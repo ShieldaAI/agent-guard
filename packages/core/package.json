@@ -1,0 +1,48 @@
+{
+  "name": "@shieldaai/agent-guard",
+  "version": "0.1.0-alpha.0",
+  "description": "A local execution boundary for registered agent tools, scoped grants, approvals and budgets.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/core"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "agents",
+    "security",
+    "mcp",
+    "guardrails",
+    "tool-authorization"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "node ../../scripts/release-check.mjs"
+  }
+}

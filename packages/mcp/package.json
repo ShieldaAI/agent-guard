@@ -1,0 +1,51 @@
+{
+  "name": "@shieldaai/agent-guard-mcp",
+  "version": "0.1.0-alpha.0",
+  "description": "MCP client adapter for Shielda Agent Guard with explicit tool approval.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/mcp"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "agents",
+    "security",
+    "mcp",
+    "guardrails",
+    "tool-authorization"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepublishOnly": "node ../../scripts/release-check.mjs"
+  },
+  "dependencies": {
+    "@shieldaai/agent-guard": "0.1.0-alpha.0"
+  }
+}
