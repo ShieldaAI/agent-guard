@@ -1,6 +1,6 @@
 # @shieldaai/agent-guard-scenarios
 
-Versioned protection scenarios and executable synthetic fixtures for the Agent Guard public API. Node.js 22+, ESM. Experimental alpha; prepared for npm publication, not yet published.
+Versioned protection scenarios and executable synthetic fixtures for the Agent Guard public API. Node.js 22+, ESM. Experimental alpha.
 
 ```ts
 import { runConformance, scenarioCatalog } from '@shieldaai/agent-guard-scenarios';

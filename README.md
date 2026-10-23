@@ -2,13 +2,21 @@
 
 TypeScript packages for controlling the tools an agent can execute. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact immutable action.
 
-**Status: experimental alpha.** The packages are prepared for npm distribution under `@shieldaai`; they are not yet published. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
+**Status: experimental alpha.** The packages use the npm scope `@shieldaai`. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
 
 | Package | Purpose |
 |---|---|
 | [`@shieldaai/agent-guard`](packages/core) | Scoped task grants, delegation, tenant checks, approvals, shared sensitivity, secret scanning and budget admission |
 | [`@shieldaai/agent-guard-mcp`](packages/mcp) | Register MCP tools with explicit metadata approval and host-defined resource resolution |
 | [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Ten versioned protection scenarios with executable malicious and benign fixtures |
+
+## Install the alpha
+
+```sh
+npm install @shieldaai/agent-guard@alpha @shieldaai/agent-guard-mcp@alpha @shieldaai/agent-guard-scenarios@alpha
+```
+
+Use only the packages your application needs. MCP and scenarios depend on the matching core version.
 
 ## Run locally
 
@@ -21,7 +29,7 @@ npm run demo
 npm run pack
 ```
 
-`npm run pack` creates installable tarballs in `artifacts/`. Install the three tarballs together into a separate project before registry publication. `npm run check` also tests packed packages in a clean temporary consumer, so workspace links cannot hide missing distribution files.
+`npm run pack` creates installable tarballs in `artifacts/`. For local builds, install the three tarballs together into a separate project. `npm run check` also tests packed packages in a clean temporary consumer, so workspace links cannot hide missing distribution files.
 
 ## Approve and execute an action
 

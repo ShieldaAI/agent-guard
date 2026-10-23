@@ -1,6 +1,20 @@
 # Releasing the npm packages
 
-The repository contains three ESM packages, versioned together. Registry publication has not happened yet. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+The repository contains three ESM packages, versioned together. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+
+## Authentication
+
+Sign in interactively and complete npm's browser and two-factor authentication prompts:
+
+```sh
+npm login --auth-type=web --registry=https://registry.npmjs.org/
+npm whoami
+npm org ls shieldaai
+```
+
+The npm account must have publishing rights in the `shieldaai` organization. Keep credentials in npm's user configuration, outside the repository. A publish may open another browser challenge; complete it with the account's security key or authenticator.
+
+## Publish and verify
 
 1. Establish ownership of the npm `shieldaai` organization and publishing rights. Sign in using npm's supported authentication flow; never put a token in this repository.
 2. Update the version in all three package manifests and internal dependency versions together. Regenerate the lockfile with `npm install --ignore-scripts`.
@@ -16,6 +30,10 @@ npm publish --workspace packages/scenarios --access public --tag alpha
 
 Each workspace's prepublish hook runs the root checks. These instructions require the complete source checkout, not just an extracted tarball. Use a supported npm authentication method with appropriate MFA. If automated publication is added later, use trusted publishing with a restricted release environment.
 
-After publishing, verify each exact version in a clean project, then update the README's publication status and create release notes/tag for the exact tested commit. Do not move the `latest` tag to this experimental alpha or imply a production security guarantee.
+An accepted publish can report that the package is still being processed. npm scans uploads before they become installable, so a temporary registry 404 is possible. Wait for each exact version to appear with `npm view <package>@<version> version dist-tags --json`; do not repeat an accepted publish or change the version to work around processing. See [npm's publish-time scanning announcement](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/).
+
+After all versions become available, install their exact versions from the public registry into a clean project, verify the MCP adapter and run the conformance suite. Update the release documentation and create release notes/tag for the tested source. Do not move the `latest` tag to this experimental alpha or imply a production security guarantee.
+
+Inspect the tags after a first publication. If npm automatically creates `latest` pointing to this alpha, remove that tag with `npm dist-tag rm <package> latest`, then verify that `alpha` still points to the intended version. This may require another browser two-factor challenge. Leave any existing stable `latest` version intact.
 
 GitHub Actions currently validates Node 22, 24 and 26 and produces tarballs. It has no npm credential and does not publish packages.

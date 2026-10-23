@@ -1,6 +1,6 @@
 # @shieldaai/agent-guard
 
-Experimental TypeScript executor for registered agent tools. Node.js 22+, ESM, no third-party runtime dependencies. Prepared for npm publication; no published version yet.
+Experimental TypeScript executor for registered agent tools. Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
 
 The trusted host registers and approves tool metadata, creates scoped task handles, and approves sensitive actions. The model receives only a constrained dispatcher. `prepare()` snapshots immutable JSON; `execute()` rechecks current grants, bound tenant context, policy, tool registration, sensitivity, approval and budgets before invoking the stored handler.
 

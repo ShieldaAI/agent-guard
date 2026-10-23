@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.1.0-alpha.0 — Unreleased on npm
+## 0.1.0-alpha.0 — 2026-10-24
+
+Published all three packages under `@shieldaai` with the `alpha` dist-tag.
 
 - Initial TypeScript execution core for explicitly registered tools and scoped task trees.
 - Immutable prepared actions, exact approvals, tenant and recipient gates, shared sensitivity, literal secret scanning and atomic local budgets.

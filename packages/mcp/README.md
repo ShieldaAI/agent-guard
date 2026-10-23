@@ -1,6 +1,6 @@
 # @shieldaai/agent-guard-mcp
 
-Register an MCP tool with the same execution boundary used by `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha; prepared for npm publication, not yet published.
+Register an MCP tool with the same execution boundary used by `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
 
 ```ts
 import { AgentGuard } from '@shieldaai/agent-guard';
