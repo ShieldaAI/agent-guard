@@ -18,6 +18,8 @@ npm install @shieldaai/agent-guard@alpha @shieldaai/agent-guard-mcp@alpha @shiel
 
 Use only the packages your application needs. MCP and scenarios depend on the matching core version.
 
+For this initial release, npm also assigned `latest` to `0.1.0-alpha.0`. The release remains experimental; use `@alpha` or an exact version explicitly.
+
 ## Run locally
 
 ```sh
