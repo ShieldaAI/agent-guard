@@ -27,7 +27,7 @@ The initial implementation is original TypeScript with no third-party runtime de
 
 - Protected durable state with transactional reservations, approval consumption and restart reconciliation.
 - Provider-specific cost ceilings and resource-side idempotency for uncertain outcomes.
-- Real MCP transport/SDK compatibility tests and explicit coverage for resources/read and other privileged methods.
+- HTTP/stdio and authenticated MCP transport tests, additional SDK/protocol versions, and explicit coverage for resources/read and other privileged methods. The current suite exercises the official SDK v2.4.0 over its linked in-memory transport.
 - Stronger isolation and credential custody supplied by the deployment host.
 - Measured detector integrations, framework adapters and independent security review.
 

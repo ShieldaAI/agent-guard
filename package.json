@@ -14,13 +14,15 @@
   },
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run build && node --test packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs",
+    "test": "npm run build && node --test packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs scripts/*.test.mjs",
     "test:pack": "node scripts/check-packages.mjs",
     "check": "npm test && npm run test:pack",
     "demo": "npm run build && node examples/basic.mjs",
     "pack": "npm run build && node scripts/pack.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/client": "2.4.0",
+    "@modelcontextprotocol/server": "2.4.0",
     "@types/node": "22.20.5",
     "typescript": "7.0.2"
   }

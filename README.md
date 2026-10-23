@@ -87,6 +87,8 @@ Cost values must be nonnegative safe integers in a consistent host-defined unit,
 
 Read the [threat model](docs/threat-model.md), [API contract](docs/api-contract.md), [architecture](docs/architecture.md) and [release instructions](docs/releasing.md) before integration.
 
+The [quality review](docs/quality-review.md) records the latest audit findings, validation and remaining release gates. Unreleased fixes listed in the changelog are not present in the npm alpha until a subsequent version is published.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports should include a minimal fixture and an assertion about actual effects. Report security vulnerabilities through [private vulnerability reporting](https://github.com/ShieldaAI/agent-guard/security/advisories/new), following [SECURITY.md](SECURITY.md).

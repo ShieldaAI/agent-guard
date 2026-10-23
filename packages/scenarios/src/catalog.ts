@@ -1,5 +1,5 @@
 /** Version of the synthetic acceptance cases, independent of package releases. */
-export const SCENARIO_CATALOG_VERSION = '1.0.0' as const;
+export const SCENARIO_CATALOG_VERSION = '1.1.0' as const;
 
 export type ScenarioId = 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10';
 

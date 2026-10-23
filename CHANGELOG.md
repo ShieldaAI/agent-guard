@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- Reject custom policy decisions when their supplied task snapshot changes during evaluation, before a handler runs or an approval is consumed.
+- Strengthen scenario catalog 1.1.0 to detect premature dispatch and incorrect cost settlement; bound asynchronous conformance cases with configurable timeouts.
+- Exercise the MCP bridge against the official SDK v2.4.0 and document the difference between local request cancellation and remote work stopping.
+- Compile packed public types and README examples, execute a packaged MCP consumer, and require a clean committed checkout with aligned versions before publication.
+
+These changes are not included in the published `0.1.0-alpha.0` packages. See the [quality review](docs/quality-review.md) for evidence and remaining release gates.
+
 ## 0.1.0-alpha.0 — 2026-10-24
 
 Published all three packages under `@shieldaai` with the `alpha` dist-tag.
