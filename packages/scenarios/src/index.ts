@@ -8,7 +8,7 @@ import { SCENARIO_CATALOG_VERSION, scenarioCatalog, type ScenarioId } from './ca
 export { SCENARIO_CATALOG_VERSION, scenarioCatalog } from './catalog.js';
 export type { ScenarioDefinition, ScenarioId } from './catalog.js';
 
-/** Structural surface required from a compatible guard adapter. */
+/** Methods an adapter must provide to run the conformance suite. */
 export type GuardLike = Pick<AgentGuard,
   'registerTool' | 'approveTool' | 'createTask' | 'delegateTask' | 'revokeTask' |
   'setPolicy' | 'prepare' | 'approve' | 'execute' | 'snapshot'>;
@@ -18,8 +18,10 @@ export type ConformanceGuardFactory = (options: GuardOptions) => GuardLike;
 export interface ConformanceOptions {
   /** Omit to execute all ten scenarios. Each selected scenario runs both variants. */
   readonly scenarioIds?: readonly ScenarioId[];
+  /** Time limit per variant in milliseconds; defaults to 5000. Timeout does not cancel adapter work. */
+  readonly caseTimeoutMs?: number;
   /**
-   * Supply a fresh isolated guard per call; defaults to the public AgentGuard implementation.
+   * Return a new guard for each call. Defaults to the public AgentGuard implementation.
    * Compatible adapters must preserve these APIs and throw this core package's GuardError
    * with the documented reason codes. The provided clock and secret configuration must be honored.
    */
@@ -80,11 +82,11 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-async function bounded<T>(promise: Promise<T>, label: string): Promise<T> {
+async function bounded<T>(promise: Promise<T>, label: string, timeoutMs = 1500): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     return await Promise.race([promise, new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new CheckFailure(label)), 1500);
+      timer = setTimeout(() => reject(new CheckFailure(label)), timeoutMs);
     })]);
   } finally {
     if (timer !== undefined) clearTimeout(timer);
@@ -367,14 +369,17 @@ const cases: Record<ScenarioId, Pair> = {
         f.remove(); const task = f.task(deleteGrant());
         const prepared = await f.guard.prepare(task, { tool: 'delete_record', args: { resource: RECORD_A } });
         const approvalId = f.approve(prepared); wait = true;
-        const pending = f.guard.execute(prepared, { approvalId });
-        // Observe early settlement immediately, including when testing a broken implementation.
-        const observed = pending.then(() => undefined, () => undefined);
-        try {
-          await bounded(Promise.race([entered.promise, observed.then(() => { throw new CheckFailure('execution settled before policy barrier'); })]), 'policy barrier not reached');
-          if (change === 'revoke') f.guard.revokeTask(task); else f.guard.setPolicy(() => 'allow');
-        } finally { release.resolve(); }
-        await c.denied(() => pending, `${change} during asynchronous policy`, change === 'revoke' ? 'TASK_REVOKED' : 'POLICY_CHANGED');
+        await c.denied(async () => {
+          const pending = f.guard.execute(prepared, { approvalId });
+          // Observe early settlement immediately, including when testing a broken implementation.
+          const observed = pending.then(() => undefined, () => undefined);
+          try {
+            await bounded(Promise.race([entered.promise, observed.then(() => { throw new CheckFailure('execution settled before policy barrier'); })]), 'policy barrier not reached');
+            if (change === 'revoke') f.guard.revokeTask(task); else f.guard.setPolicy(() => 'allow');
+          } finally { release.resolve(); }
+          return pending;
+        }, `${change} during asynchronous policy`, change === 'revoke' ? 'TASK_REVOKED' : 'POLICY_CHANGED');
+        c.assert(f.ledger.length === 0, `${change} during asynchronous policy leaves the ledger empty`);
       }
       const f = fixture(c); f.remove();
       const task = f.task(deleteGrant());
@@ -480,6 +485,13 @@ const cases: Record<ScenarioId, Pair> = {
       const snapshot = f.guard.snapshot(task);
       c.assert(snapshot.calls === 2 && snapshot.concurrent === 0 && snapshot.spent === 2 && snapshot.reserved === 0, 'completed work reconciles usage and releases slots');
 
+      const omitted = fixture(c); omitted.read({ maxCost: 3 });
+      const omittedTask = omitted.task(readGrant(), { budget: omitted.budget({ maxCost: 6 }) });
+      await omitted.invoke(omittedTask, 'read_document', { resource: GUIDE });
+      await omitted.invoke(omittedTask, 'read_document', { resource: GUIDE });
+      const omittedSnapshot = omitted.guard.snapshot(omittedTask);
+      c.assert(omittedSnapshot.calls === 2 && omittedSnapshot.spent === 6 && omittedSnapshot.reserved === 0 && omittedSnapshot.concurrent === 0, 'omitted actual cost charges the full declared maximum');
+
       const cancel = fixture(c); const entered = deferred<void>(); let observed = false;
       cancel.read({ execute: async (_args, { signal }) => {
         c.handlerInvocations += 1;
@@ -518,22 +530,28 @@ const cases: Record<ScenarioId, Pair> = {
       c.assert(deadlineObserved && deadline.guard.snapshot(deadlineTask).concurrent === 0, 'deadline signals cooperative cancellation and releases slot');
 
       const failed = fixture(c); let first = true;
-      failed.read({ execute: () => { c.handlerInvocations += 1; if (first) { first = false; throw new Error('synthetic failure'); } return { value: 'recovered' }; } });
-      const failedTask = failed.task(readGrant(), { budget: failed.budget({ maxConcurrent: 1 }) });
+      failed.read({ maxCost: 3, execute: () => { c.handlerInvocations += 1; if (first) { first = false; throw new Error('synthetic failure'); } return { value: 'recovered' }; } });
+      const failedTask = failed.task(readGrant(), { budget: failed.budget({ maxConcurrent: 1, maxCost: 9 }) });
       let rejected = false;
       try { await failed.invoke(failedTask, 'read_document', { resource: GUIDE }); } catch { rejected = true; }
       c.assert(rejected && failed.guard.snapshot(failedTask).calls === 1 && failed.guard.snapshot(failedTask).concurrent === 0, 'failed handler counts attempt and releases concurrency');
+      c.assert(failed.guard.snapshot(failedTask).spent === 3 && failed.guard.snapshot(failedTask).reserved === 0, 'failed handler retains the full declared charge');
       c.assert(await failed.invoke(failedTask, 'read_document', { resource: GUIDE }) === 'recovered', 'next authorized call can use released slot');
+      c.assert(failed.guard.snapshot(failedTask).spent === 6 && failed.guard.snapshot(failedTask).concurrent === 0, 'recovery retains both admitted charges and releases concurrency');
     },
   },
 };
 
 /**
- * Run synthetic effects against this installation's public core API.
- * This validates the listed local fixtures, not a deployment, transport, or universal injection defense.
- * No network, credentials, filesystem writes, model calls, or external effects are used.
+ * Run the catalog fixtures against AgentGuard or the supplied adapter.
+ * The default implementation uses in-memory effects only. A custom adapter is
+ * responsible for its own I/O; the runner cannot isolate or cancel it.
  */
 export async function runConformance(options: ConformanceOptions = {}): Promise<ConformanceReport> {
+  const caseTimeoutMs = options.caseTimeoutMs === undefined ? 5000 : options.caseTimeoutMs;
+  if (!Number.isSafeInteger(caseTimeoutMs) || caseTimeoutMs < 1 || caseTimeoutMs > 2_147_483_647) {
+    throw new TypeError('caseTimeoutMs must be an integer from 1 through 2147483647');
+  }
   const selected = options.scenarioIds ?? scenarioCatalog.map((scenario) => scenario.id);
   if (selected.length === 0 || new Set(selected).size !== selected.length || selected.some((id) => !Object.hasOwn(cases, id))) {
     throw new TypeError('scenarioIds must be a nonempty list of distinct catalog identifiers');
@@ -543,7 +561,7 @@ export async function runConformance(options: ConformanceOptions = {}): Promise<
     for (const variant of ['malicious', 'benign'] as const) {
       const checks = new Checks(options.createGuard);
       let failure: string | undefined;
-      try { await cases[scenarioId][variant](checks); }
+      try { await bounded(cases[scenarioId][variant](checks), 'case exceeded its asynchronous timeout', caseTimeoutMs); }
       catch (error) {
         failure = error instanceof CheckFailure ? error.message
           : error instanceof GuardError ? `Unexpected guard rejection (${safeCode(error)}).`

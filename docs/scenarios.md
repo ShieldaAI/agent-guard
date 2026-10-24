@@ -88,7 +88,7 @@ Use a controllable clock for expiry tests and explicit synchronization for concu
 
 **Benign case:** send public text and similar-looking nonsecret identifiers. The intended content reaches the fixture sink; no secret appears in evidence.
 
-**Integration requirement:** this is detection of configured values/patterns on inspected arguments. It does not establish that every secret is known or detect arbitrary encodings, split messages, screenshots or semantic paraphrases. A handler that reads a secret internally or uses another network path needs separate controls.
+**Integration requirement:** the scanner matches configured literal values in inspected arguments. It does not establish that every secret is known or detect arbitrary encodings, split messages, screenshots or semantic paraphrases. A handler that reads a secret internally or uses another network path needs separate controls.
 
 ## S08 — Recheck revocation, policy and approval before dispatch
 

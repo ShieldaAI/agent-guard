@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Buffer } from 'node:buffer';
-import { canonicalJson, digestJson, immutableJson, type JsonObject } from './json.js';
+import { digestJson, immutableJson, type JsonObject } from './json.js';
 import { GuardError } from './types.js';
 import type {
   Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
@@ -13,7 +12,6 @@ export type {
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
 } from './types.js';
 
-const MAX_JSON_BYTES = 1_048_576;
 const MAX_TIMER_DELAY = 2_147_483_647;
 
 type ToolState = {
@@ -36,6 +34,7 @@ type ApprovalState = {
   prepared: WeakRef<PreparedState>; digest: string; toolRevision: number; policyVersion: number;
   expiresAt: number; used: boolean; approverId: string;
 };
+type PolicyEvaluation = { decision: PolicyDecision; snapshot?: Readonly<TaskSnapshot> };
 
 function fail(code: ConstructorParameters<typeof GuardError>[0]): never { throw new GuardError(code); }
 
@@ -59,9 +58,7 @@ function optionalBoolean(value: unknown): boolean {
 }
 function normalizeJson(value: unknown): Json {
   try {
-    const copied = immutableJson(value);
-    if (Buffer.byteLength(canonicalJson(copied), 'utf8') > MAX_JSON_BYTES) fail('INVALID_JSON');
-    return copied;
+    return immutableJson(value);
   } catch { return fail('INVALID_JSON'); }
 }
 function asObject(value: Json): JsonObject {
@@ -112,7 +109,7 @@ function containsSecret(value: Json, secrets: readonly string[]): boolean {
     secrets.some(secret => key.includes(secret)) || containsSecret(item, secrets));
 }
 
-/** In-memory trusted-host executor. It does not sandbox code or replace backend authorization. */
+/** Executes registered tools in memory. The host must provide isolation and backend authorization. */
 export class AgentGuard {
   #tools = new Map<string, ToolState>();
   #tasks = new WeakMap<TaskHandle, TaskState>();
@@ -203,14 +200,15 @@ export class AgentGuard {
       ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
     });
     this.#gates(state, tool, action, policyVersion);
-    const decision = await this.#evaluate(action, state);
+    const evaluation = await this.#evaluate(action, state);
     this.#gates(state, tool, action, policyVersion);
+    this.#checkPolicySnapshot(state, evaluation);
     const id = randomUUID();
     const digest = `sha256:${digestJson(normalizeJson({
       preparedId: id, task: state.identity, action, toolRevision: tool.revision,
     }))}`;
     const handle: PreparedAction = Object.freeze({
-      id, digest, action, requiresApproval: tool.requiresApproval || decision === 'require_approval',
+      id, digest, action, requiresApproval: tool.requiresApproval || evaluation.decision === 'require_approval',
     });
     this.#prepared.set(handle, { handle, task: state, tool, policyVersion, dispatched: false });
     return handle;
@@ -241,11 +239,12 @@ export class AgentGuard {
     if (approvalId !== undefined && typeof approvalId !== 'string') fail('APPROVAL_INVALID');
     this.#fresh(state);
     this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
-    const decision = await this.#evaluate(state.handle.action, state.task);
+    const evaluation = await this.#evaluate(state.handle.action, state.task);
     // No await occurs between these final checks, reservation, approval consumption and handler invocation.
     this.#fresh(state);
     const dispatchTime = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
-    const approval = this.#approval(state, approvalId, state.handle.requiresApproval || decision === 'require_approval', dispatchTime);
+    this.#checkPolicySnapshot(state.task, evaluation);
+    const approval = this.#approval(state, approvalId, state.handle.requiresApproval || evaluation.decision === 'require_approval', dispatchTime);
     const ancestors = lineage(state.task);
     const controller = new AbortController();
     const cancelTimer = this.#deadlineTimer(state.task.budget.deadline - dispatchTime, controller);
@@ -286,6 +285,8 @@ export class AgentGuard {
         this.#revoke(state.task);
         return fail(error instanceof GuardError && error.code === 'COST_REPORT_INVALID' ? 'COST_REPORT_INVALID' : 'RESULT_INVALID');
       }
+      // A synchronous handler or a busy microtask queue can settle before the deadline timer runs.
+      if (this.#now() >= state.task.budget.deadline) controller.abort(new GuardError('TASK_EXPIRED'));
       if (controller.signal.aborted) fail('EXECUTION_ABORTED');
       return value;
     } finally {
@@ -403,15 +404,23 @@ export class AgentGuard {
     return now;
   }
 
-  async #evaluate(action: Readonly<Action>, task: TaskState): Promise<PolicyDecision> {
+  async #evaluate(action: Readonly<Action>, task: TaskState): Promise<PolicyEvaluation> {
     const policy = this.#policy;
-    if (!policy) return 'allow';
+    if (!policy) return { decision: 'allow' };
+    const snapshot = this.#snapshot(task);
     let decision: unknown;
-    try { decision = await policy(action, this.#snapshot(task)); }
+    try { decision = await policy(action, snapshot); }
     catch { return fail('POLICY_ERROR'); }
     if (decision === 'deny') fail('POLICY_DENIED');
     if (decision !== 'allow' && decision !== 'require_approval') fail('POLICY_ERROR');
-    return decision;
+    return { decision, snapshot };
+  }
+
+  #checkPolicySnapshot(task: TaskState, evaluation: PolicyEvaluation): void {
+    const snapshot = evaluation.snapshot;
+    if (snapshot && (snapshot.calls !== task.calls || snapshot.concurrent !== task.concurrent ||
+        snapshot.spent !== task.spent || snapshot.reserved !== task.reserved ||
+        snapshot.sensitive !== task.family.sensitive)) fail('POLICY_STATE_CHANGED');
   }
 
   #approval(state: PreparedState, id: string | undefined, required: boolean, now: number): ApprovalState | undefined {

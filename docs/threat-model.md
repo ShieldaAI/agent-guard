@@ -62,6 +62,8 @@ Child tasks receive authority from trusted host code. The intersection of the ap
 
 An approval authorizes the specific action presented to the reviewer. The prepared invocation stores cloned, immutable JSON arguments and resolved action context. Arguments, resources, task context and applicable policy must remain consistent with that approval. Consumption must be single-use and must check expiry before dispatch. A policy change invalidates existing prepared actions and approvals. Approval does not override a revoked task, an explicit denial, sensitive-context restrictions or a failed resource check.
 
+A custom policy's supplied task snapshot must still match the current local counters and shared sensitivity immediately before preparation completes or execution dispatches. Concurrent changes cause `POLICY_STATE_CHANGED` without consuming the action, approval or budget. Policies that consult external mutable data or other task snapshots need host-side coordination; the guard cannot make those reads atomic with a remote effect.
+
 Budgets constrain admission to the registered executor and its task ancestors. Local reservations and approval consumption can be atomic within one process when they are made together before dispatch. Calls that reach a handler count even when the handler fails. Concurrency remains reserved until the handler settles. The executor reserves the trusted tool's declared maximum cost and reconciles its reported actual cost; the host must enforce that maximum at the provider. That is not a transaction with a remote service: a crash, timeout or lost response can leave the outcome of a side effect unknown. Retrying an operation requires the handler's idempotency or reconciliation mechanism.
 
 The alpha maintains a monotonic sensitive flag shared across related parent/descendant tasks. Once marked sensitive by a trusted resolver, that context cannot perform external sends, including with approval. External actions also require an explicitly allowed recipient. Configured literal secrets are scanned in outbound string leaves. These checks do not automatically discover every secret or track every transformation of a value. A separate new root task must not be used to erase the labels of copied data; the host must carry the relevant context across reuse outside an existing task family.
@@ -83,6 +85,8 @@ The alpha maintains a monotonic sensitive flag shared across related parent/desc
 For production use with durable tasks, preserve state in a trusted service and define recovery behavior before resuming work after a crash. Do not silently recreate exhausted or revoked tasks with fresh authority. Multiple workers require shared authorization and quota state; separate in-memory guards do not provide an organization-wide limit.
 
 For hostile code or untrusted tool servers, add an operating-system or service boundary, restricted credentials and enforced network controls. Those controls are deployment responsibilities and are not supplied by this alpha.
+
+For MCP, the registered handler is the client bridge promise. The SDK can reject that promise on cancellation before a remote server has stopped. Local concurrency and cost reservations settle with the bridge, so enforce remote concurrency, cost ceilings and cancellation at the server or provider as well. A passing linked-transport SDK test does not establish HTTP/stdio transport security, authentication or remote-server isolation.
 
 ## Claims outside this threat model
 

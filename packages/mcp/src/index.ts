@@ -8,7 +8,7 @@ export interface McpToolDescriptor {
   [key: string]: Json | undefined;
 }
 
-/** Adapt your SDK's call signature here; the adapter owns no transport or credentials. */
+/** Host-supplied bridge to an MCP SDK client. The host owns the connection and credentials. */
 export interface McpToolClient {
   callTool(
     request: { name: string; arguments: Record<string, Json> },
@@ -24,7 +24,7 @@ export interface McpRegistration {
   requiresApproval?: boolean;
   controlPlane?: boolean;
   maxCost?: number;
-  /** Trusted usage extraction; absent this callback, the full maxCost is charged. */
+  /** Read verified usage from the result. Without this callback, charge the full maxCost. */
   measureCost?: (result: Json) => number;
 }
 
@@ -42,7 +42,7 @@ function argumentsObject(args: Json): Record<string, Json> {
   if (args === null || typeof args !== 'object' || Array.isArray(args)) {
     throw new TypeError('MCP tool arguments must be a JSON object.');
   }
-  // Array.isArray does not narrow TypeScript's readonly-array union member.
+  // Array.isArray does not exclude readonly arrays from the Json union.
   return args as Record<string, Json>;
 }
 
