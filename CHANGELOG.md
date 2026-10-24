@@ -2,7 +2,7 @@
 
 ## 0.1.0-alpha.1 — 2026-10-24
 
-Release notes are prepared; npm publication is pending the release checks below.
+Published all three packages under `@shieldaai` with the `alpha` dist-tag. The [GitHub prerelease](https://github.com/ShieldaAI/agent-guard/releases/tag/v0.1.0-alpha.1) includes the verified tarballs and checksums.
 
 - Check deadlines again when a handler result settles, so synchronous work cannot return success
   after its deadline while the cancellation timer is waiting to run.
@@ -16,7 +16,7 @@ Release notes are prepared; npm publication is pending the release checks below.
 - Remove obsolete build output and rebuild packages before packing.
 - Compile packed public types and README examples, execute a packaged MCP consumer, and require a clean committed checkout with aligned versions before publication.
 
-These changes are not included in the published `0.1.0-alpha.0` packages. See the [release review](docs/quality-review.md) for test results and outstanding publication checks.
+These changes are not included in the earlier `0.1.0-alpha.0` packages. See the [release review](docs/quality-review.md) for test results and registry verification.
 
 ## 0.1.0-alpha.0 — 2026-10-24
 
