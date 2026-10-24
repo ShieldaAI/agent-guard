@@ -1,6 +1,8 @@
 # Changelog
 
-## 0.1.0-alpha.1 — unreleased
+## 0.1.0-alpha.1 — 2026-10-24
+
+Release notes are prepared; npm publication is pending the release checks below.
 
 - Check deadlines again when a handler result settles, so synchronous work cannot return success
   after its deadline while the cancellation timer is waiting to run.

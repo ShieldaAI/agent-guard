@@ -40,7 +40,7 @@ These changes prevent stale output and uncommitted source from entering subseque
 
 ## Repository and workflow hardening
 
-The [release branch ruleset](https://github.com/ShieldaAI/agent-guard/rules/25781227) protects `main` and release branches. It requires a pull request, one fresh approval, approval of the latest push, resolved review conversations and successful, up-to-date Node 22/24/26 checks from GitHub Actions. There is no bypass list. Version tags matching `v*` cannot be changed or deleted, and only administrators may create them.
+The [release branch ruleset](https://github.com/ShieldaAI/agent-guard/rules/25781227) protects `main` and release branches. The sole-maintainer policy requires a pull request, resolved review conversations and successful, up-to-date Node 22/24/26 checks from GitHub Actions. It does not require a second person's approval. There is no bypass list. Version tags matching `v*` cannot be changed or deleted, and only administrators may create them.
 
 Secret scanning, push protection, Dependabot security updates and private vulnerability reporting are enabled. Repository settings require full commit hashes for actions and approval before workflows from external forks run.
 
@@ -62,7 +62,7 @@ The committed workflows disable persisted checkout credentials, bound job runtim
 
 ## Before the next publication
 
-1. Obtain fresh approval from someone other than the last pusher and successful required checks on the final pull-request head, then merge the fixes. Packaging and workflow hardening is already committed; the runs above cover its recorded revision.
+1. Review the final pull-request head, resolve conversations and obtain successful required checks, then merge the fixes. The sole-maintainer policy permits this without a second person's approval. Packaging and workflow hardening is already committed; the runs above cover its recorded revision.
 2. Obtain successful Node 22/24/26 and CodeQL runs on the merged release commit. Dependency review runs on pull requests, so verify its result on the final pull-request head before merging. Keep the release rules enforced.
 3. Publish the prepared `0.1.0-alpha.1` version of all three packages from a clean checkout of that commit; `0.1.0-alpha.0` is already published. Verify registry installation, integrity, `gitHead` and the release tag against the release commit.
 4. Add build provenance, preferably with a restricted trusted-publishing workflow. Registry signatures and matching hashes establish artifact integrity but do not attest to the build process.
