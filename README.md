@@ -1,6 +1,6 @@
 # Shielda Agent Guard
 
-TypeScript packages for controlling the tools an agent can execute. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact immutable action.
+TypeScript packages for controlling the tools an agent can execute. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
 
 **Status: experimental alpha.** The packages use the npm scope `@shieldaai`. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
 
@@ -8,15 +8,18 @@ TypeScript packages for controlling the tools an agent can execute. Register a t
 |---|---|
 | [`@shieldaai/agent-guard`](packages/core) | Scoped task grants, delegation, tenant checks, approvals, shared sensitivity, secret scanning and budget admission |
 | [`@shieldaai/agent-guard-mcp`](packages/mcp) | Register MCP tools with explicit metadata approval and host-defined resource resolution |
-| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Ten versioned protection scenarios with executable malicious and benign fixtures |
+| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Ten versioned scenarios, each with malicious and benign test cases |
 
 ## Install the alpha
 
 ```sh
-npm install @shieldaai/agent-guard@alpha @shieldaai/agent-guard-mcp@alpha @shieldaai/agent-guard-scenarios@alpha
+npm install @shieldaai/agent-guard@alpha
 ```
 
-Use only the packages your application needs. MCP and scenarios depend on the matching core version.
+Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
+`@shieldaai/agent-guard-scenarios@alpha` to run the scenario catalog. Both depend on
+the matching core version. Configuration lives in your application: register tools,
+create task grants, and provide an authenticated approval flow where needed.
 
 For this initial release, npm also assigned `latest` to `0.1.0-alpha.0`. The release remains experimental; use `@alpha` or an exact version explicitly.
 
@@ -25,13 +28,17 @@ For this initial release, npm also assigned `latest` to `0.1.0-alpha.0`. The rel
 ```sh
 git clone https://github.com/ShieldaAI/agent-guard.git
 cd agent-guard
-npm ci
+npm ci --ignore-scripts
 npm run check
 npm run demo
 npm run pack
 ```
 
-`npm run pack` creates installable tarballs in `artifacts/`. For local builds, install the three tarballs together into a separate project. `npm run check` also tests packed packages in a clean temporary consumer, so workspace links cannot hide missing distribution files.
+The demo uses in-memory fixtures and needs no API key, environment file, or external
+service. `npm run pack` creates installable tarballs in `artifacts/`. For local builds,
+install the three tarballs together into a separate project. `npm run check` also tests
+packed packages in a clean temporary consumer, so workspace links cannot hide missing
+distribution files.
 
 ## Approve and execute an action
 
@@ -50,7 +57,7 @@ const fingerprint = guard.registerTool({
     return { resourceId: recordId, tenantId: 'acme' };
   },
   execute: async (args, { signal }) => {
-    // Replace this fixture with your resource service. Enforce its own authorization too.
+    // Replace with your service call; the service must also check authorization.
     signal.throwIfAborted();
     return { value: { deleted: args } };
   },
@@ -66,7 +73,7 @@ const prepared = await guard.prepare(task, {
   tool: 'records.delete', args: { recordId: 'record-A' },
 });
 
-// Call only after your trusted approval UI has authenticated an authorized approver.
+// Authenticate the reviewer in your approval UI before calling approve().
 const approvalId = guard.approve(prepared, {
   approverId: 'reviewer-7', expiresAt: Date.now() + 30_000,
 });
@@ -77,7 +84,7 @@ The model receives a dispatcher that selects the host-owned task, not the guard 
 
 ## Protections and boundaries
 
-The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, structured secret/canary scanning, revocation/control failures, tenant isolation and budgets.
+The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation and budgets.
 
 All mandatory checks must pass. Custom policy can add restrictions but cannot override a missing grant, required approval, revoked task, tenant mismatch or exhausted budget. The same stored invocation is approved and executed; changing the original arguments does not change it.
 
@@ -85,9 +92,9 @@ State is in memory. Use one guard instance for a task tree. Restarting loses app
 
 Cost values must be nonnegative safe integers in a consistent host-defined unit, such as microcurrency units. Fractional amounts and unsafe integers are rejected to avoid rounding errors in admission and accounting.
 
-Read the [threat model](docs/threat-model.md), [API contract](docs/api-contract.md), [architecture](docs/architecture.md) and [release instructions](docs/releasing.md) before integration.
+Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
-The [quality review](docs/quality-review.md) records the latest audit findings, validation and remaining release gates. Unreleased fixes listed in the changelog are not present in the npm alpha until a subsequent version is published.
+The [release review](docs/quality-review.md) records known issues, test results and the remaining publication checks. Unreleased fixes listed in the changelog are not present in the npm alpha until a subsequent version is published.
 
 ## Contributing
 

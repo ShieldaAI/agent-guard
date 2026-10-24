@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { Buffer } from 'node:buffer';
-import { canonicalJson, digestJson, immutableJson, type JsonObject } from './json.js';
+import { digestJson, immutableJson, type JsonObject } from './json.js';
 import { GuardError } from './types.js';
 import type {
   Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
@@ -13,7 +12,6 @@ export type {
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
 } from './types.js';
 
-const MAX_JSON_BYTES = 1_048_576;
 const MAX_TIMER_DELAY = 2_147_483_647;
 
 type ToolState = {
@@ -60,9 +58,7 @@ function optionalBoolean(value: unknown): boolean {
 }
 function normalizeJson(value: unknown): Json {
   try {
-    const copied = immutableJson(value);
-    if (Buffer.byteLength(canonicalJson(copied), 'utf8') > MAX_JSON_BYTES) fail('INVALID_JSON');
-    return copied;
+    return immutableJson(value);
   } catch { return fail('INVALID_JSON'); }
 }
 function asObject(value: Json): JsonObject {
@@ -113,7 +109,7 @@ function containsSecret(value: Json, secrets: readonly string[]): boolean {
     secrets.some(secret => key.includes(secret)) || containsSecret(item, secrets));
 }
 
-/** In-memory trusted-host executor. It does not sandbox code or replace backend authorization. */
+/** Executes registered tools in memory. The host must provide isolation and backend authorization. */
 export class AgentGuard {
   #tools = new Map<string, ToolState>();
   #tasks = new WeakMap<TaskHandle, TaskState>();
@@ -289,6 +285,8 @@ export class AgentGuard {
         this.#revoke(state.task);
         return fail(error instanceof GuardError && error.code === 'COST_REPORT_INVALID' ? 'COST_REPORT_INVALID' : 'RESULT_INVALID');
       }
+      // A synchronous handler or a busy microtask queue can settle before the deadline timer runs.
+      if (this.#now() >= state.task.budget.deadline) controller.abort(new GuardError('TASK_EXPIRED'));
       if (controller.signal.aborted) fail('EXECUTION_ABORTED');
       return value;
     } finally {

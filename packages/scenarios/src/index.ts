@@ -8,7 +8,7 @@ import { SCENARIO_CATALOG_VERSION, scenarioCatalog, type ScenarioId } from './ca
 export { SCENARIO_CATALOG_VERSION, scenarioCatalog } from './catalog.js';
 export type { ScenarioDefinition, ScenarioId } from './catalog.js';
 
-/** Structural surface required from a compatible guard adapter. */
+/** Methods an adapter must provide to run the conformance suite. */
 export type GuardLike = Pick<AgentGuard,
   'registerTool' | 'approveTool' | 'createTask' | 'delegateTask' | 'revokeTask' |
   'setPolicy' | 'prepare' | 'approve' | 'execute' | 'snapshot'>;
@@ -18,10 +18,10 @@ export type ConformanceGuardFactory = (options: GuardOptions) => GuardLike;
 export interface ConformanceOptions {
   /** Omit to execute all ten scenarios. Each selected scenario runs both variants. */
   readonly scenarioIds?: readonly ScenarioId[];
-  /** Async time limit per variant in milliseconds; defaults to 5000. Does not cancel adapter work. */
+  /** Time limit per variant in milliseconds; defaults to 5000. Timeout does not cancel adapter work. */
   readonly caseTimeoutMs?: number;
   /**
-   * Supply a fresh isolated guard per call; defaults to the public AgentGuard implementation.
+   * Return a new guard for each call. Defaults to the public AgentGuard implementation.
    * Compatible adapters must preserve these APIs and throw this core package's GuardError
    * with the documented reason codes. The provided clock and secret configuration must be honored.
    */
@@ -543,9 +543,9 @@ const cases: Record<ScenarioId, Pair> = {
 };
 
 /**
- * Run synthetic effects against this installation's public core API.
- * This validates the listed local fixtures, not a deployment, transport, or universal injection defense.
- * No network, credentials, filesystem writes, model calls, or external effects are used.
+ * Run the catalog fixtures against AgentGuard or the supplied adapter.
+ * The default implementation uses in-memory effects only. A custom adapter is
+ * responsible for its own I/O; the runner cannot isolate or cancel it.
  */
 export async function runConformance(options: ConformanceOptions = {}): Promise<ConformanceReport> {
   const caseTimeoutMs = options.caseTimeoutMs === undefined ? 5000 : options.caseTimeoutMs;

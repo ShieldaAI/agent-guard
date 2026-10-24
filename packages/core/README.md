@@ -31,8 +31,8 @@ All state is in memory. The library is not a sandbox, distributed permission ser
 
 Normalized JSON values, including request/result envelopes and tool metadata, are capped at 1 MiB of canonical UTF-8 JSON, 100,000 nodes and 64 levels of depth. Account for the enclosing fields when sizing arguments or results. Oversized results reject with `RESULT_INVALID` and revoke the task after the handler has run.
 
+Cost budgets, declared maxima and reported usage use nonnegative safe integer units chosen by the host (for example, microcurrency units). Fractional values and unsafe integers are rejected.
+
 See the [full API](https://github.com/ShieldaAI/agent-guard/blob/main/docs/api-contract.md), [threat model](https://github.com/ShieldaAI/agent-guard/blob/main/docs/threat-model.md) and [working approval example](https://github.com/ShieldaAI/agent-guard/blob/main/examples/basic.mjs).
 
 Apache-2.0. Copyright 2026 ShieldaAI contributors.
-
-Cost budgets, declared maxima and reported usage use nonnegative safe integer units chosen by the host (for example, microcurrency units). Fractional values and unsafe integers are rejected.

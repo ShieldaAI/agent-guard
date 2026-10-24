@@ -8,7 +8,7 @@ function git(root, args) {
   return result.stdout.trim();
 }
 
-/** Publication must describe one committed source tree with aligned workspace versions. */
+/** Require a clean checkout and matching versions before publication. */
 export function validateRelease(root) {
   const repository = git(root, ['rev-parse', '--show-toplevel']);
   if (realpathSync(repository) !== realpathSync(root)) {

@@ -1,7 +1,7 @@
 {
   "name": "shielda-agent-guard-workspace",
   "private": true,
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
@@ -13,7 +13,7 @@
     "node": ">=22"
   },
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "node scripts/build.mjs",
     "test": "npm run build && node --test packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs scripts/*.test.mjs",
     "test:pack": "node scripts/check-packages.mjs",
     "check": "npm test && npm run test:pack",

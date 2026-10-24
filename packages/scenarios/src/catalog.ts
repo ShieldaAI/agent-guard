@@ -85,7 +85,7 @@ const definitions: ScenarioDefinition[] = [
   },
 ];
 
-/** Immutable descriptive catalog. Execution is opt-in through runConformance(). */
+/** Read-only scenario descriptions. Call runConformance() to run the fixtures. */
 export const scenarioCatalog: readonly ScenarioDefinition[] = Object.freeze(definitions.map((entry) => Object.freeze({
   ...entry,
   malicious: Object.freeze([...entry.malicious]),

@@ -16,7 +16,12 @@ function run(command, args, cwd) {
 try {
   const tarballs = [];
   for (const workspace of ['packages/core', 'packages/mcp', 'packages/scenarios']) {
-    const [pack] = JSON.parse(run(process.execPath, [npmCli, 'pack', '--json', '--ignore-scripts', '--workspace', workspace, '--pack-destination', temp], root));
+    mkdirSync(join(root, workspace, 'dist'), { recursive: true });
+    writeFileSync(join(root, workspace, 'dist', 'obsolete-build-output.js'), 'throw new Error("Stale build output");\n');
+    const [pack] = JSON.parse(run(process.execPath, [npmCli, 'pack', '--json', '--workspace', workspace, '--pack-destination', temp], root));
+    if (pack.files.some(file => file.path === 'dist/obsolete-build-output.js')) {
+      throw new Error(`Stale build output included in ${workspace}.`);
+    }
     for (const { path } of pack.files) {
       if (!/^(dist\/.*\.(js|d\.ts)|package\.json|README\.md|LICENSE)$/.test(path)) {
         throw new Error(`Unexpected package file: ${path}`);

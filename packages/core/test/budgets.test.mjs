@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { AgentGuard, GuardError } from '../dist/index.js';
 
 function deferred() { let resolve; const promise = new Promise(done => { resolve = done; }); return { promise, resolve }; }
-function setup({ execute, budget = {}, maxCost = 2, policy } = {}) {
-  const guard = new AgentGuard(policy ? { policy } : {});
+function setup({ execute, budget = {}, maxCost = 2, policy, clock } = {}) {
+  const guard = new AgentGuard({ ...(policy ? { policy } : {}), ...(clock ? { clock } : {}) });
   const fp = guard.registerTool({ name: 'run', description: 'A bounded operation', maxCost,
     resolve: (_args, task) => ({ resourceId: 'resource:1', tenantId: task.tenantId }),
     execute: execute ?? (() => ({ value: 'ok', actualCost: 1 })),
@@ -82,6 +82,30 @@ test('deadline requests cooperative cancellation and releases only after the han
   assert.equal(started, true);
   assert.equal(f.guard.snapshot(f.parent).concurrent, 0);
   assert.equal(f.guard.snapshot(f.parent).spent, 0);
+});
+
+test('settlement checks the deadline even before the cancellation timer can run', async t => {
+  for (const asynchronous of [false, true]) await t.test(asynchronous ? 'resolved promise' : 'synchronous result', async () => {
+    let now = 100; let signal;
+    const f = setup({ clock: () => now, budget: { deadline: 200 }, execute: (_args, context) => {
+      signal = context.signal;
+      now = 201;
+      const result = { value: 'operation completed after its deadline', actualCost: 1 };
+      return asynchronous ? Promise.resolve(result) : result;
+    } });
+    const prepared = await f.prepare();
+    await assert.rejects(f.guard.execute(prepared), isCode('EXECUTION_ABORTED'));
+    assert.equal(signal.aborted, true);
+    assert.equal(signal.reason.code, 'TASK_EXPIRED');
+    for (const task of [f.parent, f.child]) {
+      const snapshot = f.guard.snapshot(task);
+      assert.equal(snapshot.calls, 1);
+      assert.equal(snapshot.concurrent, 0);
+      assert.equal(snapshot.reserved, 0);
+      assert.equal(snapshot.spent, 1);
+    }
+    await assert.rejects(f.guard.execute(prepared), isCode('ACTION_USED'));
+  });
 });
 
 test('failed handlers remain charged, consumed and never retried automatically', async () => {

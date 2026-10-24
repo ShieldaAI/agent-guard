@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-mcp",
-  "version": "0.1.0-alpha.0",
+  "version": "0.1.0-alpha.1",
   "description": "MCP client adapter for Shielda Agent Guard with explicit tool approval.",
   "license": "Apache-2.0",
   "type": "module",
@@ -43,9 +43,10 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/build.mjs",
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.0"
+    "@shieldaai/agent-guard": "0.1.0-alpha.1"
   }
 }

@@ -3,7 +3,7 @@ import type { JsonValue } from './json.js';
 /** JSON accepted by the guard. Every invocation is copied and deeply frozen at runtime. */
 export type Json = JsonValue;
 export interface Capability { tool: string; resources: readonly string[] }
-/** Cost is a nonnegative safe integer in host-chosen units (for example microcurrency). */
+/** Costs use nonnegative safe integers in units chosen by the host, such as microcurrency units. */
 export interface Budget { maxCalls: number; maxConcurrent: number; maxCost: number; deadline: number }
 export interface TaskOptions {
   id: string; principalId: string; tenantId: string;
@@ -20,14 +20,14 @@ export interface ResolvedAction {
 export interface ToolDefinition {
   name: string; description: string; inputSchema?: Json; metadata?: Json;
   requiresApproval?: boolean; controlPlane?: boolean;
-  /** Maximum safe-integer cost units reserved before dispatch. Defaults to zero. */
+  /** Maximum cost reserved before dispatch, as a nonnegative safe integer. Defaults to zero. */
   maxCost?: number;
   resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
   execute(args: Json, context: {
     signal: AbortSignal; action: Readonly<Action>; task: Readonly<TaskIdentity>;
   }): Promise<ToolResult> | ToolResult;
 }
-/** actualCost, when present, must be safe integer units from zero through the tool's maxCost. */
+/** actualCost must be a safe integer between zero and the tool's maxCost, inclusive. */
 export interface ToolResult { value: Json; actualCost?: number }
 export interface Action extends ResolvedAction {
   tool: string; args: Json; toolFingerprint: string; policyVersion: number;
@@ -63,7 +63,7 @@ export const GuardErrorCode = Object.freeze({
 
 export type GuardErrorCodeValue = typeof GuardErrorCode[keyof typeof GuardErrorCode];
 
-/** Messages intentionally contain no request values, policy exceptions or tool output. */
+/** Errors emitted by the guard omit request values, policy exceptions and tool output. */
 export class GuardError extends Error {
   readonly code: GuardErrorCodeValue;
   constructor(code: GuardErrorCodeValue, message: string = code) {

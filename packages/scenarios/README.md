@@ -11,7 +11,7 @@ console.table(report.results);
 console.log(scenarioCatalog);
 ```
 
-Run selected scenarios with `runConformance({ scenarioIds: ['S05', 'S08'] })`. The default suite executes malicious and benign variants of all ten scenarios. It checks handler invocations and synthetic effects, not merely decision objects. Fixtures do not use real credentials, models, network services or destructive operations.
+Run selected scenarios with `runConformance({ scenarioIds: ['S05', 'S08'] })`. The default suite executes malicious and benign variants of all ten scenarios. It checks handler invocations and synthetic effects, not merely decision objects. The built-in fixtures use no credentials, model calls, network services or destructive operations. A custom adapter is responsible for its own I/O.
 
 The scenarios cover unauthorized tools/resources, delegation, protected administration, sensitive export, action-bound approval, metadata drift, outbound secrets/canaries, revocation/control failures, tenants and budgets. The [scenario specification](https://github.com/ShieldaAI/agent-guard/blob/main/docs/scenarios.md) explains each boundary.
 
