@@ -21,7 +21,7 @@ Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
 the matching core version. Configuration lives in your application: register tools,
 create task grants, and provide an authenticated approval flow where needed.
 
-For this initial release, npm also assigned `latest` to `0.1.0-alpha.0`. The release remains experimental; use `@alpha` or an exact version explicitly.
+The `alpha` tag points to `0.1.0-alpha.1`; `latest` remains on the earlier `0.1.0-alpha.0`. The packages remain experimental; use `@alpha` or an exact version explicitly.
 
 ## Run locally
 
@@ -94,7 +94,7 @@ Cost values must be nonnegative safe integers in a consistent host-defined unit,
 
 Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
-The [release review](docs/quality-review.md) records known issues, test results and the remaining publication checks. Unreleased fixes listed in the changelog are not present in the npm alpha until a subsequent version is published.
+The [release review](docs/quality-review.md) records known issues, test results and verification of the published `0.1.0-alpha.1` packages. See the [changelog](CHANGELOG.md) for the changes in this release.
 
 ## Contributing
 
