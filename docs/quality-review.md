@@ -44,13 +44,14 @@ The [release branch ruleset](https://github.com/ShieldaAI/agent-guard/rules/2578
 
 Secret scanning, push protection, Dependabot security updates and private vulnerability reporting are enabled. Repository settings require full commit hashes for actions and approval before workflows from external forks run.
 
-The local workflow changes disable persisted checkout credentials, bound job runtimes and retain CI tarballs for seven days. New workflows add CodeQL analysis of TypeScript and GitHub Actions plus dependency review for newly introduced advisories rated moderate or higher. Dependabot configuration covers npm packages and GitHub Actions. These files must be committed and pushed before those workflows can run; no hosted CodeQL or dependency-review result is claimed here.
+The committed workflows disable persisted checkout credentials, bound job runtimes and retain CI tarballs for seven days. CodeQL analyzes TypeScript and GitHub Actions, and dependency review checks newly introduced advisories rated moderate or higher. Dependabot configuration covers npm packages and GitHub Actions. Hosted CI, CodeQL and dependency review passed for commit `a8348131c747b64ae8d6511d25e7df8cc67ec867`, as recorded below.
 
 ## Validation
 
 - The current `npm run check` passed on Node 22.23.4, 24.22.1 and 26.12.0: all three packages built, 121 tests passed, and installed tarballs passed the consumer check. Deadline and bounded-normalization regressions pass, and the packing regression confirms that obsolete build output is excluded.
 - The earlier runtime review passed the same 114 tests on Node 22.0.0, 22.23.4, 24.22.1 and 26.12.0 on macOS.
-- [Hosted CI run 40038764852, attempt 2](https://github.com/ShieldaAI/agent-guard/actions/runs/40038764852/attempts/2) passed on 2026-10-24 for commit `d0df90d730c41ae2fa87ad8792e63a0081bd5324`. All three Node 22/24/26 jobs passed installation and `npm run check`; Node 24 also packed and uploaded the tarballs. This confirms that the billing block no longer prevented this run. It does not validate the remaining uncommitted packaging and workflow hardening or the new CodeQL and dependency-review workflows.
+- [Hosted CI run 40108331986](https://github.com/ShieldaAI/agent-guard/actions/runs/40108331986) passed on 2026-10-24 for commit `a8348131c747b64ae8d6511d25e7df8cc67ec867`, including the committed packaging and workflow hardening. All three Node 22/24/26 jobs passed installation and `npm run check`; Node 24 also packed and uploaded the tarballs.
+- [CodeQL run 40108332093](https://github.com/ShieldaAI/agent-guard/actions/runs/40108332093) and [dependency-review run 40108332100](https://github.com/ShieldaAI/agent-guard/actions/runs/40108332100) passed for the same commit on 2026-10-24. These results cover that revision, not a later pull-request head or merged release commit.
 - All 20 malicious/benign scenario variants pass. Regressions using deliberately faulty implementations fail the intended variants.
 - The MCP suite includes 18 tests covering the adapter and official SDK integration.
 - The current Node 26 coverage run reported 99.78% lines and 93.61% branches across built package JavaScript. Core and MCP each reached 100% line coverage. Coverage measures exercised code, not resistance to all attacks.
@@ -61,9 +62,9 @@ The local workflow changes disable persisted checkout credentials, bound job run
 
 ## Before the next publication
 
-1. Commit the remaining packaging and workflow hardening, then obtain a successful Node 22/24/26 matrix on the final release commit. The passing rerun above covers only its recorded remote revision.
-2. Commit and push the workflow hardening, then obtain successful CodeQL and dependency-review runs. Add those checks to the release ruleset after verifying their reported check names. Keep the existing required checks enforced for the final release commit.
-3. Merge the fixes with the prepared `0.1.0-alpha.1` version in all three packages; `0.1.0-alpha.0` is already published. Publish from a clean checkout, then verify registry installation, integrity, `gitHead` and the release tag against that commit.
+1. Obtain fresh approval from someone other than the last pusher and successful required checks on the final pull-request head, then merge the fixes. Packaging and workflow hardening is already committed; the runs above cover its recorded revision.
+2. Obtain successful Node 22/24/26 and CodeQL runs on the merged release commit. Dependency review runs on pull requests, so verify its result on the final pull-request head before merging. Keep the release rules enforced.
+3. Publish the prepared `0.1.0-alpha.1` version of all three packages from a clean checkout of that commit; `0.1.0-alpha.0` is already published. Verify registry installation, integrity, `gitHead` and the release tag against the release commit.
 4. Add build provenance, preferably with a restricted trusted-publishing workflow. Registry signatures and matching hashes establish artifact integrity but do not attest to the build process.
 
 The initial packages record `gitHead` `6db7631a1f9ba070b5e5c9b2a5152be0584b0622`, but their packaged READMEs match release tag commit `f7e4c77d675a6ec2fd7ab402858d49038ccc86ea`. Executable files and integrity hashes were verified; the discrepancy affects documentation traceability. See [the release instructions](releasing.md).
