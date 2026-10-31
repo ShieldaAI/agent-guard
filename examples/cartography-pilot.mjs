@@ -47,12 +47,12 @@ export async function readPilotConfig(path) {
   if (process.platform === 'win32') fail('PILOT_PLATFORM_UNSUPPORTED');
   let handle;
   try {
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size > 65_536 ||
-        (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid()))) fail('PILOT_CONFIG_INVALID');
-    handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    if (typeof constants.O_NOFOLLOW !== 'number' || typeof constants.O_NONBLOCK !== 'number') fail('PILOT_CONFIG_INVALID');
+    // Open once without following symlinks or waiting for a FIFO writer. Check
+    // the same descriptor that supplies bytes; a path check before open can race.
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const opened = await handle.stat();
-    if (opened.dev !== stat.dev || opened.ino !== stat.ino || !opened.isFile() || opened.nlink !== 1 ||
+    if (!opened.isFile() || opened.nlink !== 1 || opened.size > 65_536 ||
         (opened.mode & 0o077) !== 0 || opened.uid !== process.getuid()) fail('PILOT_CONFIG_INVALID');
     const bytes = Buffer.alloc(65_537); let size = 0;
     while (size < bytes.length) { const read = await handle.read(bytes, size, bytes.length - size, null); if (!read.bytesRead) break; size += read.bytesRead; }

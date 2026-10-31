@@ -2,6 +2,10 @@
 
 ## Unreleased — agent security hardening
 
+- Fix the local pilot launcher's configuration-file race by opening one
+  nonblocking, no-follow descriptor before validating private metadata. Cover
+  FIFO replacement and keep Node 22 runtime warnings separate from exact test
+  assertions about safe application diagnostics.
 - Reject staged graph projections where duplicate memberships or endpoint edges
   conceal missing relationships. Validate distinct nodes and expected endpoint
   pairs as well as totals before changing the published snapshot.

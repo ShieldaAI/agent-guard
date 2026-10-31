@@ -68,7 +68,8 @@ test('private pilot configuration rejects duplicate JSON, oversize content, link
 test('pilot stdin lifecycle emits safe readiness/results, never secret values', async t => {
   const config = await configuration(t), path = join(config.stateDirectory, 'config.json');
   await writeFile(path, JSON.stringify(config), { mode: 0o600 });
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../../../examples/cartography-pilot.mjs', import.meta.url)), '--config', path], { stdio: ['pipe', 'pipe', 'pipe'] });
+  // Keep runtime-version warnings separate from the exact application diagnostics.
+  const child = spawn(process.execPath, ['--no-warnings', fileURLToPath(new URL('../../../examples/cartography-pilot.mjs', import.meta.url)), '--config', path], { stdio: ['pipe', 'pipe', 'pipe'] });
   t.after(() => child.kill('SIGKILL'));
   const lines = createInterface({ input: child.stdout })[Symbol.asyncIterator](); let errors = '';
   child.stderr.on('data', chunk => { errors += chunk; });
@@ -89,7 +90,7 @@ test('pilot stdin lifecycle emits safe readiness/results, never secret values', 
 test('oversized private control input shuts the pilot down without reflecting request contents', async t => {
   const config = await configuration(t), path = join(config.stateDirectory, 'config.json');
   await writeFile(path, JSON.stringify(config), { mode: 0o600 });
-  const child = spawn(process.execPath, [fileURLToPath(new URL('../../../examples/cartography-pilot.mjs', import.meta.url)), '--config', path], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const child = spawn(process.execPath, ['--no-warnings', fileURLToPath(new URL('../../../examples/cartography-pilot.mjs', import.meta.url)), '--config', path], { stdio: ['pipe', 'pipe', 'pipe'] });
   t.after(() => child.kill('SIGKILL'));
   let output = '', errors = ''; child.stdout.on('data', chunk => { output += chunk; }); child.stderr.on('data', chunk => { errors += chunk; });
   const exit = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
