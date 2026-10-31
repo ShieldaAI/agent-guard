@@ -16,12 +16,16 @@ export interface TaskHandle { readonly id: string }
 export interface ResolvedAction {
   resourceId: string; tenantId: string;
   external?: boolean; recipient?: string; sensitive?: boolean;
+  /** Version bound into approval; the handler must enforce it at the actual resource. */
+  resourceVersion?: string;
 }
 export interface ToolDefinition {
   name: string; description: string; inputSchema?: Json; metadata?: Json;
   requiresApproval?: boolean; controlPlane?: boolean;
   /** Maximum cost reserved before dispatch, as a nonnegative safe integer. Defaults to zero. */
   maxCost?: number;
+  /** Trusted synchronous schema parser. Its normalized result is frozen before resolution. */
+  parse?(input: Json): Json;
   resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
   execute(args: Json, context: {
     signal: AbortSignal; action: Readonly<Action>; task: Readonly<TaskIdentity>;
@@ -45,6 +49,7 @@ export interface PreparedAction {
 
 export const GuardErrorCode = Object.freeze({
   INVALID_INPUT: 'INVALID_INPUT', INVALID_JSON: 'INVALID_JSON', INVALID_TASK: 'INVALID_TASK',
+  ARGUMENT_INVALID: 'ARGUMENT_INVALID',
   DUPLICATE_TASK: 'DUPLICATE_TASK', INVALID_PREPARED: 'INVALID_PREPARED',
   TOOL_UNKNOWN: 'TOOL_UNKNOWN', TOOL_UNAPPROVED: 'TOOL_UNAPPROVED', TOOL_CHANGED: 'TOOL_CHANGED',
   TASK_REVOKED: 'TASK_REVOKED', TASK_EXPIRED: 'TASK_EXPIRED', GRANT_DENIED: 'GRANT_DENIED',

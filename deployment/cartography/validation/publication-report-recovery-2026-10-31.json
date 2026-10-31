@@ -1,0 +1,50 @@
+{
+  "authorityStatePreserved": true,
+  "collectionDurationsMs": [
+    6812,
+    2000,
+    979,
+    608
+  ],
+  "collectionPreservesAuthority": true,
+  "differenceReport": "report-1793482144793-4151944c50fc4670993f8f5dffa70b5a.json",
+  "durationSeconds": 44.284,
+  "executorSurvivesRollback": true,
+  "profile": "synthetic-live-pilot",
+  "replay": {
+    "pendingExcluded": 0,
+    "published": 4,
+    "results": [
+      {
+        "originalProjectionId": "e7961021d77dd32a537bb26a63555ac9ee3cb39937b36321477aebf913f74669",
+        "projectionId": "cb3bf4ae5ddfd4d6e87eb02fdeb869100d1bdb9e29c2094ad6cafc9fd99d3a27",
+        "snapshotId": "c2cc4192-2861-439d-bb71-60359443b479",
+        "sourceId": "6002e170c662fde993d513ca5e2abd5720431934c197fc227bbbb3f732143272"
+      },
+      {
+        "originalProjectionId": "db70b8ead2b12a2484eeb4b46fd4ce04aae35e1cb8e5f37466c2d50f462cdfca",
+        "projectionId": "992c3adfe3a1f60656df6ba26c38f5512823ea66d8b715f0f655d12c67b47258",
+        "snapshotId": "31d3612c-2a1c-4df3-8a5d-10900a459532",
+        "sourceId": "6002e170c662fde993d513ca5e2abd5720431934c197fc227bbbb3f732143272"
+      },
+      {
+        "originalProjectionId": "3db14d7584eff6592737c8eb7c98caf96ec6583b67adfa02680cf0cf7ba3c36e",
+        "projectionId": "9fcc6fecd8328c490ff335c1626ebbbf877cc7ad0dad306fcf655211ad7c0c9d",
+        "snapshotId": "19bceeb1-e677-4d24-8db9-8d4a3535bb7a",
+        "sourceId": "7291f4f208dd693ee7e60528d361b2d1df1284936082e60c906b51ab722d0319"
+      },
+      {
+        "originalProjectionId": "2111f62afd236ee0d53ecf9c7355d4e1a5da2d4561d2d29c787dca704b25afbe",
+        "projectionId": "7d505bf90f2d03d1ee7a886133dbd50c775bf72a54792e2260955feee4b6a7a0",
+        "snapshotId": "4fa6ee20-8c2a-4a72-9e2e-93992926b6f3",
+        "sourceId": "7291f4f208dd693ee7e60528d361b2d1df1284936082e60c906b51ab722d0319"
+      }
+    ],
+    "status": "complete",
+    "uncertainExcluded": 0
+  },
+  "restoreLogicalContentMatches": true,
+  "restoreSnapshotPointersMatch": true,
+  "scopeChecks": 3,
+  "status": "passed"
+}

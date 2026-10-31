@@ -1,0 +1,8 @@
+{
+  "companyId": "example-company",
+  "tenantId": "alpha",
+  "accounts": [
+    { "partition": "aws", "accountId": "111122223333" }
+  ],
+  "maxAgeSeconds": 7200
+}

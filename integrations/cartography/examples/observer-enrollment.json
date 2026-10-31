@@ -1,0 +1,14 @@
+{
+  "source": {
+    "companyId": "example-company",
+    "sourceId": "executor-dev-1",
+    "enrollmentGeneration": "replace-with-approved-enrollment",
+    "inventoryInstanceId": "replace-with-host-ledger-instance",
+    "tenantId": "alpha"
+  },
+  "profile": "host-mcp",
+  "endpoint": "http://127.0.0.1:8788/v1/inventory/snapshot",
+  "tokenEnv": "AGENT_GUARD_OBSERVER_TOKEN",
+  "timeoutSeconds": 10,
+  "maxResponseBytes": 8388608
+}

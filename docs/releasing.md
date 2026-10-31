@@ -1,6 +1,6 @@
 # Releasing the npm packages
 
-The repository contains three ESM packages, versioned together. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. The executor and reference-map service are new and unreleased; the other three have published alpha versions. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
 
 ## Authentication
 
@@ -17,7 +17,7 @@ The npm account must have publishing rights in the `shieldaai` organization. Kee
 ## Publish and verify
 
 1. Establish ownership of the npm `shieldaai` organization and publishing rights. Sign in using npm's supported authentication flow; never put a token in this repository.
-2. Update the version in the root manifest, all three package manifests, and internal dependency versions together. Regenerate the lockfile with `npm install --ignore-scripts`.
+2. Update the version in the root manifest, all five package manifests plus the private viewer manifest, and internal dependency versions together. Regenerate the lockfile with `npm install --ignore-scripts`. Never publish changed source under the existing alpha version.
 3. Run `npm ci --ignore-scripts` and `npm run check`. Review the threat model, release notes and package contents. The checks install the actual tarballs in a temporary consumer, compile their public declarations and README TypeScript examples, execute an MCP dispatch, and run the conformance fixtures.
 4. Run `npm run pack` and inspect `artifacts/`. Builds remove old output before compiling; direct workspace `npm pack` commands also rebuild through `prepack`. Only JavaScript, declarations, package metadata, README and license belong in the tarballs.
 5. Commit the reviewed source, manifests, lockfile and release notes. Review the pull request and merge through the protected release branch with passing checks and resolved conversations, then confirm the release checkout is clean. The sole-maintainer policy does not require a second person's approval. Publish core first, then adapters and scenarios, with the `alpha` tag:
@@ -26,9 +26,18 @@ The npm account must have publishing rights in the `shieldaai` organization. Kee
 npm publish --workspace packages/core --access public --tag alpha
 npm publish --workspace packages/mcp --access public --tag alpha
 npm publish --workspace packages/scenarios --access public --tag alpha
+npm publish --workspace packages/executor --access public --tag alpha
+npm publish --workspace packages/agent-map --access public --tag alpha
 ```
 
 Each workspace's prepublish hook requires the repository root, a clean Git checkout, matching workspace versions, and exact matching versions for internal dependencies. It then runs the root checks and checks the release preconditions again. Ignored build output is allowed. Normal local checks and packing do not require a clean checkout. These instructions require the complete source checkout, not just an extracted tarball. Use a supported npm authentication method with appropriate MFA. If automated publication is added later, use trusted publishing with a restricted release environment.
+
+The executor is experimental until the [deployment profile](../deployment/README.md)
+and complete reference integration pass their declared Linux, macOS and Windows
+gates and independent security review. Package checks alone do not establish that
+release boundary. The manual platform workflow requires provisioned disposable
+Docker/VM runners; retain its unskipped evidence and the review record before making
+protected-deployment claims. SDK releases may ship earlier with these limits stated.
 
 An accepted publish can report that the package is still being processed. npm scans uploads before they become installable, so a temporary registry 404 is possible. Wait for each exact version to appear with `npm view <package>@<version> version dist-tags --json`; do not repeat an accepted publish or change the version to work around processing. See [npm's publish-time scanning announcement](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/).
 

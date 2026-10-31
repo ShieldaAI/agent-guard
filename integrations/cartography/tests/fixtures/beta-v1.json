@@ -1,0 +1,173 @@
+{
+  "schemaVersion": 1,
+  "profile": "core",
+  "source": {
+    "companyId": "example-company",
+    "sourceId": "executor-dev-1",
+    "enrollmentGeneration": "enrollment-1",
+    "inventoryInstanceId": "ledger-1",
+    "tenantId": "beta"
+  },
+  "snapshotId": "beta-snapshot-1",
+  "generatedAt": "2026-10-29T12:00:00Z",
+  "ledgerRevision": 1,
+  "policyEpoch": 1,
+  "coverage": {
+    "tasks": {
+      "status": "complete",
+      "observedAt": "2026-10-29T12:00:00Z"
+    },
+    "tools": {
+      "status": "complete",
+      "observedAt": "2026-10-29T12:00:00Z"
+    },
+    "manifest": {
+      "status": "not_collected"
+    },
+    "mcp": {
+      "status": "not_collected"
+    },
+    "cloud": {
+      "status": "not_collected"
+    }
+  },
+  "tasks": [
+    {
+      "id": "research-root",
+      "tenantId": "beta",
+      "principalId": "operator-1",
+      "parentTaskId": null,
+      "sourceTaskId": null,
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "records.read",
+          "resources": [
+            "report-A",
+            "report-B"
+          ]
+        },
+        {
+          "tool": "records.delete",
+          "resources": [
+            "report-B"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    },
+    {
+      "id": "review-child",
+      "tenantId": "beta",
+      "principalId": "operator-1",
+      "parentTaskId": "research-root",
+      "sourceTaskId": null,
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "records.read",
+          "resources": [
+            "report-A"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    },
+    {
+      "id": "handoff-task",
+      "tenantId": "beta",
+      "principalId": "operator-2",
+      "parentTaskId": null,
+      "sourceTaskId": "research-root",
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "outbound.send",
+          "resources": [
+            "report-C"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [
+        "recipient-1"
+      ],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "records.read",
+      "fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": false,
+      "controlPlane": false,
+      "maxCost": 0
+    },
+    {
+      "name": "records.delete",
+      "fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": true,
+      "controlPlane": false,
+      "maxCost": 0
+    },
+    {
+      "name": "outbound.send",
+      "fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": true,
+      "controlPlane": false,
+      "maxCost": 0
+    }
+  ]
+}

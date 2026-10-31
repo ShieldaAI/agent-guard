@@ -1,0 +1,50 @@
+{
+  "authorityStatePreserved": true,
+  "collectionDurationsMs": [
+    11353,
+    4346,
+    4157,
+    1777
+  ],
+  "collectionPreservesAuthority": true,
+  "differenceReport": "report-1793333380570-048c2167c1b14847bfc471f344b5e3cd.json",
+  "durationSeconds": 79.714,
+  "executorSurvivesRollback": true,
+  "profile": "synthetic-live-pilot",
+  "replay": {
+    "pendingExcluded": 0,
+    "published": 4,
+    "results": [
+      {
+        "originalProjectionId": "ddc8bdc60f532555f54c4daf737f70e6a35039304cecaa0f0608026da30e9372",
+        "projectionId": "2b11e5a56631978bf0c3272db068f082f7cfa1b0f8d2afc585dfd55859e0a655",
+        "snapshotId": "b2b6d7d5-3fc8-4251-882e-d6aea81d99c9",
+        "sourceId": "92639f78104090b548cfbea451954df9a06cf620acfa9a0085e381e4d78d758d"
+      },
+      {
+        "originalProjectionId": "5d4c1c56627d17237d16557b49abeafc00ea4b0a102eb920374ca343ec2593f3",
+        "projectionId": "6614332d5c13c736653754f12c3b7887c2737c35a1f1e7a35da664d15e725e70",
+        "snapshotId": "f2171528-1c41-4886-9f55-841a5b2e4e89",
+        "sourceId": "92639f78104090b548cfbea451954df9a06cf620acfa9a0085e381e4d78d758d"
+      },
+      {
+        "originalProjectionId": "6da79ec623f02a65fdf94edcb3ab869c9b58e7991f6db197a44abb52ed7b3790",
+        "projectionId": "221d6e3a318fd6ffe13fff27737d2f1caecc1e191152af49eb6cf50a28546a54",
+        "snapshotId": "4b3e21fa-be2e-49d4-8ab4-65f19f7babc1",
+        "sourceId": "d6ba7ad4e815b011733c864988e78589b00e5242b4a76f8d3e1d124b139de526"
+      },
+      {
+        "originalProjectionId": "1b3b56361514e7e0e76db21d2f6eeca7289dc378a73ffcfe7e89752a0f16feba",
+        "projectionId": "7cea60c79b734484a9f18724a461ce451423075178239af425d9692b9621c2e6",
+        "snapshotId": "eca0eef9-50f0-424b-b914-df13d35faca4",
+        "sourceId": "d6ba7ad4e815b011733c864988e78589b00e5242b4a76f8d3e1d124b139de526"
+      }
+    ],
+    "status": "complete",
+    "uncertainExcluded": 0
+  },
+  "restoreLogicalContentMatches": true,
+  "restoreSnapshotPointersMatch": true,
+  "scopeChecks": 3,
+  "status": "passed"
+}

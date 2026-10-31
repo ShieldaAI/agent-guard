@@ -1,12 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { digestJson, immutableJson, type JsonObject } from './json.js';
 import { GuardError } from './types.js';
+import { assertActionAuthority } from './authorization.js';
 import type {
   Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
 } from './types.js';
 
 export { GuardError, GuardErrorCode } from './types.js';
+export { assertActionAuthority, containsLiteralSecret } from './authorization.js';
+export type { AuthorityState } from './authorization.js';
+export { immutableJson, canonicalJson, digestJson } from './json.js';
 export type {
   Action, Budget, Capability, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
@@ -18,6 +22,7 @@ type ToolState = {
   name: string; fingerprint: string; revision: number; approved: boolean;
   requiresApproval: boolean; controlPlane: boolean; maxCost: number;
   resolve: ToolDefinition['resolve']; execute: ToolDefinition['execute'];
+  parse: ToolDefinition['parse'];
 };
 type TaskState = {
   handle: TaskHandle; identity: Readonly<TaskIdentity>; grants: Map<string, Set<string>>;
@@ -101,14 +106,6 @@ function lineage(task: TaskState): TaskState[] {
   while (current) { result.push(current); current = current.parent; }
   return result;
 }
-function containsSecret(value: Json, secrets: readonly string[]): boolean {
-  if (typeof value === 'string') return secrets.some(secret => value.includes(secret));
-  if (value === null || typeof value !== 'object') return false;
-  if (Array.isArray(value)) return value.some(item => containsSecret(item, secrets));
-  return Object.entries(value).some(([key, item]) =>
-    secrets.some(secret => key.includes(secret)) || containsSecret(item, secrets));
-}
-
 /** Executes registered tools in memory. The host must provide isolation and backend authorization. */
 export class AgentGuard {
   #tools = new Map<string, ToolState>();
@@ -138,6 +135,7 @@ export class AgentGuard {
     const name = identifier(definition.name);
     if (typeof definition.description !== 'string' || typeof definition.resolve !== 'function' ||
         typeof definition.execute !== 'function') fail('INVALID_INPUT');
+    if (definition.parse !== undefined && typeof definition.parse !== 'function') fail('INVALID_INPUT');
     const requiresApproval = optionalBoolean(definition.requiresApproval);
     const controlPlane = optionalBoolean(definition.controlPlane);
     const maxCost = definition.maxCost ?? 0;
@@ -145,11 +143,13 @@ export class AgentGuard {
     const metadata = normalizeJson({
       name, description: definition.description, inputSchema: definition.inputSchema ?? null,
       metadata: definition.metadata ?? null, requiresApproval, controlPlane, maxCost,
+      parsedArguments: definition.parse !== undefined,
     });
     const fingerprint = `sha256:${digestJson(metadata)}`;
     this.#tools.set(name, {
       name, fingerprint, revision: ++this.#revision, approved: false,
       requiresApproval, controlPlane, maxCost, resolve: definition.resolve, execute: definition.execute,
+      parse: definition.parse,
     });
     this.#pruneApprovals(now);
     return fingerprint;
@@ -191,7 +191,10 @@ export class AgentGuard {
     if (!tool) fail('TOOL_UNKNOWN');
     if (!tool.approved) fail('TOOL_UNAPPROVED');
     const policyVersion = this.#policyVersion;
-    const args = input.args!;
+    let args: Json = input.args as Json;
+    if (tool.parse) {
+      try { args = normalizeJson(tool.parse(args)); } catch { return fail('ARGUMENT_INVALID'); }
+    }
     let resolved: ResolvedAction;
     const resolve = tool.resolve;
     try { resolved = this.#resolved(resolve(args, state.identity)); }
@@ -373,12 +376,13 @@ export class AgentGuard {
 
   #resolved(value: ResolvedAction): ResolvedAction {
     const data = asObject(normalizeJson(value));
-    if (Object.keys(data).some(key => !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive'].includes(key))) fail('INVALID_INPUT');
+    if (Object.keys(data).some(key => !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive', 'resourceVersion'].includes(key))) fail('INVALID_INPUT');
     const result: ResolvedAction = {
       resourceId: identifier(data.resourceId), tenantId: identifier(data.tenantId),
       external: optionalBoolean(data.external), sensitive: optionalBoolean(data.sensitive),
     };
     if (Object.hasOwn(data, 'recipient')) result.recipient = identifier(data.recipient);
+    if (Object.hasOwn(data, 'resourceVersion')) result.resourceVersion = identifier(data.resourceVersion);
     return Object.freeze(result);
   }
 
@@ -387,20 +391,12 @@ export class AgentGuard {
     if (version !== this.#policyVersion) fail('POLICY_CHANGED');
     if (this.#tools.get(tool.name) !== tool) fail('TOOL_CHANGED');
     if (!tool.approved) fail('TOOL_UNAPPROVED');
-    if (action.tenantId !== task.identity.tenantId) fail('TENANT_DENIED');
-    for (const ancestor of lineage(task)) {
-      if (!permits(ancestor.grants, action.tool, action.resourceId)) fail('GRANT_DENIED');
-      if (tool.controlPlane && !ancestor.allowControlPlane) fail('CONTROL_PLANE_DENIED');
-      if (action.external && (!action.recipient || !ancestor.recipients.has(action.recipient))) fail('RECIPIENT_DENIED');
-      if (ancestor.calls >= ancestor.budget.maxCalls) fail('CALL_BUDGET_EXCEEDED');
-      if (ancestor.concurrent >= ancestor.budget.maxConcurrent) fail('CONCURRENCY_EXCEEDED');
-      // Integer units and subtraction first keep the admission comparison exact at MAX_SAFE_INTEGER.
-      if (tool.maxCost > ancestor.budget.maxCost - ancestor.spent - ancestor.reserved) fail('COST_BUDGET_EXCEEDED');
-    }
-    if (action.external) {
-      if (task.family.sensitive || action.sensitive) fail('SENSITIVE_EGRESS_DENIED');
-      if (containsSecret(action.args, this.#secrets)) fail('SECRET_EGRESS_DENIED');
-    }
+    assertActionAuthority(action, lineage(task).map(ancestor => ({
+      identity: ancestor.identity,
+      grants: [...ancestor.grants].map(([tool, resources]) => ({ tool, resources: [...resources] })),
+      allowedRecipients: [...ancestor.recipients], allowControlPlane: ancestor.allowControlPlane,
+      budget: ancestor.budget, snapshot: this.#snapshot(ancestor), revoked: ancestor.revoked,
+    })), { now, maxCost: tool.maxCost, controlPlane: tool.controlPlane, sensitive: task.family.sensitive, secretValues: this.#secrets });
     return now;
   }
 

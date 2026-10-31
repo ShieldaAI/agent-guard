@@ -1,0 +1,20 @@
+{
+  "neo4j": {
+    "uri": "bolt://127.0.0.1:7687",
+    "username": "agent_map_reader",
+    "passwordEnv": "AGENT_MAP_NEO4J_PASSWORD",
+    "database": "neo4j"
+  },
+  "credentials": [{
+    "tokenEnv": "AGENT_MAP_READER_TOKEN",
+    "scope": {
+      "subject": "platform-reader",
+      "companyId": "example-company",
+      "tenantIds": ["engineering"],
+      "teamIds": ["platform"],
+      "allTeams": false
+    }
+  }],
+  "port": 8789,
+  "viewerDirectory": "apps/agent-map/dist"
+}

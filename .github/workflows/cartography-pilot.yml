@@ -1,0 +1,62 @@
+name: Cartography pilot
+on:
+  pull_request:
+    paths:
+      - integrations/cartography/**
+      - deployment/cartography/**
+      - examples/cartography-pilot.mjs
+      - packages/**
+      - apps/agent-map/**
+      - package.json
+      - package-lock.json
+      - schemas/**
+      - scripts/build.mjs
+      - scripts/benchmark-admission*
+      - .github/workflows/cartography-pilot.yml
+  workflow_dispatch:
+    inputs:
+      full_benchmark:
+        description: Run graph-load and admission-latency acceptance profiles
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: cartography-pilot-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  pilot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install uv==0.13.6
+      - run: uv sync --locked
+        working-directory: integrations/cartography
+      - name: Live scoped pilot, backup, restore and executor rollback
+        run: uv run python scripts/run-pilot.py --output "$RUNNER_TEMP/agent-guard-pilot-verification.json"
+        working-directory: integrations/cartography
+      - name: Bounded publication and HTTP performance
+        run: uv run python scripts/benchmark-pilot.py --profile '${{ inputs.full_benchmark && 'acceptance' || 'smoke' }}' --samples 100 --output "$RUNNER_TEMP/agent-guard-pilot-benchmark.json"
+        working-directory: integrations/cartography
+      - name: Admission during inventory polling
+        run: node scripts/benchmark-admission.mjs --profile '${{ inputs.full_benchmark && 'acceptance' || 'smoke' }}' --output "$RUNNER_TEMP/agent-guard-pilot-admission.json"
+      - name: Retain safe verification reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cartography-pilot-evidence
+          path: ${{ runner.temp }}/agent-guard-pilot-*.json
+          if-no-files-found: warn
+          retention-days: 30

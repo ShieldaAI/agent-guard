@@ -1,0 +1,61 @@
+# Synthetic/local pilot only. Collector and reference processes run on the host
+# so their existing literal-loopback authentication boundaries remain intact.
+services:
+  neo4j:
+    image: neo4j:5.26.32-community@sha256:414adfe41c6ff32abb752be37f265c77607c166cab298f65a917fc4f05776218
+    labels:
+      com.shielda.agent-guard.pilot: ${PILOT_RUN_ID:?Use scripts/run-pilot.py}
+    ports:
+      - "127.0.0.1::7687"
+    secrets:
+      - neo4j_auth
+    # Compose file secrets preserve host permissions. Read the mode-0600 file
+    # as the image's root entrypoint, then let the official entrypoint drop to
+    # neo4j. The credential never appears in Compose environment metadata.
+    entrypoint: ["tini", "-g", "--", "/bin/bash", "-c"]
+    command:
+      - |
+        set -eu
+        export NEO4J_AUTH="$$(cat /run/secrets/neo4j_auth)"
+        unset NEO4J_AUTH_FILE
+        exec /startup/docker-entrypoint.sh neo4j
+    environment:
+      NEO4J_AUTH_FILE: /run/secrets/neo4j_auth
+      NEO4J_server_http_enabled: "false"
+      NEO4J_server_https_enabled: "false"
+      NEO4J_server_memory_heap_initial__size: 256m
+      NEO4J_server_memory_heap_max__size: 512m
+      NEO4J_server_memory_pagecache_size: 256m
+      NEO4J_dbms_usage__report_enabled: "false"
+      NEO4J_db_tx__log_preallocate: "false"
+      NEO4J_db_tx__log_rotation_size: 16m
+    volumes:
+      - graph:/data
+    networks:
+      - inventory
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 2g
+    cpus: 2
+    pids_limit: 256
+    stop_grace_period: 30s
+    restart: "no"
+secrets:
+  neo4j_auth:
+    file: ${PILOT_AUTH_FILE:?Use scripts/run-pilot.py}
+volumes:
+  graph:
+    labels:
+      com.shielda.agent-guard.pilot: ${PILOT_RUN_ID:?Use scripts/run-pilot.py}
+networks:
+  inventory:
+    # Host-side collectors need a published loopback port. Docker's internal
+    # bridge mode suppresses that publication on the supported local baseline.
+    # This NAT bridge controls ingress; it is not an outbound-network firewall.
+    driver: bridge
+    driver_opts:
+      com.docker.network.bridge.gateway_mode_ipv4: nat
+      com.docker.network.bridge.host_binding_ipv4: 127.0.0.1
+      com.docker.network.bridge.enable_icc: "false"
+    labels:
+      com.shielda.agent-guard.pilot: ${PILOT_RUN_ID:?Use scripts/run-pilot.py}

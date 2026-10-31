@@ -1,0 +1,40 @@
+name: Platform isolation gate
+on:
+  workflow_dispatch:
+    inputs:
+      image:
+        description: Reviewed Linux image digest, already installed on each runner
+        required: true
+        type: string
+permissions:
+  contents: read
+jobs:
+  isolation:
+    # Dedicated disposable runners: never run untrusted PRs on a persistent privileged runner.
+    runs-on: [self-hosted, agent-guard-isolation, '${{ matrix.host }}']
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        host: [Linux, macOS, Windows]
+    env:
+      AGENT_GUARD_SANDBOX_IMAGE: ${{ inputs.image }}
+      AGENT_GUARD_EXPECTED_HOST: ${{ matrix.host }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: node scripts/verify-platform.mjs
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: isolation-${{ matrix.host }}
+          path: artifacts/platform-evidence.json
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,1197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-inventory-v1.schema.json",
+  "title": "Agent Guard inventory version 1 core, host and host-mcp profiles",
+  "description": "Complete single-tenant task and tool observations. Host adds validated host assertions; host-mcp adds explicit managed-connection observations with independently captured lifecycle state. No profile establishes current authorization. Cloud discovery remains uncollected.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profile",
+    "source",
+    "snapshotId",
+    "generatedAt",
+    "ledgerRevision",
+    "policyEpoch",
+    "coverage",
+    "tasks",
+    "tools"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "profile": {
+      "enum": [
+        "core",
+        "host",
+        "host-mcp"
+      ]
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "snapshotId": {
+      "$ref": "#/$defs/identifier"
+    },
+    "generatedAt": {
+      "$ref": "#/$defs/timestamp"
+    },
+    "ledgerRevision": {
+      "$ref": "#/$defs/safeInteger"
+    },
+    "policyEpoch": {
+      "$ref": "#/$defs/safeInteger"
+    },
+    "coverage": {
+      "$ref": "#/$defs/coverage"
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/tool"
+      }
+    },
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "mcp": {
+      "$ref": "#/$defs/mcp"
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?![\\s\\u001c-\\u001f\\u0085\\uFEFF]*$)[^\\u0000]*$"
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$(?![\\s\\S])",
+      "description": "UTC RFC3339 timestamp with optional fractional seconds up to microsecond precision."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "companyId",
+        "sourceId",
+        "enrollmentGeneration",
+        "inventoryInstanceId",
+        "tenantId"
+      ],
+      "properties": {
+        "companyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "enrollmentGeneration": {
+          "$ref": "#/$defs/identifier"
+        },
+        "inventoryInstanceId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "completeCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "observedAt"
+      ],
+      "properties": {
+        "status": {
+          "const": "complete"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      }
+    },
+    "uncollectedCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "not_collected",
+            "unavailable"
+          ]
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tasks",
+        "tools",
+        "manifest",
+        "mcp",
+        "cloud"
+      ],
+      "properties": {
+        "tasks": {
+          "$ref": "#/$defs/completeCoverage"
+        },
+        "tools": {
+          "$ref": "#/$defs/completeCoverage"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/uncollectedCoverage"
+            },
+            {
+              "$ref": "#/$defs/completeCoverage"
+            }
+          ]
+        },
+        "mcp": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/uncollectedCoverage"
+            },
+            {
+              "$ref": "#/$defs/mcpCoverage"
+            }
+          ]
+        },
+        "cloud": {
+          "$ref": "#/$defs/uncollectedCoverage"
+        }
+      }
+    },
+    "grant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "resources"
+      ],
+      "properties": {
+        "tool": {
+          "$ref": "#/$defs/identifier"
+        },
+        "resources": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        }
+      },
+      "description": "Normalized to one grant per tool. Resource * is a selector and never implies access to every discovered cloud resource."
+    },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "maxCalls",
+        "maxConcurrent",
+        "maxCost",
+        "deadline"
+      ],
+      "properties": {
+        "maxCalls": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "maxConcurrent": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "maxCost": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "deadline": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 9007199254740991,
+          "description": "Unix time in milliseconds. Preserve fractional deadlines accepted by Agent Guard."
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "calls",
+        "concurrent",
+        "spent",
+        "reserved"
+      ],
+      "properties": {
+        "calls": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "concurrent": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "spent": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "reserved": {
+          "$ref": "#/$defs/safeInteger"
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tenantId",
+        "principalId",
+        "parentTaskId",
+        "sourceTaskId",
+        "familyId",
+        "grants",
+        "budget",
+        "allowedRecipients",
+        "allowControlPlane",
+        "revoked",
+        "sensitive",
+        "usage"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "principalId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "parentTaskId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceTaskId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "familyId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "grants": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "#/$defs/grant"
+          }
+        },
+        "budget": {
+          "$ref": "#/$defs/budget"
+        },
+        "allowedRecipients": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "allowControlPlane": {
+          "type": "boolean"
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "usage": {
+          "$ref": "#/$defs/usage"
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fingerprint",
+        "revision",
+        "registered",
+        "approved",
+        "requiresApproval",
+        "controlPlane",
+        "maxCost"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "revision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "registered": {
+          "type": "boolean"
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "requiresApproval": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "controlPlane": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxCost": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/safeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "description": "When registered is false, live definition flags must be null. Registered flags must be known. A missing tool record is an unresolved grant reference, not a denial.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "registered": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requiresApproval": {
+                "type": "boolean"
+              },
+              "controlPlane": {
+                "type": "boolean"
+              },
+              "maxCost": {
+                "$ref": "#/$defs/safeInteger"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "requiresApproval": {
+                "type": "null"
+              },
+              "controlPlane": {
+                "type": "null"
+              },
+              "maxCost": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "awsReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "partition",
+        "accountId",
+        "region",
+        "arn"
+      ],
+      "properties": {
+        "provider": {
+          "const": "aws"
+        },
+        "partition": {
+          "enum": [
+            "aws",
+            "aws-cn",
+            "aws-us-gov"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$(?![\\s\\S])"
+        },
+        "region": {
+          "const": ""
+        },
+        "arn": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^(?!.*[\\s\\u001c-\\u001f\\u0085\\uFEFF*?\\u0000])arn:(aws|aws-cn|aws-us-gov):[a-z0-9][a-z0-9-]*:[^:]*:[^:]*:.+$"
+        }
+      },
+      "description": "Version-1 execution identity subset: global IAM user/role or STS assumed-role ARN. This is a host assertion, not evidence of identity existence or permission.",
+      "anyOf": [
+        {
+          "properties": {
+            "arn": {
+              "pattern": "^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:(role|user)/(?:[^/]+/)*[^/]+$"
+            }
+          }
+        },
+        {
+          "properties": {
+            "arn": {
+              "pattern": "^arn:(aws|aws-cn|aws-us-gov):sts::[0-9]{12}:assumed-role/[^/]+/[^/]+$"
+            }
+          }
+        }
+      ]
+    },
+    "awsResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "partition",
+        "accountId",
+        "region",
+        "arn",
+        "kind"
+      ],
+      "properties": {
+        "provider": {
+          "const": "aws"
+        },
+        "partition": {
+          "enum": [
+            "aws",
+            "aws-cn",
+            "aws-us-gov"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$(?![\\s\\S])"
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^[a-z0-9-]*$(?![\\s\\S])"
+        },
+        "arn": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^(?!.*[\\s\\u001c-\\u001f\\u0085\\uFEFF*?\\u0000])arn:(aws|aws-cn|aws-us-gov):[a-z0-9][a-z0-9-]*:[^:]*:[^:]*:.+$"
+        },
+        "kind": {
+          "enum": [
+            "bucket",
+            "object",
+            "prefix",
+            "resource"
+          ]
+        }
+      }
+    },
+    "manifestAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "ownerId",
+        "teamId"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teamId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "manifestDeployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "agentId",
+        "environment"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "agentId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "manifestTaskBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "deploymentId"
+      ],
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "deploymentId": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "awsAction": {
+      "type": "string",
+      "maxLength": 4096,
+      "pattern": "^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$(?![\\s\\S])"
+    },
+    "manifestResourceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tool",
+        "resourceRef",
+        "target",
+        "actions",
+        "scope"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tool": {
+          "$ref": "#/$defs/identifier"
+        },
+        "resourceRef": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "not": {
+                "const": "*"
+              }
+            }
+          ]
+        },
+        "target": {
+          "$ref": "#/$defs/awsResourceReference"
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 128,
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/awsAction"
+          },
+          "uniqueItems": true
+        },
+        "scope": {
+          "enum": [
+            "exact",
+            "prefix"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "kind": {
+                    "const": "prefix"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "scope": {
+                "const": "prefix"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "scope": {
+                "const": "exact"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifestExecutionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tool",
+        "deploymentId",
+        "connectionId",
+        "identitySelection",
+        "identity"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tool": {
+          "$ref": "#/$defs/identifier"
+        },
+        "deploymentId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "connectionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identitySelection": {
+          "enum": [
+            "static",
+            "dynamic",
+            "unknown"
+          ]
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/awsReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identitySelection": {
+                "const": "static"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/awsReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "identity": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "evidenceKind",
+        "source",
+        "manifestId",
+        "revision",
+        "observedAt",
+        "agents",
+        "deployments",
+        "taskBindings",
+        "resourceBindings",
+        "executionBindings"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "evidenceKind": {
+          "const": "host_asserted"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "manifestId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestAgent"
+          }
+        },
+        "deployments": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestDeployment"
+          }
+        },
+        "taskBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestTaskBinding"
+          }
+        },
+        "resourceBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestResourceBinding"
+          }
+        },
+        "executionBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestExecutionBinding"
+          }
+        }
+      }
+    },
+    "mcpIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "transportRef",
+        "principalId",
+        "tenantId"
+      ],
+      "properties": {
+        "serverId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "transportRef": {
+          "type": "string",
+          "pattern": "^opaque:[a-f0-9]{64}$",
+          "maxLength": 71
+        },
+        "principalId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "Local managed-connection identity. The opaque transport reference does not expose the transport endpoint, credentials, or remote session. Identity is observation, not authorization."
+    },
+    "mcpOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "fingerprint"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "tool",
+            "resource",
+            "prompt"
+          ]
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "maxLength": 64
+        }
+      },
+      "description": "Locally registered operation name and metadata fingerprint; no remote name, schema, resource URI, description or callback is exposed."
+    },
+    "mcpConnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "sessionId",
+        "revision",
+        "authorizationEpoch",
+        "metadataRevision",
+        "state",
+        "metadataState",
+        "observedAt",
+        "operations"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "identity": {
+          "$ref": "#/$defs/mcpIdentity"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "authorizationEpoch": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "metadataRevision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "state": {
+          "enum": [
+            "connecting",
+            "refreshing",
+            "ready",
+            "quarantined",
+            "closed"
+          ]
+        },
+        "metadataState": {
+          "enum": [
+            "unobserved",
+            "current",
+            "stale"
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "operations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/mcpOperation"
+          }
+        }
+      },
+      "description": "Bounded detached local lifecycle observation. Session ID is generated locally; revision, authorization epoch and metadata revision are independent. Only ready connections expose operations. Names are unique; the semantic validator enforces uniqueness and the two MiB encoded limit.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metadataState": {
+                "const": "current"
+              },
+              "metadataRevision": {
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "operations": {
+                "maxItems": 0
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "metadataRevision": {
+                      "const": 0
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "metadataState": {
+                      "const": "unobserved"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "metadataState": {
+                      "const": "stale"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "mcpConnectionRecord": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "connectionId",
+            "status",
+            "inventory"
+          ],
+          "properties": {
+            "connectionId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "observed"
+            },
+            "inventory": {
+              "$ref": "#/$defs/mcpConnection"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "connectionId",
+            "status",
+            "reason"
+          ],
+          "properties": {
+            "connectionId": {
+              "$ref": "#/$defs/identifier"
+            },
+            "status": {
+              "const": "unavailable"
+            },
+            "reason": {
+              "enum": [
+                "missing",
+                "capture_failed",
+                "changed",
+                "scope_mismatch",
+                "registration_mismatch"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "mcp": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "observedAt",
+        "connections"
+      ],
+      "properties": {
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "connections": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "$ref": "#/$defs/mcpConnectionRecord"
+          }
+        }
+      },
+      "description": "Exactly the connection aliases named by this tenant manifest. Operations are restricted to bound tool names and current matching executor registrations. Missing operations remain unresolved; they are never invented. Distinct components are captured separately, not atomically."
+    },
+    "mcpCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status",
+        "observedAt"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "complete",
+            "partial",
+            "unavailable"
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "description": "Complete when every expected connection was observed, including a complete empty selection. Partial when some were observed; unavailable when none of a nonempty selection were observed. Connection readiness is a separate lifecycle property."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "core"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "manifest"
+          ]
+        },
+        "properties": {
+          "coverage": {
+            "properties": {
+              "manifest": {
+                "$ref": "#/$defs/uncollectedCoverage"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "coverage": {
+            "properties": {
+              "manifest": {
+                "$ref": "#/$defs/completeCoverage"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "host-mcp"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "mcp"
+        ],
+        "properties": {
+          "coverage": {
+            "properties": {
+              "mcp": {
+                "$ref": "#/$defs/mcpCoverage"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "mcp"
+          ]
+        },
+        "properties": {
+          "coverage": {
+            "properties": {
+              "mcp": {
+                "$ref": "#/$defs/uncollectedCoverage"
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}

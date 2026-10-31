@@ -15,7 +15,7 @@ function run(command, args, cwd) {
 }
 try {
   const tarballs = [];
-  for (const workspace of ['packages/core', 'packages/mcp', 'packages/scenarios']) {
+  for (const workspace of ['packages/core', 'packages/mcp', 'packages/scenarios', 'packages/executor', 'packages/agent-map']) {
     mkdirSync(join(root, workspace, 'dist'), { recursive: true });
     writeFileSync(join(root, workspace, 'dist', 'obsolete-build-output.js'), 'throw new Error("Stale build output");\n');
     const [pack] = JSON.parse(run(process.execPath, [npmCli, 'pack', '--json', '--workspace', workspace, '--pack-destination', temp], root));
@@ -30,6 +30,11 @@ try {
     for (const path of ['dist/index.js', 'dist/index.d.ts', 'README.md', 'LICENSE']) {
       if (!pack.files.some(file => file.path === path)) throw new Error(`Missing package file: ${path}`);
     }
+    if (workspace === 'packages/agent-map') {
+      for (const path of ['dist/identity-cli.js', 'dist/identity-http.js', 'dist/oidc.js']) {
+        if (!pack.files.some(file => file.path === path)) throw new Error(`Missing identity package file: ${path}`);
+      }
+    }
     tarballs.push(join(temp, pack.filename));
   }
   const consumer = join(temp, 'consumer'); mkdirSync(consumer);
@@ -38,7 +43,7 @@ try {
   writeFileSync(join(consumer, 'consumer.mts'), readFileSync(new URL('package-consumer.mts', import.meta.url)));
   const readmes = [
     join(root, 'README.md'),
-    ...['agent-guard', 'agent-guard-mcp', 'agent-guard-scenarios'].map(name =>
+    ...['agent-guard', 'agent-guard-mcp', 'agent-guard-scenarios', 'agent-guard-executor', 'agent-map'].map(name =>
       join(consumer, 'node_modules', '@shieldaai', name, 'README.md')),
   ];
   for (const [index, path] of readmes.entries()) {
@@ -60,6 +65,11 @@ try {
   }));
   run(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '--project', 'tsconfig.json'], consumer);
   console.log(run(process.execPath, ['compiled/consumer.mjs'], consumer).trim());
+  writeFileSync(join(consumer, 'identity-consumer.mjs'), readFileSync(new URL('identity-package-consumer.mjs', import.meta.url)));
+  writeFileSync(join(consumer, 'oidc-provider.mjs'), readFileSync(join(root, 'packages/agent-map/test/helpers/oidc-provider.mjs')));
+  console.log(run(process.execPath, ['--test', 'identity-consumer.mjs'], consumer).trim());
+  const identityHelp = run(process.execPath, ['node_modules/@shieldaai/agent-map/dist/identity-cli.js', '--help'], consumer);
+  if (!identityHelp.includes('agent-guard-map-identity --config')) throw new Error('Missing installed identity launcher');
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }

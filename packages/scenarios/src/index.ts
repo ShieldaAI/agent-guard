@@ -16,7 +16,7 @@ export type GuardLike = Pick<AgentGuard,
 export type ConformanceGuardFactory = (options: GuardOptions) => GuardLike;
 
 export interface ConformanceOptions {
-  /** Omit to execute all ten scenarios. Each selected scenario runs both variants. */
+  /** Omit to execute all twelve scenarios. Each selected scenario runs both variants. */
   readonly scenarioIds?: readonly ScenarioId[];
   /** Time limit per variant in milliseconds; defaults to 5000. Timeout does not cancel adapter work. */
   readonly caseTimeoutMs?: number;
@@ -538,6 +538,119 @@ const cases: Record<ScenarioId, Pair> = {
       c.assert(failed.guard.snapshot(failedTask).spent === 3 && failed.guard.snapshot(failedTask).reserved === 0, 'failed handler retains the full declared charge');
       c.assert(await failed.invoke(failedTask, 'read_document', { resource: GUIDE }) === 'recovered', 'next authorized call can use released slot');
       c.assert(failed.guard.snapshot(failedTask).spent === 6 && failed.guard.snapshot(failedTask).concurrent === 0, 'recovery retains both admitted charges and releases concurrency');
+    },
+  },
+  S11: {
+    async malicious(c: Checks) {
+      const f = fixture(c); let resolutions = 0;
+      f.register({ name: 'typed_write', description: 'Write a typed synthetic record',
+        parse(input) {
+          const value = fields(input);
+          if (Object.keys(value).some(key => !['resource', 'quantity'].includes(key)) ||
+              typeof value.resource !== 'string' || !value.resource.trim() ||
+              typeof value.quantity !== 'number' || !Number.isSafeInteger(value.quantity) || value.quantity < 1 || value.quantity > 10) {
+            throw new Error(SECRET);
+          }
+          return { resource: value.resource.trim(), quantity: value.quantity };
+        },
+        resolve(args) { resolutions++; return { resourceId: stringField(args, 'resource'), tenantId: 'alpha' }; },
+        execute: args => c.effect(args),
+      });
+      const task = f.task([{ tool: 'typed_write', resources: [RECORD_A] }]);
+      for (const args of [
+        { resource: RECORD_A, quantity: '1' }, { resource: RECORD_A, quantity: 1, command: 'unexpected' },
+        { quantity: 1 }, { resource: RECORD_A, quantity: 0 }, { resource: RECORD_A, quantity: 1.5 },
+      ]) await c.denied(() => f.invoke(task, 'typed_write', args), 'invalid typed arguments', 'ARGUMENT_INVALID');
+      c.assert(resolutions === 0, 'invalid typed arguments never reach resource resolution');
+      for (const parse of [() => ({ unsafe: undefined }) as unknown as Json, () => Promise.resolve(null) as unknown as Json]) {
+        f.register({ name: 'invalid_parser', description: 'Invalid trusted parser fixture', parse,
+          resolve: () => { resolutions++; return { resourceId: RECORD_A, tenantId: 'alpha' }; }, execute: args => c.effect(args) });
+        const parserTask = f.task([{ tool: 'invalid_parser', resources: [RECORD_A] }]);
+        await c.denied(() => f.invoke(parserTask, 'invalid_parser', null), 'invalid parser result', 'ARGUMENT_INVALID');
+      }
+      c.assert(resolutions === 0 && c.handlerInvocations === 0, 'parser failures prevent resolution and effects');
+    },
+    async benign(c: Checks) {
+      const observed: Json[] = [];
+      const f = fixture(c, { policy: action => { observed.push(action.args); return 'allow'; } });
+      let parses = 0; let normalized: { resource: string; quantity: number } | undefined;
+      f.register({ name: 'typed_write', description: 'Write a normalized synthetic record', requiresApproval: true,
+        parse(input) {
+          parses++;
+          const value = fields(input);
+          if (typeof value.resource !== 'string' || !Number.isSafeInteger(value.quantity)) throw new Error('invalid fixture');
+          normalized = { resource: value.resource.trim(), quantity: Number(value.quantity) };
+          return normalized;
+        },
+        resolve(args) { return { resourceId: stringField(args, 'resource'), tenantId: 'alpha' }; },
+        execute(args, { action }) {
+          c.assert(args === action.args && Object.isFrozen(args), 'handler receives the immutable approved arguments');
+          f.ledger.push(`${action.resourceId}:${fields(args).quantity}`);
+          return c.effect(args);
+        },
+      });
+      const task = f.task([{ tool: 'typed_write', resources: [RECORD_A] }]);
+      const input = { resource: ` ${RECORD_A} `, quantity: 3 };
+      const prepared = await f.guard.prepare(task, { tool: 'typed_write', args: input });
+      c.assert(prepared.action.resourceId === RECORD_A && fields(prepared.action.args).resource === RECORD_A, 'normalized resource is resolved and bound');
+      const approvalId = f.approve(prepared);
+      input.resource = RECORD_B; input.quantity = 9;
+      normalized!.resource = RECORD_B; normalized!.quantity = 8;
+      const value = await f.guard.execute(prepared, { approvalId });
+      c.assert(fields(value).resource === RECORD_A && fields(value).quantity === 3, 'caller and parser mutations do not alter the approved write');
+      c.assert(observed.length === 2 && observed.every(args => fields(args).resource === RECORD_A && fields(args).quantity === 3), 'preparation and execution policy see normalized arguments');
+      c.assert(parses === 1 && c.handlerInvocations === 1 && f.ledger[0] === `${RECORD_A}:3`, 'one parser pass and one normalized approved effect');
+    },
+  },
+  S12: {
+    async malicious(c: Checks) {
+      const f = fixture(c); let version = 'v1';
+      f.register({ name: 'versioned_write', description: 'Compare and write one synthetic record', requiresApproval: true,
+        resolve: () => ({ resourceId: RECORD_A, tenantId: 'alpha', resourceVersion: version }),
+        execute(_args, { action }) {
+          c.handlerInvocations++;
+          if (action.resourceVersion !== version) throw new Error('synthetic version conflict');
+          f.ledger.push(`write:${version}`); return { value: version };
+        },
+      });
+      const task = f.task([{ tool: 'versioned_write', resources: [RECORD_A] }]);
+      const old = await f.guard.prepare(task, { tool: 'versioned_write', args: null });
+      const approvalId = f.approve(old);
+      c.assert(old.action.resourceVersion === 'v1' && Object.isFrozen(old.action), 'resolved version is immutable approved action data');
+      await c.denied(() => f.guard.execute({ ...old, action: { ...old.action, resourceVersion: 'v2' } }, { approvalId }), 'forged resource version', 'INVALID_PREPARED');
+      version = 'v2';
+      const fresh = await f.guard.prepare(task, { tool: 'versioned_write', args: null });
+      c.assert(fresh.action.resourceVersion === 'v2' && fresh.digest !== old.digest, 'new resource version receives a distinct prepared invocation');
+      await c.denied(() => f.guard.execute(fresh, { approvalId }), 'approval transfer to new version', 'APPROVAL_INVALID');
+      let error: unknown;
+      try { await f.guard.execute(old, { approvalId }); } catch (caught) { error = caught; }
+      c.assert(error instanceof GuardError && error.code === 'TOOL_FAILED', 'stale resource compare fails with a sanitized handler error');
+      c.denialCodes.push('TOOL_FAILED');
+      c.assert(c.handlerInvocations === 1 && f.ledger.length === 0, 'stale attempt enters the handler but produces no effect');
+      await c.denied(() => f.guard.execute(old, { approvalId }), 'stale attempt cannot replay', 'ACTION_USED');
+      c.assert(f.guard.snapshot(task).calls === 1, 'stale admitted attempt still consumes one call');
+    },
+    async benign(c: Checks) {
+      const f = fixture(c); let version = 'v1';
+      f.register({ name: 'versioned_write', description: 'Compare and write one synthetic record', requiresApproval: true,
+        resolve: () => ({ resourceId: RECORD_A, tenantId: 'alpha', resourceVersion: version }),
+        execute(_args, { action }) {
+          c.handlerInvocations++;
+          if (action.resourceVersion !== version) throw new Error('synthetic version conflict');
+          f.ledger.push(`write:${version}`);
+          version = version === 'v1' ? 'v2' : 'v3';
+          return { value: { version } };
+        },
+      });
+      const task = f.task([{ tool: 'versioned_write', resources: [RECORD_A] }]);
+      for (const expected of ['v1', 'v2']) {
+        const prepared = await f.guard.prepare(task, { tool: 'versioned_write', args: null });
+        c.assert(prepared.action.resourceVersion === expected, 'preparation binds the current resource version');
+        const approvalId = f.approve(prepared);
+        await f.guard.execute(prepared, { approvalId });
+      }
+      c.assert(c.handlerInvocations === 2 && f.ledger.join(',') === 'write:v1,write:v2', 'each reviewed version produces exactly one intended effect');
+      c.assert(version === 'v3' && f.guard.snapshot(task).calls === 2, 'two independent approvals advance the synthetic resource twice');
     },
   },
 };

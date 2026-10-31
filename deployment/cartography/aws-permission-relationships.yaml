@@ -1,0 +1,30 @@
+# Pilot mapping for Cartography 0.144.0. Pass this trusted file to the separate
+# AWS collector's --permission-relationships-file option; the Agent Guard
+# collector neither invokes AWS APIs nor runs provider ingestion automatically.
+#
+# These are policy evidence edges, not effective authorization decisions.
+# Cartography retains has_condition, condition_keys and conditions on each edge.
+# Its mapper does not evaluate request-time conditions, resource policies,
+# permission boundaries or session policies. Conditional Deny statements can
+# suppress edges unconditionally, so a missing edge is never proof of denial.
+#
+# S3 object/prefix policies are projected onto the parent AWSS3Bucket by this
+# upstream mapper. CAN_READ/CAN_WRITE therefore do not establish permission for
+# every object or for a particular bound object/prefix. Preserve the host binding's
+# original ARN, kind and scope, and keep the access assessment unknown.
+#
+# IAM and S3 inventory plus this mapping must be collected for the explicitly
+# enrolled account before the Agent Guard importer can join their evidence.
+# Do not add wildcards or other labels without extending and testing the consumer.
+- target_label: AWSS3Bucket
+  permissions:
+    - s3:GetObject
+  relationship_name: CAN_READ
+- target_label: AWSS3Bucket
+  permissions:
+    - s3:PutObject
+  relationship_name: CAN_WRITE
+- target_label: AWSS3Bucket
+  permissions:
+    - s3:ListBucket
+  relationship_name: CAN_LIST

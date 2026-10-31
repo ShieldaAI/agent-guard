@@ -1,7 +1,7 @@
 /** Version of the synthetic acceptance cases, independent of package releases. */
-export const SCENARIO_CATALOG_VERSION = '1.1.0' as const;
+export const SCENARIO_CATALOG_VERSION = '1.2.0' as const;
 
-export type ScenarioId = 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10';
+export type ScenarioId = 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10' | 'S11' | 'S12';
 
 export interface ScenarioDefinition {
   readonly id: ScenarioId;
@@ -82,6 +82,20 @@ const definitions: ScenarioDefinition[] = [
     malicious: ['Concurrent burst', 'Exhausted calls/cost', 'Ancestor budget shared by children', 'Expired deadline', 'Overrun cost report'],
     benign: 'Authorized work releases concurrency, reconciles cost and cooperates with cancellation.',
     limitations: ['Quotas are local and nondurable; the provider must enforce declared upper costs and handlers must honor cancellation.'],
+  },
+  {
+    id: 'S11', title: 'Validate and bind normalized typed arguments',
+    boundary: 'A trusted synchronous parser runs before resolution; its immutable normalized output reaches policy, approval and the handler.',
+    malicious: ['Wrong field types', 'Unknown fields', 'Missing required fields', 'Out-of-range values', 'Invalid parser output', 'Asynchronous parser'],
+    benign: 'One approved write uses the normalized arguments even after caller and parser-owned objects change.',
+    limitations: ['The host supplies the parser; descriptive inputSchema metadata alone does not validate core arguments.'],
+  },
+  {
+    id: 'S12', title: 'Bind approvals to resource versions and compare at use time',
+    boundary: 'The immutable action includes the resolved version; a trusted handler atomically compares it before applying the effect.',
+    malicious: ['Forged prepared resource version', 'Approval transferred to a new version', 'Resource changed after approval', 'Replay of a stale admitted attempt'],
+    benign: 'An unchanged approved version is written once; a subsequent version requires a fresh preparation and approval.',
+    limitations: ['The core does not fetch or lock external state. A stale attempt enters the handler, which must enforce the comparison atomically with the real effect.'],
   },
 ];
 
