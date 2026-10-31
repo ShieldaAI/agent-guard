@@ -1,4 +1,9 @@
 import { AgentGuard, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+export { ManagedMcpConnection, type ManagedMcpOptions, type ManagedMcpRegistration, type McpConnectionIdentity, type McpBinding, type McpResourceBinding } from './managed.js';
+export { McpBoundaryError, compileBoundedSchema } from './boundary.js';
+export { createRestrictedMcpHttpTransport, type RestrictedMcpHttpOptions } from './http.js';
+export { assertVerifiedMcpClaims, type VerifiedMcpClaims, type McpAuthorizationPolicy } from './authorization.js';
+export type { McpConnectionInventory, McpInventoryIdentity, McpInventoryOperation, McpConnectionState, McpMetadataState } from './inventory.js';
 
 /** A JSON tool definition obtained from tools/list. All fields are fingerprinted. */
 export interface McpToolDescriptor {
@@ -50,7 +55,7 @@ function argumentsObject(args: Json): Record<string, Json> {
  * Register without approving. A host must explicitly approve the returned fingerprint.
  * Call this again when tools/list changes; previously prepared calls are invalidated.
  */
-export function registerMcpTool(guard: AgentGuard, registration: McpRegistration): RegisteredMcpTool {
+export function registerMcpTool(guard: Pick<AgentGuard, 'registerTool'>, registration: McpRegistration): RegisteredMcpTool {
   const { serverId, tool, client, resolve, requiresApproval, controlPlane, maxCost, measureCost } = registration;
   const serverToolName = tool.name;
   const name = mcpToolName(serverId, serverToolName);

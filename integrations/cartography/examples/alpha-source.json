@@ -1,0 +1,7 @@
+{
+  "companyId": "example-company",
+  "sourceId": "executor-dev-1",
+  "enrollmentGeneration": "enrollment-1",
+  "inventoryInstanceId": "ledger-1",
+  "tenantId": "alpha"
+}

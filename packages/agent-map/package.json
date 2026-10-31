@@ -1,0 +1,47 @@
+{
+  "name": "@shieldaai/agent-map",
+  "version": "0.1.0-alpha.1",
+  "description": "Scoped read-only Agent Guard reference queries, HTTP and MCP service.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agent-guard-map": "./dist/cli.js",
+    "agent-guard-map-identity": "./dist/identity-cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "2.4.0",
+    "@shieldaai/agent-guard": "0.1.0-alpha.1",
+    "neo4j-driver": "6.3.0",
+    "openid-client": "6.8.8"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/agent-map"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/build.mjs",
+    "prepublishOnly": "node ../../scripts/release-check.mjs"
+  }
+}

@@ -5,7 +5,7 @@ import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const compiler = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
-const workspaces = ['packages/core', 'packages/mcp', 'packages/scenarios'];
+const workspaces = ['packages/core', 'packages/mcp', 'packages/scenarios', 'packages/executor', 'packages/agent-map'];
 
 // tsc leaves output from deleted source files behind. Remove it before packing.
 for (const workspace of workspaces) {
@@ -18,3 +18,6 @@ for (const workspace of workspaces) {
   });
   if (result.error || result.status !== 0) process.exit(result.status ?? 1);
 }
+
+const viewer = spawnSync(process.execPath, [join(root, 'apps/agent-map/build.mjs')], { cwd: root, stdio: 'inherit' });
+if (viewer.error || viewer.status !== 0) process.exit(viewer.status ?? 1);

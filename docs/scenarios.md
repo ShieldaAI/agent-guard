@@ -1,8 +1,8 @@
 # Protection scenarios
 
-These ten scenarios define the acceptance contract for the TypeScript alpha. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
+These twelve scenarios define the acceptance contract for the TypeScript alpha. Catalog version 1.2.0 runs twenty-four malicious and benign cases. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
 
-The examples use fake data and fixture handlers. They should run without production credentials or external side effects. “Denied” means the handler is not invoked. “Allowed” means the fixture records exactly the intended effect. An approval request is not permission to execute until the host's reviewer has approved the exact action and the executor has validated that approval. Reviewer authentication belongs to the host, not to an `approverId` string supplied by a caller.
+The examples use fake data and fixture handlers. They should run without production credentials or external side effects. “Denied” means the handler is not invoked, except where a scenario explicitly tests a service-boundary rejection inside the handler, such as S12's resource-version comparison. “Allowed” means the fixture records exactly the intended effect. An approval request is not permission to execute until the host's reviewer has approved the exact action and the executor has validated that approval. Reviewer authentication belongs to the host, not to an `approverId` string supplied by a caller.
 
 ## Common fixture and assertions
 
@@ -12,7 +12,7 @@ The host creates the task context and grants. The model supplies tool arguments.
 
 For every hostile case, assert:
 
-- No unauthorized handler invocation or side effect occurs.
+- No unauthorized handler invocation or side effect occurs. When a trusted handler performs a service-boundary check, assert its invocation separately from the rejected effect.
 - The outcome identifies the failed check with a stable reason.
 - Sensitive values are absent from the returned error and audit evidence.
 
@@ -119,6 +119,26 @@ Use a controllable clock for expiry tests and explicit synchronization for concu
 **Benign case:** two short authorized calls complete within the limits and report valid actual costs at or below their declared maxima. Concurrency reservations are released when the handlers settle, and counters match the documented charging rule. A handler failure must not accidentally create extra authority or permanently retain a concurrency slot. If a handler omits actual cost, charge its declared maximum.
 
 **Integration requirement:** budgets are in-memory and per executor. Restarting, duplicating the process or issuing a new root task can create fresh state; the host must not use those actions to resume an exhausted task. A child's work also consumes its ancestor budgets. Call counts are not token or monetary limits. A cost budget controls declared local units; a monetary claim requires accurate provider usage accounting and enforced provider bounds. Durable quotas are outside this alpha.
+
+## S11 — Validate and bind normalized typed arguments
+
+**Boundary:** a trusted synchronous `ToolDefinition.parse` validates and normalizes arguments before resource resolution. The core copies and freezes its output, then uses those normalized arguments for resolution, policy, approval and execution.
+
+**Hostile case:** submit the wrong field type, an unknown field, a missing required field or an out-of-range value. The fixture parser rejects each before resolution or handler invocation. Invalid JSON and asynchronous parser results also fail with `ARGUMENT_INVALID`; parser exceptions do not disclose their contents.
+
+**Benign case:** normalize a resource identifier, prepare and approve the resulting action, then mutate both the original caller object and the object returned by the parser. One write still uses the original normalized resource and quantity. Both policy evaluations and the handler observe the same immutable normalized arguments.
+
+**Integration requirement:** the host supplies an appropriate parser. The core fingerprints `inputSchema` metadata but does not execute arbitrary JSON Schema automatically. Normalization must precede authorization and must not be repeated differently by the real service.
+
+## S12 — Bind approvals to resource versions and compare at use time
+
+**Boundary:** a trusted resolver includes `resourceVersion` in the immutable prepared action. Approval binds that invocation. A trusted handler atomically compares the approved version with current resource state before applying the effect.
+
+**Hostile case:** forge the prepared version or transfer an approval to a newly prepared version: deny before dispatch. Change the synthetic record after approval: the original invocation enters the handler, which rejects the stale version without writing. The admitted attempt consumes its call and approval and cannot be replayed.
+
+**Benign case:** approve and write an unchanged version once. Prepare and separately approve its successor, then write that version once. The fixture records exactly two version-specific effects.
+
+**Integration requirement:** the core does not fetch, refresh or lock external state. A real handler must use the bound version in an atomic conditional operation, transaction or equivalent service control. Refreshing a version immediately before dispatch and substituting it into the approved action defeats this boundary. A version mismatch may occur after handler admission, so a generic execution error must not trigger an automatic retry.
 
 ## Reading test results
 

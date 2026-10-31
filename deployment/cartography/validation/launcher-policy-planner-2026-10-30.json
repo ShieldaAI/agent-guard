@@ -1,0 +1,158 @@
+{
+  "baseViewMs": 3141.2796249999997,
+  "connectionMs": 19.06337500000018,
+  "diagnosticTimeoutMs": 30000,
+  "elapsedMs": 10227.53225,
+  "probes": 1,
+  "stages": [
+    {
+      "action": "EXPLAIN",
+      "availableAfterMs": 4420,
+      "consumedAfterMs": 1,
+      "elapsedMs": 4468.755417,
+      "maxEstimatedRows": 100,
+      "operators": {
+        "AntiSemiApply@neo4j": 10,
+        "Apply@neo4j": 3,
+        "Argument@neo4j": 11,
+        "CacheProperties@neo4j": 2,
+        "Expand(All)@neo4j": 16,
+        "Expand(Into)@neo4j": 4,
+        "Filter@neo4j": 21,
+        "LetSemiApply@neo4j": 1,
+        "Limit@neo4j": 1,
+        "NodeByLabelScan@neo4j": 1,
+        "NodeUniqueIndexSeek@neo4j": 2,
+        "Optional@neo4j": 3,
+        "OptionalExpand(All)@neo4j": 4,
+        "OptionalExpand(Into)@neo4j": 3,
+        "ProduceResults@neo4j": 1,
+        "Projection@neo4j": 1,
+        "Unwind@neo4j": 1
+      },
+      "variant": "original"
+    },
+    {
+      "action": "READ",
+      "availableAfterMs": 264,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 31,
+      "elapsedMs": 312.71295800000007,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "original"
+    },
+    {
+      "action": "READ_WARM",
+      "availableAfterMs": 3,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 9,
+      "elapsedMs": 20.600374999999985,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "original"
+    },
+    {
+      "action": "EXPLAIN",
+      "availableAfterMs": 611,
+      "consumedAfterMs": 0,
+      "elapsedMs": 641.887834000001,
+      "maxEstimatedRows": 100,
+      "operators": {
+        "Apply@neo4j": 3,
+        "CacheProperties@neo4j": 2,
+        "Filter@neo4j": 3,
+        "Limit@neo4j": 1,
+        "NodeByLabelScan@neo4j": 1,
+        "NodeUniqueIndexSeek@neo4j": 2,
+        "Optional@neo4j": 3,
+        "OptionalExpand(All)@neo4j": 4,
+        "OptionalExpand(Into)@neo4j": 3,
+        "ProduceResults@neo4j": 1,
+        "Projection@neo4j": 1,
+        "Unwind@neo4j": 1
+      },
+      "variant": "without-proof"
+    },
+    {
+      "action": "READ",
+      "availableAfterMs": 63,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 7,
+      "elapsedMs": 91.35183300000062,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "without-proof"
+    },
+    {
+      "action": "READ_WARM",
+      "availableAfterMs": 3,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 5,
+      "elapsedMs": 22.100249999999505,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "without-proof"
+    },
+    {
+      "action": "EXPLAIN",
+      "availableAfterMs": 1277,
+      "consumedAfterMs": 1,
+      "elapsedMs": 1331.218499999999,
+      "maxEstimatedRows": 100,
+      "operators": {
+        "AntiSemiApply@neo4j": 10,
+        "Apply@neo4j": 3,
+        "Argument@neo4j": 13,
+        "CacheProperties@neo4j": 2,
+        "Expand(All)@neo4j": 12,
+        "Expand(Into)@neo4j": 8,
+        "Filter@neo4j": 21,
+        "LetSemiApply@neo4j": 1,
+        "Limit@neo4j": 1,
+        "NodeByLabelScan@neo4j": 1,
+        "NodeUniqueIndexSeek@neo4j": 6,
+        "Optional@neo4j": 3,
+        "OptionalExpand(All)@neo4j": 4,
+        "OptionalExpand(Into)@neo4j": 3,
+        "ProduceResults@neo4j": 1,
+        "Projection@neo4j": 1,
+        "SemiApply@neo4j": 6,
+        "Unwind@neo4j": 1
+      },
+      "variant": "nested-proof"
+    },
+    {
+      "action": "READ",
+      "availableAfterMs": 127,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 5,
+      "elapsedMs": 144.371083,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "nested-proof"
+    },
+    {
+      "action": "READ_WARM",
+      "availableAfterMs": 1,
+      "bindingProofs": [
+        true
+      ],
+      "consumedAfterMs": 4,
+      "elapsedMs": 11.481665999999677,
+      "equalsOriginal": true,
+      "rows": 1,
+      "variant": "nested-proof"
+    }
+  ]
+}

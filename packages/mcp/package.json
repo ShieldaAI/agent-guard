@@ -47,6 +47,7 @@
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.1"
+    "@shieldaai/agent-guard": "0.1.0-alpha.1",
+    "@modelcontextprotocol/client": "2.4.0"
   }
 }

@@ -1,0 +1,990 @@
+{
+  "batchSeconds": 100.62453187501524,
+  "completedAt": "2026-10-31T21:31:49.381679+00:00",
+  "disposableCleanup": true,
+  "gates": {
+    "checks": {
+      "grant_count": true,
+      "publication_deadline": true,
+      "published_source_count": true,
+      "query_p95": true,
+      "query_success": true,
+      "task_count": true
+    },
+    "expected": {
+      "grants": 100000,
+      "sources": 100,
+      "tasks": 10000
+    },
+    "passed": true,
+    "publication_max_seconds": 7.314670166000724,
+    "query_p95_seconds": {
+      "explain_access": 0.26246341700000037,
+      "get_agent_access": 0.17071020799999997
+    },
+    "targets": {
+      "publication_per_source_seconds": 120.0,
+      "query_p95_seconds": 2.0
+    }
+  },
+  "graph": {
+    "databaseNodes": 128201,
+    "databaseRelationships": 481100,
+    "grants": 100000,
+    "sources": 100,
+    "tasks": 10000
+  },
+  "hardware": {
+    "architecture": "arm64",
+    "containerCpus": 4,
+    "containerMemoryBytes": 4294967296,
+    "dataTmpfsBytes": 2147483648,
+    "hostLogicalCpus": 10,
+    "hostMemoryBytes": 17179869184,
+    "os": "Darwin",
+    "release": "27.0.0"
+  },
+  "kind": "synthetic-pilot-benchmark",
+  "limitations": [
+    "Local hardware measurement, not a production capacity guarantee.",
+    "Publication deadline applies per serially collected source; batch time is separate.",
+    "Includes cold first HTTP sample; no warmup samples are excluded.",
+    "Synthetic fixture generation replaces the observer network and is not a live cloud collection benchmark."
+  ],
+  "passed": true,
+  "profile": "acceptance",
+  "publicationSeconds": [
+    7.314670166000724,
+    1.7579169160453603,
+    1.0572309590643272,
+    1.0366194999078289,
+    0.9504851669771597,
+    0.9511887499829754,
+    2.0497191249160096,
+    1.8493907089577988,
+    1.1164837089600042,
+    0.7748510000528768,
+    0.7819502499187365,
+    0.7418281249701977,
+    0.7305125419516116,
+    0.780759833054617,
+    0.756475165951997,
+    1.5692733749747276,
+    0.7839255410945043,
+    1.539309166953899,
+    0.9996554999379441,
+    0.744861250044778,
+    0.7549051250098273,
+    0.78590883302968,
+    1.0182039580540732,
+    0.7230324170086533,
+    0.7847540000220761,
+    0.8783326250268146,
+    0.7123721250100061,
+    0.9057398750446737,
+    0.8876533339498565,
+    0.8490589170251042,
+    0.8042549999663606,
+    0.7708373329369351,
+    0.7649547080509365,
+    0.7637724580708891,
+    0.882034208974801,
+    0.817003000061959,
+    0.8007689589867368,
+    0.7487969590583816,
+    0.7066040419740602,
+    0.7983107919571921,
+    1.4087172499857843,
+    0.728593209059909,
+    0.7212832500226796,
+    0.884114959044382,
+    0.6735722499433905,
+    0.7276527499780059,
+    0.7182127080159262,
+    1.5354924999410287,
+    0.8084205419290811,
+    0.6855135419173166,
+    0.7591354999458417,
+    0.8079882089514285,
+    0.6988042920129374,
+    0.7704228330403566,
+    0.680640459060669,
+    0.6983356669079512,
+    0.7318164170719683,
+    0.6618602910311893,
+    0.7038927919929847,
+    0.7371533330297098,
+    0.7115459999768063,
+    0.7371687499107793,
+    0.7121276669204235,
+    0.6877417920622975,
+    0.7364642919274047,
+    0.676207207958214,
+    0.6848491670098156,
+    0.7341488329693675,
+    0.714906333014369,
+    0.7457875839900225,
+    0.7009898339165375,
+    0.7367322909412906,
+    0.7580806670011953,
+    0.68207550002262,
+    0.7051804160000756,
+    0.7126917920541018,
+    0.6797919580712914,
+    0.7447170419618487,
+    1.0581823750399053,
+    0.6974403340136632,
+    0.6440118330065161,
+    0.6988851249916479,
+    0.753674125066027,
+    0.8548342500580475,
+    0.6777602500515059,
+    0.7292553749866784,
+    0.7432236670283601,
+    0.7167566670104861,
+    0.7257199169835076,
+    0.7268469579285011,
+    0.7178898329148069,
+    0.7477306249784306,
+    0.7278414580505341,
+    0.7486611669883132,
+    0.7552882919553667,
+    0.7449939170619473,
+    0.739817208959721,
+    0.7579188341042027,
+    0.7390496670268476,
+    0.7096920000622049
+  ],
+  "queries": {
+    "concurrency": 1,
+    "limits": {
+      "graphEdges": 1000,
+      "graphNodes": 500,
+      "httpTimeoutMs": 10000,
+      "queryTimeoutMs": 5000,
+      "responseBytes": 1048576,
+      "sources": 64,
+      "storeBytes": 4194304,
+      "storeEdges": 5000,
+      "storeNodes": 2000
+    },
+    "nodeVersion": "v26.12.0",
+    "samples": [
+      {
+        "bytes": 243447,
+        "code": null,
+        "cold": true,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 2.1179324580000003
+      },
+      {
+        "bytes": 4076,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 1.4018093329999997
+      },
+      {
+        "bytes": 243447,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.17071020799999997
+      },
+      {
+        "bytes": 4076,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.26246341700000037
+      },
+      {
+        "bytes": 243447,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.14215570800000024
+      },
+      {
+        "bytes": 4076,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20044141599999965
+      },
+      {
+        "bytes": 243447,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1286419999999998
+      },
+      {
+        "bytes": 4076,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.22706766699999933
+      },
+      {
+        "bytes": 243447,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12803491699999994
+      },
+      {
+        "bytes": 4076,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2056836659999999
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13472274999999992
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2363533749999997
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1510344589999995
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21945691699999953
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13652879200000007
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21954050000000006
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12809975000000032
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2811293749999995
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.16178591700000017
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2291164580000004
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.22772379099999943
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.26215762499999984
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12621820800000022
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21171708299999956
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13075470800000039
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20163374999999906
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1557294579999998
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.25085924999999953
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13196800000000075
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20908641700000044
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13094250000000102
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.19503258399999868
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13608699999999954
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21811291600000005
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13244633299999986
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21419295800000146
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12884287500000027
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21454454199999964
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13302000000000044
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21886062500000117
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13078054100000008
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.19543395799999963
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1311228749999991
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20005941600000005
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1259240840000002
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2114285409999993
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12591041600000064
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.18299537500000043
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.129988374999999
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.19060304200000064
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12150208300000122
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2216767089999994
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1275665000000008
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21644050000000062
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13216983299999993
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21365920800000093
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12463108300000021
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.222454334
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12894291599999996
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20512712499999908
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12738258300000052
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20969545800000014
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12845587499999966
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.24203266599999915
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13090687499999876
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21082312499999897
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1278123749999995
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20016695799999978
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13029633400000057
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.19703920800000013
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13289837499999885
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2172631249999995
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1236013750000002
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.1892066250000007
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1341727920000012
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.22800175000000308
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1253900829999984
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.23170987500000045
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12996487500000148
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.22353529200000047
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12770449999999983
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21664454200000183
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12692358400000012
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20648554199999852
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.13215954200000124
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.22413145799999984
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.1269224580000009
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21777629199999865
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12576337499999862
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20851766599999974
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12793995799999902
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21051995899999748
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12037824999999794
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2092338750000017
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12578262499999981
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.20218437499999709
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12433291599999939
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.2237634169999983
+      },
+      {
+        "bytes": 243448,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "get_agent_access",
+        "seconds": 0.12165608299999803
+      },
+      {
+        "bytes": 4077,
+        "code": null,
+        "cold": false,
+        "ok": true,
+        "operation": "explain_access",
+        "seconds": 0.21074945800000205
+      }
+    ],
+    "warmupSamples": 0
+  },
+  "schemaVersion": 1,
+  "scope": "Synthetic host inventory, no AWS APIs or execution; one source per bounded query.",
+  "snapshotBytes": {
+    "maximum": 127146,
+    "total": 12714590
+  },
+  "startedAt": "2026-10-31T21:29:40.009468+00:00",
+  "versions": {
+    "cartography": "0.144.0",
+    "docker": "29.5.2",
+    "neo4jImage": "neo4j:5.26.32-community@sha256:414adfe41c6ff32abb752be37f265c77607c166cab298f65a917fc4f05776218",
+    "neo4jPythonDriver": "6.4.1",
+    "python": "3.13.10"
+  }
+}

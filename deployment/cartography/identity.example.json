@@ -1,0 +1,35 @@
+{
+  "neo4j": {
+    "uri": "bolt://127.0.0.1:7687",
+    "username": "agent_map_reader",
+    "passwordEnv": "AGENT_MAP_NEO4J_PASSWORD",
+    "database": "neo4j"
+  },
+  "publicOrigin": "https://localhost:8788",
+  "listenHost": "127.0.0.1",
+  "port": 8788,
+  "tls": {
+    "keyFile": "tls/server-key.pem",
+    "certFile": "tls/server-chain.pem"
+  },
+  "oidc": {
+    "issuer": "https://login.example.invalid",
+    "clientId": "replace-with-registered-client-id",
+    "clientSecretEnv": "AGENT_MAP_OIDC_CLIENT_SECRET",
+    "clientAuthMethod": "client_secret_basic"
+  },
+  "companyId": "example-company",
+  "bindings": [{
+    "subject": "replace-with-exact-idp-sub",
+    "scope": {
+      "subject": "platform-reader",
+      "companyId": "example-company",
+      "tenantIds": ["engineering"],
+      "teamIds": ["platform"],
+      "allTeams": false
+    }
+  }],
+  "viewerDirectory": "/absolute/path/to/agent-guard/apps/agent-map/dist",
+  "sessionTtlMs": 900000,
+  "loginTtlMs": 300000
+}

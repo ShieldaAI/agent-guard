@@ -7,14 +7,17 @@
   "workspaces": [
     "packages/core",
     "packages/mcp",
-    "packages/scenarios"
+    "packages/scenarios",
+    "packages/executor",
+    "packages/agent-map",
+    "apps/agent-map"
   ],
   "engines": {
     "node": ">=22"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node --test packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs scripts/*.test.mjs",
+    "test": "npm run build && node --test packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs packages/executor/test/*.test.mjs packages/agent-map/test/*.test.mjs apps/agent-map/test/*.test.mjs scripts/*.test.mjs",
     "test:pack": "node scripts/check-packages.mjs",
     "check": "npm test && npm run test:pack",
     "demo": "npm run build && node examples/basic.mjs",

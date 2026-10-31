@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-mcp-inventory-v1.schema.json",
+  "title": "Agent Guard managed MCP connection inventory version 1",
+  "description": "Bounded detached local lifecycle observation. Session ID is generated locally; revision, authorization epoch and metadata revision are independent. Only ready connections expose operations. Names are unique; the semantic validator enforces uniqueness and the two MiB encoded limit.",
+  "$ref": "#/$defs/mcpConnection",
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?![\\s\\u001c-\\u001f\\u0085\\uFEFF]*$)[^\\u0000]*$"
+    },
+    "safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$(?![\\s\\S])",
+      "description": "UTC RFC3339 timestamp with optional fractional seconds up to microsecond precision."
+    },
+    "mcpIdentity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "serverId",
+        "transportRef",
+        "principalId",
+        "tenantId"
+      ],
+      "properties": {
+        "serverId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "transportRef": {
+          "type": "string",
+          "pattern": "^opaque:[a-f0-9]{64}$",
+          "maxLength": 71
+        },
+        "principalId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/identifier"
+        }
+      },
+      "description": "Local managed-connection identity. The opaque transport reference does not expose the transport endpoint, credentials, or remote session. Identity is observation, not authorization."
+    },
+    "mcpOperation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "fingerprint"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "tool",
+            "resource",
+            "prompt"
+          ]
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$",
+          "maxLength": 64
+        }
+      },
+      "description": "Locally registered operation name and metadata fingerprint; no remote name, schema, resource URI, description or callback is exposed."
+    },
+    "mcpConnection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "identity",
+        "sessionId",
+        "revision",
+        "authorizationEpoch",
+        "metadataRevision",
+        "state",
+        "metadataState",
+        "observedAt",
+        "operations"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "identity": {
+          "$ref": "#/$defs/mcpIdentity"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "authorizationEpoch": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "metadataRevision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "state": {
+          "enum": [
+            "connecting",
+            "refreshing",
+            "ready",
+            "quarantined",
+            "closed"
+          ]
+        },
+        "metadataState": {
+          "enum": [
+            "unobserved",
+            "current",
+            "stale"
+          ]
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "operations": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/mcpOperation"
+          }
+        }
+      },
+      "description": "Bounded detached local lifecycle observation. Session ID is generated locally; revision, authorization epoch and metadata revision are independent. Only ready connections expose operations. Names are unique; the semantic validator enforces uniqueness and the two MiB encoded limit.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "ready"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "metadataState": {
+                "const": "current"
+              },
+              "metadataRevision": {
+                "minimum": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "operations": {
+                "maxItems": 0
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "metadataRevision": {
+                      "const": 0
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "metadataState": {
+                      "const": "unobserved"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "metadataState": {
+                      "const": "stale"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,70 @@
+{
+  "schemaVersion": 1,
+  "evidenceKind": "host_asserted",
+  "source": {
+    "companyId": "company",
+    "sourceId": "executor",
+    "enrollmentGeneration": "enrollment",
+    "inventoryInstanceId": "00000000-0000-4000-8000-000000000001",
+    "tenantId": "tenant"
+  },
+  "manifestId": "host-config",
+  "revision": 4,
+  "observedAt": "2026-10-30T00:00:00.000Z",
+  "agents": [
+    {
+      "id": "agent",
+      "name": "Report agent",
+      "ownerId": "operator",
+      "teamId": "reports"
+    }
+  ],
+  "deployments": [
+    {
+      "id": "deployment",
+      "agentId": "agent",
+      "environment": "staging"
+    }
+  ],
+  "taskBindings": [
+    {
+      "taskId": "task",
+      "deploymentId": "deployment"
+    }
+  ],
+  "resourceBindings": [
+    {
+      "id": "report",
+      "tool": "read",
+      "resourceRef": "item",
+      "target": {
+        "provider": "aws",
+        "partition": "aws",
+        "accountId": "123456789012",
+        "region": "",
+        "arn": "arn:aws:s3:::reports/report.txt",
+        "kind": "object"
+      },
+      "actions": [
+        "s3:GetObject"
+      ],
+      "scope": "exact"
+    }
+  ],
+  "executionBindings": [
+    {
+      "id": "read-runtime",
+      "tool": "read",
+      "deploymentId": "deployment",
+      "connectionId": null,
+      "identitySelection": "static",
+      "identity": {
+        "provider": "aws",
+        "partition": "aws",
+        "accountId": "123456789012",
+        "region": "",
+        "arn": "arn:aws:iam::123456789012:role/reporter"
+      }
+    }
+  ]
+}

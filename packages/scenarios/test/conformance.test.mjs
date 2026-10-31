@@ -3,9 +3,9 @@ import test from 'node:test';
 import { AgentGuard, GuardError } from '@shieldaai/agent-guard';
 import { SCENARIO_CATALOG_VERSION, scenarioCatalog, runConformance } from '../dist/index.js';
 
-test('catalog contains ten immutable, explicitly scoped protection scenarios', () => {
+test('catalog contains twelve immutable, explicitly scoped protection scenarios', () => {
   assert.match(SCENARIO_CATALOG_VERSION, /^\d+\.\d+\.\d+$/);
-  assert.deepEqual(scenarioCatalog.map(({ id }) => id), Array.from({ length: 10 }, (_, i) => `S${String(i + 1).padStart(2, '0')}`));
+  assert.deepEqual(scenarioCatalog.map(({ id }) => id), Array.from({ length: 12 }, (_, i) => `S${String(i + 1).padStart(2, '0')}`));
   assert.ok(Object.isFrozen(scenarioCatalog));
   for (const scenario of scenarioCatalog) {
     assert.ok(Object.isFrozen(scenario));
@@ -15,13 +15,13 @@ test('catalog contains ten immutable, explicitly scoped protection scenarios', (
   }
 });
 
-test('all ten protection scenarios deny hostile effects and allow their benign pair', { timeout: 15000 }, async () => {
+test('all twelve protection scenarios deny hostile effects and allow their benign pair', { timeout: 15000 }, async () => {
   const report = await runConformance();
   assert.equal(report.catalogVersion, SCENARIO_CATALOG_VERSION);
-  assert.equal(report.scenarioCount, 10);
-  assert.equal(report.caseCount, 20);
+  assert.equal(report.scenarioCount, 12);
+  assert.equal(report.caseCount, 24);
   assert.equal(report.passed, true, JSON.stringify(report.results.filter(({ passed }) => !passed), null, 2));
-  assert.equal(report.passedCases, 20);
+  assert.equal(report.passedCases, 24);
   assert.equal(report.failedCases, 0);
   assert.ok(report.results.every(({ assertions }) => assertions > 0));
   assert.ok(Object.isFrozen(report) && Object.isFrozen(report.results));
@@ -87,11 +87,13 @@ test('conformance rejects a handler dispatched before the asynchronous policy ba
     },
   });
   assert.equal(report.passed, false);
-  assert.equal(report.passedCases, 19);
+  assert.equal(report.passedCases, 22);
   const failure = report.results.find(({ scenarioId, variant }) => scenarioId === 'S08' && variant === 'malicious');
   assert.equal(failure.passed, false);
   assert.equal(failure.handlerInvocations, 1);
   assert.equal(failure.failure, 'revoke during asynchronous policy: no handler invocation');
+  const duplicate = report.results.find(({ scenarioId, variant }) => scenarioId === 'S11' && variant === 'benign');
+  assert.equal(duplicate.failure, 'one parser pass and one normalized approved effect');
 });
 
 test('a nonsettling adapter produces a failed case and allows the next variant to run', { timeout: 2000 }, async () => {
@@ -186,4 +188,46 @@ test('S10 rejects retaining an adapter concurrency slot after a handler settles'
   });
   assert.equal(report.passed, false);
   assert.equal(report.results[1].failure, 'Unexpected guard rejection (CONCURRENCY_EXCEEDED).');
+});
+
+test('S11 detects an adapter that ignores its registered argument parser', async () => {
+  const report = await runConformance({ scenarioIds: ['S11'], createGuard(options) {
+    const guard = new AgentGuard(options);
+    const register = guard.registerTool.bind(guard);
+    guard.registerTool = ({ parse: _parse, ...tool }) => register(tool);
+    return guard;
+  } });
+  assert.equal(report.passed, false);
+  assert.equal(report.failedCases, 2);
+  assert.equal(report.results[0].failure, 'invalid typed arguments: operation must reject');
+});
+
+test('S12 detects an adapter that drops the resolved resource version', async () => {
+  const report = await runConformance({ scenarioIds: ['S12'], createGuard(options) {
+    const guard = new AgentGuard(options);
+    const register = guard.registerTool.bind(guard);
+    guard.registerTool = tool => register({ ...tool, resolve(...args) {
+      const { resourceVersion: _version, ...resolved } = tool.resolve(...args); return resolved;
+    } });
+    return guard;
+  } });
+  assert.equal(report.passed, false);
+  assert.equal(report.failedCases, 2);
+  assert.equal(report.results[0].failure, 'resolved version is immutable approved action data');
+});
+
+test('S12 detects an adapter that replaces an approved version with current state before dispatch', async () => {
+  const report = await runConformance({ scenarioIds: ['S12'], createGuard(options) {
+    const guard = new AgentGuard(options);
+    const register = guard.registerTool.bind(guard);
+    guard.registerTool = tool => register({ ...tool, execute(args, context) {
+      const refreshed = tool.resolve(args, context.task);
+      return tool.execute(args, { ...context, action: { ...context.action, resourceVersion: refreshed.resourceVersion } });
+    } });
+    return guard;
+  } });
+  assert.equal(report.passed, false);
+  assert.equal(report.results[0].failure, 'stale resource compare fails with a sanitized handler error');
+  assert.equal(report.results[0].handlerInvocations, 1);
+  assert.equal(report.results[1].passed, true);
 });

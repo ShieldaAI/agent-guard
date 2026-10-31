@@ -8,7 +8,41 @@ TypeScript packages for controlling the tools an agent can execute. Register a t
 |---|---|
 | [`@shieldaai/agent-guard`](packages/core) | Scoped task grants, delegation, tenant checks, approvals, shared sensitivity, secret scanning and budget admission |
 | [`@shieldaai/agent-guard-mcp`](packages/mcp) | Register MCP tools with explicit metadata approval and host-defined resource resolution |
-| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Ten versioned scenarios, each with malicious and benign test cases |
+| [`@shieldaai/agent-guard-executor`](packages/executor) | Unreleased durable executor, authenticated task API, governed memory, restricted network and Docker workload isolation |
+| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Twelve versioned scenarios, each with malicious and benign test cases |
+| [`@shieldaai/agent-map`](packages/agent-map) | Unreleased scoped HTTP/MCP reference service for Cartography inventory, with a private React/Cytoscape viewer |
+
+The optional [Agent Map](packages/agent-map/README.md) reads published inventory
+without participating in execution. It provides team-scoped evidence, access
+explanations, snapshot changes and freshness through the same HTTP/MCP contract.
+See the [Cartography plan](docs/cartography-integration-plan.md) for milestone
+status and the [viewer](apps/agent-map/README.md) for local preview instructions.
+The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic
+observer-to-viewer deployment, private backups, fresh-graph recovery, operational
+difference reports and reproducible performance/rollback checks.
+The isolated pilot passed recovery, graph-load and provisional admission-latency
+checks. The runbook records the workloads, measured limits and remaining company
+rollout gates.
+
+The [source lifecycle command](deployment/cartography/SOURCE-LIFECYCLE.md) explicitly
+replaces an enrolled generation after an executor restore or clone. It retires
+the old source from current views, blocks republishing it, and preserves the
+replacement decision through backup and reconstruction.
+
+Company browser access now has a dedicated [OIDC/HTTPS endpoint](deployment/cartography/IDENTITY.md)
+with host-assigned scopes, short-lived sessions, CSRF protection and revocation.
+Its private launcher/configuration is separate from the local bearer/MCP service.
+Real company-provider enrollment and trusted-certificate browser checks remain
+deployment steps; the implementation is tested with disposable HTTPS identities.
+
+An opt-in [single-account AWS collector](deployment/cartography/AWS.md) now fills
+the role/user/bucket metadata used by cloud joins. It verifies the exact caller,
+publishes complete captures atomically, and shares the observer worker's lock
+and polling loop. A separate enrollment flag adds bounded IAM policy capture and
+S3 candidate edges with unknown assessments. The scoped API/viewer ties these
+candidates to each visible task's execution and resource bindings, retaining
+conditions, freshness and unresolved coverage. Live account enrollment remains
+a deployment step.
 
 ## Install the alpha
 
@@ -36,9 +70,16 @@ npm run pack
 
 The demo uses in-memory fixtures and needs no API key, environment file, or external
 service. `npm run pack` creates installable tarballs in `artifacts/`. For local builds,
-install the three tarballs together into a separate project. `npm run check` also tests
+install the workspace tarballs together into a separate project. `npm run check` also tests
 packed packages in a clean temporary consumer, so workspace links cannot hide missing
 distribution files.
+
+The synthetic [SafeCall/executor integration](examples/safecall-executor.mjs) uses
+the Node SafeCall package installed in the caller's environment, or accepts its
+local built entry point: `node examples/safecall-executor.mjs /absolute/path/to/llm-safecall-node/dist/index.js`.
+It exercises buffered output validation and actual authenticated budget admission
+without cloud credentials. See the [implementation status](docs/implementation-status.md)
+for checked features and remaining protected-release gates.
 
 ## Approve and execute an action
 
@@ -80,15 +121,15 @@ const approvalId = guard.approve(prepared, {
 const result = await guard.execute(prepared, { approvalId });
 ```
 
-The model receives a dispatcher that selects the host-owned task, not the guard instance, task-creation APIs or approval APIs. An `approverId` string records a host-authenticated identity; it does not authenticate the person by itself. Resolve tenants and resources from trusted service data. Tool schemas are fingerprinted but are not automatically validated as JSON Schema: the trusted resolver validates arguments before execution.
+The model receives a dispatcher that selects the host-owned task, not the guard instance, task-creation APIs or approval APIs. An `approverId` string records a host-authenticated identity; it does not authenticate the person by itself. Resolve tenants and resources from trusted service data. Tool schemas are fingerprinted but are not automatically validated as JSON Schema: use a trusted `parse` function to validate/normalize arguments before resolution. Bind mutable resources with `resourceVersion` and compare the version again at the actual effect.
 
 ## Protections and boundaries
 
-The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation and budgets.
+The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation, budgets, normalized typed arguments and resource-version checks. Catalog 1.2.0 runs twenty-four paired malicious and benign cases. A trusted handler must compare the approved resource version atomically with the actual effect.
 
 All mandatory checks must pass. Custom policy can add restrictions but cannot override a missing grant, required approval, revoked task, tenant mismatch or exhausted budget. The same stored invocation is approved and executed; changing the original arguments does not change it.
 
-State is in memory. Use one guard instance for a task tree. Restarting loses approval consumption and usage history; separate processes do not share them. Production deployments needing durable, distributed enforcement require a protected state service and resource-side idempotency. Cancellation is cooperative through `AbortSignal`; arbitrary code cannot be forcibly stopped. Cost bounds require a trusted adapter to enforce a provider-side maximum and report actual usage. An execution error can occur after a side effect and must not trigger an automatic retry.
+The embedded core keeps state in memory. Use one guard instance for a task tree. Restarting loses approval consumption and usage history; separate processes do not share them. The new [executor package](packages/executor/README.md) adds a single-owner encrypted SQLite ledger, scoped authenticated interfaces and conservative crash recovery. It is unreleased and does not provide distributed enforcement. Cancellation is cooperative through `AbortSignal`; cost bounds require a trusted adapter to enforce a provider-side maximum and report actual usage. An execution error can occur after a side effect and must not trigger an automatic retry. The separate [Docker profile](deployment/README.md) terminates isolated workloads at resource/time limits; its full platform release gate remains open.
 
 Cost values must be nonnegative safe integers in a consistent host-defined unit, such as microcurrency units. Fractional amounts and unsafe integers are rejected to avoid rounding errors in admission and accounting.
 

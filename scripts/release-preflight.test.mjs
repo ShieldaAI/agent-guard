@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { validateRelease } from './release-preflight.mjs';
@@ -31,6 +31,18 @@ test('release accepts a clean aligned checkout and ignored package artifacts', t
   mkdirSync(join(root, 'artifacts'));
   writeFileSync(join(root, 'artifacts', 'fixture.tgz'), 'ignored fixture');
   assert.doesNotThrow(() => validateRelease(root));
+});
+
+test('release root checks resolve directory aliases without accepting nested directories', t => {
+  const { root } = fixture(t);
+  const aliases = mkdtempSync(join(tmpdir(), 'agent-guard-release-alias-'));
+  t.after(() => rmSync(aliases, { recursive: true, force: true }));
+  const kind = process.platform === 'win32' ? 'junction' : 'dir';
+  const rootAlias = join(aliases, 'root'), nestedAlias = join(aliases, 'nested');
+  symlinkSync(root, rootAlias, kind);
+  symlinkSync(join(root, 'packages/core'), nestedAlias, kind);
+  assert.doesNotThrow(() => validateRelease(rootAlias));
+  assert.throws(() => validateRelease(nestedAlias), /repository root/);
 });
 
 test('release rejects tracked modifications and staged changes', t => {
