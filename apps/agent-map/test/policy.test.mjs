@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -11,7 +12,7 @@ async function fixture() {
   const result = await queryDemo('get_agent_access', { agentId: 'agent-research' });
   return { graph: result.graph, record: result.data.policyEvidence[0] };
 }
-const compiled = await build({ entryPoints: [new URL('../src/policy-evidence.jsx', import.meta.url).pathname],
+const compiled = await build({ entryPoints: [fileURLToPath(new URL('../src/policy-evidence.jsx', import.meta.url))],
   bundle: true, write: false, platform: 'browser', format: 'esm', define: { 'process.env.NODE_ENV': '"production"' } });
 const { PolicyEvidence } = await import(`data:text/javascript;base64,${Buffer.from(compiled.outputFiles[0].text).toString('base64')}`);
 const render = (evidence, graph, compact = false) => renderToStaticMarkup(React.createElement(PolicyEvidence, { evidence, graph, compact }));

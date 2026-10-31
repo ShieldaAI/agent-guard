@@ -2,6 +2,9 @@
 
 ## Unreleased — agent security hardening
 
+- Correct Windows test paths and close the pilot's SQLite owner before deleting
+  its fixture directory. Resolve native filesystem aliases in release root
+  validation while retaining nested-directory and dirty-checkout rejection.
 - Fix the local pilot launcher's configuration-file race by opening one
   nonblocking, no-follow descriptor before validating private metadata. Cover
   FIFO replacement and keep Node 22 runtime warnings separate from exact test

@@ -10,15 +10,19 @@ import { createInterface } from 'node:readline';
 import { startPilotHost, readPilotConfig } from '../../../examples/cartography-pilot.mjs';
 
 const token = prefix => `${prefix}.${randomBytes(32).toString('base64url')}`;
-async function configuration(t) {
+async function configuration(t, close = async () => {}) {
   const stateDirectory = await mkdtemp(join(tmpdir(), 'agent-guard-pilot-'));
-  await chmod(stateDirectory, 0o700); t.after(() => rm(stateDirectory, { recursive: true, force: true }));
+  await chmod(stateDirectory, 0o700);
+  t.after(async () => { await close(); await rm(stateDirectory, { recursive: true, force: true }); });
   return { stateDirectory, observerToken: token('agi_v1'),
     referenceTokens: { blue: token('agm_v1'), red: token('agm_v1'), beta: token('agm_v1') },
     neo4j: { uri: 'bolt://127.0.0.1:1', username: 'reader', password: 'synthetic-database-password' } };
 }
 test('live pilot observer exports scoped host inventory and stopping reference/observer cannot stop admission', async t => {
-  const config = await configuration(t), host = await startPilotHost(config); t.after(() => host.close());
+  let host;
+  // Windows keeps the SQLite files locked until the owner has closed them.
+  const config = await configuration(t, () => host?.close());
+  host = await startPilotHost(config);
   const ready = host.ready;
   assert.equal(ready.sources.length, 2); assert.equal(new Set(ready.sources.map(source => source.inventoryInstanceId)).size, 1);
   const collected = await fetch(ready.observerEndpoint, { method: 'POST', headers: { Authorization: `Bearer ${config.observerToken}`, 'Content-Type': 'application/json' }, body: '{"tenantId":"alpha"}' });

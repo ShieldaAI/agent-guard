@@ -11,7 +11,9 @@ function git(root, args) {
 /** Require a clean checkout and matching versions before publication. */
 export function validateRelease(root) {
   const repository = git(root, ['rev-parse', '--show-toplevel']);
-  if (realpathSync(repository) !== realpathSync(root)) {
+  // Resolve native directory aliases, including Windows short names returned by
+  // temporary-directory APIs, before comparing with Git's canonical root.
+  if (realpathSync.native(repository) !== realpathSync.native(root)) {
     throw new Error('Release must run from the Agent Guard repository root.');
   }
   git(root, ['rev-parse', '--verify', 'HEAD']);
