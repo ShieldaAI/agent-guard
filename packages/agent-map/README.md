@@ -7,6 +7,11 @@ It supplies the same evidence to HTTP, MCP clients and the
 executes an action. Declared grants and cloud associations are not effective
 permission decisions.
 
+Install the service with `npm install @shieldaai/agent-map@alpha`. It includes the
+`agent-guard-map` and `agent-guard-map-identity` commands. Viewer assets and the
+Python collector are separate repository components and are not bundled in this
+npm package. The commands require host-owned configuration and credentials.
+
 ## Run the loopback bearer service
 
 ```sh

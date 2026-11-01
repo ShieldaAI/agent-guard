@@ -1,16 +1,41 @@
 {
   "name": "@shieldaai/agent-guard-executor",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Durable, authenticated execution and isolated workload profiles for Agent Guard.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
-  "files": ["dist", "README.md", "LICENSE"],
-  "engines": { "node": ">=22.13.0" },
-  "dependencies": { "@shieldaai/agent-guard": "0.1.0-alpha.1", "ipaddr.js": "2.5.0" },
-  "publishConfig": { "access": "public", "tag": "alpha" },
-  "repository": { "type": "git", "url": "git+https://github.com/ShieldaAI/agent-guard.git", "directory": "packages/executor" },
-  "scripts": { "build": "tsc -p tsconfig.json", "prepack": "node ../../scripts/build.mjs", "prepublishOnly": "node ../../scripts/release-check.mjs" }
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "@shieldaai/agent-guard": "0.1.0-alpha.2",
+    "ipaddr.js": "2.5.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/executor"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/build.mjs",
+    "prepublishOnly": "node ../../scripts/release-check.mjs"
+  }
 }

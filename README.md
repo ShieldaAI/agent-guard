@@ -8,9 +8,9 @@ TypeScript packages for controlling the tools an agent can execute. Register a t
 |---|---|
 | [`@shieldaai/agent-guard`](packages/core) | Scoped task grants, delegation, tenant checks, approvals, shared sensitivity, secret scanning and budget admission |
 | [`@shieldaai/agent-guard-mcp`](packages/mcp) | Register MCP tools with explicit metadata approval and host-defined resource resolution |
-| [`@shieldaai/agent-guard-executor`](packages/executor) | Unreleased durable executor, authenticated task API, governed memory, restricted network and Docker workload isolation |
+| [`@shieldaai/agent-guard-executor`](packages/executor) | Experimental durable executor, authenticated task API, governed memory, restricted network and Docker workload isolation |
 | [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Twelve versioned scenarios, each with malicious and benign test cases |
-| [`@shieldaai/agent-map`](packages/agent-map) | Unreleased scoped HTTP/MCP reference service for Cartography inventory, with a private React/Cytoscape viewer |
+| [`@shieldaai/agent-map`](packages/agent-map) | Experimental scoped HTTP/MCP reference service for Cartography inventory, with a private React/Cytoscape viewer |
 
 The optional [Agent Map](packages/agent-map/README.md) reads published inventory
 without participating in execution. It provides team-scoped evidence, access
@@ -55,7 +55,11 @@ Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
 the matching core version. Configuration lives in your application: register tools,
 create task grants, and provide an authenticated approval flow where needed.
 
-The `alpha` tag points to `0.1.0-alpha.1`; `latest` remains on the earlier `0.1.0-alpha.0`. The packages remain experimental; use `@alpha` or an exact version explicitly.
+The [0.1.0-alpha.2 release notes](docs/releases/0.1.0-alpha.2.md) describe the next
+five-package alpha and its publication status. The packages remain experimental;
+use `@alpha` or an exact version explicitly. A package's `latest` tag does not
+establish production readiness. The viewer and Python Cartography integration
+are separate source components, not npm packages in this release.
 
 ## Run locally
 
@@ -129,13 +133,15 @@ The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delega
 
 All mandatory checks must pass. Custom policy can add restrictions but cannot override a missing grant, required approval, revoked task, tenant mismatch or exhausted budget. The same stored invocation is approved and executed; changing the original arguments does not change it.
 
-The embedded core keeps state in memory. Use one guard instance for a task tree. Restarting loses approval consumption and usage history; separate processes do not share them. The new [executor package](packages/executor/README.md) adds a single-owner encrypted SQLite ledger, scoped authenticated interfaces and conservative crash recovery. It is unreleased and does not provide distributed enforcement. Cancellation is cooperative through `AbortSignal`; cost bounds require a trusted adapter to enforce a provider-side maximum and report actual usage. An execution error can occur after a side effect and must not trigger an automatic retry. The separate [Docker profile](deployment/README.md) terminates isolated workloads at resource/time limits; its full platform release gate remains open.
+The embedded core keeps state in memory. Use one guard instance for a task tree. Restarting loses approval consumption and usage history; separate processes do not share them. The new [executor package](packages/executor/README.md) adds a single-owner encrypted SQLite ledger, scoped authenticated interfaces and conservative crash recovery. It is experimental and does not provide distributed enforcement. Cancellation is cooperative through `AbortSignal`; cost bounds require a trusted adapter to enforce a provider-side maximum and report actual usage. An execution error can occur after a side effect and must not trigger an automatic retry. The separate [Docker profile](deployment/README.md) terminates isolated workloads at resource/time limits; its full platform release gate remains open.
 
 Cost values must be nonnegative safe integers in a consistent host-defined unit, such as microcurrency units. Fractional amounts and unsafe integers are rejected to avoid rounding errors in admission and accounting.
 
 Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
-The [release review](docs/quality-review.md) records known issues, test results and verification of the published `0.1.0-alpha.1` packages. See the [changelog](CHANGELOG.md) for the changes in this release.
+The [release review](docs/quality-review.md) preserves verification of the published
+`0.1.0-alpha.1` packages. See the [0.1.0-alpha.2 notes](docs/releases/0.1.0-alpha.2.md)
+and [changelog](CHANGELOG.md) for the next release's scope and remaining gates.
 
 ## Contributing
 

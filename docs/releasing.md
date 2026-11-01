@@ -1,6 +1,11 @@
 # Releasing the npm packages
 
-The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. The executor and reference-map service are new and unreleased; the other three have published alpha versions. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. The [0.1.0-alpha.2 source release](releases/0.1.0-alpha.2.md) prepares the first npm publications of the executor and reference-map service alongside updates to the other three packages. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+
+Publish only the five workspaces listed below. The React/Cytoscape viewer remains
+private, and the Python Cartography integration has its own build and version;
+neither is published by this npm release. Company service deployment is separate
+from publishing the packages.
 
 ## Authentication
 
@@ -44,6 +49,10 @@ An accepted publish can report that the package is still being processed. npm sc
 After all versions become available, install their exact versions from the public registry into a clean project, verify the MCP adapter and run the conformance suite. Verify their tarball integrity and recorded `gitHead` against the committed source used for publication. Create release notes and a version tag for that exact commit using an administrator account. Tags matching `v*` are protected against updates and deletion, so verify the commit before creating the tag. Preserve any existing stable `latest` version when publishing a prerelease, and do not imply a production security guarantee.
 
 Inspect the tags after a first publication. npm can also create `latest` even when an explicit prerelease tag is supplied; [npm/cli#8490](https://github.com/npm/cli/issues/8490) describes this behavior. For the initial release, npm assigned both `alpha` and `latest` to `0.1.0-alpha.0` and rejected removal of `latest` with HTTP 400. Document the tags assigned to each release and recommend explicit `@alpha` or exact-version installation while the packages remain experimental.
+
+For `0.1.0-alpha.2`, retain the existing `latest` tags for core, MCP and scenarios.
+Inspect and record the tags assigned to the first executor and Agent Map
+publications separately; they have no previous `latest` version to preserve.
 
 GitHub Actions validates Node 22, 24 and 26 and produces tarballs. It has no npm credential and does not publish packages. At the initial release, hosted runs were blocked by the GitHub account's billing lock; the release notes record local checks instead. [Run 40038764852, attempt 2](https://github.com/ShieldaAI/agent-guard/actions/runs/40038764852/attempts/2) subsequently passed on 2026-10-24 for commit `d0df90d730c41ae2fa87ad8792e63a0081bd5324`.
 
