@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-scenarios",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "Executable protective scenarios and conformance fixtures for agent tool executors.",
   "license": "Apache-2.0",
   "type": "module",
@@ -47,6 +47,6 @@
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.1"
+    "@shieldaai/agent-guard": "0.1.0-alpha.2"
   }
 }

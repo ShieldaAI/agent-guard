@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard",
-  "version": "0.1.0-alpha.1",
+  "version": "0.1.0-alpha.2",
   "description": "A local execution boundary for registered agent tools, scoped grants, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",

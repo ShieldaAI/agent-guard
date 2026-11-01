@@ -1,6 +1,10 @@
 # Changelog
 
-## Unreleased — agent security hardening
+## 0.1.0-alpha.2 — release preparation, 2026-11-01
+
+Prepared for publication as five npm packages under the `alpha` tag. Registry
+publication is not yet verified. See the [release notes](docs/releases/0.1.0-alpha.2.md)
+for package selection, compatibility and deployment boundaries.
 
 - Correct Windows test paths and close the pilot's SQLite owner before deleting
   its fixture directory. Resolve native filesystem aliases in release root
@@ -129,8 +133,8 @@
   execution and separately reviewed exports. Real macOS/Linux-VM tests pass; native
   Linux/Windows host runs and independent review remain protected-release gates.
 - Add platform CI, clean packaged-consumer checks and adversarial recovery,
-  transport, memory, adapter and isolation tests. These source changes are not yet
-  published; the existing alpha release remains unchanged.
+  transport, memory, adapter and isolation tests. Package publication does not
+  certify the full native platform isolation or company deployment boundary.
 
 ## 0.1.0-alpha.1 — 2026-10-24
 

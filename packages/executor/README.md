@@ -1,10 +1,10 @@
-# Agent Guard executor (unreleased alpha)
+# Agent Guard executor (experimental alpha)
 
 An additive Apache-2.0 package for a single trusted host: encrypted transactional
 authorization state, task-scoped HTTP credentials, typed adapters, governed memory,
 and a local Docker sandbox. Requires Node.js 22.13 or newer. No account or hosted
-service is required. Build and install the local workspace tarballs; this package
-has not been published by this change.
+service is required. Install the explicit prerelease tag with
+`npm install @shieldaai/agent-guard-executor@alpha`, or build the workspace tarballs.
 
 ```ts
 import { randomBytes } from 'node:crypto';
@@ -437,7 +437,7 @@ network-disabled Linux container, also usable through a local Linux VM on macOS 
 Windows. It returns bounded artifacts for separate hash-bound review and export.
 See [deployment profiles](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/README.md).
 This is not yet a complete networked coding-agent session. Never describe this
-unreleased implementation as certified isolation on all three platforms.
+experimental implementation as certified isolation on all three platforms.
 
 `ArtifactBroker` signs tenant, content hashes, sensitivity and transitive source
 lineage for files, stdout and stderr. Raw input defaults to sensitive. Verified
