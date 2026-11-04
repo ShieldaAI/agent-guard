@@ -1,7 +1,7 @@
 {
   "name": "@shieldaai/agent-guard-scenarios",
   "version": "0.1.0-alpha.2",
-  "description": "Executable protective scenarios and conformance fixtures for agent tool executors.",
+  "description": "Executable malicious and benign conformance fixtures for AI agent tool authorization, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,16 +30,18 @@
     "url": "git+https://github.com/ShieldaAI/agent-guard.git",
     "directory": "packages/scenarios"
   },
-  "homepage": "https://github.com/ShieldaAI/agent-guard#readme",
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/scenarios#readme",
   "bugs": {
     "url": "https://github.com/ShieldaAI/agent-guard/issues"
   },
   "keywords": [
-    "agents",
-    "security",
-    "mcp",
-    "guardrails",
-    "tool-authorization"
+    "ai-agents",
+    "security-testing",
+    "conformance-testing",
+    "tool-authorization",
+    "approvals",
+    "budgets",
+    "typescript"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

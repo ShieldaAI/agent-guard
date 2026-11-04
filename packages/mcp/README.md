@@ -1,6 +1,10 @@
 # @shieldaai/agent-guard-mcp
 
-Register MCP operations with the same execution boundary used by `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+
+Install with `npm install @shieldaai/agent-guard-mcp@alpha`. The host supplies
+identity, resource resolution and transport policy. For the core API and related
+packages, see the [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
 ## Managed connections
 
