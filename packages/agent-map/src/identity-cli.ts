@@ -3,7 +3,7 @@ import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
+import { isCliEntry } from './cli-entry.js';
 import { createNeo4jMapStore } from './store.js';
 import { MapService } from './service.js';
 import { startMapIdentityServer, type MapIdentityServerOptions } from './identity-http.js';
@@ -71,6 +71,6 @@ export async function runMapIdentityCli(argv: string[] = process.argv.slice(2)):
     } finally { await server.close(); }
   } finally { await store.close(); }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isCliEntry(import.meta)) {
   void runMapIdentityCli().catch(() => { process.stderr.write('MAP_START_FAILED\n'); process.exitCode = 1; });
 }

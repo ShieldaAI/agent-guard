@@ -68,8 +68,12 @@ try {
   writeFileSync(join(consumer, 'identity-consumer.mjs'), readFileSync(new URL('identity-package-consumer.mjs', import.meta.url)));
   writeFileSync(join(consumer, 'oidc-provider.mjs'), readFileSync(join(root, 'packages/agent-map/test/helpers/oidc-provider.mjs')));
   console.log(run(process.execPath, ['--test', 'identity-consumer.mjs'], consumer).trim());
-  const identityHelp = run(process.execPath, ['node_modules/@shieldaai/agent-map/dist/identity-cli.js', '--help'], consumer);
-  if (!identityHelp.includes('agent-guard-map-identity --config')) throw new Error('Missing installed identity launcher');
+  for (const name of ['agent-guard-map', 'agent-guard-map-identity']) {
+    const help = process.platform === 'win32'
+      ? run('cmd.exe', ['/d', '/c', `node_modules\\.bin\\${name}.cmd`, '--help'], consumer)
+      : run(join(consumer, 'node_modules', '.bin', name), ['--help'], consumer);
+    if (!help.startsWith(`${name} --config `)) throw new Error(`Installed ${name} launcher did not print its usage.`);
+  }
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }
