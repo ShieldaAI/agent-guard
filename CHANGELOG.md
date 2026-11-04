@@ -1,10 +1,10 @@
 # Changelog
 
-## 0.1.0-alpha.2 — release preparation, 2026-11-01
+## 0.1.0-alpha.2 — 2026-11-04
 
-Prepared for publication as five npm packages under the `alpha` tag. Registry
-publication is not yet verified. See the [release notes](docs/releases/0.1.0-alpha.2.md)
-for package selection, compatibility and deployment boundaries.
+Published all five npm packages under the `alpha` tag. The release notes cover
+registry verification and the workaround for the two Agent Map command shortcuts
+on macOS. [Release notes](docs/releases/0.1.0-alpha.2.md)
 
 - Correct Windows test paths and close the pilot's SQLite owner before deleting
   its fixture directory. Resolve native filesystem aliases in release root

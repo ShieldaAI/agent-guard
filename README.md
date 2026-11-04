@@ -55,11 +55,10 @@ Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
 the matching core version. Configuration lives in your application: register tools,
 create task grants, and provide an authenticated approval flow where needed.
 
-The [0.1.0-alpha.2 release notes](docs/releases/0.1.0-alpha.2.md) describe the next
-five-package alpha and its publication status. The packages remain experimental;
-use `@alpha` or an exact version explicitly. A package's `latest` tag does not
-establish production readiness. The viewer and Python Cartography integration
-are separate source components, not npm packages in this release.
+All five npm packages are available as `0.1.0-alpha.2` under the `alpha` tag.
+The private viewer and Python Cartography integration are separate source
+components. The release notes include an Agent Map CLI workaround for macOS.
+[Release notes](docs/releases/0.1.0-alpha.2.md)
 
 ## Run locally
 
@@ -141,7 +140,7 @@ Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-
 
 The [release review](docs/quality-review.md) preserves verification of the published
 `0.1.0-alpha.1` packages. See the [0.1.0-alpha.2 notes](docs/releases/0.1.0-alpha.2.md)
-and [changelog](CHANGELOG.md) for the next release's scope and remaining gates.
+and [changelog](CHANGELOG.md) for the published release and remaining deployment gates.
 
 ## Contributing
 

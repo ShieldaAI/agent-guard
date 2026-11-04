@@ -1,6 +1,6 @@
 # Releasing the npm packages
 
-The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. The [0.1.0-alpha.2 source release](releases/0.1.0-alpha.2.md) prepares the first npm publications of the executor and reference-map service alongside updates to the other three packages. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. Version `0.1.0-alpha.2` introduced the executor and Agent Map to npm alongside updates to the other three packages. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
 
 Publish only the five workspaces listed below. The React/Cytoscape viewer remains
 private, and the Python Cartography integration has its own build and version;
@@ -50,9 +50,12 @@ After all versions become available, install their exact versions from the publi
 
 Inspect the tags after a first publication. npm can also create `latest` even when an explicit prerelease tag is supplied; [npm/cli#8490](https://github.com/npm/cli/issues/8490) describes this behavior. For the initial release, npm assigned both `alpha` and `latest` to `0.1.0-alpha.0` and rejected removal of `latest` with HTTP 400. Document the tags assigned to each release and recommend explicit `@alpha` or exact-version installation while the packages remain experimental.
 
-For `0.1.0-alpha.2`, retain the existing `latest` tags for core, MCP and scenarios.
-Inspect and record the tags assigned to the first executor and Agent Map
-publications separately; they have no previous `latest` version to preserve.
+On 4 November 2026, all five packages were published as `0.1.0-alpha.2` from
+`e8d8e82b31d7e4c60d565d9d37721953cc33c048`. Core, MCP and scenarios kept
+`latest` at `0.1.0-alpha.0`. The new executor and Agent Map packages received
+both `alpha` and `latest` at `0.1.0-alpha.2`. The registry tarballs matched the
+reviewed builds. The release notes record the installed consumer results and
+the macOS Agent Map CLI workaround. [Release notes](releases/0.1.0-alpha.2.md)
 
 GitHub Actions validates Node 22, 24 and 26 and produces tarballs. It has no npm credential and does not publish packages. At the initial release, hosted runs were blocked by the GitHub account's billing lock; the release notes record local checks instead. [Run 40038764852, attempt 2](https://github.com/ShieldaAI/agent-guard/actions/runs/40038764852/attempts/2) subsequently passed on 2026-10-24 for commit `d0df90d730c41ae2fa87ad8792e63a0081bd5324`.
 
