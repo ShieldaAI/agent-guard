@@ -1,6 +1,13 @@
 # @shieldaai/agent-guard
 
-Experimental TypeScript executor for registered agent tools. Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
+Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. Experimental TypeScript library; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
+
+Install with `npm install @shieldaai/agent-guard@alpha`. For MCP integration,
+persistent execution or model response validation, see the
+[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
+
+Try the [allow, deny and approval walkthrough](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/tool-permissions.md)
+for a complete local example with assertions about actual handler calls.
 
 The trusted host registers and approves tool metadata, creates scoped task handles, and approves sensitive actions. The model receives only a constrained dispatcher. `prepare()` snapshots immutable JSON; `execute()` rechecks current grants, bound tenant context, policy, tool registration, sensitivity, approval and budgets before invoking the stored handler.
 

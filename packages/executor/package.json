@@ -1,7 +1,7 @@
 {
   "name": "@shieldaai/agent-guard-executor",
   "version": "0.1.0-alpha.2",
-  "description": "Durable, authenticated execution and isolated workload profiles for Agent Guard.",
+  "description": "Durable AI agent tool authorization with SQLite state, authenticated task APIs, approvals and budget admission.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -37,5 +37,19 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "node ../../scripts/build.mjs",
     "prepublishOnly": "node ../../scripts/release-check.mjs"
-  }
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/executor#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "typescript",
+    "nodejs",
+    "tool-authorization",
+    "sqlite",
+    "approvals",
+    "budgets",
+    "durable-execution"
+  ]
 }

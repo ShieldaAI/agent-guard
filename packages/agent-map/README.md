@@ -1,5 +1,10 @@
 # Agent Guard reference map
 
+Query AI agent and MCP inventory, snapshot changes and access explanations over
+scoped HTTP and MCP interfaces. See the
+[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)
+for tool authorization and model response validation.
+
 Optional read-only reference service for the immutable Agent Guard projections
 published by the [Cartography collector](../../integrations/cartography/README.md).
 It supplies the same evidence to HTTP, MCP clients and the

@@ -1,5 +1,9 @@
 # Agent Guard executor (experimental alpha)
 
+Persist AI agent tool approvals and budget admission across restarts, with
+authenticated task APIs. For the in-memory core and MCP integration, see the
+[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
+
 An additive Apache-2.0 package for a single trusted host: encrypted transactional
 authorization state, task-scoped HTTP credentials, typed adapters, governed memory,
 and a local Docker sandbox. Requires Node.js 22.13 or newer. No account or hosted

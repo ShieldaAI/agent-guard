@@ -1,8 +1,19 @@
 # Shielda Agent Guard
 
-TypeScript packages for controlling the tools an agent can execute. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
+Authorize AI agent tool calls in TypeScript with scoped resources, tenant checks, approvals and budgets. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
 
 **Status: experimental alpha.** The packages use the npm scope `@shieldaai`. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
+
+Start with the [core tool-authorization example](packages/core/README.md), or use
+the [package selection guide](docs/package-guide.md) to choose between MCP
+integration, persistent execution, model response validation and dependency
+advisory monitoring. The core example and synthetic scenarios need no provider key.
+
+The [tool-permissions walkthrough](docs/guides/tool-permissions.md) demonstrates
+an out-of-scope denial, authenticated-host approval and replay rejection using
+the published npm package and synthetic records.
+
+![Annotated replay of verified tool-permission fixture output](docs/media/tool-permissions.gif)
 
 | Package | Purpose |
 |---|---|

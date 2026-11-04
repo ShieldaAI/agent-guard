@@ -65,6 +65,8 @@ try {
   }));
   run(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '--project', 'tsconfig.json'], consumer);
   console.log(run(process.execPath, ['compiled/consumer.mjs'], consumer).trim());
+  writeFileSync(join(consumer, 'tool-permissions.mjs'), readFileSync(join(root, 'examples/tool-permissions.mjs')));
+  console.log(run(process.execPath, ['tool-permissions.mjs'], consumer).trim());
   writeFileSync(join(consumer, 'identity-consumer.mjs'), readFileSync(new URL('identity-package-consumer.mjs', import.meta.url)));
   writeFileSync(join(consumer, 'oidc-provider.mjs'), readFileSync(join(root, 'packages/agent-map/test/helpers/oidc-provider.mjs')));
   console.log(run(process.execPath, ['--test', 'identity-consumer.mjs'], consumer).trim());

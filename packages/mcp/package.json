@@ -1,7 +1,7 @@
 {
   "name": "@shieldaai/agent-guard-mcp",
   "version": "0.1.0-alpha.2",
-  "description": "MCP client adapter for Shielda Agent Guard with explicit tool approval.",
+  "description": "Authorize MCP tool calls in TypeScript with approved metadata, task-scoped resources and Agent Guard.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -30,16 +30,19 @@
     "url": "git+https://github.com/ShieldaAI/agent-guard.git",
     "directory": "packages/mcp"
   },
-  "homepage": "https://github.com/ShieldaAI/agent-guard#readme",
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/mcp#readme",
   "bugs": {
     "url": "https://github.com/ShieldaAI/agent-guard/issues"
   },
   "keywords": [
-    "agents",
-    "security",
+    "ai-agents",
     "mcp",
-    "guardrails",
-    "tool-authorization"
+    "model-context-protocol",
+    "typescript",
+    "tool-authorization",
+    "tool-approval",
+    "metadata-drift",
+    "agent-security"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
