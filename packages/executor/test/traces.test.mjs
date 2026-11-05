@@ -263,7 +263,11 @@ test('disabled trace and invalid options leave the existing executor contract ex
 
 test('restart reports unknown durable work with stable opaque correlation and a fresh session', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'trace-recovery-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  let e;
+  t.after(() => {
+    try { e?.close(); }
+    finally { rmSync(directory, { recursive: true, force: true }); }
+  });
   const database = join(directory, 'state.sqlite');
   const module = new URL('../dist/index.js', import.meta.url).href;
   const script = `import {DurableExecutor} from ${JSON.stringify(module)};
@@ -276,8 +280,7 @@ test('restart reports unknown durable work with stable opaque correlation and a 
   const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, database], { encoding: 'utf8', timeout: 10_000 });
   assert.equal(child.status, 17, child.stderr);
   const before = JSON.parse(child.stdout);
-  const e = new DurableExecutor({ database, encryptionKey: Buffer.alloc(32, 7), clock: () => 1000, decisionTraces: {} });
-  t.after(() => e.close());
+  e = new DurableExecutor({ database, encryptionKey: Buffer.alloc(32, 7), clock: () => 1000, decisionTraces: {} });
   const event = e.decisionTraceSnapshot({ tenantId: 'tenant' }).events[0];
   assert.equal(event.event, 'unknown');
   assert.equal(event.code, 'RECOVERY_UNKNOWN');

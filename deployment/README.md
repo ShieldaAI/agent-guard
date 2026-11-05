@@ -139,7 +139,9 @@ Run the Windows gate from native Windows Node under the dedicated host account.
 A Node process running inside WSL exercises the Linux profile. Use Node 22.13.0 or
 later, a fixed local drive, and a canonical workspace path. Selected file names
 must match their on-disk spelling. Network shares, junctions, symbolic links,
-hard links, alternate streams and short-name aliases are outside the input profile.
+hard links, alternate streams and short-name aliases in selected relative paths
+are outside the input profile. OS-supplied short-name ancestors in the workspace
+root are resolved from retained directory handles.
 
 The account needs Windows PowerShell at
 `%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe`, permission to run

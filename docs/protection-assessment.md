@@ -13,6 +13,12 @@ in the [deployment checklist](protection-acceptance.md#deployment-validation-che
 with their evidence status preserved. These scores express review judgment
 about construction quality.
 
+The scores and runtime comparisons below are bound to the recorded construction
+snapshot, before the alpha.3 version bump and release-check refinements. The
+[alpha.3 release notes](releases/0.1.0-alpha.3.md) link the exact published commit,
+its subsequent fixes and fresh release verification. Historical package equality
+is not a claim that the release archive has the same bytes.
+
 ## Category scores
 
 Each dimension has a maximum of two points. A full score means the specified

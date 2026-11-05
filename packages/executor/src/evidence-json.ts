@@ -18,19 +18,36 @@ export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number): Json {
   const source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const statement = immutableJson(JSON.parse(source), 24, 8192, maxBytes);
   const objects: Set<string>[] = [];
-  for (const match of source.matchAll(/"(?:[^"\\]|\\.)*"|[{}:]|-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/gu)) {
-    const token = match[0];
-    if (token === '{') objects.push(new Set());
-    else if (token === '}') objects.pop();
-    else if (token.startsWith('"')) {
-      let next = match.index! + token.length;
-      while (next < source.length && /[ \t\r\n]/u.test(source[next]!)) next++;
+  // Walk the already validated JSON once. Avoid a searching/backtracking regular
+  // expression on long escaped strings supplied by providers or evidence files.
+  for (let offset = 0; offset < source.length;) {
+    const char = source[offset]!;
+    if (char === '{') { objects.push(new Set()); offset++; }
+    else if (char === '}') { objects.pop(); offset++; }
+    else if (char === '"') {
+      const start = offset++;
+      while (offset < source.length) {
+        const current = source[offset++];
+        if (current === '\\') offset++; // JSON.parse already checked the escape grammar.
+        else if (current === '"') break;
+      }
+      let next = offset;
+      while (source[next] === ' ' || source[next] === '\t' || source[next] === '\r' || source[next] === '\n') next++;
       if (source[next] !== ':') continue;
-      const name = JSON.parse(token) as string;
+      const name = JSON.parse(source.slice(start, offset)) as string;
       const keys = objects.at(-1)!;
       if (keys.has(name)) throw new Error('Duplicate JSON member in evidence');
       keys.add(name);
-    } else if (token !== ':') checkNumber(token);
+    } else if (char === '-' || (char >= '0' && char <= '9')) {
+      const start = offset++;
+      while (offset < source.length) {
+        const current = source[offset]!;
+        if ((current >= '0' && current <= '9') || current === '.' || current === 'e' ||
+            current === 'E' || current === '+' || current === '-') offset++;
+        else break;
+      }
+      checkNumber(source.slice(start, offset));
+    } else offset++;
   }
   return statement;
 }

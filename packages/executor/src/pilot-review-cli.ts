@@ -34,15 +34,16 @@ function policyPath(path: string): string {
 
 function readFile(path: string, kind: Input): Buffer {
   if (kind === 'policy') path = policyPath(path);
-  const before = lstatSync(path, { bigint: true });
-  if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(limits[kind])) {
-    throw new Error();
-  }
+  // Open first, then validate the descriptor that supplies the bytes. O_NOFOLLOW
+  // rejects leaf links on POSIX; named identity checks also cover Windows, where
+  // that flag is unavailable. O_NONBLOCK avoids waiting on a substituted FIFO.
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const opened = fstatSync(fd, { bigint: true });
-    if (!opened.isFile() || opened.nlink !== 1n || opened.dev !== before.dev || opened.ino !== before.ino ||
-        opened.size !== before.size || opened.ctimeNs !== before.ctimeNs) throw new Error();
+    const named = lstatSync(path, { bigint: true });
+    if (!opened.isFile() || opened.nlink !== 1n || opened.size > BigInt(limits[kind]) ||
+        !named.isFile() || named.nlink !== 1n || opened.dev !== named.dev || opened.ino !== named.ino ||
+        opened.size !== named.size || opened.ctimeNs !== named.ctimeNs) throw new Error();
     if (process.platform !== 'win32') {
       if (kind === 'policy' && ((opened.mode & 0o022n) !== 0n ||
           (opened.uid !== 0n && opened.uid !== BigInt(process.geteuid!())))) throw new Error();
@@ -56,7 +57,10 @@ function readFile(path: string, kind: Input): Buffer {
       offset += count;
     }
     const end = fstatSync(fd, { bigint: true });
-    if (end.size !== opened.size || end.ctimeNs !== opened.ctimeNs || end.mtimeNs !== opened.mtimeNs) throw new Error();
+    const finalName = lstatSync(path, { bigint: true });
+    if (end.size !== opened.size || end.ctimeNs !== opened.ctimeNs || end.mtimeNs !== opened.mtimeNs ||
+        !finalName.isFile() || finalName.nlink !== 1n || finalName.dev !== opened.dev ||
+        finalName.ino !== opened.ino || finalName.ctimeNs !== opened.ctimeNs) throw new Error();
     return bytes;
   } finally {
     closeSync(fd);

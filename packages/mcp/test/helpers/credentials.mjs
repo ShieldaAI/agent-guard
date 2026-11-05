@@ -54,7 +54,11 @@ export async function credentialFixture(t, { wrongName = false } = {}) {
         counts.calls++; if (controls.hangCall) return;
         counts[message.params.name === 'write' ? 'writes' : 'reads']++;
         result = { content: [{ type: 'text', text: 'Synthetic protected effect completed.' }],
-          ...(controls.reflect === 'result' ? { _meta: { [req.headers.authorization]: 'reflected header as a nested key' } } : {}) };
+          // Deliberately reflect a credential as data to exercise the rejection
+          // boundary. fromEntries defines own properties without setter dispatch.
+          ...(controls.reflect === 'result' ? { _meta: Object.fromEntries([
+            [String(req.headers.authorization), 'reflected header as a nested key'],
+          ]) } : {}) };
       } else throw new Error('Unexpected fixture method');
       json(res, { jsonrpc: '2.0', id: message.id, result });
     })().catch(() => { if (!res.destroyed) { res.writeHead(400); res.end(); } });

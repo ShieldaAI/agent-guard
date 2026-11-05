@@ -12,6 +12,17 @@ if (process.platform !== 'win32') {
     assert.throws(() => read('C:\\workspace', 'selected', 10), /Workspace input/);
   });
 } else {
+  test('Windows workspace roots accept the operating system temporary-directory alias', t => {
+    // Windows runners commonly return a RUNNER~1 ancestor here. Keep that exact
+    // spelling to exercise the public caller's path instead of expanding it first.
+    const root = mkdtempSync(join(tmpdir(), 'guard-win-alias-'));
+    t.after(() => rmSync(root, { recursive: true, force: true }));
+    const bytes = Buffer.from([0, 255, 10, 13, 26]);
+    writeFileSync(join(root, 'selected.bin'), bytes);
+    assert.deepEqual(read(root, 'selected.bin', bytes.length), bytes);
+    assert.deepEqual(read(realpathSync.native(root), 'selected.bin', bytes.length), bytes);
+  });
+
   function fixture(t) {
     const temp = realpathSync.native(mkdtempSync(join(tmpdir(), 'guard-win-input-')));
     t.after(() => rmSync(temp, { recursive: true, force: true }));

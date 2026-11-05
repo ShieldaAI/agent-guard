@@ -298,13 +298,13 @@ export async function evaluateInjectedTrials(config, transport, corpusBytes) {
 }
 
 function readEnrollmentFile(path, maxBytes, privateCorpus = false) {
-  const before = lstatSync(path, { bigint: true });
-  if (!before.isFile() || before.nlink !== 1n || before.size > BigInt(maxBytes)) invalid();
   const fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const info = fstatSync(fd, { bigint: true });
-    if (!info.isFile() || info.nlink !== 1n || info.dev !== before.dev || info.ino !== before.ino ||
-        info.ctimeNs !== before.ctimeNs || info.size !== before.size) invalid();
+    // Validate the opened descriptor before reading, including on hosts without O_NOFOLLOW.
+    const named = lstatSync(path, { bigint: true });
+    if (!info.isFile() || info.nlink !== 1n || info.size > BigInt(maxBytes) || !named.isFile() ||
+        named.dev !== info.dev || named.ino !== info.ino || named.ctimeNs !== info.ctimeNs || named.size !== info.size) invalid();
     if (process.platform !== 'win32' && ((info.mode & (privateCorpus ? 0o077n : 0o022n)) !== 0n ||
         (info.uid !== 0n && info.uid !== BigInt(process.geteuid())))) invalid();
     const bytes = Buffer.alloc(Number(info.size) + 1);
@@ -315,9 +315,9 @@ function readEnrollmentFile(path, maxBytes, privateCorpus = false) {
       length += n;
     }
     const after = fstatSync(fd, { bigint: true });
-    const named = lstatSync(path, { bigint: true });
+    const namedAfter = lstatSync(path, { bigint: true });
     if (BigInt(length) !== info.size || after.ctimeNs !== info.ctimeNs || after.mtimeNs !== info.mtimeNs ||
-        named.dev !== info.dev || named.ino !== info.ino || named.ctimeNs !== info.ctimeNs) invalid();
+        !namedAfter.isFile() || namedAfter.dev !== info.dev || namedAfter.ino !== info.ino || namedAfter.ctimeNs !== info.ctimeNs) invalid();
     return bytes.subarray(0, length);
   } finally { closeSync(fd); }
 }

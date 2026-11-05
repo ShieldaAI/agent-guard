@@ -27,16 +27,17 @@ live provider behavior, physical storage failure and company enrollment retain
 their explicit validation status. The deployment checklist below supports a
 future deployment decision.
 
-## Current candidate
+## Reviewed construction candidate
 
 The [final construction record](validation/project-quality-review-2026-11-05.json)
 records a minimum engineering score of **9.7/10**, 919 passing workspace tests
 and ten browser states. Every category meets the 9.6 target in this rubric.
 
 The [replacement package record](validation/guarded-input-candidate-6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c.json)
-identifies the five npm tarballs and the static viewer. Use the combined
-archive digest in that record to enroll the candidate. The public npm alpha
-and the earlier local archives contain different bytes.
+identifies the five npm tarballs and the static viewer used for construction
+review. Use its digest only when enrolling that exact review candidate. The
+[alpha.3 release](releases/0.1.0-alpha.3.md) has its own source commit, package
+digests and fresh verification; it includes later release-check refinements.
 The replacement archive SHA-256 is
 `58e9a24b7492058cf2e71e3f76beb97500f8b5e99c8b2d8b0069cb7dc1de17a5`.
 

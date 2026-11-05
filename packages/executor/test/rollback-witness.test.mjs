@@ -66,7 +66,7 @@ test('an absent, stale, substituted or shared witness never bootstraps an existi
   rmSync(a.witness);
   assert.throws(() => a.open('resume'), { code: 'STORE_WITNESS_UNAVAILABLE' });
   assert.equal(existsSync(a.witness), false);
-  writeFileSync(a.witness, matching, { mode: 0o600 });
+  writeFileSync(a.witness, matching, { mode: 0o600, flag: 'wx' });
   linkSync(a.witness, a.witness + '-alias');
   assert.throws(() => a.open('resume'), { code: 'STORE_WITNESS_UNAVAILABLE' });
   assert.throws(() => a.open('resume', { rollbackWitness: { mode: 'resume', path: a.database + '-witness' } }), { code: 'STORE_CONFIG_INVALID' });

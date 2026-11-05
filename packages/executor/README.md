@@ -484,8 +484,8 @@ A changed input requires a fresh review. Both the raw Docker launcher and the
 governed tool reject path traversal through symbolic links and hard-linked
 files. On Linux, file capture requires procfs at `/proc`. On Windows, use a
 fixed local drive and Windows PowerShell with permission to compile the
-file-handle helper. The Windows implementation is a candidate profile awaiting
-native runtime verification. Follow the
+file-handle helper. Hosted CI exercises the native file reader; full Windows
+Docker isolation remains a candidate profile requiring deployment verification. Follow the
 [Windows preflight and failure procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/README.md#windows-preflight-and-failure-handling)
 and pass its native file-reader and full platform checks before enabling it.
 The tool applies the executor's budget, forwards cancellation, and retains

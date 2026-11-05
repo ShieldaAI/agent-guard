@@ -100,3 +100,31 @@ test('an unsafe policy directory cannot substitute another signed deployment', {
   symlinkSync('enrolled', join(dir, 'link'));
   denied('link/policy');
 });
+
+test('pilot review input replacement after opening fails before evidence verification', t => {
+  const dir = files(t);
+  const f = createPilotReviewFixture({ policy(p) { p.mode = 'company-pilot'; } });
+  const contents = { policy: JSON.stringify(f.policy), candidate: f.candidateBytes, bundle: JSON.stringify(f.bundle) };
+  for (const [name, bytes] of Object.entries(contents)) writeFileSync(join(dir, name), bytes, { mode: 0o600 });
+  assert.equal(launch(dir, args).status, 0);
+  for (const selected of Object.keys(contents)) {
+    const hook = join(dir, 'replace-after-open.mjs');
+    writeFileSync(hook, `import fs from 'node:fs';
+      import { resolve } from 'node:path'; import { syncBuiltinESMExports } from 'node:module';
+      const original = fs.openSync; let replaced = false;
+      fs.openSync = function(path, ...rest) {
+        const fd = original(path, ...rest);
+        if (!replaced && resolve(String(path)) === resolve(${JSON.stringify(selected)})) {
+          replaced = true;
+          fs.renameSync(path, String(path) + '.original');
+          fs.writeFileSync(path, '{}', { mode: 0o600, flag: 'wx' });
+        }
+        return fd;
+      }; syncBuiltinESMExports();`);
+    const child = spawnSync(process.execPath, ['--import', hook, cli, ...args], { cwd: dir, encoding: 'utf8', timeout: 5_000 });
+    assert.equal(child.status, 1, child.error?.message);
+    assert.equal(child.stdout, '');
+    assert.equal(child.stderr.trim(), readFailure);
+    writeFileSync(join(dir, selected), contents[selected], { mode: 0o600 });
+  }
+});

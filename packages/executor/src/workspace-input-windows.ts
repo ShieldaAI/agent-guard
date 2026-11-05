@@ -87,7 +87,7 @@ public static class GuardWorkspaceInput {
         }
     }
 
-    static FileInfo Inspect(SafeFileHandle file, string expected, bool directory, string selectedComponent) {
+    static FileInfo Inspect(SafeFileHandle file, ref string expected, bool directory, string selectedComponent) {
         FileInfo info;
         Ensure(!file.IsInvalid && GetFileType(file) == 1); // FILE_TYPE_DISK
         Ensure(GetFileInformationByHandle(file, out info));
@@ -96,9 +96,19 @@ public static class GuardWorkspaceInput {
         var actual = new StringBuilder(32768);
         uint size = GetFinalPathNameByHandleW(file, actual, (uint)actual.Capacity, 0);
         Ensure(size != 0 && size < actual.Capacity);
-        // Normalized names reject short-name, mounted-path and alternate-spelling aliases.
+        // Windows can supply a short-name ancestor in os.tmpdir(). Resolve that
+        // workspace-root spelling from the handle we already opened and retained.
+        // Its canonical name must still be a direct child of the pinned parent.
+        // Selected relative components keep their exact spelling checks below.
         string normalized = actual.ToString();
-        Ensure(String.Equals(normalized, expected, StringComparison.OrdinalIgnoreCase));
+        if (!String.Equals(normalized, expected, StringComparison.OrdinalIgnoreCase)) {
+            Ensure(selectedComponent == null && directory && expected.Length > 7);
+            int prefixLength = expected.LastIndexOf('\\') + 1;
+            Ensure(normalized.Length > prefixLength &&
+                normalized.StartsWith(expected.Substring(0, prefixLength), StringComparison.OrdinalIgnoreCase) &&
+                normalized.IndexOf('\\', prefixLength) == -1);
+        }
+        expected = normalized;
         if (selectedComponent != null) Ensure(normalized.EndsWith("\\" + selectedComponent, StringComparison.Ordinal));
         return info;
     }
@@ -132,7 +142,7 @@ public static class GuardWorkspaceInput {
             var current = CreateFileW(expected, Synchronize | ReadAttributes | 0x20, ShareRead, IntPtr.Zero,
                 3, 0x02000000 | OpenReparsePoint, IntPtr.Zero); // OPEN_EXISTING | BACKUP_SEMANTICS
             held.Add(current);
-            Inspect(current, expected, true, null);
+            Inspect(current, ref expected, true, null);
             for (int i = 0; i < rootParts.Length + selected.Length; i++) {
                 bool workspacePart = i < rootParts.Length;
                 string component = workspacePart ? rootParts[i] : selected[i - rootParts.Length];
@@ -140,7 +150,7 @@ public static class GuardWorkspaceInput {
                 current = OpenChild(current, component, directory);
                 held.Add(current);
                 expected = expected.TrimEnd('\\') + "\\" + component;
-                FileInfo before = Inspect(current, expected, directory, workspacePart ? null : component);
+                FileInfo before = Inspect(current, ref expected, directory, workspacePart ? null : component);
                 if (directory) continue;
                 Ensure(before.SizeHigh == 0 && before.SizeLow <= limit);
                 var bytes = new byte[(int)before.SizeLow];
@@ -152,7 +162,7 @@ public static class GuardWorkspaceInput {
                         offset += count;
                     }
                     Ensure(stream.ReadByte() == -1);
-                    FileInfo after = Inspect(current, expected, false, component);
+                    FileInfo after = Inspect(current, ref expected, false, component);
                     Ensure(after.SizeLow == before.SizeLow && after.SizeHigh == 0 &&
                         after.WriteLow == before.WriteLow && after.WriteHigh == before.WriteHigh);
                 }
