@@ -3,6 +3,7 @@ export { ManagedMcpConnection, type ManagedMcpOptions, type ManagedMcpRegistrati
 export { McpBoundaryError, compileBoundedSchema } from './boundary.js';
 export { createRestrictedMcpHttpTransport, type RestrictedMcpHttpOptions } from './http.js';
 export { assertVerifiedMcpClaims, type VerifiedMcpClaims, type McpAuthorizationPolicy } from './authorization.js';
+export { VerifiedMcpHttpSession, type VerifiedMcpHttpOptions, type McpJwtAuthorization } from './credentials.js';
 export type { McpConnectionInventory, McpInventoryIdentity, McpInventoryOperation, McpConnectionState, McpMetadataState } from './inventory.js';
 
 /** A JSON tool definition obtained from tools/list. All fields are fingerprinted. */

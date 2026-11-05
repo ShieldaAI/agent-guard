@@ -1,0 +1,76 @@
+{
+  "kind": "local-disposable-linux-vm-witness-power-cut",
+  "version": 2,
+  "status": "passed",
+  "observedAtUtc": "2026-11-05T17:30:03+00:00",
+  "candidate": {
+    "sourceSha256": "a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9",
+    "archiveSha256": "ea629366886c0d9b2320f037064abd5327495e0f238910ee2ab4424792009d5e",
+    "publicPackagingRecord": "docs/validation/guarded-input-candidate-a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9.json",
+    "publicPackagingRecordSha256": "8153833e23eb3d286c3f9252f24a424794f5a935c211cafe9b1ee0e1c657c640",
+    "corePackageSha256": "5fef037fe969469f1eac210207bcff96c884153c694e2abd0e55274732053f62",
+    "executorPackageSha256": "29df877ef3f044903ea6bfaf7a2cafe29cb1d2ebcf8d467d800bd2b88a3bbfad",
+    "installation": "Verified the combined archive and all six member artifact hashes inside the fresh guest. Installed the core and executor npm tarballs there and supplied the ipaddr.js dependency from the local npm cache using its workspace-locked SHA-512."
+  },
+  "environment": {
+    "host": "macOS 27.0.1 arm64",
+    "hypervisor": "Apple Virtualization.framework via Lima 2.2.1, vz plain mode",
+    "guest": "Ubuntu 24.04.4 LTS arm64",
+    "linux": "6.8.0-117-generic",
+    "node": "v22.13.0",
+    "sqlite": "3.47.2",
+    "nodeDistributionSha256": "5de54a12983d0de6ba23597d4d0194e64933e26b0f04a469db3be9c3e18b6b2b",
+    "cachedGuestImageGzipSha256": "1fc0354f4f99734ce3886628cc7af8b0437c1a1d391b126bd09cba0df35ee53f",
+    "storage": "Separate owner-only ledger and witness directories on one guest ext4 root filesystem and private virtual disk. Root mount flags were rw,relatime,discard,errors=remount-ro,commit=30.",
+    "hostMounts": false
+  },
+  "method": [
+    "Create an isolated guest from a locally cached image. In each fresh case create a witnessed ledger and one scoped bearer, close it and sync fixture setup before reopening in resume mode.",
+    "After credential authentication, a ptrace parent intercepts a signal marker just before the public revokeTask call. It stops at the selected journal fd sync, super-journal unlinkat entry or a second marker after revokeTask returns.",
+    "On each checkpoint the host checks the dedicated instance name, private instance directory, hostagent pidfile and socket, and matching VZ PID. It sends SIGKILL to that process and observes SSH termination. It reboots that virtual disk and checks the new kernel boot ID differs.",
+    "Open the original ledger with its witness, close it and independently compare the encrypted payload SHA-256 with the commitment before testing effects. Reopen it and test the original credential and a scoped read. Compare the ledger and witness again after the effect checks."
+  ],
+  "cases": [
+    {
+      "phase": "journal-sync",
+      "checkpoint": "first-journal-sync-entry journal_syncs=1 main_writes=0 witness_writes=0",
+      "vmProcessKilled": true,
+      "guestConnectionInterrupted": true,
+      "freshBootId": true,
+      "revoked": false,
+      "effects": 1,
+      "matchedBeforeEffects": true,
+      "matchedWitness": true
+    },
+    {
+      "phase": "superjournal-delete",
+      "checkpoint": "superjournal-unlink-entry journal_syncs=4 main_writes=1 witness_writes=1",
+      "vmProcessKilled": true,
+      "guestConnectionInterrupted": true,
+      "freshBootId": true,
+      "revoked": false,
+      "effects": 1,
+      "matchedBeforeEffects": true,
+      "matchedWitness": true
+    },
+    {
+      "phase": "after-return",
+      "checkpoint": "after-return journal_syncs=6 main_writes=1 witness_writes=1",
+      "vmProcessKilled": true,
+      "guestConnectionInterrupted": true,
+      "freshBootId": true,
+      "revoked": true,
+      "effects": 0,
+      "matchedBeforeEffects": true,
+      "matchedWitness": true
+    }
+  ],
+  "runAccounting": {
+    "completedPowerCuts": 3,
+    "excludedPowerCuts": 0,
+    "checkpointCaptureRetries": 0
+  },
+  "interpretation": "Both interrupted pre-commit revocations rolled back and each authorized one scoped read. The revocation whose API had returned remained effective and authorized zero reads.",
+  "scope": "Three selected Linux guest power interruptions on this hypervisor and filesystem. The host and physical storage remained powered. Independent disks, physical power loss, Windows, and joint restoration of both the ledger and witness require other evidence.",
+  "cleanup": "Deleted the dedicated Lima guest, its disk and its private temporary host directory. The separate shared Colima guest was untouched."
+}

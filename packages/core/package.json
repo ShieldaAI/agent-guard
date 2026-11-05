@@ -1,7 +1,7 @@
 {
   "name": "@shieldaai/agent-guard",
-  "version": "0.1.0-alpha.2",
-  "description": "A local execution boundary for registered agent tools, scoped grants, approvals and budgets.",
+  "version": "0.1.0-alpha.3",
+  "description": "TypeScript authorization for AI agent tool calls with scoped resources, tenant checks, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -35,11 +35,14 @@
     "url": "https://github.com/ShieldaAI/agent-guard/issues"
   },
   "keywords": [
-    "agents",
+    "ai-agents",
     "security",
-    "mcp",
-    "guardrails",
-    "tool-authorization"
+    "typescript",
+    "nodejs",
+    "tool-authorization",
+    "access-control",
+    "human-in-the-loop",
+    "budgets"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",

@@ -6,19 +6,14 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import {
-  constants,
-  closeSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
-  readSync,
-  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { readWorkspaceInput } from './workspace-input.js';
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import {
@@ -31,6 +26,13 @@ import {
   type ToolDefinition,
 } from "@shieldaai/agent-guard";
 import type { DurableExecutor, TaskCredential } from "./executor.js";
+import { ExecutorError } from "./store.js";
+import {
+  BuildProvenancePolicy,
+  type BuildArtifactPolicy,
+  type BuildAttestationEnvelope,
+  type BuildProvenanceEvidence,
+} from "./build-provenance.js";
 import {
   runDockerSandbox,
   validateSandboxProfile,
@@ -40,7 +42,11 @@ import {
 
 export type ArtifactSensitivity = "public" | "sensitive";
 export interface ArtifactPayload {
-  schemaVersion: 1;
+  schemaVersion: 1 | 2;
+  /** Version 2 binds every receipt, including local derivatives, to the enrolled policy. */
+  buildPolicySha256?: string;
+  /** Present only on an externally attested build root. */
+  buildProvenance?: BuildProvenanceEvidence;
   keyId: string;
   artifactId: string;
   version: number;
@@ -80,12 +86,30 @@ export interface GovernedSandboxOptions extends SandboxOptions {
   inputReceipts?: readonly SignedArtifactEnvelope[];
   origin: string;
 }
+type FileDigest = { path: string; sha256: string };
+// Only the registered tool supplies this check; direct host administration has no prepared action.
+const checkStagedInputVersion = Symbol("checkStagedInputVersion");
+type RegisteredSandboxOptions = GovernedSandboxOptions & {
+  [checkStagedInputVersion]: (files: FileDigest[]) => void;
+};
 const MAX_BYTES = 64 * 1024 * 1024;
 const SIDECAR = ".agent-guard-provenance.json";
 const hash = (bytes: Uint8Array) =>
   createHash("sha256").update(bytes).digest("hex");
 function fail(): never {
   throw new Error("Artifact provenance validation failed");
+}
+function requireAttestation(): never {
+  throw new ExecutorError("ARTIFACT_ATTESTATION_REQUIRED");
+}
+const receiptFields = [
+  "artifactId", "bytes", "issuedAt", "keyId", "kind", "lineage", "lineageTaskIds",
+  "origin", "path", "schemaVersion", "sensitivity", "sha256", "sourceTaskId",
+  "tenantId", "trust", "version",
+];
+function exactFields(value: object, fields: readonly string[]): boolean {
+  const keys = Object.keys(value);
+  return keys.length === fields.length && fields.every((field) => Object.hasOwn(value, field));
 }
 function text(value: unknown, max = 512): string {
   if (
@@ -141,76 +165,42 @@ function decode(value: string): Buffer {
 function union(values: readonly string[]): string[] {
   return list([...new Set(values)]);
 }
-function readInput(root: string, name: string, maximum: number): Buffer {
-  let current = root;
-  const parts = path(name).split("/");
-  for (let index = 0; index < parts.length; index++) {
-    if (!readdirSync(current).includes(parts[index]!)) fail();
-    current = join(current, parts[index]!);
-    const info = lstatSync(current);
-    if (
-      info.isSymbolicLink() ||
-      (index < parts.length - 1
-        ? !info.isDirectory()
-        : !info.isFile() || info.nlink !== 1)
-    )
-      fail();
-  }
-  const before = lstatSync(current);
-  if (before.size > maximum) fail();
-  const fd = openSync(
-    current,
-    constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-  );
-  try {
-    const opened = fstatSync(fd);
-    if (
-      !opened.isFile() ||
-      opened.nlink !== 1 ||
-      opened.dev !== before.dev ||
-      opened.ino !== before.ino ||
-      opened.size !== before.size
-    )
-      fail();
-    const bytes = Buffer.alloc(opened.size + 1);
-    let offset = 0;
-    while (offset < bytes.length) {
-      const read = readSync(fd, bytes, offset, bytes.length - offset, null);
-      if (!read) break;
-      offset += read;
-    }
-    if (offset !== opened.size || fstatSync(fd).size !== opened.size) fail();
-    return bytes.subarray(0, offset);
-  } finally {
-    closeSync(fd);
-  }
-}
-
 /** Host-only signing authority. Store its stable random key outside every agent and guest environment. */
 export class ArtifactBroker {
   readonly #key: Buffer;
   readonly #keyId: string;
   readonly #clock: () => number;
+  readonly #buildPolicy: BuildProvenancePolicy | undefined;
   #closed = false;
   constructor(options: {
     key: Uint8Array;
     keyId: string;
     clock?: () => number;
+    buildPolicy?: BuildArtifactPolicy;
   }) {
     if (!(options.key instanceof Uint8Array) || options.key.byteLength !== 32)
       fail();
     this.#key = Buffer.from(options.key);
     this.#keyId = text(options.keyId);
     this.#clock = options.clock ?? Date.now;
+    this.#buildPolicy = options.buildPolicy === undefined
+      ? undefined : new BuildProvenancePolicy(options.buildPolicy);
+  }
+  get buildPolicySha256(): string | undefined {
+    return this.#buildPolicy?.digest;
   }
   close(): void {
     this.#key.fill(0);
     this.#closed = true;
   }
+  /** Check host authority before reading inputs or starting work, including commands with no inputs. */
+  assertOpen(): void {
+    if (this.#closed) throw new ExecutorError("ARTIFACT_BROKER_CLOSED");
+  }
   #signature(payload: ArtifactPayload): Buffer {
-    if (this.#closed) fail();
+    this.assertOpen();
     return createHmac("sha256", this.#key)
-      .update("agent-guard-artifact-v1\0")
+      .update(payload.schemaVersion === 2 ? "agent-guard-artifact-v2\0" : "agent-guard-artifact-v1\0")
       .update(canonicalJson(payload as unknown as Json))
       .digest();
   }
@@ -225,6 +215,7 @@ export class ArtifactBroker {
       | "bytes"
       | "issuedAt"
       | "trust"
+      | "buildPolicySha256"
     >,
     executor?: DurableExecutor,
   ): SignedArtifactEnvelope {
@@ -232,7 +223,8 @@ export class ArtifactBroker {
     if (!Number.isSafeInteger(issuedAt) || issuedAt < 0) fail();
     const payload: ArtifactPayload = {
       ...fields,
-      schemaVersion: 1,
+      schemaVersion: this.#buildPolicy ? 2 : 1,
+      ...(this.#buildPolicy ? { buildPolicySha256: this.#buildPolicy.digest } : {}),
       keyId: this.#keyId,
       artifactId: randomUUID(),
       sha256: hash(bytes),
@@ -255,6 +247,8 @@ export class ArtifactBroker {
     origin: string;
     sensitivity?: ArtifactSensitivity;
   }): SignedArtifactEnvelope {
+    this.assertOpen();
+    if (this.#buildPolicy) requireAttestation();
     const sensitivity = options.sensitivity ?? "sensitive";
     if (sensitivity !== "public" && sensitivity !== "sensitive") fail();
     return this.#sign(boundedBytes(options.content), {
@@ -269,6 +263,47 @@ export class ArtifactBroker {
       version: 1,
     });
   }
+  /** Verify external build evidence against host enrollment before minting a sensitive root receipt. */
+  admitBuildArtifact(options: {
+    content: Uint8Array;
+    path: string;
+    tenantId: string;
+    attestation: BuildAttestationEnvelope;
+  }): SignedArtifactEnvelope {
+    this.assertOpen();
+    if (!this.#buildPolicy) requireAttestation();
+    const name = path(options.path);
+    const tenantId = text(options.tenantId);
+    const bytes = boundedBytes(options.content);
+    const buildProvenance = this.#buildPolicy.verify({
+      tenantId, path: name, sha256: hash(bytes), attestation: options.attestation,
+    });
+    return this.#sign(bytes, {
+      path: name, tenantId, origin: "verified-build", sensitivity: "sensitive",
+      kind: "file", sourceTaskId: null, lineageTaskIds: [], lineage: [],
+      version: 1, buildProvenance,
+    });
+  }
+  #verifyReceiptProfile(payload: ArtifactPayload): void {
+    if (!this.#buildPolicy) {
+      if (payload.schemaVersion !== 1 || !exactFields(payload, receiptFields)) fail();
+      return;
+    }
+    if (payload.schemaVersion !== 2 || payload.buildPolicySha256 !== this.#buildPolicy.digest) fail();
+    const fields = [...receiptFields, "buildPolicySha256"];
+    if (payload.sourceTaskId === null) {
+      const evidence = payload.buildProvenance;
+      if (!evidence || typeof evidence !== "object" ||
+          !exactFields(evidence, ["policySha256", "statementSha256", "signerSha256"]) ||
+          evidence.policySha256 !== this.#buildPolicy.digest ||
+          typeof evidence.statementSha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidence.statementSha256) ||
+          typeof evidence.signerSha256 !== "string" || !/^[a-f0-9]{64}$/.test(evidence.signerSha256) ||
+          payload.kind !== "file" || payload.version !== 1 || payload.sensitivity !== "sensitive" ||
+          payload.origin !== "verified-build") fail();
+      fields.push("buildProvenance");
+    }
+    if (!exactFields(payload, fields)) fail();
+  }
   /** Validate signed data without creating tasks or writing files. Source receipts require the owning executor. */
   verifyArtifact(
     envelope: SignedArtifactEnvelope,
@@ -276,6 +311,7 @@ export class ArtifactBroker {
     tenantId: string,
     executor?: DurableExecutor,
   ): Readonly<ArtifactPayload> {
+    this.assertOpen();
     const value = snapshot(envelope);
     if (
       !value ||
@@ -284,15 +320,9 @@ export class ArtifactBroker {
     )
       fail();
     const p = value.payload;
+    if (!p || typeof p !== "object") fail();
+    this.#verifyReceiptProfile(p);
     if (
-      !p ||
-      typeof p !== "object" ||
-      Object.keys(p).sort().join(",") !==
-        "artifactId,bytes,issuedAt,keyId,kind,lineage,lineageTaskIds,origin,path,schemaVersion,sensitivity,sha256,sourceTaskId,tenantId,trust,version"
-    )
-      fail();
-    if (
-      p.schemaVersion !== 1 ||
       p.keyId !== this.#keyId ||
       p.trust !== "untrusted" ||
       !["file", "stdout", "stderr"].includes(p.kind) ||
@@ -343,15 +373,21 @@ export class ArtifactBroker {
     options: TaskOptions,
     inputs: readonly ArtifactInput[],
   ): TaskCredential {
-    if (!Array.isArray(inputs) || !inputs.length || inputs.length > 256) fail();
-    const payloads = inputs.map((input) =>
-      this.verifyArtifact(
-        input.envelope,
-        decode(input.contentBase64),
-        options.tenantId,
-        executor,
-      ),
-    );
+    this.assertOpen();
+    const task = immutableJson(options) as unknown as TaskOptions;
+    if (!Array.isArray(inputs)) fail();
+    const count = Object.getOwnPropertyDescriptor(inputs, "length")?.value;
+    if (!Number.isSafeInteger(count) || count < 1 || count > 256) fail();
+    const payloads: Readonly<ArtifactPayload>[] = [];
+    // Array.map skips holes. A sparse batch must never create an unlabeled task.
+    for (let index = 0; index < count; index++) {
+      const entry = Object.getOwnPropertyDescriptor(inputs, index);
+      if (!entry || !("value" in entry) || !entry.value || typeof entry.value !== "object") fail();
+      const envelope = Object.getOwnPropertyDescriptor(entry.value, "envelope");
+      const content = Object.getOwnPropertyDescriptor(entry.value, "contentBase64");
+      if (!envelope || !("value" in envelope) || !content || !("value" in content)) fail();
+      payloads.push(this.verifyArtifact(envelope.value, decode(content.value), task.tenantId, executor));
+    }
     const sources = union(
       payloads.flatMap((p) =>
         p.sourceTaskId === null ? [] : [p.sourceTaskId],
@@ -364,7 +400,7 @@ export class ArtifactBroker {
         p.sensitivity !== "public" ||
         p.lineageTaskIds.some((id) => executor.assertProvenance(id).sensitive),
     );
-    return executor.createTask(options, {
+    return executor.createTask(task, {
       sensitive,
       ...(sources[0] ? { sourceTaskId: sources[0] } : {}),
     });
@@ -374,6 +410,7 @@ export class ArtifactBroker {
     taskId: string,
     options: GovernedSandboxOptions,
   ): Promise<GovernedSandboxResult> {
+    this.assertOpen();
     const initial = executor.assertProvenance(taskId);
     const profile = validateSandboxProfile(options.profile);
     text(options.origin);
@@ -388,6 +425,7 @@ export class ArtifactBroker {
       fail();
     const receipts = snapshot(options.inputReceipts ?? []);
     if (!Array.isArray(receipts) || receipts.length > names.length) fail();
+    if (this.#buildPolicy && receipts.length !== names.length) requireAttestation();
     const receiptNames = receipts.map((receipt) => path(receipt.payload.path));
     if (
       new Set(receiptNames).size !== receiptNames.length ||
@@ -409,9 +447,17 @@ export class ArtifactBroker {
       const parents: Readonly<ArtifactPayload>[] = [];
       const rawInputs: { name: string; bytes: Buffer }[] = [];
       const inputs: SignedArtifactEnvelope[] = [...receipts];
-      for (const name of names) {
-        const bytes = readInput(root, name, remaining);
+      const stagedInputs = names.map((name) => {
+        const bytes = readWorkspaceInput(root, name, remaining);
         remaining -= bytes.length;
+        return { name, bytes };
+      });
+      // Hash and copy the same private buffers. A second read of the source workspace
+      // here would let a file change between approval validation and guest staging.
+      (options as Partial<RegisteredSandboxOptions>)[checkStagedInputVersion]?.(
+        stagedInputs.map(({ name, bytes }) => ({ path: name, sha256: hash(bytes) })),
+      );
+      for (const { name, bytes } of stagedInputs) {
         const receipt = receipts.find(
           (candidate) => candidate.payload.path === name,
         );
@@ -434,6 +480,7 @@ export class ArtifactBroker {
             ),
         );
       // Persist taint before any bytes or command reach the shell, including failed executions.
+      this.assertOpen();
       if (sensitive) executor.markSensitive(taskId);
       const lineageTaskIds = union(executor.provenanceTaskIds(taskId));
       if (
@@ -470,14 +517,16 @@ export class ArtifactBroker {
       );
       const version = 1 + Math.max(0, ...parents.map((p) => p.version));
       if (version > 1_000_000) fail();
-      const result = await runDockerSandbox({
+      const launch = {
         profile,
         workspace: staging,
         inputFiles: names,
         command: options.command,
         ...(options.exportFiles ? { exportFiles: options.exportFiles } : {}),
         ...(options.signal ? { signal: options.signal } : {}),
-      });
+      };
+      this.assertOpen();
+      const result = await runDockerSandbox(launch);
       for (const source of lineageTaskIds) {
         const state = executor.assertProvenance(source);
         if (state.tenantId !== initial.tenantId) fail();
@@ -523,6 +572,7 @@ export class ArtifactBroker {
     approved: { path: string; sha256: string }[],
     destination: string,
   ): string[] {
+    this.assertOpen();
     if (!Array.isArray(approved) || !approved.length || approved.length > 256)
       fail();
     const expectedTenant = output.stdout.payload.tenantId;
@@ -618,14 +668,16 @@ export interface SandboxToolOptions {
 }
 /** Register and approve this definition to place every shell invocation behind durable admission. */
 export function createSandboxTool(options: SandboxToolOptions): ToolDefinition {
+  const broker = options.broker;
+  broker.assertOpen();
   const executor = options.executor,
-    broker = options.broker,
     onResult = options.onResult;
   if (typeof onResult !== "function") fail();
   const config = snapshot({
     name: text(options.name),
     profile: validateSandboxProfile(options.profile),
     workspace: resolve(options.workspace),
+    ...(broker.buildPolicySha256 ? { buildPolicySha256: broker.buildPolicySha256 } : {}),
     inputFiles: list(options.inputFiles).map(path),
     exportFiles: list(options.exportFiles ?? []).map(path),
     tenantId: text(options.tenantId),
@@ -640,6 +692,11 @@ export function createSandboxTool(options: SandboxToolOptions): ToolDefinition {
     typeof config.requiresApproval !== "boolean"
   )
     fail();
+  if (config.buildPolicySha256) {
+    const selected = new Set(config.inputReceipts.map((receipt) => receipt.payload.path));
+    if (selected.size !== config.inputReceipts.length || selected.size !== config.inputFiles.length ||
+        config.inputFiles.some((name) => !selected.has(name))) requireAttestation();
+  }
   const configDigest = digestJson(config as unknown as Json);
   const versionKey = randomBytes(32);
   function parse(value: Json): Json {
@@ -666,7 +723,11 @@ export function createSandboxTool(options: SandboxToolOptions): ToolDefinition {
       throw new GuardError("ARGUMENT_INVALID");
     return { command: argv };
   }
+  function versionForFiles(files: FileDigest[]): string {
+    return `hmac-sha256:${createHmac("sha256", versionKey).update(canonicalJson({ configDigest, files })).digest("hex")}`;
+  }
   function resourceVersion(): string {
+    broker.assertOpen();
     if (
       lstatSync(config.workspace).isSymbolicLink() ||
       !lstatSync(config.workspace).isDirectory() ||
@@ -675,11 +736,16 @@ export function createSandboxTool(options: SandboxToolOptions): ToolDefinition {
       fail();
     let remaining = config.profile.maxInputBytes;
     const files = config.inputFiles.map((name) => {
-      const bytes = readInput(config.workspace, name, remaining);
+      const bytes = readWorkspaceInput(config.workspace, name, remaining);
       remaining -= bytes.length;
+      if (config.buildPolicySha256) {
+        const receipt = config.inputReceipts.find((item) => item.payload.path === name);
+        if (!receipt) requireAttestation();
+        broker.verifyArtifact(receipt, bytes, config.tenantId, executor);
+      }
       return { path: name, sha256: hash(bytes) };
     });
-    return `hmac-sha256:${createHmac("sha256", versionKey).update(canonicalJson({ configDigest, files })).digest("hex")}`;
+    return versionForFiles(files);
   }
   const logs = (value: string, receipt: SignedArtifactEnvelope): Json => {
     const bytes = Buffer.from(value);
@@ -734,26 +800,26 @@ export function createSandboxTool(options: SandboxToolOptions): ToolDefinition {
       const parsed = parse(args) as { command: string[] };
       if (
         context.task.tenantId !== config.tenantId ||
-        context.action.resourceId !== config.resourceId ||
-        context.action.resourceVersion !== resourceVersion()
+        context.action.resourceId !== config.resourceId
       )
         throw new GuardError("TOOL_CHANGED");
       if (context.signal.aborted) throw new GuardError("EXECUTION_ABORTED");
-      const output = await broker.runGovernedSandbox(
-        executor,
-        context.task.id,
-        {
-          profile: config.profile,
-          workspace: config.workspace,
-          inputFiles: config.inputFiles,
-          exportFiles: config.exportFiles,
-          command: parsed.command,
-          origin: config.origin,
-          inputClassification: config.inputClassification,
-          inputReceipts: config.inputReceipts,
-          signal: context.signal,
+      const launch: RegisteredSandboxOptions = {
+        profile: config.profile,
+        workspace: config.workspace,
+        inputFiles: config.inputFiles,
+        exportFiles: config.exportFiles,
+        command: parsed.command,
+        origin: config.origin,
+        inputClassification: config.inputClassification,
+        inputReceipts: config.inputReceipts,
+        signal: context.signal,
+        [checkStagedInputVersion](files) {
+          if (versionForFiles(files) !== context.action.resourceVersion)
+            throw new GuardError("TOOL_CHANGED");
         },
-      );
+      };
+      const output = await broker.runGovernedSandbox(executor, context.task.id, launch);
       if (context.signal.aborted) throw new GuardError("EXECUTION_ABORTED");
       const resultId = text(
         await onResult(output, { taskId: context.task.id }),

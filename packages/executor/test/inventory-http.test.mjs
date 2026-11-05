@@ -123,11 +123,15 @@ test('oversized output fails as a complete safe error before any snapshot bytes 
 
 test('synchronous generation overruns return timeout, never a late successful snapshot', async t => {
   const { value } = executor(t);
-  const service = await observer(t, value, { requestTimeoutMs: 25 });
+  const timeoutMs = 5000;
+  let elapsed = 0;
+  t.mock.method(performance, 'now', () => elapsed);
+  const service = await observer(t, value, { requestTimeoutMs: timeoutMs });
   const original = value.inventorySnapshot.bind(value);
   const slow = t.mock.method(value, 'inventorySnapshot', scope => {
     const snapshot = original(scope);
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 60);
+    // Advance time during generation without tying the next successful request to host scheduling.
+    elapsed += timeoutMs + 1;
     return snapshot;
   });
   const result = await post(service);

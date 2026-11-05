@@ -1,5 +1,9 @@
 # Open-source agent security implementation status
 
+For the 5 November Agent Guard working checkout, use the
+[protection assessment and release gates](protection-assessment.md).
+The cross-project counts and outstanding work below are a historical snapshot.
+
 Snapshot: 28 October 2026. The changes are local, uncommitted and unpublished on
 `codex/agent-security-hardening` in all four repositories. Existing licenses remain
 Apache-2.0 for Agent Guard/Security Watch and MIT for both SafeCall implementations.
@@ -41,26 +45,35 @@ Security Watch's pinned PyPI comparison dependency requires **Node 24.10 or newe
 its installed consumer was also checked on 24.10.0. The new executor requires Node
 22.13 or newer. Existing package versions were not republished.
 
-## Remaining gates and boundaries
+## Deployment validation and future scope
 
-The entire roadmap and first protected release are **not complete**. The following
-work must be finished before claiming the planned deployment boundary:
+The current defensive-project review is in the [protection assessment](protection-assessment.md).
+The following work belongs to deployment validation and the broader roadmap.
 
-1. Run and retain native Linux and Windows/WSL2 host evidence. The installed workflows
-   require matching host OS, a pinned image, zero skips and named runtime cases, but
-   this session validated only macOS with a Linux VM. Provision private Windows ACLs
-   and test VM restart/reconnect and recovery on each platform.
-2. Finish one complete networked coding-client workflow and an isolated untrusted
-   MCP-server lifecycle. The governed shell, model broker and managed MCP connection
-   are implemented components; a supplied MCP transport is still a host responsibility.
-   The sandbox deliberately has no direct network access or provider credentials.
-3. Complete an independent security review and pilot measurements. Internal agent
-   review and automated tests are not that release review. Establish retention,
-   backup/key rotation and operational reconciliation procedures for real deployments.
-4. Extend cryptographic artifact admission beyond pinned sandbox images and signed
-   local content receipts. Watch records operator-declared signature/attestation
-   evidence; it does not perform cryptographic verification or independently observe
-   running deployments. A patched version alone does not resolve configuration risk.
+1. Keep runtime validation tied to the intended host. The November review records
+   44 passing checks each on macOS arm64 and a Linux arm64 process inside Colima,
+   with the native Linux Docker socket. A separate disposable Linux VM passed
+   three shutdown/recovery cases. Native Windows/WSL2 execution and physical
+   storage failure remain unverified. Provision private Windows ACLs and run
+   the [platform procedure](../deployment/README.md) before enabling that profile.
+2. A complete networked coding client is future integration work. The governed
+   shell, model broker, managed MCP lifecycle and isolated MCP fixture are
+   implemented and tested. The host supplies its production MCP transport and
+   controls access to credentials and outbound destinations.
+3. For a deployment decision, collect pilot measurements and review the enrolled
+   integration. Establish retention, backup/key rotation and operational
+   reconciliation procedures for that environment.
+   The [offline pilot review gate](guides/pilot-review.md) binds both enrolled
+   signatures, the actual build and a specific deployment boundary to the evidence.
+   Its rehearsal uses disposable keys and measurements.
+4. Enroll the company's actual builders, signing keys and release manifests.
+   The executor now verifies external file bytes against a host-pinned Ed25519
+   DSSE build attestation and enforces the resulting receipts on protected task
+   imports and selected sandbox inputs. Container images use the separate
+   pinned-digest launch profile. Independent review of the deployed builders,
+   container image supply chain and host's import paths remains open. Watch's
+   inventory records operator-declared signature and attestation evidence.
+   See the [build artifact admission profile](guides/build-artifact-admission.md).
 5. Implement the later distributed-worker milestone, including shared transactions,
    worker fencing, remote delegation and partition/recovery tests. The executor
    intentionally rejects a second SQLite owner; independent local ledgers are not

@@ -91,6 +91,24 @@ test('unknown server requests get errors, with no advertised sampling, elicitati
   assert.equal(f.effects.length, 0);
 });
 
+test('compact local references cannot amplify a schema beyond the validator input limit', () => {
+  const schema = { type: 'object', properties: Object.fromEntries(Array.from({ length: 30 }, (_, i) => ['field' + i, { $ref: '#/definitions/value' }])),
+    definitions: { value: { enum: ['x'.repeat(5000)] } } };
+  assert(Buffer.byteLength(JSON.stringify(schema)) < 8192);
+  assert.throws(() => compileBoundedSchema(schema), { code: 'JSON_LIMIT' });
+  schema.definitions.value.enum = ['ok'];
+  const validate = compileBoundedSchema(schema);
+  assert.equal(validate({ field10: 'ok' }), true); assert.equal(validate({ field10: 'other' }), false);
+});
+
+test('in-process schema and argument proxies are rejected without executing traps', () => {
+  let traps = 0;
+  const value = new Proxy({}, { getPrototypeOf() { traps++; return null; }, ownKeys() { traps++; return []; } });
+  assert.throws(() => compileBoundedSchema(value), { code: 'INVALID_JSON' });
+  assert.equal(compileBoundedSchema({ type: 'object' })(value), false);
+  assert.equal(traps, 0);
+});
+
 test('a metadata change during an in-flight call discards its result and requires review', { timeout: 5_000 }, async t => {
   let release; const paused = new Promise(resolve => { release = resolve; });
   let entered; const started = new Promise(resolve => { entered = resolve; });

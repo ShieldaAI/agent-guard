@@ -1,0 +1,8 @@
+{"version": 2, "width": 100, "height": 24, "title": "Agent Guard annotated fixture replay", "env": {"TERM": "xterm-256color"}}
+[0, "o", "\u001b[2J\u001b[HOne task, one resource\r\n\r\n$ node tool-permissions.mjs\r\n\r\n"]
+[8, "o", "\u001b[2J\u001b[HAn ungranted resource is denied\r\n\r\n$ node tool-permissions.mjs\r\nDENIED ungranted resource: GRANT_DENIED; handler calls: 0\r\n"]
+[20, "o", "\u001b[2J\u001b[HA grant still needs the required approval\r\n\r\n$ node tool-permissions.mjs\r\nDENIED ungranted resource: GRANT_DENIED; handler calls: 0\r\nDENIED without approval: APPROVAL_REQUIRED; handler calls: 0\r\n"]
+[30, "o", "\u001b[2J\u001b[HThe approved action runs once\r\n\r\n$ node tool-permissions.mjs\r\nDENIED ungranted resource: GRANT_DENIED; handler calls: 0\r\nDENIED without approval: APPROVAL_REQUIRED; handler calls: 0\r\nALLOWED approved record-A: archived; handler calls: 1\r\n"]
+[44, "o", "\u001b[2J\u001b[HReplaying the same action is denied\r\n\r\n$ node tool-permissions.mjs\r\nDENIED ungranted resource: GRANT_DENIED; handler calls: 0\r\nDENIED without approval: APPROVAL_REQUIRED; handler calls: 0\r\nALLOWED approved record-A: archived; handler calls: 1\r\nDENIED replay: ACTION_USED; handler calls: 1\r\n"]
+[56, "o", "\u001b[2J\u001b[HTry the published package\r\n\r\n$ node tool-permissions.mjs\r\nDENIED ungranted resource: GRANT_DENIED; handler calls: 0\r\nDENIED without approval: APPROVAL_REQUIRED; handler calls: 0\r\nALLOWED approved record-A: archived; handler calls: 1\r\nDENIED replay: ACTION_USED; handler calls: 1\r\nAll assertions passed. In-process fixtures; no API key or external side effects.\r\n"]
+[64, "o", "\r\n"]

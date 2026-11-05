@@ -40,7 +40,8 @@ export interface TaskSnapshot extends TaskIdentity {
   sensitive: boolean; calls: number; concurrent: number; spent: number; reserved: number;
 }
 export type PolicyDecision = 'allow' | 'deny' | 'require_approval';
-export type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>) => PolicyDecision | Promise<PolicyDecision>;
+export type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
+  context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
 export interface GuardOptions { policy?: Policy; secretValues?: readonly string[]; clock?: () => number }
 export interface PreparedAction {
   readonly id: string; readonly digest: string;
@@ -58,6 +59,7 @@ export const GuardErrorCode = Object.freeze({
   SENSITIVE_EGRESS_DENIED: 'SENSITIVE_EGRESS_DENIED', SECRET_EGRESS_DENIED: 'SECRET_EGRESS_DENIED',
   RESOLUTION_FAILED: 'RESOLUTION_FAILED', POLICY_DENIED: 'POLICY_DENIED', POLICY_ERROR: 'POLICY_ERROR',
   POLICY_CHANGED: 'POLICY_CHANGED', POLICY_STATE_CHANGED: 'POLICY_STATE_CHANGED',
+  POLICY_BUSY: 'POLICY_BUSY', POLICY_TIMEOUT: 'POLICY_TIMEOUT', ACTION_APPROVAL_LIMIT: 'ACTION_APPROVAL_LIMIT',
   ACTION_USED: 'ACTION_USED', APPROVAL_REQUIRED: 'APPROVAL_REQUIRED',
   APPROVAL_INVALID: 'APPROVAL_INVALID', APPROVAL_EXPIRED: 'APPROVAL_EXPIRED', APPROVAL_USED: 'APPROVAL_USED',
   CALL_BUDGET_EXCEEDED: 'CALL_BUDGET_EXCEEDED', CONCURRENCY_EXCEEDED: 'CONCURRENCY_EXCEEDED',

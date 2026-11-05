@@ -1,6 +1,10 @@
 # @shieldaai/agent-guard-mcp
 
-Register MCP operations with the same execution boundary used by `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+
+Install with `npm install @shieldaai/agent-guard-mcp@alpha`. The host supplies
+identity, resource resolution and transport policy. For the core API and related
+packages, see the [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
 ## Managed connections
 
@@ -99,6 +103,18 @@ Defaults: 10-second request deadline, four discovery pages, 64 total registry en
 
 This factory does not launch a server, run a shell, open an OAuth URL, discover an issuer, refresh a token or expose a control API. Use a maintained OAuth implementation outside the model-accessible process; verify signatures, issuer, audience/resource, subject, expiry and required scopes before passing scoped credentials. `assertVerifiedMcpClaims(claims, policy, now?)` performs the latter binding checks on **already cryptographically verified** claims, using Unix seconds. It never decodes/authenticates an arbitrary JWT. Never pass merely decoded token contents. A missing/wrong audience is rejected even if the signature was valid. Supply the manager's synchronous `authorize: () => assertVerifiedMcpClaims(verifiedClaims, policy)` callback to recheck expiry/revocation at connection, preparation, discovery and operation dispatch. A thrown error quarantines the connection. Async authorization callbacks are rejected; asynchronous verification belongs in the credential provider before supplying a verified authorization snapshot.
 
+For pre-issued JWT access tokens, `VerifiedMcpHttpSession.connect(options, accessToken)` supplies a maintained `jose` verification boundary and owns the resulting managed session. Enroll an exact HTTPS endpoint, issuer, JWKS URI, resource audience, subject and required scopes. The profile accepts `at+jwt` access tokens with RS256 (or explicitly ES256), never OIDC ID tokens or token-selected key URLs. Use `createRestrictedFetch` from the executor package for actual TLS/DNS enforcement; optional `additionalCaByOrigin` adds trust only for exact enrolled HTTPS origins.
+
+`replaceCredential(nextToken)` invalidates the old session before asynchronous verification, fetches a fresh JWKS and requires renewed metadata/per-call approval. Failed replacement never restores the old token. `refresh()` only refreshes metadata; `revoke()` and `close()` are terminal. Tokens and verified claims have no public getter. Existing sessions do not automatically observe removed issuer keys: host revocation/replacement or expiry ends that authority. Host token acquisition, OAuth discovery/refresh flows and opaque-token introspection remain external. See the [verified credential guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/verified-mcp-credentials.md) for the full contract and real HTTPS, key-rotation, DNS and late-completion tests.
+
+The verified session closes if the peer reflects the exact bearer in a decoded message
+key or string, including discovery descriptions and tool results. An in-flight
+operation can already have had an effect; reconcile its durable status before retrying.
+`ManagedMcpConnection` accepts up to 32 `protectedValues` for hosts that enroll their
+own literal secrets. A peer that receives a bearer can deliberately transform or
+split it. Enroll only an endpoint authorized to hold that credential. Use a trusted
+credential gateway when the underlying workload must never receive the bearer.
+
 If supplying a custom transport, the executor owns its endpoint/redirect rules, byte limits before parsing, credential custody, authenticated management API, subprocess launch policy, sandbox and operating-system network limits. Native hooks alone do not provide host isolation. The manager's trusted identity strings are not substitutes for these controls.
 
 ## Existing single-tool bridge
@@ -166,6 +182,6 @@ Optional `maxCost` reserves a trusted upper bound. `measureCost(result)` can ret
 
 Core JSON limits also apply to MCP results: the full result envelope must fit within 1 MiB of canonical UTF-8 JSON, 100,000 nodes and 64 levels of depth. Large base64 images or embedded resources can exceed that limit; resolve large content through bounded host-controlled resources instead. An oversized result becomes `RESULT_INVALID` and revokes the task after the remote call has occurred.
 
-Integration coverage uses official SDK 2.4.0 linked transports for tool/resource/prompt discovery and execution, metadata changes, denied dispatch, approvals, schema rejection, cancellation, server failures and cost settlement. Real loopback HTTP fixtures verify benign initialization, cross-origin redirect credential denial and stream-size limits. Claim-binding tests do not certify an OAuth provider or cryptographic verifier. Native stdio launch, live identity providers, DNS-pinned networking, arbitrary remote-server behavior and OS isolation require executor/deployment tests. The client SDK is a runtime dependency; the server SDK is used by tests.
+Integration coverage uses official SDK 2.4.0 linked transports for tool/resource/prompt discovery and execution, metadata changes, denied dispatch, approvals, schema rejection, cancellation, server failures and cost settlement. Real loopback HTTP fixtures verify benign initialization, cross-origin redirect credential denial and stream-size limits. The verified-credential profile additionally exercises real TLS and JOSE access-token verification, explicit key/token replacement and dispatch revocation with temporary local fixtures. These tests do not certify a company OAuth provider. Native stdio launch, live identity providers, arbitrary remote-server behavior and OS isolation retain executor/deployment gates. The client SDK is a runtime dependency; the server SDK is used by tests.
 
 Apache-2.0. See the [repository threat model](https://github.com/ShieldaAI/agent-guard/blob/main/docs/threat-model.md).

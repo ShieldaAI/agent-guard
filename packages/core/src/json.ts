@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { Buffer } from 'node:buffer';
+import { isProxy } from 'node:util/types';
 
 export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
@@ -40,6 +41,7 @@ export function immutableJson(value: unknown, maxDepth = 64, maxNodes = 100_000,
       return Object.is(input, -0) ? 0 : input;
     }
     if (typeof input !== 'object') throw new InvalidJsonError('Only JSON values are accepted');
+    if (isProxy(input)) throw new InvalidJsonError('JSON proxies are unsupported');
     if (ancestors.has(input)) throw new InvalidJsonError('Circular JSON value');
     const prototype = Object.getPrototypeOf(input);
     if ((Array.isArray(input) && prototype !== Array.prototype) ||

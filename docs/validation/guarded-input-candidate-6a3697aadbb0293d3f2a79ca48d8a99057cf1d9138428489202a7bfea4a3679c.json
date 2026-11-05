@@ -1,0 +1,120 @@
+{
+  "kind": "unsigned-local-guarded-input-candidate",
+  "sourceSha256": "6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c",
+  "artifacts": [
+    {
+      "name": "@shieldaai/agent-guard",
+      "file": "shieldaai-agent-guard-0.1.0-alpha.2.tgz",
+      "bytes": 16839,
+      "sha256": "5fef037fe969469f1eac210207bcff96c884153c694e2abd0e55274732053f62",
+      "version": "0.1.0-alpha.2",
+      "npmIntegrity": "sha512-r+1YGO2snpfTrFezuAvVeh4rMZUe/RtckDDecIDTx2BpJtYoJ1zrZIu7mpKJgSUzmtVJwSMlRBgsezqt9KZNQA=="
+    },
+    {
+      "name": "@shieldaai/agent-guard-mcp",
+      "file": "shieldaai-agent-guard-mcp-0.1.0-alpha.2.tgz",
+      "bytes": 26919,
+      "sha256": "40c0dddc5995ee00b2c9db36004eef80b3f04fa1c7030b5878f67d72ec92662e",
+      "version": "0.1.0-alpha.2",
+      "npmIntegrity": "sha512-W/CTnjGV7vWiEblcMxjxRyRGE3XASmeYGeKpN6KBnpuMNyp4lvm+wxyu7uPXbCA45+WxelpcdixdhI4M+FxPPQ=="
+    },
+    {
+      "name": "@shieldaai/agent-guard-scenarios",
+      "file": "shieldaai-agent-guard-scenarios-0.1.0-alpha.2.tgz",
+      "bytes": 18640,
+      "sha256": "11ac7603c10b8541f9a7849543249d5c131118c32bede9eb1fdf2bda27c36ff2",
+      "version": "0.1.0-alpha.2",
+      "npmIntegrity": "sha512-nhxDh9UHQxeKW0Hhv6b4gWHV8DoGVpj27bq31F5yTZ2X/Dx11bp4KhTmO5auJ+OlqsL+PpuV6Qif5SAdOb4fvw=="
+    },
+    {
+      "name": "@shieldaai/agent-guard-executor",
+      "file": "shieldaai-agent-guard-executor-0.1.0-alpha.2.tgz",
+      "bytes": 92361,
+      "sha256": "19d05af61f30402686036485f6f4501e00630b3338cd7433115a89934a5895e7",
+      "version": "0.1.0-alpha.2",
+      "npmIntegrity": "sha512-bot/CC9GaKzLZTW2fi4nSJ8e6tBv+KO1MYnyzXlDTc3beXhV6l2U6YpsxCCEChW8HI3fD0nGy5+GpFSDpR8UYA=="
+    },
+    {
+      "name": "@shieldaai/agent-map",
+      "file": "shieldaai-agent-map-0.1.0-alpha.2.tgz",
+      "bytes": 55227,
+      "sha256": "ea33b8b674093d0f4196edd6c944b638ea53493b601f828bea8be9bec6deeb27",
+      "version": "0.1.0-alpha.2",
+      "npmIntegrity": "sha512-YbgXjosR2Uwyks/bWcWSXq5Okjlcnlodi/OT1RcWdIQBRKixDMpB2cMkMwZzQcZVsBkgdQ4a6juIYodbHFYFxA=="
+    },
+    {
+      "name": "private-reference-viewer",
+      "file": "agent-map-guarded-input-viewer.tar.gz",
+      "bytes": 234784,
+      "sha256": "ae0996afb2859658c97085a327f5dd249e59c0ae66d43effe1fd3f9cf6fc3f26"
+    }
+  ],
+  "combined": {
+    "name": "combined-candidate",
+    "file": "agent-guard-guarded-input-candidate.tar.gz",
+    "bytes": 446885,
+    "sha256": "58e9a24b7492058cf2e71e3f76beb97500f8b5e99c8b2d8b0069cb7dc1de17a5"
+  },
+  "localDirectory": "artifacts/guarded-input-candidate-6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c",
+  "twoPacksByteIdentical": true,
+  "packagingToolSha256": "dab330c7fa9195e80a0a6ab5463a0993866c1eaa9c20ae727e9a378c59dc2fa4",
+  "installedConsumer": {
+    "npm": "11.20.0",
+    "offlineInstall": true,
+    "verifiedLocalPackageIntegrities": 5,
+    "verifiedThirdPartyIntegrities": 27,
+    "installedIntegritySetSha256": "b165c3852f7c6aa953577107e7d6e029a5366a43b1bfa9e6f1a2e1a7778c5cb1",
+    "probeSha256": "cbbbf96c56ac13dfc49ec4e82579f67df398c9cbb5417f9307d4846b5e5a7a2e",
+    "observed": {
+      "importedInstalledPackages": 5,
+      "host": "darwin",
+      "arch": "arm64",
+      "node": "v26.12.0",
+      "shellImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+      "stagedInput": {
+        "raw": {
+          "swapped": {
+            "code": "TOOL_CHANGED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "symlink": {
+            "code": "TOOL_FAILED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "unchanged": {
+            "guestExit": 0,
+            "approvedBytesReturned": true,
+            "results": 1
+          }
+        },
+        "attested": {
+          "swapped": {
+            "code": "TOOL_CHANGED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "symlink": {
+            "code": "TOOL_FAILED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "unchanged": {
+            "guestExit": 0,
+            "approvedBytesReturned": true,
+            "results": 1
+          }
+        }
+      },
+      "witness": {
+        "restoredHistoricalLedger": "STORE_WITNESS_UNAVAILABLE",
+        "unfencedReopen": "STORE_UNAVAILABLE",
+        "currentWitnessUnchanged": true,
+        "revokedCredential": "UNAUTHENTICATED",
+        "spent": 1,
+        "effects": 1
+      }
+    }
+  }
+}

@@ -1,16 +1,17 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { MapService, createMapMcpServer, createMapToken, startMapServer, startMapIdentityServer,
   validateReadScope, type MapStore, type MapPolicyEvidence, type MapProjection,
   type MapNode, type MapEdge, type MapIdentityServerOptions, type MapIdentityServer, type MapOidcOptions } from '@shieldaai/agent-map';
 import { AgentGuard, GuardError, GuardErrorCode, type GuardOptions, type Json } from '@shieldaai/agent-guard';
-import { ManagedMcpConnection, registerMcpTool, type McpToolClient, type McpConnectionInventory } from '@shieldaai/agent-guard-mcp';
+import { ManagedMcpConnection, VerifiedMcpHttpSession, registerMcpTool, type McpToolClient, type McpConnectionInventory } from '@shieldaai/agent-guard-mcp';
 import { runConformance, scenarioCatalog, type GuardLike } from '@shieldaai/agent-guard-scenarios';
 import { ArtifactBroker, DurableExecutor, createRestrictedFetch, createModelTool, validateSandboxProfile, createSandboxTool,
   createInventoryObserverToken, startInventoryServer,
   validateInventoryManifest, composeInventorySnapshot,
   validateMcpConnectionInventory, validateMcpInventorySources, composeMcpInventorySnapshot, type McpInventorySnapshot,
   type InventoryManifest, type HostInventorySnapshot, type InventoryOptions, type InventorySnapshot,
-  type InventoryTask, type InventoryServerOptions } from '@shieldaai/agent-guard-executor';
+  type InventoryTask, type InventoryServerOptions, type BuildArtifactRule, type BuildAttestationEnvelope } from '@shieldaai/agent-guard-executor';
 
 const calls: Array<{ name: string; arguments: Record<string, Json> }> = [];
 const client: McpToolClient = {
@@ -56,7 +57,8 @@ assert.equal(report.caseCount, scenarioCatalog.length * 2);
 console.log('Packed declarations and README examples compiled; MCP dispatch and all conformance scenarios passed.');
 
 const inventory: InventoryOptions = { companyId: 'pack-test', sourceId: 'installed-consumer', enrollmentGeneration: 'one' };
-const durable = new DurableExecutor({ database: ':memory:', encryptionKey: new Uint8Array(32), inventory });
+const durable = new DurableExecutor({ database: ':memory:', encryptionKey: new Uint8Array(32), inventory,
+  decisionTraces: { maxEventsPerTenant: 32 } });
 const model = createModelTool({ name: 'model', model: 'fixture', tenantId: 'pack-test', recipient: 'fixture-provider',
   maxCost: 2, maxOutputTokens: 10, complete: async () => ({ response: { text: 'accepted' }, actualCost: 1 }) });
 durable.approveTool('model', durable.registerTool(model));
@@ -67,6 +69,16 @@ assert.equal(durable.authenticate(scoped.token), scoped.taskId);
 const modelAction = await durable.prepare(scoped.taskId, { tool: 'model', args: { prompt: 'public', maxOutputTokens: 10 } });
 assert.equal((await durable.execute(scoped.taskId, modelAction.id) as {text: string}).text, 'accepted');
 assert.equal(durable.snapshot(scoped.taskId).spent, 1);
+const trace = durable.decisionTraceSnapshot({ tenantId: 'pack-test', taskId: scoped.taskId });
+assert.ok(trace.events.length >= 3);
+let exportedTrace = '';
+await durable.exportDecisionTraces({ tenantId: 'pack-test' }, async batch => {
+  exportedTrace = JSON.stringify(batch);
+});
+assert.ok(exportedTrace.length > 0);
+for (const privateValue of ['pack-test', scoped.taskId, scoped.token, modelAction.id, 'fixture-provider']) {
+  assert.equal(exportedTrace.includes(privateValue), false);
+}
 const inventorySnapshot: InventorySnapshot = durable.inventorySnapshot({ tenantId: 'pack-test' });
 const inventoryTask: InventoryTask = inventorySnapshot.tasks[0]!;
 assert.equal(inventorySnapshot.schemaVersion, 1);
@@ -129,14 +141,39 @@ try {
   assert.equal(mcpInventory.coverage.mcp.status, 'complete');
 } finally { await observer.close(); }
 assert.equal(typeof createRestrictedFetch({ allowedOrigins: [] }), 'function');
+assert.equal(typeof VerifiedMcpHttpSession.connect, 'function');
+const scopedCaFetch = createRestrictedFetch({ allowedOrigins: [], additionalCaByOrigin: {} });
+assert.equal(typeof scopedCaFetch, 'function');
 assert.throws(() => validateSandboxProfile({ image: 'unreviewed:latest' }));
-durable.close();
 const artifacts = new ArtifactBroker({ key: new Uint8Array(32), keyId: 'consumer' });
 const bytes = new TextEncoder().encode('fixture');
 const receipt = artifacts.classifyArtifact({ content: bytes, path: 'fixture.txt', tenantId: 'pack-test', origin: 'consumer' });
 assert.equal(artifacts.verifyArtifact(receipt, bytes, 'pack-test').sensitivity, 'sensitive');
 assert.equal(typeof createSandboxTool, 'function');
 artifacts.close();
+// This fixture was signed with OpenSSL and a disposable key, independently of the package.
+const signedBuild = JSON.parse(readFileSync('packed-build-attestation.json', 'utf8')) as {
+  rule: BuildArtifactRule; attestation: BuildAttestationEnvelope;
+};
+const buildBroker = new ArtifactBroker({ key: new Uint8Array(32), keyId: 'consumer',
+  buildPolicy: { artifacts: [signedBuild.rule] } });
+try {
+  const request = { content: bytes, path: 'fixture.txt', tenantId: 'pack-test', attestation: signedBuild.attestation };
+  assert.throws(() => buildBroker.verifyArtifact(receipt, bytes, 'pack-test'));
+  assert.throws(() => buildBroker.admitBuildArtifact({ ...request, content: Buffer.from('substituted') }));
+  assert.throws(() => buildBroker.admitBuildArtifact({ ...request, tenantId: 'another-tenant' }));
+  const admitted = buildBroker.admitBuildArtifact(request);
+  assert.equal(buildBroker.verifyArtifact(admitted, bytes, 'pack-test').trust, 'untrusted');
+  const imported = buildBroker.createTaskFromArtifacts(durable, {
+    id: 'packed-admitted-build', principalId: 'host', tenantId: 'pack-test', grants: [],
+    budget: { maxCalls: 1, maxConcurrent: 1, maxCost: 1, deadline: Date.now() + 60_000 },
+  }, [{ envelope: admitted, contentBase64: Buffer.from(bytes).toString('base64') }]);
+  assert.equal(durable.assertProvenance(imported.taskId).sensitive, true);
+  console.log('Packed build admission verified an OpenSSL signature and rejected substituted bytes and scope.');
+} finally {
+  buildBroker.close();
+  durable.close();
+}
 const mapStore: MapStore = { async read(scope) { assert.equal(scope.companyId, 'pack-test'); return { sources: [] }; } };
 const mapService = new MapService(mapStore);
 const mapScope = validateReadScope({ subject: 'consumer', companyId: 'pack-test', tenantIds: ['pack-test'], teamIds: ['platform'], allTeams: false });

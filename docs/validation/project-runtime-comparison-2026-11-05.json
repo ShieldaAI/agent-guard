@@ -1,0 +1,1743 @@
+{
+  "kind": "local-packed-runtime-file-comparison",
+  "before": {
+    "sourceSha256": "a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9",
+    "combinedSha256": "ea629366886c0d9b2320f037064abd5327495e0f238910ee2ab4424792009d5e"
+  },
+  "after": {
+    "sourceSha256": "6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c",
+    "combinedSha256": "58e9a24b7492058cf2e71e3f76beb97500f8b5e99c8b2d8b0069cb7dc1de17a5"
+  },
+  "allFivePackageRuntimeAndDeclarationsEqual": true,
+  "allPackageMetadataEqual": true,
+  "packages": [
+    {
+      "name": "@shieldaai/agent-guard",
+      "distFileCount": 10,
+      "runtimeJavaScriptCount": 5,
+      "allDistFilesEqual": true,
+      "packageJsonEqual": true,
+      "packageJson": {
+        "file": "package/package.json",
+        "equalBytes": true,
+        "equalMode": true,
+        "before": {
+          "sha256": "18d74b2a5b483696626662970fe40c043b2aa36dd30477086d7d67cbc155bfbe",
+          "bytes": 1226,
+          "mode": "0o644"
+        },
+        "after": {
+          "sha256": "18d74b2a5b483696626662970fe40c043b2aa36dd30477086d7d67cbc155bfbe",
+          "bytes": 1226,
+          "mode": "0o644"
+        }
+      },
+      "files": [
+        {
+          "file": "package/dist/authorization.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e149717f29ffe288d005d6e0f377ebde42599eda0a0a2cfb14a5d7e8c2b663e1",
+            "bytes": 921,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e149717f29ffe288d005d6e0f377ebde42599eda0a0a2cfb14a5d7e8c2b663e1",
+            "bytes": 921,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/authorization.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "459d06c1e7d2fc3620fb5da0411df9b14394088acc58910d42a20f24d15bb15a",
+            "bytes": 2215,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "459d06c1e7d2fc3620fb5da0411df9b14394088acc58910d42a20f24d15bb15a",
+            "bytes": 2215,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "21952fbb9c017fc519221bc0d4b5b7f9e6842b9eeddec89d50f8bda5d01f0f01",
+            "bytes": 1632,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "21952fbb9c017fc519221bc0d4b5b7f9e6842b9eeddec89d50f8bda5d01f0f01",
+            "bytes": 1632,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "da4b1616b423b9dbaa0f1abe55770d8d21cf90fa72290cec7078c8bb3bed97bf",
+            "bytes": 21156,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "da4b1616b423b9dbaa0f1abe55770d8d21cf90fa72290cec7078c8bb3bed97bf",
+            "bytes": 21156,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/json.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "21ea3fbf11fc177d5033744314494b52af75c55f3c7decef8a42d0e3a36d5b38",
+            "bytes": 773,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "21ea3fbf11fc177d5033744314494b52af75c55f3c7decef8a42d0e3a36d5b38",
+            "bytes": 773,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/json.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "30dd564719655d9a59862351e92d73acd6065eb3ae48225d50cafe13618830c9",
+            "bytes": 5369,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "30dd564719655d9a59862351e92d73acd6065eb3ae48225d50cafe13618830c9",
+            "bytes": 5369,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/policy-admission.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "54e85aa0dcdabf914bf93027c960a2283b20fb92a0d35d8b562c2f2d5a090c42",
+            "bytes": 598,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "54e85aa0dcdabf914bf93027c960a2283b20fb92a0d35d8b562c2f2d5a090c42",
+            "bytes": 598,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/policy-admission.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "daae03cc13082e1c1a540edaa9e9848df71dfa8e343f56d82a03b5788520159d",
+            "bytes": 2906,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "daae03cc13082e1c1a540edaa9e9848df71dfa8e343f56d82a03b5788520159d",
+            "bytes": 2906,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/types.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c93ad8f31bbd2b75d2588b06459b5a7e2888384e41c29e97afe0e118ced3dfe1",
+            "bytes": 5121,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c93ad8f31bbd2b75d2588b06459b5a7e2888384e41c29e97afe0e118ced3dfe1",
+            "bytes": 5121,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/types.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e678f5f58f3c3ad111e167299ba71ae826f479f6882faed9057ee2a991b060ca",
+            "bytes": 1817,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e678f5f58f3c3ad111e167299ba71ae826f479f6882faed9057ee2a991b060ca",
+            "bytes": 1817,
+            "mode": "0o644"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@shieldaai/agent-guard-executor",
+      "distFileCount": 46,
+      "runtimeJavaScriptCount": 23,
+      "allDistFilesEqual": true,
+      "packageJsonEqual": true,
+      "packageJson": {
+        "file": "package/package.json",
+        "equalBytes": true,
+        "equalMode": true,
+        "before": {
+          "sha256": "3e5687829224b09e159751bf18cf9ea73fbaeb33e76717bbcc3d8476539100ba",
+          "bytes": 1417,
+          "mode": "0o644"
+        },
+        "after": {
+          "sha256": "3e5687829224b09e159751bf18cf9ea73fbaeb33e76717bbcc3d8476539100ba",
+          "bytes": 1417,
+          "mode": "0o644"
+        }
+      },
+      "files": [
+        {
+          "file": "package/dist/adapters.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "072d8bfd1570365e14a5b6e5238385727a530290471fc9fbc73822b0f3f034ff",
+            "bytes": 1987,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "072d8bfd1570365e14a5b6e5238385727a530290471fc9fbc73822b0f3f034ff",
+            "bytes": 1987,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/adapters.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "f14eaee93215c6ffd7640203d5804742f37359f01de213855c501a0bf7cb5272",
+            "bytes": 20431,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "f14eaee93215c6ffd7640203d5804742f37359f01de213855c501a0bf7cb5272",
+            "bytes": 20431,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/artifacts.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "8372669c80d67a1adb53ffe6d0c1f20682c8ba0df7b3963a63c319a9e79beed5",
+            "bytes": 5134,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "8372669c80d67a1adb53ffe6d0c1f20682c8ba0df7b3963a63c319a9e79beed5",
+            "bytes": 5134,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/artifacts.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "49f799325fe303621d87f90ba7a58e63ac51fc64274bfdbb62e3f5db90d94c27",
+            "bytes": 27149,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "49f799325fe303621d87f90ba7a58e63ac51fc64274bfdbb62e3f5db90d94c27",
+            "bytes": 27149,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/build-provenance.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e0e379229a744caac0d93cc5a47f1ff29763c22cf269b57cb142fa9eaca04596",
+            "bytes": 1301,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e0e379229a744caac0d93cc5a47f1ff29763c22cf269b57cb142fa9eaca04596",
+            "bytes": 1301,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/build-provenance.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "68d6dab4a6517bbc42a2b2faf4a7dc7c8f6f3a4d0802ffe326c64ca933531887",
+            "bytes": 7599,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "68d6dab4a6517bbc42a2b2faf4a7dc7c8f6f3a4d0802ffe326c64ca933531887",
+            "bytes": 7599,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/client.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "37d445530b61e1b3756ad0306986f094fe9de97260010242530bee3ddcbbabb5",
+            "bytes": 765,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "37d445530b61e1b3756ad0306986f094fe9de97260010242530bee3ddcbbabb5",
+            "bytes": 765,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/client.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "d6e0ee599f6232f3d264f9478313a41d6ab2fba95c78ac7d41ae825821c6b218",
+            "bytes": 4936,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "d6e0ee599f6232f3d264f9478313a41d6ab2fba95c78ac7d41ae825821c6b218",
+            "bytes": 4936,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/evidence-json.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "1cf3470cfd87f0bf16476b244e212f45dbc1d9e09572682689b008568b781e08",
+            "bytes": 259,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "1cf3470cfd87f0bf16476b244e212f45dbc1d9e09572682689b008568b781e08",
+            "bytes": 259,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/evidence-json.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "71f147275cd5b7d78d441cb95e3480e585aff4c9d6aa29586cd53f60f03d9d8e",
+            "bytes": 2066,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "71f147275cd5b7d78d441cb95e3480e585aff4c9d6aa29586cd53f60f03d9d8e",
+            "bytes": 2066,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/executor.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "3f68c416128724d3fd7c374011e8e010398bbba9dfd47e6e2938e506a61ad95c",
+            "bytes": 5286,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "3f68c416128724d3fd7c374011e8e010398bbba9dfd47e6e2938e506a61ad95c",
+            "bytes": 5286,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/executor.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "bd4b959c45da20298a725343a11ae8f4a58dec1731e711d1b2579af7d927d3e0",
+            "bytes": 47390,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "bd4b959c45da20298a725343a11ae8f4a58dec1731e711d1b2579af7d927d3e0",
+            "bytes": 47390,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "933ea3270207933063104da6747c1438b7e5ddd15b70e7014f2f90ac030ea4d8",
+            "bytes": 759,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "933ea3270207933063104da6747c1438b7e5ddd15b70e7014f2f90ac030ea4d8",
+            "bytes": 759,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "246c5b4749c23c80a1ca455b74a6537d25aa985d6f17a192a825d77ddf6ac914",
+            "bytes": 8218,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "246c5b4749c23c80a1ca455b74a6537d25aa985d6f17a192a825d77ddf6ac914",
+            "bytes": 8218,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "ba867bda43d5f07d80a82a68d9c3534e316f47940438efaff748885375232747",
+            "bytes": 2772,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "ba867bda43d5f07d80a82a68d9c3534e316f47940438efaff748885375232747",
+            "bytes": 2772,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "b0171d79ee0d360a4c4192dce18f08b22a3fecb93e547bdccad15881b2c1ec45",
+            "bytes": 1048,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "b0171d79ee0d360a4c4192dce18f08b22a3fecb93e547bdccad15881b2c1ec45",
+            "bytes": 1048,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-http.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c5ae98c83836c244fd0f7f99ee50c136691529353d97c4bf5dad29c0f5e4d335",
+            "bytes": 1598,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c5ae98c83836c244fd0f7f99ee50c136691529353d97c4bf5dad29c0f5e4d335",
+            "bytes": 1598,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-http.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "739690e6bf0b65ec09f24bca48dfe84328490b93a97a96256caa4a591ee66664",
+            "bytes": 19203,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "739690e6bf0b65ec09f24bca48dfe84328490b93a97a96256caa4a591ee66664",
+            "bytes": 19203,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-manifest.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "8df5d61e64fa54d11d8706b9c17c700ee07569f61ac558aae64079e7c7eb2ed6",
+            "bytes": 2925,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "8df5d61e64fa54d11d8706b9c17c700ee07569f61ac558aae64079e7c7eb2ed6",
+            "bytes": 2925,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-manifest.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "fb1085d86ba267d401370912bbf8d0da8b0d701d91bf4205b0a2004ecb388dd9",
+            "bytes": 16137,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "fb1085d86ba267d401370912bbf8d0da8b0d701d91bf4205b0a2004ecb388dd9",
+            "bytes": 16137,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-mcp.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "967f95a4248439a8dee2b34465fed9932975399579513bebc307f91d9155aae1",
+            "bytes": 2627,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "967f95a4248439a8dee2b34465fed9932975399579513bebc307f91d9155aae1",
+            "bytes": 2627,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory-mcp.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "4faaa22a60e69c094b2b46ebf070d1114de13702e08aa8d8ed6a93805afeebfa",
+            "bytes": 12478,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "4faaa22a60e69c094b2b46ebf070d1114de13702e08aa8d8ed6a93805afeebfa",
+            "bytes": 12478,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "f968607f45c684d4468080a773fbbfb7cbfd6c5239dde23daeb7c3d9ba8df7bf",
+            "bytes": 3470,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "f968607f45c684d4468080a773fbbfb7cbfd6c5239dde23daeb7c3d9ba8df7bf",
+            "bytes": 3470,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "cc3208d926b91d13cc42d4d40e24cb6408ea022c1c941a0cadf3a566628be62b",
+            "bytes": 12009,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "cc3208d926b91d13cc42d4d40e24cb6408ea022c1c941a0cadf3a566628be62b",
+            "bytes": 12009,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/model.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "59d5676e9fd4c0c5a4de605e411a1291b1b9f82aef963367ec2cd2aec5119b9c",
+            "bytes": 1404,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "59d5676e9fd4c0c5a4de605e411a1291b1b9f82aef963367ec2cd2aec5119b9c",
+            "bytes": 1404,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/model.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "a885e2a3b6fe5d87756cbb7dedde28137871231b6d3e4e012f8e42ab061578b7",
+            "bytes": 3726,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "a885e2a3b6fe5d87756cbb7dedde28137871231b6d3e4e012f8e42ab061578b7",
+            "bytes": 3726,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/network.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "823117ac1e0187bfc511d887053f13344d26e0a168f412e27ae2d59033135358",
+            "bytes": 748,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "823117ac1e0187bfc511d887053f13344d26e0a168f412e27ae2d59033135358",
+            "bytes": 748,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/network.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "535c0d86ed544068987de79ec1300c7a4254b5b41b7aa3277e1815a181a0c406",
+            "bytes": 11121,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "535c0d86ed544068987de79ec1300c7a4254b5b41b7aa3277e1815a181a0c406",
+            "bytes": 11121,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/pilot-review-cli.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012",
+            "bytes": 31,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "43e818adf60173644896298637f47b01d5819b17eda46eaa32d0c7d64724d012",
+            "bytes": 31,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/pilot-review-cli.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "385b78b079386cd78a547e24bd3279ef10a4379e8364b73a97f52d21e46d3047",
+            "bytes": 5320,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "385b78b079386cd78a547e24bd3279ef10a4379e8364b73a97f52d21e46d3047",
+            "bytes": 5320,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/pilot-review.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "b585ff6f35ff0fec2f819d915d09827599135bf3dc0a21fb3955d75d06cc133a",
+            "bytes": 1826,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "b585ff6f35ff0fec2f819d915d09827599135bf3dc0a21fb3955d75d06cc133a",
+            "bytes": 1826,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/pilot-review.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "66a294c4c6b65a3cf153ed7bf08d8badd5d44696612498f41f3ecb11a3a9c9ed",
+            "bytes": 11975,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "66a294c4c6b65a3cf153ed7bf08d8badd5d44696612498f41f3ecb11a3a9c9ed",
+            "bytes": 11975,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/response-code.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "3c567d54162723af54e03202c1d0b53d0fc28c69309c6de32bab543b3851d2f1",
+            "bytes": 152,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "3c567d54162723af54e03202c1d0b53d0fc28c69309c6de32bab543b3851d2f1",
+            "bytes": 152,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/response-code.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "45f274e725e386a3fdec4d7039da9ea008dc6c2f06be6a79c5d861373468c053",
+            "bytes": 1193,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "45f274e725e386a3fdec4d7039da9ea008dc6c2f06be6a79c5d861373468c053",
+            "bytes": 1193,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/sandbox.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "0adbfde5965d0a4e559acedcf6d7d317f50af0e0890b6564b0ca82c12ea229d5",
+            "bytes": 1859,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "0adbfde5965d0a4e559acedcf6d7d317f50af0e0890b6564b0ca82c12ea229d5",
+            "bytes": 1859,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/sandbox.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "89480d6212263807e3182084706eef3069282990492e83399acae4b0fdc4f9ef",
+            "bytes": 18137,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "89480d6212263807e3182084706eef3069282990492e83399acae4b0fdc4f9ef",
+            "bytes": 18137,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/signed-evidence.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "0a31edbb9a97e131bce4c833df6636eef998bf8961ce16b2ac8508ed0f0f8002",
+            "bytes": 584,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "0a31edbb9a97e131bce4c833df6636eef998bf8961ce16b2ac8508ed0f0f8002",
+            "bytes": 584,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/signed-evidence.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "54d219a040479bd9f88c824bd8326751ae58969e8411c1972fd2e00672a8c14b",
+            "bytes": 2192,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "54d219a040479bd9f88c824bd8326751ae58969e8411c1972fd2e00672a8c14b",
+            "bytes": 2192,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/store.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "77f545fe250978fec82a4d285688a06b0123ac268c5f16271f4a598f1b4ee245",
+            "bytes": 2881,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "77f545fe250978fec82a4d285688a06b0123ac268c5f16271f4a598f1b4ee245",
+            "bytes": 2881,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/store.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "724689a55cefbc3ae3ed8b60804603addb1f5f98d22a9ee04c4b7af9d66b5c47",
+            "bytes": 10311,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "724689a55cefbc3ae3ed8b60804603addb1f5f98d22a9ee04c4b7af9d66b5c47",
+            "bytes": 10311,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/traces.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "5d04731d08248fe6cdde968c2a88c14c3e7d3d7cb9508efd0f73ab65820ccc70",
+            "bytes": 2923,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "5d04731d08248fe6cdde968c2a88c14c3e7d3d7cb9508efd0f73ab65820ccc70",
+            "bytes": 2923,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/traces.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "271b717ee242c4f8c00fe19d6d8fbe6adc34ff9cb64797313d680733fa5f4063",
+            "bytes": 9422,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "271b717ee242c4f8c00fe19d6d8fbe6adc34ff9cb64797313d680733fa5f4063",
+            "bytes": 9422,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/workspace-input-windows.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "57490f2a94386712fe370fa0d2964e03c3b5d829790d5aca4bfcea703ebc665d",
+            "bytes": 231,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "57490f2a94386712fe370fa0d2964e03c3b5d829790d5aca4bfcea703ebc665d",
+            "bytes": 231,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/workspace-input-windows.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "1a6890499d7eaa84c0d21f3f6daed8a91b1bbfff829a2cec928d11adf8c30e4b",
+            "bytes": 12216,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "1a6890499d7eaa84c0d21f3f6daed8a91b1bbfff829a2cec928d11adf8c30e4b",
+            "bytes": 12216,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/workspace-input.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "4b5324c0f5fd2672746c8c2727e70715aa38d087d24e505ad1b2c720c7e3ce10",
+            "bytes": 190,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "4b5324c0f5fd2672746c8c2727e70715aa38d087d24e505ad1b2c720c7e3ce10",
+            "bytes": 190,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/workspace-input.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "cfc0bb86770e9c4d3ec257a244b059b111f6c0e6291f04ec904899c23c5d5c90",
+            "bytes": 4170,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "cfc0bb86770e9c4d3ec257a244b059b111f6c0e6291f04ec904899c23c5d5c90",
+            "bytes": 4170,
+            "mode": "0o644"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@shieldaai/agent-guard-mcp",
+      "distFileCount": 14,
+      "runtimeJavaScriptCount": 7,
+      "allDistFilesEqual": true,
+      "packageJsonEqual": true,
+      "packageJson": {
+        "file": "package/package.json",
+        "equalBytes": true,
+        "equalMode": true,
+        "before": {
+          "sha256": "d8d79dd9332ad4e52c5b324ea167bbdac473b4c0dce3456526cdba80f5ad5618",
+          "bytes": 1396,
+          "mode": "0o644"
+        },
+        "after": {
+          "sha256": "d8d79dd9332ad4e52c5b324ea167bbdac473b4c0dce3456526cdba80f5ad5618",
+          "bytes": 1396,
+          "mode": "0o644"
+        }
+      },
+      "files": [
+        {
+          "file": "package/dist/authorization.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "b85fac86e2eee1026be161b04374f919124bb6810b9a4fcfd25c5e5f9e77694e",
+            "bytes": 895,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "b85fac86e2eee1026be161b04374f919124bb6810b9a4fcfd25c5e5f9e77694e",
+            "bytes": 895,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/authorization.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e1fad1a3f500709a00bdca1a050827666e9f4d2d28295c1f6aa55fa95e616ff9",
+            "bytes": 1750,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e1fad1a3f500709a00bdca1a050827666e9f4d2d28295c1f6aa55fa95e616ff9",
+            "bytes": 1750,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/boundary.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "b019fe1dec9e3861dde0be3ed9122de02f5c88c89071b7d6e9eaca427261bd03",
+            "bytes": 974,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "b019fe1dec9e3861dde0be3ed9122de02f5c88c89071b7d6e9eaca427261bd03",
+            "bytes": 974,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/boundary.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "1e4687418cf1d1fbbf423ad6b1a595485b1887d97700c883a3fab8fd5bdfcd4f",
+            "bytes": 9092,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "1e4687418cf1d1fbbf423ad6b1a595485b1887d97700c883a3fab8fd5bdfcd4f",
+            "bytes": 9092,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/credentials.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "ba4cc2779af5fc354f5fb1cf1c5b0efb4971b23adcbbd1330ab417aa8abfcc3d",
+            "bytes": 2247,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "ba4cc2779af5fc354f5fb1cf1c5b0efb4971b23adcbbd1330ab417aa8abfcc3d",
+            "bytes": 2247,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/credentials.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "72fcd21d28fa29ec4c138897a4cd1d5e26ba5605bd186bd1c143d95fe015cf8b",
+            "bytes": 14370,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "72fcd21d28fa29ec4c138897a4cd1d5e26ba5605bd186bd1c143d95fe015cf8b",
+            "bytes": 14370,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "40dc5d2d3efd369484bfb1b98a3beae54192444d6a4a87cae07c7495eaadb714",
+            "bytes": 835,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "40dc5d2d3efd369484bfb1b98a3beae54192444d6a4a87cae07c7495eaadb714",
+            "bytes": 835,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "23de29541251da2d192624eefcae4f2d11ecb1c3b7e3d178f1240f4017a967c0",
+            "bytes": 2979,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "23de29541251da2d192624eefcae4f2d11ecb1c3b7e3d178f1240f4017a967c0",
+            "bytes": 2979,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "57706a2b2ba09aee5c223b79e7a43ae4897a78d1148eb49374ab486add8a584d",
+            "bytes": 2256,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "57706a2b2ba09aee5c223b79e7a43ae4897a78d1148eb49374ab486add8a584d",
+            "bytes": 2256,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "d1348bbdf0e9ecacbc31272eea5893753ca5cbe402d200c428adeef7ab278f93",
+            "bytes": 2367,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "d1348bbdf0e9ecacbc31272eea5893753ca5cbe402d200c428adeef7ab278f93",
+            "bytes": 2367,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "095f421ba982b1c1e01ab967e200f68c7b10785e25edb894d9bf1d12050f3ccd",
+            "bytes": 1579,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "095f421ba982b1c1e01ab967e200f68c7b10785e25edb894d9bf1d12050f3ccd",
+            "bytes": 1579,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/inventory.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "a0a18ca65ed914f0d79fdf8bb91fa3b1438e50a3b2e24a8e900d6fb6d2bcf953",
+            "bytes": 2867,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "a0a18ca65ed914f0d79fdf8bb91fa3b1438e50a3b2e24a8e900d6fb6d2bcf953",
+            "bytes": 2867,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/managed.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "da8c6b08f3529e8b5e62f6dbbbe9cbf7164e3c84f01a1bc45683a58e1b71ac54",
+            "bytes": 2883,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "da8c6b08f3529e8b5e62f6dbbbe9cbf7164e3c84f01a1bc45683a58e1b71ac54",
+            "bytes": 2883,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/managed.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "3f11749bdb1e5ec32effbf120d81e0292d2a8a930d1fde2d8ac19ae1d9cd6efe",
+            "bytes": 19701,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "3f11749bdb1e5ec32effbf120d81e0292d2a8a930d1fde2d8ac19ae1d9cd6efe",
+            "bytes": 19701,
+            "mode": "0o644"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@shieldaai/agent-guard-scenarios",
+      "distFileCount": 4,
+      "runtimeJavaScriptCount": 2,
+      "allDistFilesEqual": true,
+      "packageJsonEqual": true,
+      "packageJson": {
+        "file": "package/package.json",
+        "equalBytes": true,
+        "equalMode": true,
+        "before": {
+          "sha256": "a6e3267ed0942918b512f1b083e5eaf3add97e29a87427796dece931b8a36502",
+          "bytes": 1331,
+          "mode": "0o644"
+        },
+        "after": {
+          "sha256": "a6e3267ed0942918b512f1b083e5eaf3add97e29a87427796dece931b8a36502",
+          "bytes": 1331,
+          "mode": "0o644"
+        }
+      },
+      "files": [
+        {
+          "file": "package/dist/catalog.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "63b943d0cdd390a41144d0d231971952dd792f6799af75564d5786e8ae9b6902",
+            "bytes": 656,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "63b943d0cdd390a41144d0d231971952dd792f6799af75564d5786e8ae9b6902",
+            "bytes": 656,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/catalog.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "f96be61dc34f2508978764be05b285ffb2187f5a44b7a508d55008e17b1bfb7a",
+            "bytes": 7022,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "f96be61dc34f2508978764be05b285ffb2187f5a44b7a508d55008e17b1bfb7a",
+            "bytes": 7022,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "eacfba640f7ae99dba5b7a006cb87ce2491d478cdc31eb532ef95933eec34389",
+            "bytes": 2343,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "eacfba640f7ae99dba5b7a006cb87ce2491d478cdc31eb532ef95933eec34389",
+            "bytes": 2343,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "245c50f2046b2d0150e7831938d52462bd84b4ed3d31974372211c50af23f9aa",
+            "bytes": 47429,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "245c50f2046b2d0150e7831938d52462bd84b4ed3d31974372211c50af23f9aa",
+            "bytes": 47429,
+            "mode": "0o644"
+          }
+        }
+      ]
+    },
+    {
+      "name": "@shieldaai/agent-map",
+      "distFileCount": 30,
+      "runtimeJavaScriptCount": 15,
+      "allDistFilesEqual": true,
+      "packageJsonEqual": true,
+      "packageJson": {
+        "file": "package/package.json",
+        "equalBytes": true,
+        "equalMode": true,
+        "before": {
+          "sha256": "06f9cf9695e6019cd4816aa1b8bfef4333a5c99d7f295b255229fcb811dba4ff",
+          "bytes": 1533,
+          "mode": "0o644"
+        },
+        "after": {
+          "sha256": "06f9cf9695e6019cd4816aa1b8bfef4333a5c99d7f295b255229fcb811dba4ff",
+          "bytes": 1533,
+          "mode": "0o644"
+        }
+      },
+      "files": [
+        {
+          "file": "package/dist/assets.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "cdc0755403e71347d3ed5d805ba049748af300e68264474f361235a786353e54",
+            "bytes": 217,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "cdc0755403e71347d3ed5d805ba049748af300e68264474f361235a786353e54",
+            "bytes": 217,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/assets.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e2945af1900bbcde4398ac51b7166ddf1846bb6b6c1c940195471c107e4c6041",
+            "bytes": 1941,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e2945af1900bbcde4398ac51b7166ddf1846bb6b6c1c940195471c107e4c6041",
+            "bytes": 1941,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/boundary.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "de246c977495f3e4a0e457dd442bbff71bff7166915d36fd9e526882643906cf",
+            "bytes": 560,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "de246c977495f3e4a0e457dd442bbff71bff7166915d36fd9e526882643906cf",
+            "bytes": 560,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/boundary.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "a3ceacf90a8d3726933d2ab49da3887b5a98e827b050e984530ee18495217041",
+            "bytes": 4867,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "a3ceacf90a8d3726933d2ab49da3887b5a98e827b050e984530ee18495217041",
+            "bytes": 4867,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/cli-entry.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "70123f786da46d48dcec5b85abe75ace156470874da55b2b67cf1ed207250c48",
+            "bytes": 149,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "70123f786da46d48dcec5b85abe75ace156470874da55b2b67cf1ed207250c48",
+            "bytes": 149,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/cli-entry.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "0ab74492a4a2d4a77d31435b71cf4d3d426b1647eb499f0343214e6dc33b8087",
+            "bytes": 622,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "0ab74492a4a2d4a77d31435b71cf4d3d426b1647eb499f0343214e6dc33b8087",
+            "bytes": 622,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/cli.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e67842568b6f2a6687d61896fb1096268cfc67107dd916675c9a20eaaea3d178",
+            "bytes": 176,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e67842568b6f2a6687d61896fb1096268cfc67107dd916675c9a20eaaea3d178",
+            "bytes": 176,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/cli.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "23b60054d786ac173916a2d6ae9d5921e8521a8e5722160a5480a081679b46de",
+            "bytes": 4425,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "23b60054d786ac173916a2d6ae9d5921e8521a8e5722160a5480a081679b46de",
+            "bytes": 4425,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "26e492510523e49b5ea3af89df639993a34b17ece6ed261e9d8aebd06fb96680",
+            "bytes": 967,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "26e492510523e49b5ea3af89df639993a34b17ece6ed261e9d8aebd06fb96680",
+            "bytes": 967,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/http.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "d5c650dade80d1048d047f7bf9e655fdefa325c5c9817b5193baf4dd682c3e11",
+            "bytes": 12205,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "d5c650dade80d1048d047f7bf9e655fdefa325c5c9817b5193baf4dd682c3e11",
+            "bytes": 12205,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/identity-cli.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e7c91bee290d0082dfd9c3f6815a1b7fbef6b7e2d6b02d375bf76143ade9ff1a",
+            "bytes": 499,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e7c91bee290d0082dfd9c3f6815a1b7fbef6b7e2d6b02d375bf76143ade9ff1a",
+            "bytes": 499,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/identity-cli.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "ad3734ecadbd86f62b0811acabed1a40fb4c9c82a1b1ed812e773f2e68e6bb16",
+            "bytes": 5746,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "ad3734ecadbd86f62b0811acabed1a40fb4c9c82a1b1ed812e773f2e68e6bb16",
+            "bytes": 5746,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/identity-http.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "e2fda7168933c0f147e18c52221476bd54508fc93110e48b9740340e62e2ef28",
+            "bytes": 1457,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "e2fda7168933c0f147e18c52221476bd54508fc93110e48b9740340e62e2ef28",
+            "bytes": 1457,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/identity-http.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "4baf22d26e9f5546d2056679062bff8e1f8c95cf9742501d3c7b2cf73bbabceb",
+            "bytes": 21403,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "4baf22d26e9f5546d2056679062bff8e1f8c95cf9742501d3c7b2cf73bbabceb",
+            "bytes": 21403,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "310f10bd24ad58e8eb64152c25178475447d08bd50ccd942a18d0551600a816f",
+            "bytes": 957,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "310f10bd24ad58e8eb64152c25178475447d08bd50ccd942a18d0551600a816f",
+            "bytes": 957,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/index.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "d06c6e50b075773a72874d3b1ea516f3126a86c1a8dc8e9072e258e2f9a7b71e",
+            "bytes": 398,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "d06c6e50b075773a72874d3b1ea516f3126a86c1a8dc8e9072e258e2f9a7b71e",
+            "bytes": 398,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/mcp.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c1b84e009021f306cf50bd83fe5177c97c9544c320d1ead61b068b12eab26202",
+            "bytes": 553,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c1b84e009021f306cf50bd83fe5177c97c9544c320d1ead61b068b12eab26202",
+            "bytes": 553,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/mcp.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "9bd7592545866a9ba56c99921b25378f6baf043b6cdb38fa0c7a187dff30250b",
+            "bytes": 1824,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "9bd7592545866a9ba56c99921b25378f6baf043b6cdb38fa0c7a187dff30250b",
+            "bytes": 1824,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/oidc.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "7b25faf9159abcde4377c9309eeb9f1f6c0dbb7858f03127273048e728dedc98",
+            "bytes": 1003,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "7b25faf9159abcde4377c9309eeb9f1f6c0dbb7858f03127273048e728dedc98",
+            "bytes": 1003,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/oidc.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "4287c0673efc8ee20731538b588a495f44f59fb18402d1fab49083b30cb926f4",
+            "bytes": 16689,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "4287c0673efc8ee20731538b588a495f44f59fb18402d1fab49083b30cb926f4",
+            "bytes": 16689,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/policy-reader.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "7ef3b126f329727b37270a162a07f74be062b24a3b0d2a3685fc02567fd7c7b3",
+            "bytes": 1735,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "7ef3b126f329727b37270a162a07f74be062b24a3b0d2a3685fc02567fd7c7b3",
+            "bytes": 1735,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/policy-reader.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c76a6bfa9a927ec596a0e3d19428dcf9e278c59cd490c98c85f186551c56abb4",
+            "bytes": 29649,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c76a6bfa9a927ec596a0e3d19428dcf9e278c59cd490c98c85f186551c56abb4",
+            "bytes": 29649,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/service.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "84ab6cacf554243f053f14f2bf8cec77aac06ae26b82c507795dd1868d57c782",
+            "bytes": 1358,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "84ab6cacf554243f053f14f2bf8cec77aac06ae26b82c507795dd1868d57c782",
+            "bytes": 1358,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/service.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "327ec46cee815dbd324cc0ba8adf5321a56ae43ad92c0456392ee7ed4be3b32e",
+            "bytes": 40900,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "327ec46cee815dbd324cc0ba8adf5321a56ae43ad92c0456392ee7ed4be3b32e",
+            "bytes": 40900,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/store.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "1202dc946d90682e844c73099fb52fdffabf0a917db4a20b8afed6d1663ee480",
+            "bytes": 1002,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "1202dc946d90682e844c73099fb52fdffabf0a917db4a20b8afed6d1663ee480",
+            "bytes": 1002,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/store.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c7cb915bda62a3a21b8a9499a35515837c1fd63afe8940f08614860b39c89f37",
+            "bytes": 28887,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c7cb915bda62a3a21b8a9499a35515837c1fd63afe8940f08614860b39c89f37",
+            "bytes": 28887,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/transport.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "c2c58b4e066e561a466ac5d37f58d19c7499331813367efaabdc6ac36b173882",
+            "bytes": 643,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "c2c58b4e066e561a466ac5d37f58d19c7499331813367efaabdc6ac36b173882",
+            "bytes": 643,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/transport.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "eec4ec76eeaa695e1b19694a56c1ea021ac854de026d4aeaad03a44ec81c3aa0",
+            "bytes": 3364,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "eec4ec76eeaa695e1b19694a56c1ea021ac854de026d4aeaad03a44ec81c3aa0",
+            "bytes": 3364,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/types.d.ts",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "eefa39866394866664c5be61daebea2b8208014809990fd19b7475e27de79834",
+            "bytes": 4086,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "eefa39866394866664c5be61daebea2b8208014809990fd19b7475e27de79834",
+            "bytes": 4086,
+            "mode": "0o644"
+          }
+        },
+        {
+          "file": "package/dist/types.js",
+          "equalBytes": true,
+          "equalMode": true,
+          "before": {
+            "sha256": "0da980bb3db253da201b9bb69a1e8044add459d79988ca51e59462d17a1bace6",
+            "bytes": 2208,
+            "mode": "0o644"
+          },
+          "after": {
+            "sha256": "0da980bb3db253da201b9bb69a1e8044add459d79988ca51e59462d17a1bace6",
+            "bytes": 2208,
+            "mode": "0o644"
+          }
+        }
+      ]
+    }
+  ],
+  "viewer": [
+    {
+      "file": "app.css",
+      "equalBytes": false,
+      "equalMode": true,
+      "before": {
+        "sha256": "cf04e226a8ed3df68cc2d63a3e9c2452a084fe9e240e28286d575da5660ab36e",
+        "bytes": 28264,
+        "mode": "0o644"
+      },
+      "after": {
+        "sha256": "04176e16432b965f173e84f48e148aca945d4e53129fe91f16f5e0e7f45f09e0",
+        "bytes": 28504,
+        "mode": "0o644"
+      }
+    },
+    {
+      "file": "app.js",
+      "equalBytes": false,
+      "equalMode": true,
+      "before": {
+        "sha256": "260f0ddf91ac74111d9ad769e787889daa55dc063d6272b694751e9a5613a4a3",
+        "bytes": 729227,
+        "mode": "0o644"
+      },
+      "after": {
+        "sha256": "7eaa8759f681e4479aa41095c7edd64ef651646d0126dc0c762e96923ad9f45e",
+        "bytes": 729928,
+        "mode": "0o644"
+      }
+    },
+    {
+      "file": "index.html",
+      "equalBytes": true,
+      "equalMode": true,
+      "before": {
+        "sha256": "7da3eca2ded5d9dbb72f9993ee554108f6435e0c0afccf1405d99ac3050548e6",
+        "bytes": 378,
+        "mode": "0o644"
+      },
+      "after": {
+        "sha256": "7da3eca2ded5d9dbb72f9993ee554108f6435e0c0afccf1405d99ac3050548e6",
+        "bytes": 378,
+        "mode": "0o644"
+      }
+    }
+  ],
+  "comparisonToolSha256": "3fb6f11fe06d864c7621ace4f45c49a84e186723a99939f27eb02e3971dd30f9"
+}

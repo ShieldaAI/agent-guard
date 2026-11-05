@@ -1,7 +1,7 @@
 import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { fail } from './boundary.js';
+import { fail, trustedHostFile } from './boundary.js';
 
 /** Load the fixed public assets once; never follow a replaced leaf or read beyond the cap. */
 export async function loadMapAssets(directory: unknown): Promise<Map<string, { body: Buffer; mime: string }>> {
@@ -15,7 +15,7 @@ export async function loadMapAssets(directory: unknown): Promise<Map<string, { b
       const file = await open(join(directory, name), constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
       try {
         const info = await file.stat();
-        if (!info.isFile() || info.size > maximum) fail('MAP_CONFIG_INVALID');
+        if (!trustedHostFile(info) || info.size > maximum) fail('MAP_CONFIG_INVALID');
         const data = Buffer.alloc(maximum + 1); let bytes = 0;
         while (bytes < data.length) {
           const read = await file.read(data, bytes, data.length - bytes, null);

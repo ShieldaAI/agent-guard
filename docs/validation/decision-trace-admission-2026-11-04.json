@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "testedAt": "2026-11-04T22:47:32.644Z",
+  "kind": "synthetic-decision-trace-admission-comparison",
+  "correctnessPassed": true,
+  "workload": {
+    "mode": "baseline",
+    "samples": 100,
+    "warmup": 30,
+    "tasks": 100,
+    "grants": 10
+  },
+  "hardware": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "logicalCpus": 10,
+    "node": "v26.12.0"
+  },
+  "phaseOrder": [
+    "disabled",
+    "enabled",
+    "enabled",
+    "disabled"
+  ],
+  "disabledP95Ms": 16.094,
+  "enabledP95Ms": 15.320959,
+  "p95OverheadPercent": -4.803286939232021,
+  "phases": [
+    {
+      "traceEnabled": false,
+      "p95AdmissionMs": 16.993833,
+      "successfulEffects": 130,
+      "finalCalls": 130,
+      "samples": 100,
+      "cleanup": {
+        "worker": true,
+        "clientWorker": true,
+        "observer": true,
+        "taskServer": true,
+        "executor": true,
+        "directory": true
+      }
+    },
+    {
+      "traceEnabled": true,
+      "p95AdmissionMs": 15.358666,
+      "successfulEffects": 130,
+      "finalCalls": 130,
+      "samples": 100,
+      "decisionTraces": {
+        "retained": 390,
+        "dropped": 0,
+        "events": 390
+      },
+      "cleanup": {
+        "worker": true,
+        "clientWorker": true,
+        "observer": true,
+        "taskServer": true,
+        "executor": true,
+        "directory": true
+      }
+    },
+    {
+      "traceEnabled": true,
+      "p95AdmissionMs": 15.250292,
+      "successfulEffects": 130,
+      "finalCalls": 130,
+      "samples": 100,
+      "decisionTraces": {
+        "retained": 390,
+        "dropped": 0,
+        "events": 390
+      },
+      "cleanup": {
+        "worker": true,
+        "clientWorker": true,
+        "observer": true,
+        "taskServer": true,
+        "executor": true,
+        "directory": true
+      }
+    },
+    {
+      "traceEnabled": false,
+      "p95AdmissionMs": 15.340917,
+      "successfulEffects": 130,
+      "finalCalls": 130,
+      "samples": 100,
+      "cleanup": {
+        "worker": true,
+        "clientWorker": true,
+        "observer": true,
+        "taskServer": true,
+        "executor": true,
+        "directory": true
+      }
+    }
+  ],
+  "limitations": [
+    "Local synthetic 100-task/1000-grant file-backed ledger and independent HTTP workload worker. No production state or external tool effects.",
+    "ABBA phases include 30 warmup calls each, excluded from the p95 calculation. All 400 measured calls are retained, with no outlier exclusion.",
+    "This measures recording overhead, not exporter networking. Exports run outside admission.",
+    "The comparison reports observed timing on this machine. It is not a production latency guarantee or a calibrated performance acceptance gate.",
+    "The final negative delta is timing variation, not evidence that tracing improves performance. The source change removes redundant work; no production latency target is certified."
+  ],
+  "beforeOptimization": {
+    "testedAt": "2026-11-04T22:44:59.776Z",
+    "disabledP95Ms": 16.107125,
+    "enabledP95Ms": 18.703333,
+    "p95OverheadPercent": 16.118382392885145,
+    "correctnessPassed": true,
+    "change": "Execute now reuses its initial authority snapshot for observation, removing the extra ledger read. A regression compares traced and untraced read counts and effects."
+  },
+  "sourceSha256": {
+    "packages/executor/src/executor.ts": "019c1f610762919d9e556e1f00b9595d3b26f3f50704cf24ea165851a596ef90",
+    "packages/executor/src/traces.ts": "43de80fcbdd08da5cac9cb76df5dcc1cb53dc39bac1a4a1fa6b085b390850667",
+    "scripts/benchmark-admission.mjs": "524f92e0d1e15a3dfc83f771037b944632f6c71eac7c65022bc924b2a5360f24"
+  }
+}

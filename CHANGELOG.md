@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.1.0-alpha.3 — 2026-11-05
+
+- Harden policy admission, approval expiry, cancellation, task authentication,
+  response validation and bounded callback capacity.
+- Bind approved sandbox inputs to the bytes actually staged; reject unsafe
+  workspace paths and add an opt-in independent rollback witness.
+- Add scoped MCP credential management, signed build and pilot evidence,
+  provider outcome evaluation and operator-study tooling.
+- Clarify Agent Map authorization, stale-result handling, recovery and mobile
+  navigation; fix installed command launchers.
+- Publish protection requirements, design, engineering review and reproducible
+  validation evidence. SDK publication remains experimental and does not certify
+  a production deployment. [Release notes](docs/releases/0.1.0-alpha.3.md)
+
 ## 0.1.0-alpha.2 — 2026-11-04
 
 Published all five npm packages under the `alpha` tag. The release notes cover

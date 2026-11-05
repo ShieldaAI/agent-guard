@@ -41,6 +41,17 @@ test('large aliased JSON input is rejected within a small normalization budget',
   assert.throws(() => immutableJson({ ['x'.repeat(1_048_576)]: 0 }), InvalidJsonError);
 });
 
+test('JSON normalization rejects object, array and revoked proxies without executing traps', () => {
+  let traps = 0;
+  const handler = { getPrototypeOf(target) { traps++; return Reflect.getPrototypeOf(target); } };
+  const revoked = Proxy.revocable({}, handler);
+  revoked.revoke();
+  for (const input of [new Proxy({}, handler), new Proxy([], handler), revoked.proxy]) {
+    assert.throws(() => immutableJson({ nested: [input] }), InvalidJsonError);
+  }
+  assert.equal(traps, 0);
+});
+
 test('an oversized tool result retains the full charge and revokes its task', async () => {
   const guard = new AgentGuard();
   const shared = 'x'.repeat(64 * 1024);

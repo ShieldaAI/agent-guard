@@ -1,21 +1,17 @@
 import { spawn } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
 import {
-  constants,
   chmodSync,
-  closeSync,
-  fstatSync,
   lstatSync,
   mkdirSync,
   mkdtempSync,
-  openSync,
-  readSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { readWorkspaceInput } from './workspace-input.js';
 import { homedir } from "node:os";
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 
 export interface SandboxProfile {
   image: string;
@@ -280,67 +276,15 @@ function stageInputs(
   target: string,
   limit: number,
 ): void {
-  const root = realpathSync(workspace);
-  if (!lstatSync(root).isDirectory())
-    throw new Error("Workspace must be a directory");
-  let bytes = 0;
+  const root = resolve(workspace);
+  if (!lstatSync(root).isDirectory()) throw new Error("Workspace must be a directory");
+  let remaining = limit;
   for (const path of selected) {
-    let current = root;
-    for (const part of path.split("/")) {
-      current = join(current, part);
-      const stat = lstatSync(current);
-      if (stat.isSymbolicLink())
-        throw new Error("Workspace input symlinks are not permitted");
-    }
-    const actual = realpathSync(current);
-    if (
-      relative(root, actual).startsWith(`..${sep}`) ||
-      relative(root, actual) === ".." ||
-      isAbsolute(relative(root, actual))
-    )
-      throw new Error("Workspace input escaped the selected root");
-    const expected = lstatSync(current);
-    const handle = openSync(
-      actual,
-      constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0),
-    );
-    try {
-      const stat = fstatSync(handle);
-      if (
-        !stat.isFile() ||
-        stat.nlink !== 1 ||
-        stat.dev !== expected.dev ||
-        stat.ino !== expected.ino ||
-        stat.size > limit - bytes
-      )
-        throw new Error(
-          "Inputs must be bounded regular files without hard links",
-        );
-      const buffer = Buffer.alloc(stat.size + 1);
-      let length = 0;
-      while (length < buffer.length) {
-        const count = readSync(
-          handle,
-          buffer,
-          length,
-          buffer.length - length,
-          null,
-        );
-        if (!count) break;
-        length += count;
-      }
-      if (length !== stat.size)
-        throw new Error("Workspace input changed during its bounded copy");
-      const data = buffer.subarray(0, length);
-      bytes += data.length;
-      if (bytes > limit)
-        throw new Error("Workspace input exceeded its byte limit");
-      const destination = join(target, ...path.split("/"));
-      mkdirSync(dirname(destination), { recursive: true, mode: 0o755 });
-      writeFileSync(destination, data, { flag: "wx", mode: 0o444 });
-    } finally {
-      closeSync(handle);
-    }
+    const data = readWorkspaceInput(root, path, remaining);
+    remaining -= data.length;
+    const destination = join(target, ...path.split("/"));
+    mkdirSync(dirname(destination), { recursive: true, mode: 0o755 });
+    writeFileSync(destination, data, { flag: "wx", mode: 0o444 });
   }
   chmodSync(target, 0o555);
 }

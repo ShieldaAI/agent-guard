@@ -1,8 +1,9 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
-import { GuardError, immutableJson, type Json, type TaskOptions } from '@shieldaai/agent-guard';
+import { immutableJson, type Json, type TaskOptions } from '@shieldaai/agent-guard';
 import { DurableExecutor } from './executor.js';
 import { ExecutorError } from './store.js';
+import { executorErrorResponse } from './response-code.js';
 
 export interface ExecutorServerOptions {
   executor: DurableExecutor;
@@ -42,6 +43,7 @@ async function body(request: IncomingMessage, limit: number): Promise<Record<str
 export async function startExecutorServer(options: ExecutorServerOptions): Promise<{ server: Server; url: string; close(): Promise<void> }> {
   if (!/^[A-Za-z0-9_-]{43,256}$/.test(options.adminToken) || !options.operatorId?.trim()) throw new ExecutorError('SERVER_CONFIG_INVALID');
   const adminHash = digest(options.adminToken);
+  const operatorId = options.operatorId;
   const limit = options.maxRequestBytes ?? 256 * 1024;
   const timeout = options.requestTimeoutMs ?? 10_000;
   if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(timeout) || timeout < 1) throw new ExecutorError('SERVER_CONFIG_INVALID');
@@ -54,7 +56,7 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
       if (req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined || req.method !== 'POST') throw new ExecutorError('REQUEST_DENIED');
       if (!req.url || !/^\/v1\/(?:task|admin)\/[a-z-]+$/.test(req.url)) throw new ExecutorError('REQUEST_DENIED');
       const auth = req.headers.authorization;
-      if (!auth?.startsWith('Bearer ') || auth.length > 270 || req.rawHeaders.filter(value => value.toLowerCase() === 'authorization').length !== 1) throw new ExecutorError('UNAUTHENTICATED');
+      if (!auth?.startsWith('Bearer ') || auth.length > 270 || req.headersDistinct.authorization?.length !== 1) throw new ExecutorError('UNAUTHENTICATED');
       const token = auth.slice(7);
       const admin = req.url.startsWith('/v1/admin/');
       const taskId = admin ? undefined : executor.authenticate(token);
@@ -62,6 +64,8 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
       const timer = setTimeout(() => req.destroy(), timeout); timer.unref();
       let input: Record<string, Json>;
       try { input = await body(req, limit); } finally { clearTimeout(timer); }
+      // The bearer (or a provenance ancestor) can expire or be revoked while the body arrives.
+      if (!admin && executor.authenticate(token) !== taskId) throw new ExecutorError('UNAUTHENTICATED');
       let output: unknown;
       switch (req.url) {
         case '/v1/task/prepare': keys(input, ['tool', 'args']);
@@ -80,7 +84,7 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
           if (input.provenance !== undefined) keys(object(input.provenance), ['sensitive', 'sourceTaskId']);
           output = executor.createTask(object(input.options) as unknown as TaskOptions, input.provenance as { sensitive?: boolean; sourceTaskId?: string } | undefined); break;
         case '/v1/admin/approve': keys(input, ['actionId', 'expiresAt']);
-          output = { approvalId: executor.approve(string(input.actionId), { approverId: options.operatorId, expiresAt: input.expiresAt as number }) }; break;
+          output = { approvalId: executor.approve(string(input.actionId), { approverId: operatorId, expiresAt: input.expiresAt as number }) }; break;
         case '/v1/admin/revoke': keys(input, ['taskId']); executor.revokeTask(string(input.taskId)); output = { revoked: true }; break;
         case '/v1/admin/reconcile': keys(input, ['actionId', 'outcome', 'actualCost', 'reference']);
           if (input.outcome !== 'SUCCEEDED' && input.outcome !== 'FAILED') throw new ExecutorError('REQUEST_INVALID');
@@ -90,7 +94,7 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
       }
       res.writeHead(200); res.end(JSON.stringify(output));
     } catch (error) {
-      const code = error instanceof GuardError || error instanceof ExecutorError ? error.code : 'REQUEST_INVALID';
+      const code = executorErrorResponse(error);
       res.writeHead(code === 'UNAUTHENTICATED' ? 401 : 400); res.end(JSON.stringify({ error: code }));
     }
   });

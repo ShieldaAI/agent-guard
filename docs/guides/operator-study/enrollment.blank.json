@@ -1,0 +1,12 @@
+{
+  "kind": "operator-study-enrollment-v1",
+  "studyId": null,
+  "buildSha256": null,
+  "deploymentSha256": null,
+  "briefSha256": null,
+  "start": null,
+  "end": null,
+  "facilitatorKey": null,
+  "backendKey": null,
+  "participants": []
+}

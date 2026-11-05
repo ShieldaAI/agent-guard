@@ -1,7 +1,7 @@
 {
   "name": "@shieldaai/agent-map",
-  "version": "0.1.0-alpha.2",
-  "description": "Scoped read-only Agent Guard reference queries, HTTP and MCP service.",
+  "version": "0.1.0-alpha.3",
+  "description": "Read-only AI agent and MCP inventory queries over HTTP and MCP, with scoped access to Cartography projections.",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -26,7 +26,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
-    "@shieldaai/agent-guard": "0.1.0-alpha.2",
+    "@shieldaai/agent-guard": "0.1.0-alpha.3",
     "neo4j-driver": "6.3.0",
     "openid-client": "6.8.8"
   },
@@ -43,5 +43,19 @@
     "build": "tsc -p tsconfig.json",
     "prepack": "node ../../scripts/build.mjs",
     "prepublishOnly": "node ../../scripts/release-check.mjs"
-  }
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/agent-map#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "agent-inventory",
+    "mcp",
+    "model-context-protocol",
+    "cartography",
+    "neo4j",
+    "typescript",
+    "access-explanations"
+  ]
 }

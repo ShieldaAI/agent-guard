@@ -215,6 +215,7 @@ export function errorMessage(error) {
   if (error?.status === 401) return 'Your reference credential was not accepted. Connect again with a valid credential.';
   if (error?.status === 403) return 'This reference operation is outside your authorized scope.';
   if (error?.code?.includes('NOT_FOUND')) return 'That item is unavailable in your authorized inventory.';
+  if (error?.status === 429 || error?.code === 'MAP_RATE_LIMITED') return 'Too many requests. Wait a moment, then try again.';
   if (error?.code?.includes('LIMIT') || error?.status === 413) return 'This view is too large. Narrow the source or agent selection and try again.';
   if (error?.name === 'AbortError' || error?.code?.includes('TIMEOUT')) return 'The reference service took too long. Try again shortly.';
   return 'The reference service could not complete this request. Try again shortly.';
@@ -322,16 +323,22 @@ export async function retryCompanyLogout(options = {}) {
   return value;
 }
 /** Authentication loss aborts sibling requests before their results can reach the page. */
-export function createCompanyQuerySession(csrfToken, { onEnded = () => {}, ...options } = {}) {
+function createAuthenticatedQuerySession(invoke, { onEnded = () => {}, ...options }) {
   let ended = false;
   const session = createQuerySession(async (operation, args, { signal }) => {
-    try { return await queryCompanySession(csrfToken, operation, args, { ...options, signal }); }
+    try { return await invoke(operation, args, { ...options, signal }); }
     catch (error) {
       if ([401, 403].includes(error?.status) && !ended) { ended = true; session.close(); onEnded(); }
       throw error;
     }
   });
   return Object.freeze({ close() { ended = true; session.close(); }, query: session.query });
+}
+export function createBearerQuerySession(token, options = {}) {
+  return createAuthenticatedQuerySession((...args) => queryReference(token, ...args), options);
+}
+export function createCompanyQuerySession(csrfToken, options = {}) {
+  return createAuthenticatedQuerySession((...args) => queryCompanySession(csrfToken, ...args), options);
 }
 /** Returning to a company workspace always revalidates before showing its cached data. */
 export function watchCompanySession({ expiresAt, onInvalidate, onRevalidate, windowImpl = window,

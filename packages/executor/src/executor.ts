@@ -1,12 +1,15 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
-  AgentGuard, GuardError, assertActionAuthority, canonicalJson, digestJson, immutableJson,
+  AgentGuard, GuardError, PolicyAdmission, assertActionAuthority, canonicalJson, digestJson, immutableJson,
   type Action, type AuthorityState, type Json, type Policy, type PreparedAction, type TaskIdentity,
   type TaskOptions, type TaskSnapshot, type ToolDefinition,
 } from '@shieldaai/agent-guard';
-import { ExecutorError, LedgerStore, type Ledger, type MemoryRecord, type StoredAction, type StoredTask } from './store.js';
+import { ExecutorError, LedgerStore, type ExecutionReceipt, type Ledger, type LedgerWitness, type MemoryRecord, type StoredAction, type StoredTask } from './store.js';
 import { projectInventory, validateInventorySource, type InventoryOptions, type InventoryScope,
   type InventorySnapshot, type InventorySourceOptions } from './inventory.js';
+import { DecisionTraces, decisionTraceCode, type DecisionTraceOptions, type DecisionTraceScope,
+  type DecisionTraceSnapshot, type DecisionTraceSink, type DecisionTraceExportResult,
+  type TraceContext, type DecisionTraceEventName, type DecisionTraceOutcome } from './traces.js';
 
 function id(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 4096 || value.includes('\0')) throw new GuardError('INVALID_INPUT');
@@ -25,6 +28,8 @@ export interface ExecutorOptions {
   database: string;
   /** Exactly 32 random bytes supplied through the protected host's key custody. Never an agent secret. */
   encryptionKey: Uint8Array;
+  /** Optional POSIX rollback detection: separate private state outside the database restore domain. */
+  rollbackWitness?: LedgerWitness;
   clock?: () => number;
   policy?: Policy;
   secretValues?: readonly string[];
@@ -37,6 +42,8 @@ export interface ExecutorOptions {
   maxTaskBytesPerFamily?: number;
   /** Trusted host enrollment. Omit to disable inventory; never accept this configuration from a task. */
   inventory?: InventoryOptions;
+  /** Opt-in volatile observation. Export is explicit and never runs during admission. */
+  decisionTraces?: DecisionTraceOptions;
 }
 export interface TaskCredential { taskId: string; token: string }
 
@@ -52,8 +59,10 @@ export class DurableExecutor {
   readonly #maxTaskBytesPerFamily: number;
   readonly #inventorySource: InventorySourceOptions | undefined;
   readonly #inventoryReferenceKey: Buffer | undefined;
+  readonly #traces: DecisionTraces | undefined;
   readonly #tools = new Map<string, Registered>();
   readonly #active = new Map<string, { taskIds: string[]; controller: AbortController }>();
+  readonly #policyAdmission = new PolicyAdmission();
   #policy: Policy | undefined;
   #observedClock = 0;
 
@@ -89,26 +98,78 @@ export class DurableExecutor {
         }
       } catch { throw new ExecutorError('INVENTORY_CONFIG_INVALID'); }
     }
-    try { this.#store = new LedgerStore(options.database, options.encryptionKey); }
+    try { this.#store = new LedgerStore(options.database, options.encryptionKey, undefined, options.rollbackWitness); }
     catch (error) { this.#inventoryReferenceKey?.fill(0); throw error; }
     try {
-      this.#store.transaction(state => {
+      if (options.decisionTraces !== undefined) this.#traces = new DecisionTraces(options.decisionTraces, options.encryptionKey, this.#store.read().inventoryInstanceId);
+      const recovered = this.#store.transaction(state => {
         const now = this.#now(state);
         state.epoch++; // Process/code changes invalidate every outstanding preparation.
         for (const tool of Object.values(state.tools)) tool.approved = false;
+        const recovered: TraceContext[] = [];
         for (const action of Object.values(state.actions)) {
-          if (action.status === 'RUNNING' || action.status === 'ADMITTED') action.status = 'UNKNOWN';
+          if (action.status === 'RUNNING' || action.status === 'ADMITTED') {
+            action.status = 'UNKNOWN';
+            if (this.#traces) recovered.push({ tenantId: state.tasks[action.taskId]!.options.tenantId,
+              taskId: action.taskId, actionId: action.id, policyRevision: state.epoch,
+              toolRevision: action.toolRevision, started: performance.now() });
+          }
         }
         audit(state, now, 'EXECUTOR_STARTED');
+        return recovered;
       });
-    } catch (error) { this.#store.close(); this.#inventoryReferenceKey?.fill(0); throw error; }
+      for (const context of recovered) this.#record(context, 'unknown', 'UNKNOWN', 'RECOVERY_UNKNOWN');
+    } catch (error) { this.#store.close(); this.#inventoryReferenceKey?.fill(0); this.#traces?.close(); throw error; }
   }
 
-  #now(state: Ledger): number {
-    const now = this.#clock();
-    if (!Number.isSafeInteger(now) || now < state.lastClock || now < this.#observedClock || now < 0) throw new GuardError('CLOCK_INVALID');
+  #traceStart(taskId: string | undefined, actionId: string, observedState?: Ledger): TraceContext | undefined {
+    if (!this.#traces) return undefined;
+    try {
+      const state = observedState ?? this.#store.read();
+      const action = own(state.actions, actionId);
+      const owner = taskId ?? action?.taskId;
+      const task = owner === undefined ? undefined : own(state.tasks, owner);
+      if (!task) return undefined; // Unknown/unauthenticated identities cannot select a tenant.
+      return { tenantId: task.options.tenantId, taskId: task.options.id, actionId,
+        policyRevision: state.epoch, toolRevision: action && action.taskId === owner ? action.toolRevision : 0,
+        started: performance.now() };
+    } catch { return undefined; }
+  }
+  #record(context: TraceContext | undefined, event: DecisionTraceEventName, outcome: DecisionTraceOutcome, code = 'OK'): void {
+    // Observation failure cannot replace an authorization result or enter an exporter.
+    if (context) try { this.#traces?.record(context, event, outcome, code); } catch { /* Optional observation only. */ }
+  }
+  /** Host-only tenant-scoped observation. Authentication must precede choosing this scope. */
+  decisionTraceSnapshot(scope: DecisionTraceScope): DecisionTraceSnapshot {
+    if (!this.#traces) throw new ExecutorError('TRACE_DISABLED');
+    const selected = clone(scope);
+    if (selected.taskId !== undefined && this.#task(this.#store.read(), selected.taskId).options.tenantId !== selected.tenantId) throw new ExecutorError('TRACE_SCOPE_DENIED');
+    return this.#traces.snapshot(selected);
+  }
+  /** Explicit host export. No trace callback is registered on the execution path. */
+  exportDecisionTraces(scope: { tenantId: string }, sink: DecisionTraceSink, options?: { timeoutMs?: number }): Promise<DecisionTraceExportResult> {
+    if (!this.#traces) throw new ExecutorError('TRACE_DISABLED');
+    return this.#traces.export(scope, sink, options);
+  }
+  /** Host-only aggregate health. Never expose these cross-tenant counters to a tenant observer. */
+  decisionTraceStatistics(): Readonly<{ tenantCapacityDrops: number; tenants: number }> {
+    if (!this.#traces) throw new ExecutorError('TRACE_DISABLED');
+    return this.#traces.statistics();
+  }
+  /** Records an authenticated host review refusal, without granting or revoking authority. */
+  recordReviewDecision(actionId: string, decision: 'denied'): void {
+    if (decision !== 'denied') throw new GuardError('INVALID_INPUT');
+    const action = own(this.#store.read().actions, id(actionId));
+    if (!action || action.status !== 'PREPARED') throw new GuardError('INVALID_PREPARED');
+    this.#record(this.#traceStart(action.taskId, actionId), 'review', 'DENIED', 'REVIEW_DENIED');
+  }
+
+  #now(state?: Ledger): number {
+    let now: number;
+    try { now = this.#clock(); } catch { throw new GuardError('CLOCK_INVALID'); }
+    if (!Number.isSafeInteger(now) || now < (state?.lastClock ?? 0) || now < this.#observedClock) throw new GuardError('CLOCK_INVALID');
     this.#observedClock = now;
-    state.lastClock = now;
+    if (state) state.lastClock = now;
     return now;
   }
   #task(state: Ledger, taskId: string): StoredTask {
@@ -202,12 +263,11 @@ export class DurableExecutor {
   }
   async #decision(state: Ledger, action: StoredAction): Promise<'allow' | 'require_approval'> {
     if (!this.#policy) return 'allow';
-    let decision: unknown;
-    try { decision = await this.#policy(clone(action.action), clone(this.#snapshot(state, this.#task(state, action.taskId)))); }
-    catch { throw new GuardError('POLICY_ERROR'); }
-    if (decision === 'deny') throw new GuardError('POLICY_DENIED');
-    if (decision !== 'allow' && decision !== 'require_approval') throw new GuardError('POLICY_ERROR');
-    return decision;
+    const task = this.#task(state, action.taskId);
+    return this.#policyAdmission.evaluate(this.#policy, clone(action.action), clone(this.#snapshot(state, task)), {
+      familyId: task.family, taskIds: this.#provenance(state, action.taskId).map(source => source.options.id),
+      remainingMs: task.options.budget.deadline - this.#now(state),
+    });
   }
 
   registerTool(definition: ToolDefinition): string {
@@ -239,6 +299,7 @@ export class DurableExecutor {
     if (typeof policy !== 'function') throw new GuardError('INVALID_INPUT');
     this.#store.transaction(state => { state.epoch++; audit(state, this.#now(state), 'POLICY_CHANGED'); });
     this.#policy = policy;
+    this.#policyAdmission.invalidate('POLICY_CHANGED');
   }
   createTask(options: TaskOptions, provenance: { sensitive?: boolean; sourceTaskId?: string } = {}): TaskCredential {
     return this.#newTask(options, null, provenance);
@@ -308,6 +369,7 @@ export class DurableExecutor {
       this.#quarantine(state, revoked.options.tenantId, entries);
       audit(state, this.#now(state), 'TASK_REVOKED', taskId);
     });
+    this.#policyAdmission.revokeTask(taskId);
     for (const active of this.#active.values()) if (active.taskIds.includes(taskId)) active.controller.abort();
   }
   markSensitive(taskId: string): void {
@@ -325,13 +387,18 @@ export class DurableExecutor {
     return Object.freeze(tasks.map(task => task.options.id));
   }
   cancel(taskId: string, actionId: string): void {
-    this.#store.transaction(state => {
+    const trace = this.#traceStart(taskId, actionId);
+    let cancelled: boolean;
+    try { cancelled = this.#store.transaction(state => {
       const action = own(state.actions, actionId);
       if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
+      const cancelled = action.status === 'PREPARED';
       if (action.status === 'PREPARED') { action.status = 'FAILED'; action.charged = 0; }
       audit(state, this.#now(state), 'CANCELLATION_REQUESTED', taskId, actionId);
-    });
+      return cancelled;
+    }); } catch (error) { this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error)); throw error; }
     this.#active.get(actionId)?.controller.abort();
+    this.#record(trace, 'cancel', cancelled ? 'CANCELLED' : 'CANCEL_REQUESTED');
   }
   snapshot(taskId: string): Readonly<TaskSnapshot> { const state = this.#store.read(); return clone(this.#snapshot(state, this.#task(state, taskId))); }
 
@@ -344,28 +411,36 @@ export class DurableExecutor {
   }
 
   async prepare(taskId: string, request: { tool: string; args: Json }): Promise<PreparedAction> {
+    const actionId = randomUUID();
+    const trace = this.#traceStart(taskId, actionId);
+    try {
+      const prepared = await this.#prepare(taskId, request, actionId, trace);
+      this.#record(trace, 'prepare', 'PREPARED', prepared.requiresApproval ? 'REVIEW_REQUIRED' : 'OK');
+      return prepared;
+    } catch (error) { this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error)); throw error; }
+  }
+  async #prepare(taskId: string, request: { tool: string; args: Json }, actionId: string, trace: TraceContext | undefined): Promise<PreparedAction> {
     const input = clone(request);
     if (Object.keys(input).some(key => key !== 'tool' && key !== 'args') || !Object.hasOwn(input, 'args')) throw new GuardError('INVALID_INPUT');
     const registration = this.#tools.get(id(input.tool));
     if (!registration) throw new GuardError('TOOL_UNKNOWN');
     const state = this.#store.read();
     const task = this.#task(state, taskId);
-    let args = input.args;
-    if (registration.definition.parse) {
-      try { args = clone(registration.definition.parse(args)); } catch { throw new GuardError('ARGUMENT_INVALID'); }
-    }
+    if (this.#provenance(state, taskId).some(ancestor => ancestor.revoked)) throw new GuardError('TASK_REVOKED');
+    if (!own(state.tools, input.tool)?.approved) throw new GuardError('TOOL_UNAPPROVED');
+    if (this.#policy) this.#policyAdmission.assertCapacity(task.family);
     // Core preparation validates resolver output, mandatory gates and immutable argument binding.
     const verifier = new AgentGuard({ clock: () => this.#now(state), secretValues: this.#secrets });
-    const { parse: _parse, ...validatedDefinition } = registration.definition;
-    const fp = verifier.registerTool(validatedDefinition);
+    const fp = verifier.registerTool(registration.definition);
     verifier.approveTool(input.tool, fp);
     const handle = verifier.createTask(task.options);
-    const verified = await verifier.prepare(handle, { tool: input.tool, args });
+    const verified = await verifier.prepare(handle, input);
     const action = clone({ ...verified.action, toolFingerprint: registration.fingerprint, policyVersion: state.epoch });
-    const actionId = randomUUID();
     const stored: StoredAction = { id: actionId, taskId, action, toolRevision: registration.revision,
       digest: `sha256:${digestJson(clone({ id: actionId, taskId, action, revision: registration.revision }))}`,
       requiresApproval: registration.definition.requiresApproval ?? false, status: 'PREPARED', maxCost: registration.definition.maxCost ?? 0 };
+    // Retain the action's revisions, not a registration replaced before the caller resumes.
+    if (trace) { trace.toolRevision = stored.toolRevision; trace.policyRevision = stored.action.policyVersion; }
     this.#gates(state, stored);
     const decision = await this.#decision(state, stored);
     stored.requiresApproval ||= decision === 'require_approval';
@@ -381,6 +456,14 @@ export class DurableExecutor {
     return clone({ id: stored.id, digest: stored.digest, action: stored.action, requiresApproval: stored.requiresApproval });
   }
   approve(actionId: string, options: { approverId: string; expiresAt: number }): string {
+    const trace = this.#traceStart(undefined, actionId);
+    try {
+      const approval = this.#approve(actionId, options);
+      this.#record(trace, 'review', 'APPROVED');
+      return approval;
+    } catch (error) { this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error)); throw error; }
+  }
+  #approve(actionId: string, options: { approverId: string; expiresAt: number }): string {
     const approvalId = randomUUID();
     this.#store.transaction(state => {
       this.#prune(state, this.#now(state));
@@ -398,7 +481,15 @@ export class DurableExecutor {
     return approvalId;
   }
   async execute(taskId: string, actionId: string, options: { approvalId?: string } = {}): Promise<Json> {
-    const initial = this.#store.read();
+    let trace: TraceContext | undefined;
+    try {
+      const initial = this.#store.read();
+      trace = this.#traceStart(taskId, actionId, initial);
+      return await this.#execute(taskId, actionId, options, trace, initial);
+    }
+    catch (error) { this.#record(trace, trace?.admitted ? 'error' : 'deny', trace?.admitted ? 'ERROR' : 'DENIED', decisionTraceCode(error)); throw error; }
+  }
+  async #execute(taskId: string, actionId: string, options: { approvalId?: string }, trace: TraceContext | undefined, initial: Ledger): Promise<Json> {
     const record = own(initial.actions, id(actionId));
     if (!record || record.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
     if (record.status !== 'PREPARED') throw new GuardError('ACTION_USED');
@@ -411,6 +502,7 @@ export class DurableExecutor {
       if (action.status !== 'PREPARED') throw new GuardError('ACTION_USED');
       this.#gates(state, action);
       const now = this.#now(state);
+      let approvalDeadline: number | undefined;
       if (options.approvalId !== undefined || action.requiresApproval || decision === 'require_approval') {
         if (!options.approvalId) throw new GuardError('APPROVAL_REQUIRED');
         const approval = own(state.approvals, options.approvalId);
@@ -418,6 +510,7 @@ export class DurableExecutor {
         if (approval.used) throw new GuardError('APPROVAL_USED');
         if (now >= approval.expiresAt) throw new GuardError('APPROVAL_EXPIRED');
         approval.used = true;
+        approvalDeadline = approval.expiresAt;
       }
       const ancestors = this.#lineage(state, taskId);
       for (const task of ancestors) { task.calls++; task.concurrent++; task.reserved += action.maxCost; }
@@ -426,18 +519,31 @@ export class DurableExecutor {
       action.status = 'ADMITTED';
       audit(state, now, 'ACTION_ADMITTED', taskId, actionId);
       return { action: clone(action), identity: clone({ id: taskId, principalId: task.options.principalId, tenantId: task.options.tenantId }),
-        taskIds: this.#provenance(state, taskId).map(parent => parent.options.id), deadline: task.options.budget.deadline };
+        taskIds: this.#provenance(state, taskId).map(parent => parent.options.id), deadline: task.options.budget.deadline, approvalDeadline };
     });
+    if (trace) trace.admitted = true;
+    this.#record(trace, 'admit', 'ADMITTED');
     this.#active.set(actionId, { taskIds: admitted.taskIds, controller });
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const arm = (): void => {
-      const remaining = admitted.deadline - this.#clock();
+    const arm = (now: number): void => {
+      const remaining = admitted.deadline - now;
       if (remaining <= 0) { controller.abort(); return; }
-      timer = setTimeout(arm, Math.min(remaining, 2_147_483_647));
+      timer = setTimeout(() => {
+        try { arm(this.#now()); } catch { controller.abort(); }
+      }, Math.min(remaining, 2_147_483_647));
     };
-    arm();
     try {
       this.#store.transaction(state => { state.actions[actionId]!.status = 'RUNNING'; this.#now(state); });
+      // SQLite commits can take long enough to outlive the task or its one-use approval.
+      // No handler has run, so a deadline denial can safely settle with zero cost.
+      const dispatchTime = this.#now();
+      if (dispatchTime >= admitted.deadline || (admitted.approvalDeadline !== undefined && dispatchTime >= admitted.approvalDeadline)) {
+        const code = dispatchTime >= admitted.deadline ? 'TASK_EXPIRED' : 'APPROVAL_EXPIRED';
+        this.#settle(actionId, 'FAILED', 0);
+        this.#record(trace, 'settle', 'FAILED', code);
+        throw new GuardError(code);
+      }
+      arm(dispatchTime);
       const tool = this.#tools.get(admitted.action.action.tool)!;
       const raw = await tool.definition.execute(admitted.action.action.args, Object.freeze({
         signal: controller.signal, action: admitted.action.action, task: admitted.identity,
@@ -452,15 +558,24 @@ export class DurableExecutor {
         this.revokeTask(taskId); throw new GuardError('COST_REPORT_INVALID');
       }
       this.#settle(actionId, 'SUCCEEDED', cost);
-      if (controller.signal.aborted || this.#clock() >= admitted.deadline) throw new GuardError('EXECUTION_ABORTED');
+      this.#record(trace, 'settle', 'SUCCEEDED');
+      if (controller.signal.aborted || this.#now() >= admitted.deadline) throw new GuardError('EXECUTION_ABORTED');
       return result.value;
     } catch (error) {
-      this.#store.transaction(state => {
+      const unknown = this.#store.transaction(state => {
         const action = state.actions[actionId]!;
         if (action.status === 'ADMITTED' || action.status === 'RUNNING') {
-          action.status = 'UNKNOWN'; audit(state, this.#now(state), 'OUTCOME_UNKNOWN', taskId, actionId);
+          // A faulty clock must not roll back conservative recovery and strand a reservation
+          // in RUNNING. Use the last trusted time for this audit entry only.
+          let observed = state.lastClock;
+          try { observed = this.#now(state); }
+          catch (clockError) { if (!(clockError instanceof GuardError && clockError.code === 'CLOCK_INVALID')) throw clockError; }
+          action.status = 'UNKNOWN'; audit(state, observed, 'OUTCOME_UNKNOWN', taskId, actionId);
+          return true;
         }
+        return false;
       });
+      if (unknown) this.#record(trace, 'unknown', 'UNKNOWN', 'OUTCOME_UNKNOWN');
       if (error instanceof GuardError || error instanceof ExecutorError) throw error;
       throw new GuardError(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED');
     } finally { if (timer) clearTimeout(timer); this.#active.delete(actionId); }
@@ -481,13 +596,22 @@ export class DurableExecutor {
   }
   /** Operator-only reconciliation requires evidence that backend work has ended; never call on lease expiry alone. */
   reconcile(actionId: string, evidence: { outcome: 'SUCCEEDED' | 'FAILED'; actualCost: number; reference: string }): void {
+    const trace = this.#traceStart(undefined, actionId);
+    try {
+      let input: typeof evidence;
+      try { input = clone(evidence); } catch { throw new ExecutorError('RECONCILIATION_INVALID'); }
+      this.#reconcile(actionId, input);
+      this.#record(trace, 'reconcile', input.outcome, 'RECONCILED');
+    } catch (error) { this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error)); throw error; }
+  }
+  #reconcile(actionId: string, evidence: { outcome: 'SUCCEEDED' | 'FAILED'; actualCost: number; reference: string }): void {
     if (!evidence || (evidence.outcome !== 'SUCCEEDED' && evidence.outcome !== 'FAILED')) throw new ExecutorError('RECONCILIATION_INVALID');
     id(evidence.reference);
     const action = own(this.#store.read().actions, actionId);
     if (!action || action.status !== 'UNKNOWN' || this.#active.has(actionId)) throw new ExecutorError('RECONCILIATION_INVALID');
     this.#settle(actionId, evidence.outcome, evidence.actualCost, hash(evidence.reference));
   }
-  execution(taskId: string, actionId: string): Readonly<{ id: string; status: string; charged?: number; reconciliation?: { referenceHash: string; time: number } }> {
+  execution(taskId: string, actionId: string): ExecutionReceipt {
     const action = own(this.#store.read().actions, actionId);
     if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
     return clone({ id: action.id, status: action.status, ...(action.charged === undefined ? {} : { charged: action.charged }),
@@ -609,6 +733,8 @@ export class DurableExecutor {
   close(): void {
     if (this.#active.size) throw new ExecutorError('EXECUTIONS_ACTIVE');
     this.#store.close();
+    this.#policyAdmission.invalidate('TASK_REVOKED');
     this.#inventoryReferenceKey?.fill(0);
+    this.#traces?.close();
   }
 }

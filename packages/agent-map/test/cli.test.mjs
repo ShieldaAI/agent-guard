@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { spawn, spawnSync } from 'node:child_process';
 import { constants } from 'node:fs';
-import { mkdtemp, writeFile, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, symlink, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -64,6 +64,18 @@ test('CLI startup failures produce only a stable safe error', async () => {
   assert.equal(code, 1); assert.equal(out, ''); assert.equal(error, 'MAP_START_FAILED\n');
 });
 
+test(onSupportedHost('shared-writable host configuration cannot choose credential destinations'), async t => {
+  if (await unsupportedHost()) return;
+  const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-mode-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const config = join(dir, 'config.json');
+  await writeFile(config, JSON.stringify({ neo4j: { uri: 'bolt+s://untrusted.invalid', username: 'reader',
+    passwordEnv: 'MAP_TEST_MISSING_PASSWORD' }, credentials: [] }));
+  for (const mode of [0o664, 0o646]) {
+    await chmod(config, mode);
+    await assert.rejects(runMapCli(['--config', config]), { code: 'MAP_CONFIG_INVALID' });
+  }
+});
 test(onSupportedHost('CLI rejects FIFO configuration without waiting for a writer'), async t => {
   if (await unsupportedHost()) return;
   const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-fifo-'));
@@ -84,7 +96,8 @@ test('CLI rejects nonregular and oversized inputs with stable diagnostics', asyn
   await writeFile(oversized, 'credential-canary'.padEnd(128 * 1024 + 1, ' '));
   for (const input of [dir, oversized]) {
     const result = spawnSync(process.execPath, [cli, '--config', input], {
-      encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL',
+      // Include cold Node startup under parallel suite load. The exit code and diagnostic prove rejection.
+      encoding: 'utf8', timeout: 15_000, killSignal: 'SIGKILL',
     });
     assert.equal(result.error, undefined); assert.equal(result.status, 1);
     assert.equal(result.stdout, ''); assert.equal(result.stderr, 'MAP_START_FAILED\n');

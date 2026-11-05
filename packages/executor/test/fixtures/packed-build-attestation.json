@@ -1,0 +1,26 @@
+{
+  "rule": {
+    "tenantId": "pack-test",
+    "path": "fixture.txt",
+    "sha256": "f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+    "subjectName": "dist/fixture.txt",
+    "builderId": "https://builder.example.test/packed",
+    "buildType": "https://builder.example.test/types/plain-text/v1",
+    "sourceUri": "git+https://source.example.test/fixtures",
+    "sourceDigest": {
+      "algorithm": "sha256",
+      "value": "59afae24ddfce76b6a90c193de186ec1af7d909311955b0f518e4a6df56e66a5"
+    },
+    "signerPublicKeyPem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAUNwxFJ/qUqDz/mbCs/PgX2InG53bJ5V6XhgFNINN88s=\n-----END PUBLIC KEY-----\n"
+  },
+  "attestation": {
+    "payloadType": "application/vnd.in-toto+json",
+    "payload": "ewogICJfdHlwZSI6ICJodHRwczovL2luLXRvdG8uaW8vU3RhdGVtZW50L3YxIiwKICAic3ViamVjdCI6IFsKICAgIHsKICAgICAgIm5hbWUiOiAiZGlzdC9maXh0dXJlLnR4dCIsCiAgICAgICJkaWdlc3QiOiB7CiAgICAgICAgInNoYTI1NiI6ICJmMTZkMDVlYzZiMjkyNDhkMmM2MWFkYjFlOTI2M2Y3OGU0ZjdiYWNlMWI5NTUwMTRhMmQxNzg3MmNmZTQwNjRkIgogICAgICB9CiAgICB9CiAgXSwKICAicHJlZGljYXRlVHlwZSI6ICJodHRwczovL3Nsc2EuZGV2L3Byb3ZlbmFuY2UvdjEiLAogICJwcmVkaWNhdGUiOiB7CiAgICAiYnVpbGREZWZpbml0aW9uIjogewogICAgICAiYnVpbGRUeXBlIjogImh0dHBzOi8vYnVpbGRlci5leGFtcGxlLnRlc3QvdHlwZXMvcGxhaW4tdGV4dC92MSIsCiAgICAgICJleHRlcm5hbFBhcmFtZXRlcnMiOiB7fSwKICAgICAgImludGVybmFsUGFyYW1ldGVycyI6IHt9LAogICAgICAicmVzb2x2ZWREZXBlbmRlbmNpZXMiOiBbCiAgICAgICAgewogICAgICAgICAgInVyaSI6ICJnaXQraHR0cHM6Ly9zb3VyY2UuZXhhbXBsZS50ZXN0L2ZpeHR1cmVzIiwKICAgICAgICAgICJkaWdlc3QiOiB7CiAgICAgICAgICAgICJzaGEyNTYiOiAiNTlhZmFlMjRkZGZjZTc2YjZhOTBjMTkzZGUxODZlYzFhZjdkOTA5MzExOTU1YjBmNTE4ZTRhNmRmNTZlNjZhNSIKICAgICAgICAgIH0KICAgICAgICB9CiAgICAgIF0KICAgIH0sCiAgICAicnVuRGV0YWlscyI6IHsKICAgICAgImJ1aWxkZXIiOiB7CiAgICAgICAgImlkIjogImh0dHBzOi8vYnVpbGRlci5leGFtcGxlLnRlc3QvcGFja2VkIgogICAgICB9CiAgICB9CiAgfQp9Cg==",
+    "signatures": [
+      {
+        "keyid": "8cefd1a8c88da7112905d8e9ef1e11e70917ad51a5f56ae4ec8528782177990f",
+        "sig": "6rAiQY43eBpjiO+jnVzym+CYK4pmwHSWWoHNxZSBuPacLNeKzX2Vl2+aWY+EUuaCJp9MC8FiImRs+JLPoDwADg=="
+      }
+    ]
+  }
+}

@@ -298,6 +298,9 @@ After an AWS refresh, wait for a successful Guard poll to renew provider joins;
 changed or stale evidence is explicitly unavailable. No AWS collection or timer is enabled
 by the synthetic pilot or by installing the package.
 
+For one enrolled deployment, use the [independently signed pilot review](../../docs/guides/pilot-review.md)
+to bind the actual candidate, deployment scope and redacted run evidence to the operator observations and reviewer decision.
+
 Before expanding beyond that pilot, record live AWS join checks, the organization's
 SSO/TLS and credential-rotation tests, representative load results, backup storage
 and restore evidence, and independent security review. These deployment-specific

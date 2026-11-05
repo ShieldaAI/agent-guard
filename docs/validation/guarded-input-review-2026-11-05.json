@@ -1,0 +1,284 @@
+{
+  "recordedAt": "2026-11-05T17:31:09+00:00",
+  "targetMinimumPerCategory": 9.6,
+  "decision": "unverified; controlled field validation outstanding",
+  "sourceSha256": "a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9",
+  "baseCommit": "772f160055725f6a5ed3f08081d74db1e0374fd0",
+  "packageRecord": "guarded-input-candidate-a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9.json",
+  "packageRecordSha256": "8153833e23eb3d286c3f9252f24a424794f5a935c211cafe9b1ee0e1c657c640",
+  "archive": {
+    "name": "combined-candidate",
+    "file": "agent-guard-guarded-input-candidate.tar.gz",
+    "bytes": 446315,
+    "sha256": "ea629366886c0d9b2320f037064abd5327495e0f238910ee2ab4424792009d5e"
+  },
+  "supersedes": "561da7d1ebe587fe365e529e9b7e817eb80dd0c1e4db5eb3332cdf26aff8e892",
+  "firstCandidateReproduction": {
+    "syntheticOutsideFileReachedIsolatedGuest": true,
+    "hook": "After checking a selected directory, replaced it with a link to a sibling fixture. The packaged governed broker copied the sibling file and the real guest returned its marker."
+  },
+  "unchangedArtifactDigests": [
+    "@shieldaai/agent-guard",
+    "@shieldaai/agent-guard-mcp",
+    "@shieldaai/agent-guard-scenarios",
+    "@shieldaai/agent-map"
+  ],
+  "checks": {
+    "workspace": {
+      "command": "npm run check with both enrolled Docker fixtures",
+      "tests": 917,
+      "pass": 917,
+      "fail": 0,
+      "cancelled": 0,
+      "skipped": 0,
+      "todo": 0,
+      "packedConsumerSuite": "passed"
+    },
+    "platform": {
+      "macOS": {
+        "platform": "darwin",
+        "node": "v26.12.0",
+        "arch": "arm64",
+        "release": "27.0.0",
+        "image": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+        "mcpImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+        "counts": {
+          "tests": 44,
+          "passed": 44,
+          "skipped": 0,
+          "runtimeTests": [
+            "real Linux Docker runtime enforces isolation and copies only selected files",
+            "raw: content swapped as the broker starts staging cannot reach Docker under the old approval",
+            "attested: content swapped as the broker starts staging cannot reach Docker under the old approval",
+            "real Docker export rejects symlinks and host input symlinks",
+            "real Docker time and output limits terminate workloads and clean up containers",
+            "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+            "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+            "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+            "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+            "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+            "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+            "trusted CA does not disable hostname validation or grant private network access",
+            "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup",
+            "bounded input capture accepts the selected file and rejects a FIFO without blocking",
+            "a directory swap during capture cannot send an outside file to the guest"
+          ]
+        }
+      },
+      "LinuxVM": {
+        "platform": "linux",
+        "node": "v22.13.0",
+        "arch": "arm64",
+        "release": "6.8.0-117-generic",
+        "image": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+        "mcpImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+        "counts": {
+          "tests": 44,
+          "passed": 44,
+          "skipped": 0,
+          "runtimeTests": [
+            "real Linux Docker runtime enforces isolation and copies only selected files",
+            "raw: content swapped as the broker starts staging cannot reach Docker under the old approval",
+            "attested: content swapped as the broker starts staging cannot reach Docker under the old approval",
+            "real Docker export rejects symlinks and host input symlinks",
+            "real Docker time and output limits terminate workloads and clean up containers",
+            "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+            "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+            "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+            "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+            "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+            "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+            "trusted CA does not disable hostname validation or grant private network access",
+            "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup",
+            "bounded input capture accepts the selected file and rejects a FIFO without blocking",
+            "a directory swap during capture cannot send an outside file to the guest"
+          ]
+        }
+      }
+    },
+    "windows": {
+      "typescript": "passed",
+      "embeddedCSharp5Compilation": "passed on Darwin",
+      "nativeRun": "outstanding"
+    },
+    "aliasEntryPoints": {
+      "invalidPlatformReplacedStalePass": true,
+      "invalidStudyReturnedUnverified": true,
+      "invalidAdmissionArgumentsRejected": true
+    },
+    "installed": {
+      "importedInstalledPackages": 5,
+      "host": "darwin",
+      "arch": "arm64",
+      "node": "v26.12.0",
+      "shellImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+      "stagedInput": {
+        "raw": {
+          "swapped": {
+            "code": "TOOL_CHANGED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "symlink": {
+            "code": "TOOL_FAILED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "unchanged": {
+            "guestExit": 0,
+            "approvedBytesReturned": true,
+            "results": 1
+          }
+        },
+        "attested": {
+          "swapped": {
+            "code": "TOOL_CHANGED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "symlink": {
+            "code": "TOOL_FAILED",
+            "dockerCalls": 0,
+            "results": 0
+          },
+          "unchanged": {
+            "guestExit": 0,
+            "approvedBytesReturned": true,
+            "results": 1
+          }
+        }
+      },
+      "witness": {
+        "restoredHistoricalLedger": "STORE_WITNESS_UNAVAILABLE",
+        "unfencedReopen": "STORE_UNAVAILABLE",
+        "currentWitnessUnchanged": true,
+        "revokedCredential": "UNAUTHENTICATED",
+        "spent": 1,
+        "effects": 1
+      }
+    },
+    "guestPowerCuts": {
+      "result": "witness-vm-power-cut-2026-11-05-a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9.json",
+      "sha256": "1cc54f362724446d42e5632cbf8bea45b252789670fa4e604c9b9fb18c5a3513",
+      "completed": 3,
+      "limit": "Guest ext4 virtual disk; host storage remained powered."
+    },
+    "publicProviderReplay": {
+      "gate": {
+        "passed": true,
+        "complete": true,
+        "expectedTrials": 72,
+        "actualTrials": 72,
+        "reasons": []
+      },
+      "guarded": {
+        "openai/guarded/all": {
+          "safeTaskSuccess": {
+            "count": 12,
+            "denominator": 12,
+            "rate": 1
+          },
+          "unauthorizedActions": 0,
+          "disclosureTrials": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        },
+        "anthropic/guarded/all": {
+          "safeTaskSuccess": {
+            "count": 12,
+            "denominator": 12,
+            "rate": 1
+          },
+          "unauthorizedActions": 0,
+          "disclosureTrials": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        }
+      },
+      "realRequests": 0
+    },
+    "privateProviderControls": {
+      "policyGroups": 6,
+      "completions": 120,
+      "planned": 120,
+      "realRequests": 0
+    },
+    "dependencies": {
+      "npmAdvisories": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "pypiLockedVersionsCheckedWithOSV": 194,
+      "pypiPackagesWithMatches": 0,
+      "scope": "Public advisory data at time of review. Includes the locked development dependencies."
+    },
+    "openRemoteCodeScanningAlerts": [
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 7,
+        "path": "packages/agent-map/src/boundary.ts",
+        "ref": "refs/heads/main",
+        "rule": "js/remote-property-injection",
+        "candidateTriage": "Strict JSON decoder creates fresh null-prototype objects throughout, including when parsing reserved own property names."
+      },
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 6,
+        "path": "packages/agent-map/src/boundary.ts",
+        "ref": "refs/heads/main",
+        "rule": "js/remote-property-injection",
+        "candidateTriage": "Closed field allowlist and a fresh null-prototype result object prevent writes to object prototypes."
+      },
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 5,
+        "path": "packages/agent-map/test/helpers/oidc-provider.mjs",
+        "ref": "refs/heads/main",
+        "rule": "js/file-access-to-http",
+        "candidateTriage": "OIDC test helper sends caller-supplied test bodies over HTTPS in the local fixture suite. Keep it outside production code."
+      },
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 4,
+        "path": "integrations/cartography/tests/fixtures/benchmark-pilot.mjs",
+        "ref": "refs/heads/main",
+        "rule": "js/file-access-to-http",
+        "candidateTriage": "Test benchmark sends fixture request bodies to the local service URL generated by startMapServer, which binds 127.0.0.1."
+      },
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 3,
+        "path": "packages/executor/src/artifacts.ts",
+        "ref": "refs/heads/main",
+        "rule": "js/file-system-race",
+        "candidateTriage": "Confirmed a related ancestor-substitution read on the old installed artifact; replaced capture in raw and governed paths and tested actual staged bytes."
+      },
+      {
+        "commit": "e0f3af69bd1ccbc5bcfb3b669dec688bcc0cc3b5",
+        "number": 2,
+        "path": "scripts/verify-platform.test.mjs",
+        "ref": "refs/heads/main",
+        "rule": "js/identity-replacement",
+        "candidateTriage": "No-op in skip simulation was removed; the test now substitutes the actual skipped runtime check."
+      }
+    ]
+  },
+  "awaiting": {
+    "independentDeploymentSecurityReview": "missing",
+    "signedCompanyPilot": "missing",
+    "completedOperatorSessions": 0,
+    "submittedModelSelectedTrialArchives": 0,
+    "draftPolicies": 6,
+    "nativeWindowsResult": "missing",
+    "backupCustodyAndPhysicalPowerLoss": "unverified"
+  },
+  "approval": "No general rollout. Verify every row in docs/protection-acceptance.md on the enrolled target."
+}

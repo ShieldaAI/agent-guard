@@ -1,6 +1,10 @@
 // Explicit browser-only demonstration. These values are never presented as live inventory.
 const sourceId = 'a'.repeat(64);
 const capturedAt = Date.now();
+const readTool = 'mcp:documents:read';
+const selector = 'opaque:' + 'd'.repeat(64);
+const reportArn = 'arn:aws:s3:::company-reports/quarterly/summary.pdf';
+const readAction = 's3:GetObject';
 const capture = (status, ageSeconds, stale) => ({ status, observedAt: new Date(capturedAt - ageSeconds * 1000).toISOString(), ageSeconds, stale });
 const sources = [{ id: sourceId, sourceId, tenantId: 'acme-research', profile: 'host-mcp',
   generatedAt: new Date(capturedAt - 120_000).toISOString(), snapshotId: 'demo-current', projectionId: 'b'.repeat(64), stale: false,
@@ -16,8 +20,7 @@ const agents = [
 ];
 function access(agent) {
   const taskId = `${agent.agentId}-task`;
-  const tool = 'mcp:documents:read';
-  const resource = 'opaque:' + 'd'.repeat(64);
+  const tool = readTool, resource = selector;
   const node = (id, label, properties) => ({ id, entityId: id, label, properties });
   const nodes = [
     node(agent.id, 'GuardAgent', { agent_id: agent.agentId, name: agent.name, team_id: agent.teamId, owner_id: agent.ownerId }),
@@ -31,8 +34,8 @@ function access(agent) {
     node('binding', 'GuardExecutionBinding', { binding_id: 'documents-reader', tool, identity_selection: 'static', evidence_kind: 'host_asserted' }),
     node('identity', 'GuardExternalIdentity', { arn: `arn:aws:iam::111122223333:role/${agent.agentId}`, cloud_status: 'resolved', assessment: 'unknown' }),
     node('resource-binding', 'GuardResourceBinding', { binding_id: 'reports-object', tool, resource_ref: resource,
-      actions: ['s3:GetObject'], scope: 'exact', evidence_kind: 'host_asserted', assessment: 'unknown' }),
-    node('external-resource', 'GuardExternalResource', { arn: 'arn:aws:s3:::company-reports/quarterly/summary.pdf',
+      actions: [readAction], scope: 'exact', evidence_kind: 'host_asserted', assessment: 'unknown' }),
+    node('external-resource', 'GuardExternalResource', { arn: reportArn,
       kind: 'object', cloud_status: 'resolved', cloud_match_kind: 'containment', assessment: 'unknown' }),
   ];
   const edges = [
@@ -44,7 +47,7 @@ function access(agent) {
     ['resource-binding', 'resource', 'G_BINDS_SELECTOR'], ['resource-binding', 'external-resource', 'G_MAPS_TO'],
   ].map(([source, target, kind]) => ({ source, target, kind }));
   const policyEvidence = [{ taskId: 'task', deploymentId: 'deployment', executionBindingId: 'binding',
-    resourceBindingId: 'resource-binding', identityId: 'identity', resourceId: 'external-resource', action: 's3:GetObject',
+    resourceBindingId: 'resource-binding', identityId: 'identity', resourceId: 'external-resource', action: readAction,
     status: agent.id === 'agent-finance' ? 'unavailable' : 'complete',
     reason: agent.id === 'agent-finance' ? 'boundary_unresolved' : agent.id === 'agent-release' ? 'no_candidate' : null,
     observedAt: sources[0].coverage.policy.observedAt, assessment: 'unknown',
@@ -67,16 +70,26 @@ export async function queryDemo(operation, args = {}) {
   } else if (operation === 'get_inventory_health') result = { data: { sources } };
   else if (operation === 'get_agent_access') {
     const agent = agents.find(agent => agent.id === args.agentId || agent.agentId === args.agentId);
-    if (!agent) throw new Error('REFERENCE_NOT_FOUND');
+    if (!agent || (args.sourceId && args.sourceId !== sourceId)) throw new Error('REFERENCE_NOT_FOUND');
     result = access(agent);
-  } else if (operation === 'explain_access') result = { data: { ...args, assessment: 'unknown', blockers: [],
-    unknownChecks: ['Current custom policy', 'Resolved request arguments', 'Backend authorization', 'Concurrent reservations'],
-    delegation: [{ id: 'task', taskId: args.taskId }], matchedGrants: [{ tool: args.tool, resources: [args.resourceId] }],
-    externalEvidence: { policyEvidence: access(agents.find(agent => `${agent.agentId}-task` === args.taskId) ?? agents[0]).data.policyEvidence } } };
-  else if (operation === 'find_agents_with_access') result = { data: { candidates: [{ agent: agents[0], assessment: 'unknown',
-    evidence: [{ policyEvidence: access(agents[0]).data.policyEvidence.filter(item => item.action === args.action) }],
-    resourceRef: args.resourceRef, action: args.action, scope: 'exact' }],
-    limitations: ['Candidates have declared or mapped access. They are not guaranteed to execute this action.'] } };
+  } else if (operation === 'explain_access') {
+    const agent = agents.find(item => `${item.agentId}-task` === args.taskId);
+    if (!agent || (args.sourceId && args.sourceId !== sourceId)) throw new Error('REFERENCE_NOT_FOUND');
+    const { grants, policyEvidence } = access(agent).data;
+    const matchedGrants = grants.filter(grant => grant.tool === args.tool && grant.resources.includes(args.resourceId));
+    result = { data: { ...args, assessment: matchedGrants.length ? 'unknown' : 'blocked',
+      blockers: matchedGrants.length ? [] : ['declared_grant_missing'],
+      unknownChecks: ['Current custom policy', 'Resolved request arguments', 'Backend authorization', 'Concurrent reservations'],
+      delegation: [{ id: 'task', taskId: args.taskId }], matchedGrants,
+      externalEvidence: { policyEvidence: matchedGrants.length ? policyEvidence : [] } } };
+  } else if (operation === 'find_agents_with_access') {
+    const matches = (!args.sourceId || args.sourceId === sourceId) && args.action === readAction &&
+      [selector, reportArn].includes(args.resourceRef) ? agents : [];
+    const limit = args.limit ?? 50;
+    result = { data: { candidates: matches.slice(0, limit).map(agent => ({ agent, assessment: 'unknown',
+      evidence: [{ policyEvidence: access(agent).data.policyEvidence, scope: 'exact' }] })),
+      truncated: matches.length > limit } };
+  }
   else if (operation === 'get_changes') result = { data: { sourceId, from: { snapshotId: 'demo-previous', generatedAt: new Date(Date.now() - 420_000).toISOString() },
     to: sources[0], changes: { added: [{ entityId: 'new-task', label: 'GuardTask', name: 'research-followup' }], removed: [],
       changed: [{ entityId: 'connection', label: 'GuardMcpConnection', name: 'documents-eu' }, { entityId: 'tool', label: 'GuardTool', name: 'mcp:documents:read' }] },

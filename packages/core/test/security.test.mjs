@@ -70,6 +70,40 @@ test('opaque object identity rejects copied, serialized and cross-guard handles'
   assert.deepEqual(f.effects, []);
 });
 
+test('ungranted and control-plane tools cannot run parser or resource lookups', async () => {
+  for (const [task, controlPlane, expected] of [
+    [{ grants: [] }, false, 'GRANT_DENIED'],
+    [{ grants: [{ tool: 'record.write', resources: [] }] }, false, 'GRANT_DENIED'],
+    [{}, true, 'CONTROL_PLANE_DENIED'],
+  ]) {
+    let callbacks = 0;
+    const f = fixture({ task, tool: {
+      controlPlane,
+      parse(input) { callbacks++; return input; },
+      resolve() { callbacks++; throw new Error('private lookup'); },
+    } });
+    await assert.rejects(f.prepare(), code(expected));
+    assert.equal(callbacks, 0);
+    assert.equal(f.guard.snapshot(f.handle).calls, 0);
+    assert.deepEqual(f.effects, []);
+  }
+});
+
+test('the parser receives only arguments and cannot accidentally merge them into registration state', async () => {
+  let receiver;
+  const f = fixture({ tool: { requiresApproval: true, parse(input) {
+    receiver = this;
+    const parsed = Object.assign(this ?? {}, input);
+    return parsed.requiresApproval;
+  } } });
+  const prepared = await f.prepare({ requiresApproval: false });
+  assert.equal(receiver, undefined);
+  assert.equal(prepared.action.args, false);
+  assert.equal(prepared.requiresApproval, true);
+  await assert.rejects(f.guard.execute(prepared), code('APPROVAL_REQUIRED'));
+  assert.deepEqual(f.effects, []);
+});
+
 test('canonical metadata fingerprint covers schema, metadata and security configuration', () => {
   const f = fixture();
   const register = fields => f.guard.registerTool({ ...f.definition, ...fields });
@@ -197,6 +231,15 @@ test('approval binds an exact prepared action, expires, and concurrent replay di
   assert.equal(f.effects.length, 1);
 });
 
+test('rejected promises from synchronous hook positions fail closed without unhandled rejections', async () => {
+  for (const [field, expected] of [['parse', 'ARGUMENT_INVALID'], ['resolve', 'RESOLUTION_FAILED']]) {
+    const f = fixture({ tool: { [field]: () => Promise.reject(new Error('private resolver diagnostic')) } });
+    await assert.rejects(f.prepare(), code(expected));
+    await new Promise(done => setImmediate(done)); // node:test detects unhandledRejection.
+    assert.deepEqual(f.effects, []);
+  }
+});
+
 test('policy can tighten approval at execution without changing version', async () => {
   let needsApproval = false;
   const f = fixture({ options: { policy: () => needsApproval ? 'require_approval' : 'allow' } });
@@ -206,6 +249,43 @@ test('policy can tighten approval at execution without changing version', async 
   await assert.rejects(f.guard.execute(prepared), code('APPROVAL_REQUIRED'));
   const approvalId = f.guard.approve(prepared, { approverId: 'reviewer:1', expiresAt: Date.now() + 10_000 });
   assert.equal(await f.guard.execute(prepared, { approvalId }), 'ok');
+});
+
+test('live approval records are bounded per action and expired records free space', async () => {
+  let now = 1000;
+  const f = fixture({ options: { clock: () => now }, tool: { requiresApproval: true },
+    task: { budget: { ...defaultBudget(), deadline: 4000 } } });
+  const prepared = await f.prepare();
+  const approve = (expiresAt) => f.guard.approve(prepared, { approverId: 'reviewer', expiresAt });
+  const first = approve(2000);
+  for (let i = 0; i < 3; i++) approve(3000);
+  assert.throws(() => approve(3000), code('ACTION_APPROVAL_LIMIT'));
+  now = 2000;
+  const next = approve(3000);
+  await assert.rejects(f.guard.execute(prepared, { approvalId: first }), code('APPROVAL_INVALID'));
+  assert.equal(await f.guard.execute(prepared, { approvalId: next }), 'ok');
+  assert.equal(f.effects.length, 1);
+});
+
+test('clock rollback cannot resurrect an expired approval or task', async () => {
+  let now = 1000;
+  const f = fixture({ options: { clock: () => now }, tool: { requiresApproval: true },
+    task: { budget: { ...defaultBudget(), deadline: 5000 } } });
+  const prepared = await f.prepare();
+  const approvalId = f.guard.approve(prepared, { approverId: 'reviewer', expiresAt: 3000 });
+  now = 4000;
+  await f.prepare(); // Observe the elapsed approval lifetime without consuming it.
+  now = 2000;
+  await assert.rejects(f.guard.execute(prepared, { approvalId }), code('CLOCK_INVALID'));
+  now = 4000;
+  await assert.rejects(f.guard.execute(prepared, { approvalId }), code('APPROVAL_EXPIRED'));
+  const freshApproval = f.guard.approve(prepared, { approverId: 'reviewer', expiresAt: 5000 });
+  now = 5000;
+  await assert.rejects(f.guard.execute(prepared, { approvalId: freshApproval }), code('TASK_EXPIRED'));
+  now = 4999;
+  await assert.rejects(f.guard.execute(prepared, { approvalId: freshApproval }), code('CLOCK_INVALID'));
+  assert.equal(f.guard.snapshot(f.handle).calls, 0);
+  assert.deepEqual(f.effects, []);
 });
 
 test('final checks reject state changes while execution policy is pending', async t => {

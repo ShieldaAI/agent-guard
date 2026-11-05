@@ -13,6 +13,7 @@ const maximum = 4 * 1024 * 1024;
 const initial = mode === 'exact' ? Buffer.alloc(maximum, 'x') : Buffer.from('original asset');
 await fs.writeFile(privatePath, 'asset-boundary-private-canary');
 for (const name of ['index.html', 'app.js', 'app.css']) await fs.writeFile(join(directory, name), name === 'index.html' ? initial : 'small asset');
+if (mode === 'shared-writable') await fs.chmod(path, 0o666);
 const original = { lstat: fs.lstat, readFile: fs.readFile, open: fs.open };
 let mutated = false, bytes = 0, closed = false;
 async function mutate() {

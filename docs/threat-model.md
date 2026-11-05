@@ -66,7 +66,7 @@ A custom policy's supplied task snapshot must still match the current local coun
 
 Budgets constrain admission to the registered executor and its task ancestors. Local reservations and approval consumption can be atomic within one process when they are made together before dispatch. Calls that reach a handler count even when the handler fails. Concurrency remains reserved until the handler settles. The executor reserves the trusted tool's declared maximum cost and reconciles its reported actual cost; the host must enforce that maximum at the provider. That is not a transaction with a remote service: a crash, timeout or lost response can leave the outcome of a side effect unknown. Retrying an operation requires the handler's idempotency or reconciliation mechanism.
 
-The alpha maintains a monotonic sensitive flag shared across related parent/descendant tasks. Once marked sensitive by a trusted resolver, that context cannot perform external sends, including with approval. External actions also require an explicitly allowed recipient. Configured literal secrets are scanned in outbound string leaves. These checks do not automatically discover every secret or track every transformation of a value. A separate new root task must not be used to erase the labels of copied data; the host must carry the relevant context across reuse outside an existing task family.
+The alpha maintains a monotonic sensitive flag shared across related parent/descendant tasks. Once marked sensitive by a trusted resolver, that context cannot perform external sends, including with approval. External actions also require an explicitly allowed recipient. Configured literal secrets are scanned in outbound object keys and string values. These checks do not automatically discover every secret or track every transformation of a value. A separate new root task must not be used to erase the labels of copied data; the host must carry the relevant context across reuse outside an existing task family.
 
 ## Limits that affect deployment
 
@@ -84,7 +84,7 @@ The alpha maintains a monotonic sensitive flag shared across related parent/desc
 
 For production use with durable tasks, preserve state in a trusted service and define recovery behavior before resuming work after a crash. Do not silently recreate exhausted or revoked tasks with fresh authority. Multiple workers require shared authorization and quota state; separate in-memory guards do not provide an organization-wide limit.
 
-For hostile code or untrusted tool servers, add an operating-system or service boundary, restricted credentials and enforced network controls. Those controls are deployment responsibilities and are not supplied by this alpha.
+For hostile code or untrusted tool servers, add an operating-system or service boundary, restricted credentials and enforced network controls. The embedded core does not supply them. This checkout includes a separate [Docker isolation profile](../deployment/README.md) and [MCP deployment fixture](guides/mcp-isolation-acceptance.md); the host must actually use and verify those controls.
 
 For MCP, the registered handler is the client bridge promise. The SDK can reject that promise on cancellation before a remote server has stopped. Local concurrency and cost reservations settle with the bridge, so enforce remote concurrency, cost ceilings and cancellation at the server or provider as well. A passing linked-transport SDK test does not establish HTTP/stdio transport security, authentication or remote-server isolation.
 
@@ -92,7 +92,7 @@ For MCP, the registered handler is the client bridge promise. The SDK can reject
 
 The alpha does not claim protection against operating-system or runtime vulnerabilities, malicious application administrators, compromised credential stores, arbitrary code execution in its own process, or unauthorized operations performed outside the wrapper. It does not verify the correctness of all model output or detect all prompt injection.
 
-Cross-process authentication, distributed revocation, durable approval replay protection, persisted budgets, secure secret storage and federated agent identity require additional components. A local test of those ideas is not evidence that these distributed guarantees exist. See the [API contract](api-contract.md) for the alpha's local state and charging rules.
+Cross-process authentication, durable approval replay protection and persisted budgets require the optional executor or an equivalent service. Distributed revocation, federated agent identity and company-wide secret custody are outside the core and the single-owner executor. See the [API contract](api-contract.md) for local charging rules and the [protection design](protection-design.md) for the division of responsibilities.
 
 ## Evidence and failure handling
 

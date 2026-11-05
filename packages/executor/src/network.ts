@@ -2,6 +2,8 @@ import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { lookup } from 'node:dns';
 import { isIP, type LookupFunction } from 'node:net';
+import { X509Certificate } from 'node:crypto';
+import { rootCertificates } from 'node:tls';
 import ipaddr from 'ipaddr.js';
 import { ExecutorError } from './store.js';
 
@@ -9,6 +11,8 @@ export interface NetworkPolicy {
   allowedOrigins: readonly string[];
   /** Exact operator-approved origins only; permits private addresses and HTTP on those origins. */
   allowPrivateOrigins?: readonly string[];
+  /** Additional PEM trust anchors for exact allowed HTTPS origins; bundled roots and hostname checks remain active. */
+  additionalCaByOrigin?: Readonly<Record<string, string>>;
   maxResponseBytes?: number;
   maxRequestBytes?: number;
   timeoutMs?: number;
@@ -27,6 +31,23 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
   for (const origin of [...origins, ...privateOrigins]) {
     const url = new URL(origin);
     if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || !origins.has(origin)) throw new ExecutorError('NETWORK_CONFIG_INVALID');
+  }
+  const certificatesByOrigin = new Map<string, string[]>();
+  if (policy.additionalCaByOrigin !== undefined) {
+    const additional = policy.additionalCaByOrigin;
+    if (!additional || typeof additional !== 'object' || Array.isArray(additional) ||
+        ![Object.prototype, null].includes(Object.getPrototypeOf(additional)) || Object.keys(additional).length > 32) throw new ExecutorError('NETWORK_CONFIG_INVALID');
+    let totalBytes = 0;
+    for (const [origin, pem] of Object.entries(additional)) {
+      let url: URL;
+      try { url = new URL(origin); } catch { throw new ExecutorError('NETWORK_CONFIG_INVALID'); }
+      if (!origins.has(origin) || url.origin !== origin || url.protocol !== 'https:' || typeof pem !== 'string' ||
+          Buffer.byteLength(pem) > 262_144 || (totalBytes += Buffer.byteLength(pem)) > 1_048_576) throw new ExecutorError('NETWORK_CONFIG_INVALID');
+      const certificates = pem.match(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g);
+      if (!certificates?.length || certificates.length > 16 || pem.replace(/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/g, '').trim()) throw new ExecutorError('NETWORK_CONFIG_INVALID');
+      try { for (const certificate of certificates) new X509Certificate(certificate); } catch { throw new ExecutorError('NETWORK_CONFIG_INVALID'); }
+      certificatesByOrigin.set(origin, [...rootCertificates, ...certificates]);
+    }
   }
   return async (input, init) => {
     const request = new Request(input, init);
@@ -49,7 +70,7 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
         const item = await reader.read();
         if (item.done) break;
         requestSize += item.value.byteLength;
-        if (requestSize > maxRequest) { await reader.cancel(); throw new ExecutorError('REQUEST_TOO_LARGE'); }
+        if (requestSize > maxRequest) { cancelReader(); throw new ExecutorError('REQUEST_TOO_LARGE'); }
         chunks.push(item.value);
       }
       if (signal.aborted) throw new ExecutorError('REQUEST_ABORTED');
@@ -64,6 +85,7 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
     if (requestSize) headers['content-length'] = String(requestSize);
     const secureLookup: LookupFunction = (hostname, opts, callback) => {
       lookup(hostname, { all: true, verbatim: true }, (error, addresses) => {
+        if (signal.aborted) { callback(new ExecutorError('REQUEST_ABORTED'), '', 4); return; }
         if (error || !addresses.length) { callback(new ExecutorError('DNS_FAILED'), '', 4); return; }
         if (!allowPrivate && addresses.some(item => !isPublicAddress(item.address))) { callback(new ExecutorError('DESTINATION_DENIED'), '', 4); return; }
         if (opts.all) callback(null, addresses); else callback(null, addresses[0]!.address, addresses[0]!.family);
@@ -72,6 +94,8 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
     return new Promise<Response>((resolve, reject) => {
       const req = (url.protocol === 'https:' ? httpsRequest : httpRequest)(url, {
         method: request.method, headers, lookup: secureLookup, agent: false, signal,
+        ...(url.protocol === 'https:' ? { rejectUnauthorized: true, minVersion: 'TLSv1.2' as const,
+          ...(certificatesByOrigin.has(url.origin) ? { ca: certificatesByOrigin.get(url.origin) } : {}) } : {}),
       }, res => {
         try {
           const status = res.statusCode ?? 502;
@@ -87,6 +111,12 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
           let received = 0; let ended = false;
           const responseHeaders = new Headers();
           for (const [key, value] of Object.entries(res.headers)) if (value !== undefined) responseHeaders.set(key, Array.isArray(value) ? value.join(', ') : value);
+          if (request.method === 'HEAD' || status === 204 || status === 205) {
+            // The caller cannot consume a body on these responses. A hostile 205 can still
+            // stream bytes indefinitely, so close the private socket before releasing its timer.
+            res.destroy(); req.destroy(); clearTimeout(timer);
+            resolve(new Response(null, { status, headers: responseHeaders })); return;
+          }
           const stream = new ReadableStream<Uint8Array>({
             start(controller) {
               res.on('data', (chunk: Buffer) => {
@@ -101,8 +131,7 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
             pull() { res.resume(); },
             cancel() { ended = true; clearTimeout(timer); res.destroy(); req.destroy(); },
           });
-          if (request.method === 'HEAD' || [204, 205, 304].includes(status)) { res.resume(); clearTimeout(timer); resolve(new Response(null, { status, headers: responseHeaders })); }
-          else resolve(new Response(stream, { status, headers: responseHeaders }));
+          resolve(new Response(stream, { status, headers: responseHeaders }));
         } catch {
           clearTimeout(timer); res.destroy(); req.destroy(); reject(new ExecutorError('RESPONSE_INVALID'));
         }

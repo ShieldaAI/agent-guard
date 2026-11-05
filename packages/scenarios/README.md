@@ -1,6 +1,11 @@
 # @shieldaai/agent-guard-scenarios
 
-Versioned protection scenarios and executable synthetic fixtures for the Agent Guard public API. Node.js 22+, ESM. Experimental alpha.
+Test AI agent tool authorization with paired malicious and benign conformance fixtures for the Agent Guard public API. Node.js 22+, ESM. Experimental alpha.
+
+Install with `npm install @shieldaai/agent-guard-scenarios@alpha`. The synthetic
+fixtures need no provider key or external service. See the
+[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)
+for related execution and MCP packages.
 
 ```ts
 import { runConformance, scenarioCatalog } from '@shieldaai/agent-guard-scenarios';
