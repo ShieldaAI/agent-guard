@@ -4,7 +4,7 @@ import { chmodSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, trunc
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createPilotReviewFixture } from './fixtures/pilot-review.mjs';
 
 const cli = fileURLToPath(new URL('../dist/pilot-review-cli.js', import.meta.url));
@@ -121,7 +121,7 @@ test('pilot review input replacement after opening fails before evidence verific
         }
         return fd;
       }; syncBuiltinESMExports();`);
-    const child = spawnSync(process.execPath, ['--import', hook, cli, ...args], { cwd: dir, encoding: 'utf8', timeout: 5_000 });
+    const child = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, cli, ...args], { cwd: dir, encoding: 'utf8', timeout: 5_000 });
     assert.equal(child.status, 1, child.error?.message);
     assert.equal(child.stdout, '');
     assert.equal(child.stderr.trim(), readFailure);

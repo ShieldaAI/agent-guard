@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, closeSync, existsSync, linkSync, mkdirSync, mkdtempSync, openSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DurableExecutor } from '../dist/index.js';
@@ -66,7 +66,9 @@ test('an absent, stale, substituted or shared witness never bootstraps an existi
   rmSync(a.witness);
   assert.throws(() => a.open('resume'), { code: 'STORE_WITNESS_UNAVAILABLE' });
   assert.equal(existsSync(a.witness), false);
-  writeFileSync(a.witness, matching, { mode: 0o600, flag: 'wx' });
+  const witnessFd = openSync(a.witness, 'wx', 0o600);
+  try { writeFileSync(witnessFd, matching); }
+  finally { closeSync(witnessFd); }
   linkSync(a.witness, a.witness + '-alias');
   assert.throws(() => a.open('resume'), { code: 'STORE_WITNESS_UNAVAILABLE' });
   assert.throws(() => a.open('resume', { rollbackWitness: { mode: 'resume', path: a.database + '-witness' } }), { code: 'STORE_CONFIG_INVALID' });

@@ -5,7 +5,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const cli = fileURLToPath(new URL('./evaluate-provider-trials.mjs', import.meta.url));
 
@@ -63,7 +63,7 @@ for (const change of ['none', 'replace-after-open', 'change-during-read']) {
     `, { mode: 0o600 });
     const args = change === 'none' ? ['--validate-corpus', '--config', policy, '--corpus', corpus]
       : ['--live', '--config', policy, '--output', output, '--corpus', corpus];
-    const result = spawnSync(process.execPath, ['--import', hook, cli, ...args], {
+    const result = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, cli, ...args], {
       cwd: directory, env: { NODE_NO_WARNINGS: '1', OPENAI_API_KEY: 'synthetic-unused-key' },
       encoding: 'utf8', timeout: 5000,
     });
