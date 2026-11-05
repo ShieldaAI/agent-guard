@@ -58,11 +58,24 @@ redirects, bounds responses, and requests cancellation when an execution signal 
 aborted. Cancellation is cooperative; already accepted backend effects cannot be
 retracted. A canceled preparation cannot later dispatch.
 
+For an `APPROVAL_REQUIRED` response, show the exact prepared action to the authenticated
+reviewer. On a dispatch error or lost response, call `client.execution(action.id)` to
+inspect the task's retained status. If it is `UNKNOWN`, stop and give the action ID to
+the operator for backend reconciliation. Starting a new action can repeat an effect.
+Task responses carry fixed denial codes. Backend exception text stays on the executor side.
+When the reviewer refuses a prepared action, the trusted host calls
+`executor.cancel(taskId, action.id)` to retire it and prevent dispatch with an
+earlier approval. `recordReviewDecision(action.id, 'denied')` only records the review.
+
 Mandatory grant, tenant, recipient, deadline, sensitivity and integer budget gates
 are shared with the embedded core. Arguments pass a trusted `ToolDefinition.parse`
 before resource resolution. `resourceVersion` is bound into the prepared action;
 the resource adapter must recheck it at the effect boundary. Custom policy can only
 tighten these gates. Changing a policy or registering a tool invalidates old work.
+The executor accepts up to eight unresolved policy checks per task family and 64 per
+instance. A saturated scope returns `POLICY_BUSY`. Each caller waits up to 30 seconds
+or its task deadline, whichever comes first. Policy code receives an abort signal.
+A callback that keeps running after cancellation occupies its slot until it settles.
 
 ## Durable admission and recovery
 
@@ -70,6 +83,9 @@ Use one executor owner per SQLite file on a local filesystem. A second owner fai
 closed under SQLite's process lock. A transaction rechecks authority, consumes one
 approval, reserves every ancestor budget and records admission before dispatch.
 The state sequence is `PREPARED -> ADMITTED -> RUNNING -> SUCCEEDED/FAILED/UNKNOWN`.
+Immediately before calling the handler, the executor checks the task and approval
+deadlines again. Expiry during persistence settles as `FAILED` with a consumed
+admission, zero charge and no handler call.
 Generic handler failure or process loss after admission is `UNKNOWN`: no automatic
 retry, refund or concurrency release. `reconcile()` requires operator evidence that
 work ended, an exact outcome and bounded actual cost. Its evidence reference is
@@ -90,6 +106,15 @@ and requires platform validation. The host administrator, clock, key store, SQLi
 runtime and encryption-key backup are trusted. Losing the key makes state unreadable;
 restoring an old database can roll back authority and must not be used as recovery.
 
+If a database or its volume may be restored independently, enable
+`rollbackWitness` when provisioning a **new** POSIX ledger. It pairs the exact
+encrypted state with a private second SQLite file that remains current across
+database restores. If a pre-revocation copy is substituted, the executor refuses
+to open even with the correct encryption key. See the
+[restore and rollback procedure](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/ledger-rollback.md)
+for setup, failure handling and the crucial requirement that the witness stay
+outside the data backup/restore domain.
+
 Storage is bounded to 16 MiB. Family-wide pending action/byte and delegated-task
 caps prevent one task from filling shared storage through preparation/delegation.
 Expired or invalidated preparations and approvals are pruned. Terminal records have
@@ -99,6 +124,14 @@ reconciliation evidence. Task and action IDs are host-controlled audit metadata;
 avoid putting secrets in IDs. There is no automatic quota reset, key rotation or
 distributed-worker support. Plan an operator-controlled retention/archival policy
 before reaching capacity; never delete active authority state to recover quota.
+
+For optional diagnostics without raw task/action identifiers, enable
+`decisionTraces` on the executor. `decisionTraceSnapshot()` and
+`exportDecisionTraces()` expose bounded tenant-scoped events through host-only APIs.
+Export is explicit and runs outside admission; exporter failure never retries a
+tool effect. Buffers are volatile and can lose events through expiry, capacity or
+process loss. The [decision trace guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/decision-traces.md)
+describes the pseudonymous fields, access boundary, counters and export guarantees.
 
 ## Adapters and integrations
 
@@ -446,14 +479,33 @@ experimental implementation as certified isolation on all three platforms.
 `ArtifactBroker` signs tenant, content hashes, sensitivity and transitive source
 lineage for files, stdout and stderr. Raw input defaults to sensitive. Verified
 imports into fresh roots keep labels and reject revoked sources even after restart.
-`createSandboxTool` binds selected input versions, uses the executor's approval and
-budget admission, forwards cancellation, and retains complete results with the host.
+`createSandboxTool` binds approval to the actual bytes copied into the guest.
+A changed input requires a fresh review. Both the raw Docker launcher and the
+governed tool reject path traversal through symbolic links and hard-linked
+files. On Linux, file capture requires procfs at `/proc`. On Windows, use a
+fixed local drive and Windows PowerShell with permission to compile the
+file-handle helper. Hosted CI exercises the native file reader; full Windows
+Docker isolation remains a candidate profile requiring deployment verification. Follow the
+[Windows preflight and failure procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/README.md#windows-preflight-and-failure-handling)
+and pass its native file-reader and full platform checks before enabling it.
+The tool applies the executor's budget, forwards cancellation, and retains
+complete results with the host.
 Only bounded logs and artifact references reach the model. Reviewed exports require
 exact hashes and preserve a signed sidecar. Host signing keys and classification
 decisions must stay outside agent authority; the raw launcher does not provide this
 provenance contract. A signature does not make untrusted content trustworthy.
 
-## Verification and remaining release gates
+For externally built inputs, configure `ArtifactBroker` with a host-owned
+`buildPolicy` and call `admitBuildArtifact`. It verifies an Ed25519 DSSE
+signature and pins the file bytes, tenant, path, builder identity, build type
+and reported source dependency. The governed sandbox requires signed receipts
+for every selected input. Version-2 root and derived receipts bind the policy
+digest so a changed enrollment rejects old imports. See the
+[build artifact admission guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/build-artifact-admission.md).
+
+For an enrolled deployment, `agent-guard-pilot-review --policy policy.json --candidate candidate.bin --bundle evidence.json` verifies the build, operator observations and independent approval locally. The package also exports `verifyPilotReview`. [Scope, signing and file formats](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/pilot-review.md)
+
+## Verification and supported profiles
 
 `npm run check` builds all packages, runs adversarial/benign tests and installs the
 tarballs into a clean consumer. Executor tests use actual SQLite, process exits,
@@ -461,11 +513,22 @@ HTTP collectors, scoped credentials and versioned memory. The optional Docker te
 must run without skips for platform evidence. The platform workflow records runtime
 metadata and refuses a missing pinned image.
 
-The protected-release gate still requires native Linux and Windows host isolation
-results, a complete reference coding-agent integration, independent security review,
-artifact admission beyond pinned sandbox images, and reviewed retention/recovery
-operations. Distributed execution is a later milestone. The implementation makes no
-claim to detect every prompt injection or prevent every agent attack.
+The [candidate verification record](https://github.com/ShieldaAI/agent-guard/blob/main/docs/validation/guarded-input-review-2026-11-05.json)
+records 44/44 platform checks on macOS arm64 and 44/44 with the executor running as
+a Linux arm64 process inside Colima against its native daemon, each with zero skips.
+An offline installed consumer exercised approved raw and attested inputs through
+the actual Docker runtime. A separate disposable Linux VM exercised three abrupt
+guest interruptions against the exact packaged executor and recovered consistent
+ledger/witness pairs. The host and physical storage remained powered.
+
+Native Windows runtime verification remains a prerequisite for Windows rollout.
+The bounded offline sandbox, single-owner durable executor and documented MCP and
+provider adapters form the implemented project profiles. A complete networked
+coding-agent session and distributed execution require additional implementation.
+Deployments enroll their own trusted builders, credentials and endpoints and set
+their retention and recovery procedures. An independent security review can inform
+a deployment's assurance decision. Physical storage durability and backup custody
+need validation on the storage and backup system that deployment uses.
 
 ## Concrete file and HTTP adapters
 

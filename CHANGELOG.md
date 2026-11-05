@@ -1,10 +1,24 @@
 # Changelog
 
-## 0.1.0-alpha.2 — release preparation, 2026-11-01
+## 0.1.0-alpha.3 — 2026-11-05
 
-Prepared for publication as five npm packages under the `alpha` tag. Registry
-publication is not yet verified. See the [release notes](docs/releases/0.1.0-alpha.2.md)
-for package selection, compatibility and deployment boundaries.
+- Harden policy admission, approval expiry, cancellation, task authentication,
+  response validation and bounded callback capacity.
+- Bind approved sandbox inputs to the bytes actually staged; reject unsafe
+  workspace paths and add an opt-in independent rollback witness.
+- Add scoped MCP credential management, signed build and pilot evidence,
+  provider outcome evaluation and operator-study tooling.
+- Clarify Agent Map authorization, stale-result handling, recovery and mobile
+  navigation; fix installed command launchers.
+- Publish protection requirements, design, engineering review and reproducible
+  validation evidence. SDK publication remains experimental and does not certify
+  a production deployment. [Release notes](docs/releases/0.1.0-alpha.3.md)
+
+## 0.1.0-alpha.2 — 2026-11-04
+
+Published all five npm packages under the `alpha` tag. The release notes cover
+registry verification and the workaround for the two Agent Map command shortcuts
+on macOS. [Release notes](docs/releases/0.1.0-alpha.2.md)
 
 - Correct Windows test paths and close the pilot's SQLite owner before deleting
   its fixture directory. Resolve native filesystem aliases in release root

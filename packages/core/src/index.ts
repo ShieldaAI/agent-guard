@@ -1,13 +1,16 @@
 import { randomUUID } from 'node:crypto';
+import { isPromise } from 'node:util/types';
 import { digestJson, immutableJson, type JsonObject } from './json.js';
 import { GuardError } from './types.js';
 import { assertActionAuthority } from './authorization.js';
+import { PolicyAdmission } from './policy-admission.js';
 import type {
   Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
 } from './types.js';
 
 export { GuardError, GuardErrorCode } from './types.js';
+export { PolicyAdmission } from './policy-admission.js';
 export { assertActionAuthority, containsLiteralSecret } from './authorization.js';
 export type { AuthorityState } from './authorization.js';
 export { immutableJson, canonicalJson, digestJson } from './json.js';
@@ -27,17 +30,16 @@ type ToolState = {
 type TaskState = {
   handle: TaskHandle; identity: Readonly<TaskIdentity>; grants: Map<string, Set<string>>;
   recipients: Set<string>; allowControlPlane: boolean; budget: Readonly<Budget>;
-  parent: TaskState | undefined; family: { sensitive: boolean }; revoked: boolean;
+  parent: TaskState | undefined; family: { id: string; sensitive: boolean }; revoked: boolean;
   calls: number; concurrent: number; spent: number; reserved: number;
   active: Set<AbortController>;
 };
 type PreparedState = {
   handle: PreparedAction; task: TaskState; tool: ToolState; policyVersion: number;
-  dispatched: boolean;
+  dispatched: boolean; approvals: Map<string, ApprovalState>;
 };
 type ApprovalState = {
-  prepared: WeakRef<PreparedState>; digest: string; toolRevision: number; policyVersion: number;
-  expiresAt: number; used: boolean; approverId: string;
+  expiresAt: number; approverId: string;
 };
 type PolicyEvaluation = { decision: PolicyDecision; snapshot?: Readonly<TaskSnapshot> };
 
@@ -65,6 +67,15 @@ function normalizeJson(value: unknown): Json {
   try {
     return immutableJson(value);
   } catch { return fail('INVALID_JSON'); }
+}
+function synchronousResult<T>(value: T): T {
+  if (isPromise(value)) {
+    // A misconfigured async parser/resolver must not crash the host or print a
+    // raw rejection after prepare() has already returned its sanitized error.
+    void Promise.prototype.then.call(value, undefined, () => {});
+    fail('INVALID_INPUT');
+  }
+  return value;
 }
 function asObject(value: Json): JsonObject {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) fail('INVALID_INPUT');
@@ -111,12 +122,13 @@ export class AgentGuard {
   #tools = new Map<string, ToolState>();
   #tasks = new WeakMap<TaskHandle, TaskState>();
   #prepared = new WeakMap<PreparedAction, PreparedState>();
-  #approvals = new Map<string, ApprovalState>();
+  #policyAdmission = new PolicyAdmission();
   #taskIds = new Set<string>();
   #revision = 0;
   #policyVersion = 1;
   #policy: Policy | undefined;
   #clock: () => number;
+  #observedClock = 0;
   #secrets: readonly string[];
 
   constructor(options: GuardOptions = {}) {
@@ -130,7 +142,7 @@ export class AgentGuard {
   }
 
   registerTool(definition: ToolDefinition): string {
-    const now = this.#now();
+    this.#now();
     if (!definition || typeof definition !== 'object') fail('INVALID_INPUT');
     const name = identifier(definition.name);
     if (typeof definition.description !== 'string' || typeof definition.resolve !== 'function' ||
@@ -151,12 +163,11 @@ export class AgentGuard {
       requiresApproval, controlPlane, maxCost, resolve: definition.resolve, execute: definition.execute,
       parse: definition.parse,
     });
-    this.#pruneApprovals(now);
     return fingerprint;
   }
 
   approveTool(name: string, fingerprint: string): void {
-    this.#pruneApprovals(this.#now());
+    this.#now();
     const tool = this.#tools.get(name);
     if (!tool) fail('TOOL_UNKNOWN');
     if (fingerprint !== tool.fingerprint) fail('TOOL_CHANGED');
@@ -178,26 +189,32 @@ export class AgentGuard {
     if (typeof policy !== 'function') fail('INVALID_INPUT');
     this.#policy = policy;
     this.#policyVersion++;
-    this.#pruneApprovals(this.#now());
+    this.#policyAdmission.invalidate('POLICY_CHANGED');
   }
 
   async prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction> {
     const state = this.#task(task);
     this.#live(state);
+    if (this.#policy) this.#policyAdmission.assertCapacity(state.family.id);
     const input = asObject(normalizeJson(request));
     if (Object.keys(input).some(key => key !== 'tool' && key !== 'args') || !Object.hasOwn(input, 'args')) fail('INVALID_INPUT');
     const name = identifier(input.tool);
     const tool = this.#tools.get(name);
     if (!tool) fail('TOOL_UNKNOWN');
     if (!tool.approved) fail('TOOL_UNAPPROVED');
+    // Delegation only narrows authority. Reject a tool outside the leaf's scope
+    // before running host callbacks, which may look up private resource metadata.
+    if (!state.grants.get(name)?.size) fail('GRANT_DENIED');
+    if (tool.controlPlane && !state.allowControlPlane) fail('CONTROL_PLANE_DENIED');
     const policyVersion = this.#policyVersion;
     let args: Json = input.args as Json;
-    if (tool.parse) {
-      try { args = normalizeJson(tool.parse(args)); } catch { return fail('ARGUMENT_INVALID'); }
+    const parse = tool.parse;
+    if (parse) {
+      try { args = normalizeJson(synchronousResult(parse(args))); } catch { return fail('ARGUMENT_INVALID'); }
     }
     let resolved: ResolvedAction;
     const resolve = tool.resolve;
-    try { resolved = this.#resolved(resolve(args, state.identity)); }
+    try { resolved = this.#resolved(synchronousResult(resolve(args, state.identity))); }
     catch { return fail('RESOLUTION_FAILED'); }
     const action: Readonly<Action> = Object.freeze({
       ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
@@ -213,7 +230,7 @@ export class AgentGuard {
     const handle: PreparedAction = Object.freeze({
       id, digest, action, requiresApproval: tool.requiresApproval || evaluation.decision === 'require_approval',
     });
-    this.#prepared.set(handle, { handle, task: state, tool, policyVersion, dispatched: false });
+    this.#prepared.set(handle, { handle, task: state, tool, policyVersion, dispatched: false, approvals: new Map() });
     return handle;
   }
 
@@ -221,17 +238,15 @@ export class AgentGuard {
     const state = this.#invocation(prepared);
     this.#fresh(state);
     const now = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
-    this.#pruneApprovals(now);
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
     const approverId = identifier(options.approverId);
     const expiresAt = options.expiresAt;
     if (!nonnegative(expiresAt) || expiresAt <= now ||
         lineage(state.task).some(task => expiresAt > task.budget.deadline)) fail('APPROVAL_INVALID');
+    for (const [id, approval] of state.approvals) if (now >= approval.expiresAt) state.approvals.delete(id);
+    if (state.approvals.size >= 4) fail('ACTION_APPROVAL_LIMIT');
     const id = randomUUID();
-    this.#approvals.set(id, {
-      prepared: new WeakRef(state), digest: state.handle.digest, toolRevision: state.tool.revision,
-      policyVersion: state.policyVersion, expiresAt, used: false, approverId,
-    });
+    state.approvals.set(id, { expiresAt, approverId });
     return id;
   }
 
@@ -247,13 +262,12 @@ export class AgentGuard {
     this.#fresh(state);
     const dispatchTime = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
     this.#checkPolicySnapshot(state.task, evaluation);
-    const approval = this.#approval(state, approvalId, state.handle.requiresApproval || evaluation.decision === 'require_approval', dispatchTime);
+    this.#approval(state, approvalId, state.handle.requiresApproval || evaluation.decision === 'require_approval', dispatchTime);
     const ancestors = lineage(state.task);
     const controller = new AbortController();
     const cancelTimer = this.#deadlineTimer(state.task.budget.deadline - dispatchTime, controller);
     state.dispatched = true;
-    if (approval) approval.used = true;
-    this.#pruneApprovals(dispatchTime);
+    state.approvals.clear();
     for (const task of ancestors) {
       task.calls++;
       task.concurrent++;
@@ -308,7 +322,8 @@ export class AgentGuard {
   #now(): number {
     let now: unknown;
     try { now = this.#clock(); } catch { return fail('CLOCK_INVALID'); }
-    if (!nonnegative(now)) fail('CLOCK_INVALID');
+    if (!nonnegative(now) || now < this.#observedClock) fail('CLOCK_INVALID');
+    this.#observedClock = now;
     return now;
   }
 
@@ -340,12 +355,11 @@ export class AgentGuard {
     const handle = Object.freeze({ id: identity.id });
     const state: TaskState = {
       handle, identity, grants, recipients, allowControlPlane, budget, parent,
-      family: parent?.family ?? { sensitive: false }, revoked: false,
+      family: parent?.family ?? { id: identity.id, sensitive: false }, revoked: false,
       calls: 0, concurrent: 0, spent: 0, reserved: 0, active: new Set(),
     };
     this.#tasks.set(handle, state);
     this.#taskIds.add(identity.id);
-    this.#pruneApprovals(now);
     return handle;
   }
 
@@ -404,11 +418,11 @@ export class AgentGuard {
     const policy = this.#policy;
     if (!policy) return { decision: 'allow' };
     const snapshot = this.#snapshot(task);
-    let decision: unknown;
-    try { decision = await policy(action, snapshot); }
-    catch { return fail('POLICY_ERROR'); }
-    if (decision === 'deny') fail('POLICY_DENIED');
-    if (decision !== 'allow' && decision !== 'require_approval') fail('POLICY_ERROR');
+    const ancestors = lineage(task);
+    const decision = await this.#policyAdmission.evaluate(policy, action, snapshot, {
+      familyId: task.family.id,
+      taskIds: ancestors.map(ancestor => ancestor.identity.id), remainingMs: task.budget.deadline - this.#now(),
+    });
     return { decision, snapshot };
   }
 
@@ -419,17 +433,15 @@ export class AgentGuard {
         snapshot.sensitive !== task.family.sensitive)) fail('POLICY_STATE_CHANGED');
   }
 
-  #approval(state: PreparedState, id: string | undefined, required: boolean, now: number): ApprovalState | undefined {
+  #approval(state: PreparedState, id: string | undefined, required: boolean, now: number): void {
     if (id === undefined) {
       if (required) fail('APPROVAL_REQUIRED');
-      return undefined;
+      return;
     }
-    const approval = this.#approvals.get(id);
-    if (!approval || approval.prepared.deref() !== state || approval.digest !== state.handle.digest ||
-        approval.policyVersion !== this.#policyVersion || approval.toolRevision !== state.tool.revision) fail('APPROVAL_INVALID');
-    if (approval.used) fail('APPROVAL_USED');
-    if (now >= approval.expiresAt) { this.#approvals.delete(id); fail('APPROVAL_EXPIRED'); }
-    return approval;
+    // Lookup is scoped to the exact issued action. #gates checked its policy and tool revision.
+    const approval = state.approvals.get(id);
+    if (!approval) fail('APPROVAL_INVALID');
+    if (now >= approval.expiresAt) { state.approvals.delete(id); fail('APPROVAL_EXPIRED'); }
   }
 
   #snapshot(task: TaskState): Readonly<TaskSnapshot> {
@@ -442,20 +454,8 @@ export class AgentGuard {
   #revoke(task: TaskState): void {
     task.revoked = true;
     // Revocation must work even if an injected clock fails.
-    this.#pruneApprovals();
+    this.#policyAdmission.revokeTask(task.identity.id);
     for (const controller of task.active) controller.abort(new GuardError('TASK_REVOKED'));
-  }
-
-  #pruneApprovals(now?: number): void {
-    for (const [id, approval] of this.#approvals) {
-      const prepared = approval.prepared.deref();
-      if (!prepared || prepared.dispatched || approval.policyVersion !== this.#policyVersion ||
-          this.#tools.get(prepared.tool.name) !== prepared.tool ||
-          (now !== undefined && now >= approval.expiresAt) ||
-          lineage(prepared.task).some(task => task.revoked || (now !== undefined && now >= task.budget.deadline))) {
-        this.#approvals.delete(id);
-      }
-    }
   }
 
   #deadlineTimer(remaining: number, controller: AbortController): () => void {

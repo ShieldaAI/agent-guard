@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { AgentGuard, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+import { AgentGuard, containsLiteralSecret, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
 import { Client, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
 import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';
@@ -29,6 +29,8 @@ export interface ManagedMcpOptions {
   transport: Transport;
   /** Trusted synchronous auth/revocation check, run at connection, preparation and dispatch. */
   authorize?: () => void;
+  /** Close on a decoded inbound message containing one of these exact host secrets in any key or string. */
+  protectedValues?: readonly string[];
   tools?: readonly McpBinding[];
   /** Exact, advertised resource URIs only; no templates or automatic link fetching. */
   resources?: readonly McpResourceBinding[];
@@ -86,6 +88,7 @@ export class ManagedMcpConnection {
   readonly #maxEntries: number;
   readonly #maxMessages: number;
   readonly #authorize: (() => void) | undefined;
+  readonly #protectedValues: readonly string[];
   #messages = 0;
   #epoch = 0;
   // Observation revision includes ready transitions without changing execution epochs.
@@ -101,6 +104,10 @@ export class ManagedMcpConnection {
     this.#guard = options.guard;
     if (options.authorize !== undefined && typeof options.authorize !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
     this.#authorize = options.authorize;
+    const protectedValues = options.protectedValues ?? [];
+    if (!Array.isArray(protectedValues) || protectedValues.length > 32 ||
+        protectedValues.some(value => typeof value !== 'string' || !value.length || value.length > 16_384)) throw new McpBoundaryError('INVALID_CONFIGURATION');
+    this.#protectedValues = Object.freeze([...protectedValues]);
     this.#identity = Object.freeze({ serverId: identifier(options.identity.serverId), transportIdentity: identifier(options.identity.transportIdentity), principalId: identifier(options.identity.principalId), tenantId: identifier(options.identity.tenantId) });
     this.#transportRef = opaqueTransportRef(this.#identity.transportIdentity);
     this.#tools = bindings(options.tools);
@@ -218,7 +225,9 @@ export class ManagedMcpConnection {
         inner.onmessage = (message, extra) => {
           try {
             if (++this.#messages > this.#maxMessages) throw new McpBoundaryError('MESSAGE_BUDGET');
-            const safe = boundedJson(message) as unknown as JSONRPCMessage;
+            const data = boundedJson(message);
+            if (this.#protectedValues.length && containsLiteralSecret(data, this.#protectedValues)) throw new McpBoundaryError('CREDENTIAL_REFLECTED');
+            const safe = data as unknown as JSONRPCMessage;
             // Quarantine synchronously before SDK async notification dispatch.
             if ('method' in safe && ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'].includes(safe.method)) this.#invalidate('quarantined');
             wrapper.onmessage?.(safe, extra);

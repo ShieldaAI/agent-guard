@@ -39,7 +39,8 @@ ownership and authenticates reviewers for actions requiring approval.
 
 For MCP tools, add `@shieldaai/agent-guard-mcp@alpha`. For persistent authority
 state, add `@shieldaai/agent-guard-executor@alpha`. Install matching Guard package
-versions; `0.1.0-alpha.2` is the published reference release for this guide.
+versions; this checkout targets `0.1.0-alpha.3`. See the
+[release notes](releases/0.1.0-alpha.3.md) for publication verification.
 
 To evaluate the existing synthetic fixtures without a model provider:
 
@@ -98,7 +99,8 @@ Agent Map supplies scoped HTTP and MCP reference queries over published
 Cartography inventory. It does not authorize or execute agent actions. The
 [package guide](../packages/agent-map/README.md) covers its required host-owned
 configuration; the viewer and Python collector are separate source components.
-For the published alpha.2 package on macOS, invoke the launcher directly with
+Alpha.3 fixes the installed command launchers. For the older alpha.2 package on
+macOS, invoke the launcher directly with
 `node node_modules/@shieldaai/agent-map/dist/cli.js --help` if its npm command
 shortcut produces no output. See the [release notes](releases/0.1.0-alpha.2.md)
 for the release boundary.

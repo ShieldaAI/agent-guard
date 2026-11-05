@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-executor",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Durable AI agent tool authorization with SQLite state, authenticated task APIs, approvals and budget admission.",
   "license": "Apache-2.0",
   "type": "module",
@@ -12,6 +12,9 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "agent-guard-pilot-review": "./dist/pilot-review-cli.js"
+  },
   "files": [
     "dist",
     "README.md",
@@ -21,7 +24,7 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.2",
+    "@shieldaai/agent-guard": "0.1.0-alpha.3",
     "ipaddr.js": "2.5.0"
   },
   "publishConfig": {

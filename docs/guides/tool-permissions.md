@@ -118,4 +118,3 @@ Both have additional deployment responsibilities.
 See the [API contract](../api-contract.md), [threat model](../threat-model.md),
 [package selection guide](../package-guide.md), and
 [standalone example](../../examples/tool-permissions.mjs).
-

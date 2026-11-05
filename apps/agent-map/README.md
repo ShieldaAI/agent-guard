@@ -22,7 +22,7 @@ The loopback server advertises bearer mode. It sends fixed same-origin
 `POST /v1/query` requests with an in-memory `agm_v1.…` reference credential and
 omits cookies. It never persists the credential in browser storage, puts it in a
 URL or sends it to an arbitrary endpoint. Reloading or disconnecting clears the
-credential. The host service owns company, tenant and team access rules.
+credential. A 401 or 403 also clears the credential and displayed inventory and cancels pending requests. The host service owns company, tenant and team access rules.
 
 The company gateway advertises OIDC mode and supplies an expiring browser session
 and CSRF value. The viewer sends same-origin cookies plus the CSRF header for
@@ -54,6 +54,11 @@ The viewer offers:
 - Current IAM policy candidate cards and dashed graph edges tied to exact task,
   execution and resource bindings; timestamps, conditions and scope stay visible.
 
+Search and filter changes show a loading state until the scoped query completes.
+An unavailable query hides the previous list and offers **Refresh evidence** to
+retry. The matching count describes the current filter result. Mobile navigation
+keeps all four views and the refresh action visible.
+
 Policy candidates are always labeled with unknown access. A complete empty
 result does not establish denial; unresolved boundaries, unsupported policies,
 stale evidence and missing collection remain visible. History compares inventory
@@ -76,3 +81,26 @@ actual executor or cloud connection.
 The server's CSP must allow scripts from `self` and styles from `self` with inline
 style attributes for Cytoscape's canvas sizing. No external fonts, images, scripts
 or styles are fetched. The viewer is responsive and supports reduced motion.
+
+## Verify the operator workflow in Chromium
+
+From the repository root on a supported POSIX host, run the built viewer against
+a disposable loopback service. Browser tooling stays in a temporary directory.
+
+```sh
+npm run build
+browser_tools=$(mktemp -d)
+npm install --prefix "$browser_tools" --ignore-scripts --no-audit --no-fund playwright@1.63.0 axe-core@4.14.0
+"$browser_tools/node_modules/.bin/playwright" install chromium
+node apps/agent-map/check-browser.mjs "$browser_tools"
+```
+
+The check opens the demo from the keyboard, inspects one resource, distinguishes
+a missing grant from an unknown outcome, checks matching and empty lookups, and
+compares snapshots. It also checks four navigation views at a 375px viewport. A
+real bearer session loads synthetic protected inventory, checks a failed filter
+request and successful retry, then receives a 401 response and verifies the
+inventory disappears. The command exits with
+an error on a failed assertion, an uncaught page error, or an axe WCAG 2/2.1 A/AA
+violation in any of the ten sampled states. Representative operators and
+assistive-technology users still need to exercise the deployed workflow.

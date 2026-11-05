@@ -1,6 +1,13 @@
+import type { Stats } from 'node:fs';
 import { MapQueryError } from './types.js';
 
 export function fail(code: string): never { throw new MapQueryError(code); }
+// Configuration selects credential destinations. Viewer assets run in authenticated browsers.
+// Check the descriptor after open so the test applies to the bytes that will be used.
+export function trustedHostFile(info: Stats): boolean {
+  return typeof process.geteuid === 'function' && info.isFile() &&
+    (info.uid === 0 || info.uid === process.geteuid()) && (info.mode & 0o022) === 0;
+}
 export function fields(value: unknown, allowed: readonly string[], required: readonly string[] = []): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value) ||
       ![null, Object.prototype].includes(Object.getPrototypeOf(value)) || Object.getOwnPropertySymbols(value).length) fail('MAP_CONFIG_INVALID');

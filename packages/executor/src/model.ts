@@ -10,25 +10,32 @@ export interface ModelToolOptions {
 }
 /** Each dispatch reserves the tool's maximum cost in the executor before calling the credential owner. */
 export function createModelTool(options: ModelToolOptions): ToolDefinition {
-  const maxPrompt = options.maxPromptChars ?? 131_072;
-  if (!Number.isSafeInteger(maxPrompt) || maxPrompt < 1 || !Number.isSafeInteger(options.maxOutputTokens) || options.maxOutputTokens < 1) throw new GuardError('INVALID_INPUT');
+  const { name, model, tenantId, recipient, complete, maxCost, maxOutputTokens, maxPromptChars: maxPrompt = 131_072 } = options;
+  if (typeof complete !== 'function' || !Number.isSafeInteger(maxPrompt) || maxPrompt < 1 ||
+      !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 1) throw new GuardError('INVALID_INPUT');
+  const callProvider = complete.bind(options);
   return {
-    name: options.name, description: `Bounded provider request for ${options.model}`, maxCost: options.maxCost,
-    metadata: { model: options.model, recipient: options.recipient, maxOutputTokens: options.maxOutputTokens, maxPromptChars: maxPrompt },
+    name, description: `Bounded provider request for ${model}`, maxCost,
+    metadata: { model, tenantId, recipient, maxOutputTokens, maxPromptChars: maxPrompt },
     parse(value) {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new GuardError('ARGUMENT_INVALID');
       const input = value as Record<string, Json>;
       if (Object.keys(input).some(key => !['prompt', 'maxOutputTokens'].includes(key)) || typeof input.prompt !== 'string' || input.prompt.length > maxPrompt ||
-          !Number.isSafeInteger(input.maxOutputTokens) || Number(input.maxOutputTokens) < 1 || Number(input.maxOutputTokens) > options.maxOutputTokens) throw new GuardError('ARGUMENT_INVALID');
+          !Number.isSafeInteger(input.maxOutputTokens) || Number(input.maxOutputTokens) < 1 || Number(input.maxOutputTokens) > maxOutputTokens) throw new GuardError('ARGUMENT_INVALID');
       return value;
     },
-    resolve: () => ({ resourceId: options.model, tenantId: options.tenantId, external: true, recipient: options.recipient }),
+    resolve: () => ({ resourceId: model, tenantId, external: true, recipient }),
     async execute(args, context) {
       const input = args as { prompt: string; maxOutputTokens: number };
-      const result = await options.complete(input.prompt, { maxOutputTokens: input.maxOutputTokens, signal: context.signal });
-      if (typeof result.response.text !== 'string' || result.response.text.length > 1_048_576 || result.response.outputComplete === false) throw new GuardError('RESULT_INVALID');
-      for (const value of [result.response.inputTokens, result.response.outputTokens]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new GuardError('RESULT_INVALID');
-      return { value: { ...result.response, model: options.model } as Json, ...(result.actualCost === undefined ? {} : { actualCost: result.actualCost }) };
+      const result = await callProvider(input.prompt, { maxOutputTokens: input.maxOutputTokens, signal: context.signal });
+      const { text, inputTokens, outputTokens, cost, outputComplete } = result.response;
+      if (typeof text !== 'string' || text.length > 1_048_576 || (outputComplete !== undefined && outputComplete !== true) ||
+          (cost !== undefined && (!Number.isFinite(cost) || cost < 0))) throw new GuardError('RESULT_INVALID');
+      for (const value of [inputTokens, outputTokens]) if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) throw new GuardError('RESULT_INVALID');
+      // Provider SDK responses can carry request headers and internal diagnostics alongside the public result.
+      const value = { text, model, ...(inputTokens === undefined ? {} : { inputTokens }), ...(outputTokens === undefined ? {} : { outputTokens }),
+        ...(cost === undefined ? {} : { cost }), ...(outputComplete === undefined ? {} : { outputComplete }) };
+      return { value, ...(result.actualCost === undefined ? {} : { actualCost: result.actualCost }) };
     },
   };
 }

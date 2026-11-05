@@ -53,6 +53,12 @@ for (const transport of ['http', 'https']) {
     const result = await probe(t, transport, 'grow');
     assert.deepEqual(result, { code: 'MAP_CONFIG_INVALID', bytes: maximum + 1, closed: true, mutated: true });
   });
+  test(name(`${transport} refuses viewer code writable by another local account`), async t => {
+    if (await unsupported(transport)) return;
+    const result = await probe(t, transport, 'shared-writable');
+    assert.equal(result.code, 'MAP_CONFIG_INVALID');
+    assert.equal(result.bytes, 0);
+  });
   test(name(`${transport} assets reject a symlink replacing a checked regular file`), async t => {
     if (await unsupported(transport)) return;
     const result = await probe(t, transport, 'symlink');

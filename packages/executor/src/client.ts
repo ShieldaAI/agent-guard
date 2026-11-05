@@ -1,5 +1,6 @@
 import type { Json, PreparedAction, TaskSnapshot } from '@shieldaai/agent-guard';
-import { ExecutorError } from './store.js';
+import { ExecutorError, executionStatuses, type ExecutionReceipt } from './store.js';
+import { isExecutorResponseCode } from './response-code.js';
 
 /** Task-only client. It has no administration or approval API and never follows redirects with credentials. */
 export class ExecutorClient {
@@ -19,17 +20,29 @@ export class ExecutorClient {
       method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${this.#token}` },
       body: JSON.stringify(input), redirect: 'error', ...(signal === undefined ? {} : { signal }),
     });
-    if (response.redirected || response.status >= 300) { await response.body?.cancel(); throw new ExecutorError('EXECUTOR_REQUEST_DENIED'); }
+    const denied = !response.ok;
+    if (response.redirected || (denied && (![400, 401].includes(response.status) ||
+        response.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/json'))) {
+      void response.body?.cancel().catch(() => {}); throw new ExecutorError('EXECUTOR_REQUEST_DENIED');
+    }
+    const limit = denied ? 1024 : 2_097_152;
     const reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let bytes = 0;
+    let timedOut = false;
+    const timer = denied && reader ? setTimeout(() => { timedOut = true; void reader.cancel().catch(() => {}); }, 1000) : undefined;
     try {
       if (reader) for (;;) {
         const item = await reader.read(); if (item.done) break;
         bytes += item.value.byteLength;
-        if (bytes > 2_097_152) { await reader.cancel(); throw new ExecutorError('EXECUTOR_RESPONSE_LIMIT'); }
+        if (bytes > limit) { void reader.cancel().catch(() => {}); throw new ExecutorError(denied ? 'EXECUTOR_REQUEST_DENIED' : 'EXECUTOR_RESPONSE_LIMIT'); }
         chunks.push(item.value);
       }
-      return JSON.parse(Buffer.concat(chunks).toString('utf8')) as T;
-    } finally { reader?.releaseLock(); }
+      if (timedOut) throw new ExecutorError('EXECUTOR_REQUEST_DENIED');
+      let value;
+      try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
+      catch { throw new ExecutorError(denied ? 'EXECUTOR_REQUEST_DENIED' : 'EXECUTOR_RESPONSE_INVALID'); }
+      if (denied) throw new ExecutorError(isExecutorResponseCode(value?.error) ? value.error : 'EXECUTOR_REQUEST_DENIED');
+      return value as T;
+    } finally { if (timer) clearTimeout(timer); reader?.releaseLock(); }
   }
   prepare(tool: string, args: Json, signal?: AbortSignal): Promise<PreparedAction> { return this.#call('prepare', { tool, args }, signal); }
   async execute(actionId: string, options: { approvalId?: string; signal?: AbortSignal } = {}): Promise<Json> {
@@ -39,4 +52,14 @@ export class ExecutorClient {
     finally { options.signal?.removeEventListener('abort', cancel); }
   }
   snapshot(signal?: AbortSignal): Promise<TaskSnapshot> { return this.#call('snapshot', {}, signal); }
+  async execution(actionId: string, signal?: AbortSignal): Promise<ExecutionReceipt> {
+    const receipt = await this.#call<ExecutionReceipt>('execution', { actionId }, signal);
+    if (!receipt || receipt.id !== actionId || !executionStatuses.includes(receipt.status) ||
+        (receipt.charged !== undefined && (!Number.isSafeInteger(receipt.charged) || receipt.charged < 0))) throw new ExecutorError('EXECUTOR_RESPONSE_INVALID');
+    const evidence = receipt.reconciliation;
+    if (evidence !== undefined && (!evidence || typeof evidence.referenceHash !== 'string' || !/^[a-f0-9]{64}$/.test(evidence.referenceHash) ||
+        !Number.isSafeInteger(evidence.time) || evidence.time < 0)) throw new ExecutorError('EXECUTOR_RESPONSE_INVALID');
+    return { id: receipt.id, status: receipt.status, ...(receipt.charged === undefined ? {} : { charged: receipt.charged }),
+      ...(evidence === undefined ? {} : { reconciliation: { referenceHash: evidence.referenceHash, time: evidence.time } }) };
+  }
 }

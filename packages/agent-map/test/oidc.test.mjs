@@ -189,12 +189,20 @@ test('cancellation is per exchange and cannot authenticate later or cancel anoth
 test('late DNS completion after deadline never dispatches client credentials', async t => {
   const provider = await createTestIdentityProvider(t), local = provider.issuer.replace('127.0.0.1', 'localhost');
   provider.controls.metadata = { token_endpoint: local + '/token' };
-  const client = await createMapOidcClient(configuration(provider, { endpointOrigins: [local], requestTimeoutMs: 100 }));
+  const timeoutMs = 5000;
+  const client = await createMapOidcClient(configuration(provider, { endpointOrigins: [local], requestTimeoutMs: timeoutMs }));
   const { start, callback } = await flow(client, provider);
-  let release;
-  const mocked = t.mock.method(dns, 'lookup', (_hostname, _options, done) => { release = done; });
+  // Cross the exchange deadline precisely while DNS is outstanding. Discovery uses the normal clock.
+  let elapsed = 0;
+  t.mock.method(performance, 'now', () => elapsed);
+  const mocked = t.mock.method(dns, 'lookup', (_hostname, _options, done) => {
+    setImmediate(() => {
+      elapsed += timeoutMs + 1;
+      done(null, [{ address: '127.0.0.1', family: 4 }]);
+    });
+  });
   syncBuiltinESMExports(); t.after(() => { mocked.mock.restore(); syncBuiltinESMExports(); });
   await assert.rejects(client.complete(callback, transaction(start)), { code: 'MAP_IDENTITY_UNAVAILABLE' });
-  assert.equal(typeof release, 'function'); release(null, [{ address: '127.0.0.1', family: 4 }]);
-  await new Promise(resolve => setTimeout(resolve, 20)); assert.equal(calls(provider, '/token'), 0);
+  assert.equal(mocked.mock.callCount(), 1);
+  assert.equal(calls(provider, '/token'), 0);
 });

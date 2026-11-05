@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
+import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -30,10 +30,17 @@ try {
     for (const path of ['dist/index.js', 'dist/index.d.ts', 'README.md', 'LICENSE']) {
       if (!pack.files.some(file => file.path === path)) throw new Error(`Missing package file: ${path}`);
     }
+    if (workspace === 'packages/executor' && !pack.files.some(file => file.path === 'dist/pilot-review-cli.js')) {
+      throw new Error('Missing installed pilot review executable.');
+    }
     if (workspace === 'packages/agent-map') {
       for (const path of ['dist/identity-cli.js', 'dist/identity-http.js', 'dist/oidc.js']) {
         if (!pack.files.some(file => file.path === path)) throw new Error(`Missing identity package file: ${path}`);
       }
+    }
+    if (workspace === 'packages/mcp') {
+      const metadata = JSON.parse(readFileSync(join(root, workspace, 'package.json'), 'utf8'));
+      if (!/^\d+\.\d+\.\d+$/.test(metadata.dependencies?.jose ?? '')) throw new Error('MCP JWT verification dependency must be directly pinned.');
     }
     tarballs.push(join(temp, pack.filename));
   }
@@ -41,6 +48,10 @@ try {
   writeFileSync(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   run(process.execPath, [npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs], consumer);
   writeFileSync(join(consumer, 'consumer.mts'), readFileSync(new URL('package-consumer.mts', import.meta.url)));
+  cpSync(join(root, 'packages/executor/test/fixtures/packed-build-attestation.json'), join(consumer, 'packed-build-attestation.json'));
+  cpSync(join(root, 'packages/executor/test/fixtures/pilot-review.mjs'), join(consumer, 'pilot-review-fixture.mjs'));
+  cpSync(join(root, 'scripts/pilot-review-package-consumer.mjs'), join(consumer, 'pilot-review-consumer.mjs'));
+  console.log(run(process.execPath, ['pilot-review-consumer.mjs'], consumer).trim());
   const readmes = [
     join(root, 'README.md'),
     ...['agent-guard', 'agent-guard-mcp', 'agent-guard-scenarios', 'agent-guard-executor', 'agent-map'].map(name =>
@@ -67,11 +78,35 @@ try {
   console.log(run(process.execPath, ['compiled/consumer.mjs'], consumer).trim());
   writeFileSync(join(consumer, 'tool-permissions.mjs'), readFileSync(join(root, 'examples/tool-permissions.mjs')));
   console.log(run(process.execPath, ['tool-permissions.mjs'], consumer).trim());
+  // These repository examples must work with the public, packed core API too.
+  cpSync(join(root, 'examples/providers'), join(consumer, 'examples', 'providers'), { recursive: true });
+  for (const example of ['openai-responses.mjs', 'anthropic-messages.mjs']) {
+    const output = run(process.execPath, [join('examples', 'providers', example)], consumer).trim();
+    const report = JSON.parse(output);
+    if (report.provider !== example.split('-')[0] || report.mode !== 'offline-synthetic-replay' ||
+        report.assertions !== 'passed' || report.approvedWrites !== 1 || report.forbiddenEffects !== 0 ||
+        report.privateCanaryDisclosures !== 0) {
+      throw new Error(`Installed protected ticket workflow failed: ${example}`);
+    }
+    console.log(output);
+  }
+  cpSync(join(root, 'evals/provider-tools'), join(consumer, 'evals/provider-tools'), { recursive: true });
+  mkdirSync(join(consumer, 'scripts'));
+  for (const name of ['evaluate-provider-tools.mjs', 'evaluate-provider-trials.mjs', 'provider-trials-package-consumer.mjs']) {
+    cpSync(join(root, 'scripts', name), join(consumer, 'scripts', name));
+  }
+  console.log(run(process.execPath, ['scripts/provider-trials-package-consumer.mjs'], consumer).trim());
   writeFileSync(join(consumer, 'identity-consumer.mjs'), readFileSync(new URL('identity-package-consumer.mjs', import.meta.url)));
   writeFileSync(join(consumer, 'oidc-provider.mjs'), readFileSync(join(root, 'packages/agent-map/test/helpers/oidc-provider.mjs')));
   console.log(run(process.execPath, ['--test', 'identity-consumer.mjs'], consumer).trim());
-  const identityHelp = run(process.execPath, ['node_modules/@shieldaai/agent-map/dist/identity-cli.js', '--help'], consumer);
-  if (!identityHelp.includes('agent-guard-map-identity --config')) throw new Error('Missing installed identity launcher');
+  writeFileSync(join(consumer, 'mcp-credentials-consumer.mjs'), readFileSync(new URL('mcp-credential-package-consumer.mjs', import.meta.url)));
+  console.log(run(process.execPath, ['--test', 'mcp-credentials-consumer.mjs'], consumer).trim());
+  for (const name of ['agent-guard-map', 'agent-guard-map-identity']) {
+    const help = process.platform === 'win32'
+      ? run('cmd.exe', ['/d', '/c', `node_modules\\.bin\\${name}.cmd`, '--help'], consumer)
+      : run(join(consumer, 'node_modules', '.bin', name), ['--help'], consumer);
+    if (!help.startsWith(`${name} --config `)) throw new Error(`Installed ${name} launcher did not print its usage.`);
+  }
 } finally {
   rmSync(temp, { recursive: true, force: true });
 }

@@ -36,7 +36,7 @@ clearly labeled synthetic demo uses only browser-local fixture data.
 
 The launcher requires nonblocking file-open support, as provided by the pilot's
 POSIX hosts. Its configuration must resolve to a regular file of at most 128 KiB;
-symlinks to regular files remain supported. It checks the opened descriptor and
+symlinks to regular files remain supported. The file must belong to the service user or root, with group and other write access disabled. Protect the configuration path and its parent directories from replacement. It checks the opened descriptor and
 limits bytes read even if the file grows. Named pipes and other nonregular inputs
 fail startup with the same safe diagnostic. Native Windows is outside the
 [pilot's supported host profile](../../deployment/cartography/RUNBOOK.md#prerequisites-and-layout).
@@ -45,7 +45,7 @@ Viewer asset hosting on both HTTP and HTTPS also requires nonblocking and
 no-follow file-open support, as provided by the POSIX pilot hosts. The fixed
 `index.html`, `app.js` and `app.css` entries must each be regular files of at most
 4 MiB. The loader checks each opened descriptor, rejects a symlink replacing an
-asset, and bounds reads even if the file grows. It captures the bytes at startup;
+asset, and bounds reads even if the file grows. Assets must belong to the service user or root, with group and other write access disabled. Keep the entire asset path in trusted directories. It captures the bytes at startup;
 later path replacements do not change the served assets. Starting an API without
 `viewerDirectory` does not require these file-open capabilities.
 

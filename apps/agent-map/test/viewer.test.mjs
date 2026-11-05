@@ -210,6 +210,27 @@ test('explicit synthetic demo exercises each view without network access', async
   assert.equal(health.data.sources.length, 1);
   const changes = await queryDemo('get_changes', { sourceId: agents[0].sourceId, since: 'previous' });
   assert.equal(changes.data.coverageGap, false);
-  const candidates = await queryDemo('find_agents_with_access', { resourceRef: 'synthetic', action: 's3:GetObject' });
+  const candidates = await queryDemo('find_agents_with_access', { resourceRef: access.data.grants[0].resources[0], action: 's3:GetObject' });
   assert.equal(candidates.data.candidates[0].assessment, 'unknown');
+});
+
+test('demo distinguishes matching grants, unknown tasks and lookups without a declared binding', async () => {
+  const access = (await queryDemo('get_agent_access', { agentId: 'agent-research' })).data;
+  const form = initialExplanation(access);
+  for (const override of [{ tool: 'mcp:documents:delete' }, { resourceId: 'opaque:other' }]) {
+    const { data } = await queryDemo('explain_access', { ...form, ...override });
+    assert.equal(data.assessment, 'blocked');
+    assert.deepEqual(data.matchedGrants, []);
+    assert.deepEqual(data.externalEvidence.policyEvidence, []);
+  }
+  await assert.rejects(queryDemo('explain_access', { ...form, taskId: 'unlisted' }), /REFERENCE_NOT_FOUND/);
+  const ref = 'arn:aws:s3:::company-reports/quarterly/summary.pdf';
+  for (const resourceRef of [ref, form.resourceId]) {
+    const { data } = await queryDemo('find_agents_with_access', { resourceRef, action: 's3:GetObject', limit: 2 });
+    assert.equal(data.candidates.length, 2);
+    assert.equal(data.truncated, true);
+  }
+  for (const [resourceRef, action] of [[ref + '.old', 's3:GetObject'], [ref, 's3:DeleteObject']]) {
+    assert.deepEqual((await queryDemo('find_agents_with_access', { resourceRef, action })).data.candidates, []);
+  }
 });

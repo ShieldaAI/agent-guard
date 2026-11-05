@@ -39,3 +39,23 @@ test('cancellation during asynchronous policy prevents admission and later repla
   await assert.rejects(executor.execute('task', action.id), { code: 'ACTION_USED' });
   assert.equal(effects, 0); assert.equal(executor.snapshot('task').calls, 0);
 });
+
+test('registered model tools pin the approved provider and return only the public result', async t => {
+  const executor = new DurableExecutor({ database: ':memory:', encryptionKey: Buffer.alloc(32) });
+  t.after(() => executor.close());
+  let calls = 0, redirected = 0;
+  const options = { name: 'model', model: 'reviewed', recipient: 'reviewed-provider', tenantId: 'tenant', maxCost: 0, maxOutputTokens: 5,
+    complete: async () => { calls++; return { response: { text: 'public', inputTokens: 2, outputComplete: true,
+      diagnostics: { authorization: 'synthetic-host-credential' } } }; } };
+  const definition = createModelTool(options);
+  executor.approveTool('model', executor.registerTool(definition));
+  executor.createTask({ id: 'task', principalId: 'host', tenantId: 'tenant', grants: [{ tool: 'model', resources: ['reviewed'] }],
+    allowedRecipients: ['reviewed-provider'], budget: { maxCalls: 2, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 } });
+  const prepare = maxOutputTokens => executor.prepare('task', { tool: 'model', args: { prompt: 'synthetic prompt', maxOutputTokens } });
+  const action = await prepare(5);
+  options.maxOutputTokens = 999; options.model = 'replacement'; options.recipient = 'other';
+  options.complete = async () => { redirected++; return { response: { text: 'replaced' } }; };
+  assert.deepEqual({ ...await executor.execute('task', action.id) }, { model: 'reviewed', text: 'public', inputTokens: 2, outputComplete: true });
+  await assert.rejects(prepare(100), { code: 'ARGUMENT_INVALID' });
+  assert.equal(calls, 1); assert.equal(redirected, 0);
+});

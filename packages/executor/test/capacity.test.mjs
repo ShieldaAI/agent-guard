@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { DurableExecutor } from '../dist/index.js';
+import { DurableExecutor, startExecutorServer } from '../dist/index.js';
 
 const task = (id, extra = {}) => ({ id, principalId: 'operator', tenantId: 'tenant',
   grants: [{ tool: 'test', resources: ['item'] }],
@@ -21,6 +21,38 @@ function setup(t, options = {}) {
   return { executor, register, now: value => { now = value; }, effects: () => effects };
 }
 const prepare = (executor, taskId, args = null) => executor.prepare(taskId, { tool: 'test', args });
+
+test('an HTTP task family cannot flood a stalled policy or block unrelated work', { timeout: 5000 }, async t => {
+  const signals = []; let unblock, full;
+  const held = new Promise(resolve => { unblock = resolve; });
+  const saturated = new Promise(resolve => { full = resolve; });
+  const { executor, effects } = setup(t, { policy: async (_action, task, { signal }) => {
+    if (task.id !== 'other') { signals.push(signal); if (signals.length === 8) full(); await held; }
+    return 'allow';
+  } });
+  const parent = executor.createTask(task('parent'));
+  const handoff = executor.createTask(task('handoff'), { sourceTaskId: 'parent' });
+  executor.createTask(task('other'));
+  const service = await startExecutorServer({ executor, adminToken: 'A'.repeat(43), operatorId: 'operator' });
+  t.after(() => service.close());
+  const post = async token => {
+    const response = await fetch(service.url + '/v1/task/prepare', { method: 'POST',
+      headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
+      body: JSON.stringify({ tool: 'test', args: null }) });
+    return response.json();
+  };
+  try {
+    const pending = Promise.all(Array.from({ length: 8 }, (_, i) => post(i % 2 ? parent.token : handoff.token)));
+    await saturated;
+    assert.deepEqual(await post(handoff.token), { error: 'POLICY_BUSY' });
+    const action = await prepare(executor, 'other');
+    assert.equal(await executor.execute('other', action.id), 'ok');
+    executor.revokeTask('parent');
+    assert.deepEqual(await pending, Array(8).fill({ error: 'TASK_REVOKED' }));
+    assert(signals.every(signal => signal.aborted));
+    assert.equal(signals.length, 8); assert.equal(effects(), 1); assert.equal(executor.snapshot('parent').calls, 0);
+  } finally { unblock(); }
+});
 
 test('pending action count is shared by delegates and leaves capacity for another family', async t => {
   const { executor, effects } = setup(t);

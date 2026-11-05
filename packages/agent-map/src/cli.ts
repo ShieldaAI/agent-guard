@@ -3,12 +3,12 @@ import { constants } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { pathToFileURL } from 'node:url';
+import { isCliEntry } from './cli-entry.js';
 import { createNeo4jMapStore } from './store.js';
 import { MapService } from './service.js';
 import { startMapServer, type MapCredential } from './http.js';
 import { validateReadScope } from './types.js';
-import { fields, fail, integer, parseRequest } from './boundary.js';
+import { fields, fail, integer, parseRequest, trustedHostFile } from './boundary.js';
 
 function environmentName(value: unknown): string {
   if (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) fail('MAP_CONFIG_INVALID');
@@ -21,7 +21,7 @@ async function configBytes(path: string): Promise<Buffer> {
   const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK);
   try {
     const info = await file.stat();
-    if (!info.isFile() || info.size > maximum) fail('MAP_CONFIG_INVALID');
+    if (!trustedHostFile(info) || info.size > maximum) fail('MAP_CONFIG_INVALID');
     // The file may grow after stat; never use an unbounded readFile here.
     const data = Buffer.alloc(maximum + 1); let bytes = 0;
     while (bytes < data.length) {
@@ -65,6 +65,6 @@ export async function runMapCli(argv: string[] = process.argv.slice(2)): Promise
     await server.close();
   } finally { await store.close(); }
 }
-if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
+if (isCliEntry(import.meta)) {
   void runMapCli().catch(() => { process.stderr.write('MAP_START_FAILED\n'); process.exitCode = 1; });
 }

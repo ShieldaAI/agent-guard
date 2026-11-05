@@ -19,16 +19,21 @@ Preparing an action copies its JSON arguments and records the tool registration 
 
 Policy evaluation may await a remote service. On return, the core rechecks current authority and restrictions. Reservations and approval consumption happen synchronously before calling the registered handler. Every ancestor accounts for its descendants' usage. This provides atomic admission within one JavaScript process, not across workers or machines.
 
-Sensitivity is monotonic within a task tree. This alpha denies external sends after a trusted sensitive read is admitted. There is no automatic classifier or declassification workflow. Literal secret scanning visits nested string values; it is additional detection, not a replacement for restricting sensitive-data access and export.
+Sensitivity is monotonic within a task tree. This alpha denies external sends after a trusted sensitive read is admitted. There is no automatic classifier or declassification workflow. Literal secret scanning visits nested object keys and string values; it supplements restrictions on sensitive-data access and export.
 
 The core is implemented in TypeScript and has no third-party runtime dependencies. Integrations with external policy evaluators need their own conformance tests. Reusing an external evaluator must not transfer authority over identity, action binding, approvals or resource access to untrusted inputs.
 
-## Later work
+## When one in-process guard is insufficient
 
-- Durable state that keeps reservations and approval consumption consistent and supports recovery after a restart.
-- Provider-specific cost ceilings and resource-side idempotency for uncertain outcomes.
-- HTTP/stdio and authenticated MCP transport tests, additional SDK/protocol versions, and explicit coverage for resources/read and other privileged methods. The current suite exercises the official SDK v2.4.0 over its linked in-memory transport.
-- Stronger isolation and credential custody supplied by the deployment host.
-- Detector integrations with measured accuracy, framework adapters and independent security review.
+The [durable executor](../packages/executor/README.md) persists reservations and
+approval consumption and records uncertain outcomes for reconciliation. The
+[managed MCP adapter](../packages/mcp/README.md) pins a reviewed descriptor
+and has an explicit, limited set of supported methods. The [isolation
+profile](../deployment/README.md) runs selected workloads in a separate,
+network-disabled container. None of these components protects calls that bypass it.
 
-These features are not implemented. The alpha supports local integration experiments and conformance testing.
+Use the [protection design](protection-design.md) to choose components, and the
+[verification scorecard](protection-assessment.md) for tested profiles and open
+work. The host still owns user authentication, credential custody, atomic checks at
+the backend, provider-side spending ceilings and the response to uncertain effects.
+Multiple independent SQLite owners do not implement distributed authorization.

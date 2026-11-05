@@ -2,6 +2,8 @@
 
 The host owns `AgentGuard`. Give the model only a dispatcher, never administration methods or opaque handles. Authority is stored by object identity inside one guard instance. All state is in memory and lasts for that instance's lifetime.
 
+The signatures and limits below describe the current source checkout. For a published version, consult its release notes and installed declarations.
+
 Exports from `@shieldaai/agent-guard`:
 
 ```ts
@@ -40,7 +42,8 @@ interface TaskSnapshot extends TaskIdentity {
   sensitive: boolean; calls: number; concurrent: number; spent: number; reserved: number;
 }
 type PolicyDecision = 'allow' | 'deny' | 'require_approval';
-type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>) => PolicyDecision | Promise<PolicyDecision>;
+type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
+  context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
 interface GuardOptions { policy?: Policy; secretValues?: readonly string[]; clock?: () => number }
 interface PreparedAction {
   readonly id: string; readonly digest: string;
@@ -60,6 +63,14 @@ class AgentGuard {
   execute(prepared: PreparedAction, options?: { approvalId?: string }): Promise<Json>;
   snapshot(task: TaskHandle): Readonly<TaskSnapshot>;
 }
+// Shared by executor implementations. AgentGuard manages its own pool.
+class PolicyAdmission {
+  assertCapacity(familyId: string): void;
+  evaluate(policy: Policy, action: Readonly<Action>, snapshot: Readonly<TaskSnapshot>,
+    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number }): Promise<'allow' | 'require_approval'>;
+  revokeTask(taskId: string): void;
+  invalidate(reason: 'TASK_REVOKED' | 'POLICY_CHANGED'): void;
+}
 ```
 
 ## Execution rules
@@ -72,7 +83,9 @@ The host must approve tool metadata before preparing or executing a call. Finger
 
 ### Prepared actions and policy
 
-The guard accepts finite, plain JSON values, then clones and freezes them. It rejects cycles, accessors, exotic objects and inputs that exceed the size or depth limits below. An optional trusted synchronous `parse` validates and normalizes arguments exactly once before resolution; parser failure produces `ARGUMENT_INVALID`. The normalized result is cloned/frozen and used for approval and dispatch. It also validates and stores the resolver's result. Changing caller-owned arguments cannot change the stored invocation.
+The guard clones and freezes finite, plain JSON values. It rejects cycles, accessors, JavaScript proxies and other exotic objects. Each normalized envelope is limited to 1 MiB of canonical UTF-8 JSON, 100,000 nodes and 64 levels of depth. Proxy rejection happens before inspecting the proxy's properties or prototype.
+
+Preparation checks tool-level grants and control-plane permission before calling the tool's parser or resolver. An optional synchronous `parse` validates and normalizes arguments once. The guard freezes its result for resource resolution, approval and dispatch. Invalid parser output produces `ARGUMENT_INVALID`. Invalid resolver output produces `RESOLUTION_FAILED`. A resolver for a granted tool may receive an out-of-scope resource ID, so keep lookups read-only and tenant-scoped.
 
 `resourceVersion` is an opaque host-supplied value bound into the action and its
 approval. The handler must compare it with current state at the actual effect; the
@@ -87,19 +100,25 @@ After awaiting policy, the guard rechecks the policy version, grants, revocation
 
 This check covers the supplied local snapshot. It cannot coordinate external mutable state or other tasks that a custom policy reads through a closure. Grants cannot be changed in place, administration APIs must remain with the trusted host, and the core does not require a remote policy service.
 
+Preparation and execution share capacity for eight outstanding policy evaluations per task family and 64 per guard. When either limit is full, the next evaluation rejects with `POLICY_BUSY` before starting another callback. Forward `context?.signal` to policy I/O. A waiting call rejects at the task deadline with `TASK_EXPIRED`, or after 30 seconds with `POLICY_TIMEOUT`, whichever comes first. Revoking a task or ancestor and replacing the policy also abort affected waits. A callback keeps its slot until it settles, even if it ignores cancellation. Synchronous work still occupies the host event loop. Limit request rates and root task creation per tenant, because multiple families can fill the shared pool.
+
 ### Approval and dispatch
 
 Each prepared action can run at most once. A required approval is bound to that action and its policy and tool revisions. It must expire no later than the task deadline and is consumed immediately before dispatch. Only trusted host code may approve actions or tool metadata.
+
+The guard stores up to four live approvals on each exact prepared action. A fifth rejects with `ACTION_APPROVAL_LIMIT`. Expired records free space when the host next approves that action. Any single valid approval suffices. Dispatch consumes the action and clears all of its approvals. Dropping the action handle makes its records eligible for garbage collection. The host should bound its own review queue.
 
 ### Sensitive data and outbound calls
 
 Outbound tools require an explicitly allowed recipient. Parent and descendant tasks share a sensitive flag. Once a trusted resolver marks the context sensitive, external sends are denied. The flag is set before dispatch and cannot be cleared.
 
-The guard scans each outbound string value for configured literal secrets or canaries and omits argument values from errors. The scanner does not cover arbitrary encodings or secrets split across values.
+For external actions the guard scans outbound argument object keys and string values at every depth for configured literal secrets or canaries. A match produces `SECRET_EGRESS_DENIED` without the argument value. Encoded or split data can evade literal matching.
 
 ### Budgets and cancellation
 
 Before dispatch, budget admission updates every ancestor synchronously. Calls count attempts that reach a handler. A failed call or an uncertain side effect is not automatically retried or refunded.
+
+The embedded guard remembers its highest observed clock reading. A lower reading yields `CLOCK_INVALID` on time-dependent operations until the clock catches up. Revocation remains available during rollback. This prevents an observed expiry from becoming valid again within that guard instance.
 
 Budget `maxCost`, tool `maxCost` and reported `actualCost` use nonnegative safe integers in the same unit chosen by the host, such as microcurrency units. Fractional values and unsafe integers are rejected. The guard reserves `maxCost` and then settles the charge using `actualCost`, which must not exceed the reservation. If usage is omitted, it charges `maxCost`. An invalid or excessive cost report fails the call and revokes the task, charging the full reservation. The host must enforce the provider's actual cost ceiling.
 
@@ -108,6 +127,64 @@ Concurrency stays reserved until the registered handler's promise settles, inclu
 An MCP client may settle its request before the remote server stops working. Local accounting therefore cannot bound the remaining remote work. An error after invocation does not prove that no side effect occurred.
 
 ## Packages
+
+### Governed memory
+
+These methods belong to the trusted `DurableExecutor` host. They are not model
+tools or task-client administration operations:
+
+```ts
+importMemory(entry: {
+  id: string; tenantId: string; origin: string; value: Json;
+  sensitive?: boolean; trusted?: boolean;
+}): void;
+registerMemoryTools(prefix?: string): Readonly<{ read: string; write: string }>;
+quarantineMemory(tenantId: string, entryId: string): void;
+rollbackMemory(tenantId: string, entryId: string, version: number): void;
+```
+
+`registerMemoryTools()` defaults to the `memory` prefix and returns fingerprints,
+which the host must approve separately as `memory.read` and `memory.write`.
+Register and approve the tools again after reopening an executor. Grants name
+entry IDs; each lookup uses the task's authenticated tenant, so identical IDs in
+different tenants name different records. Delegated tasks use their inherited
+tenant and narrowed grants.
+
+| Tool | Exact arguments | Successful value from `execute()` |
+| --- | --- | --- |
+| `memory.read` | `{ id }` | `{ id, tenantId, origin, value, version, sensitive, trusted, parentIds, quarantined: false, familyId? }` |
+| `memory.write` | `{ id, value, ifVersion }` | `{ id, version, sensitive, trusted: false }` |
+
+Extra argument fields are rejected. Use `ifVersion: 0` to create an entry and the
+current positive version to replace it. Reads and writes bind a version during
+preparation and check it again at execution. An unavailable/quarantined entry or
+stale version during preparation yields `RESOLUTION_FAILED`; an execution-time
+version change yields `MEMORY_VERSION_CHANGED`. A race with quarantine can yield
+`MEMORY_UNAVAILABLE`. These handler failures follow the durable executor's normal
+uncertain-result accounting; inspect the execution receipt and reconcile before
+retrying.
+
+Host imports append versions, default to sensitive and untrusted, and cannot
+lower an existing entry's sensitivity. Tool writes are always untrusted and
+inherit family sensitivity and known memory-read lineage. Neither text nor the
+`trusted` metadata field grants permission or approves an action. Route reuse
+through the governed read/import paths; unrelated raw copies do not acquire
+provenance automatically.
+
+Quarantine marks all versions of the named entry and its known descendants in
+that tenant unavailable. It persists across reopening. Rollback appends a new
+version with the selected old value; it preserves all known parent IDs and never
+lowers sensitivity. A missing or quarantined rollback source yields
+`MEMORY_UNAVAILABLE`. Rollback cannot undo quarantine; a deliberate host import
+can append a replacement record, so the operator must separately review its
+content and provenance. History remains encrypted and retained rather than erased.
+
+Values are limited to 64 KiB of canonical JSON, each entry to 128 versions, and
+task-family memory history to 256 writes and 512 KiB of stored records. The host's
+configured record limit also bounds the number of entries. Exhaustion yields
+`MEMORY_LIMIT` or `FAMILY_MEMORY_LIMIT`; it does not silently drop history. See the
+[executor guide](../packages/executor/README.md) for source-task handoffs and
+reconciliation.
 
 ### Executor inventory (unreleased)
 

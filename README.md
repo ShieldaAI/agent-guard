@@ -4,6 +4,11 @@ Authorize AI agent tool calls in TypeScript with scoped resources, tenant checks
 
 **Status: experimental alpha.** The packages use the npm scope `@shieldaai`. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
 
+Start the defensive-project review with the [protection requirements and design](docs/protection-design.md)
+and the [engineering scorecard](docs/protection-assessment.md). The
+[acceptance criteria](docs/protection-acceptance.md) define the 9.6/10 target
+for each risk category and identify the checks needed for an actual deployment.
+
 Start with the [core tool-authorization example](packages/core/README.md), or use
 the [package selection guide](docs/package-guide.md) to choose between MCP
 integration, persistent execution, model response validation and dependency
@@ -14,6 +19,24 @@ an out-of-scope denial, authenticated-host approval and replay rejection using
 the published npm package and synthetic records.
 
 ![Annotated replay of verified tool-permission fixture output](docs/media/tool-permissions.gif)
+
+The [OpenAI and Anthropic ticket workflow](docs/guides/provider-ticket-workflow.md)
+uses one shared protected backend with scoped approvals and provider-specific tool
+results. Both examples run offline and test actual reads, writes and private-data
+disclosure without API keys.
+
+To try the review decision yourself, run `npm run build` and
+`node examples/providers/review-ticket.mjs` from the checkout. Press Enter to
+deny the change, or type the exact confirmation to see the updated synthetic ticket.
+
+The [provider outcome evaluation](docs/guides/provider-outcome-evaluation.md)
+compares guarded, deliberately permissive and deny-all hosts on paired synthetic
+tasks. Run `npm run evaluate:providers -- --output provider-evaluation.json` to
+measure completed tasks, unauthorized effects and private-data disclosure.
+To measure the actions an OpenAI or Anthropic model chooses, use the public tickets or enroll a
+private set of synthetic cases by its SHA-256 digest. To use the result for a release decision,
+choose minimum task-success rates in a version 3 configuration. Local validation gives you a
+digest that locks the cases and criteria for the paid run. [Model-selected trial guide](docs/guides/model-selected-provider-trials.md)
 
 | Package | Purpose |
 |---|---|
@@ -66,11 +89,10 @@ Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
 the matching core version. Configuration lives in your application: register tools,
 create task grants, and provide an authenticated approval flow where needed.
 
-The [0.1.0-alpha.2 release notes](docs/releases/0.1.0-alpha.2.md) describe the next
-five-package alpha and its publication status. The packages remain experimental;
-use `@alpha` or an exact version explicitly. A package's `latest` tag does not
-establish production readiness. The viewer and Python Cartography integration
-are separate source components, not npm packages in this release.
+This checkout targets `0.1.0-alpha.3` for all five npm packages under the `alpha` tag.
+The private viewer and Python Cartography integration are separate source
+components. See the [release notes](docs/releases/0.1.0-alpha.3.md) for changes
+and the published verification record.
 
 ## Run locally
 
@@ -98,24 +120,39 @@ for checked features and remaining protected-release gates.
 
 ## Approve and execute an action
 
+This integration sketch uses an in-memory record and an approval UI supplied by
+your application. For a runnable version with no external services, use the
+[ticket review exercise](examples/providers/review-ticket.mjs).
+
 ```ts
 import { AgentGuard } from '@shieldaai/agent-guard';
 
 const guard = new AgentGuard();
+const records = new Map([['record-A', { tenant: 'acme', version: 'v1' }]]);
 const fingerprint = guard.registerTool({
   name: 'records.delete',
   description: 'Delete one record',
   requiresApproval: true,
-  resolve: args => {
-    if (!args || typeof args !== 'object' || Array.isArray(args)) throw new Error('Invalid arguments');
-    const recordId = (args as { readonly recordId?: unknown }).recordId;
-    if (typeof recordId !== 'string') throw new Error('Invalid arguments');
-    return { resourceId: recordId, tenantId: 'acme' };
+  parse: input => {
+    if (!input || typeof input !== 'object' || Array.isArray(input) ||
+        Object.keys(input).length !== 1 || !('recordId' in input) ||
+        typeof input.recordId !== 'string') throw new Error('Invalid arguments');
+    return { recordId: input.recordId };
   },
-  execute: async (args, { signal }) => {
-    // Replace with your service call; the service must also check authorization.
+  resolve: (args, task) => {
+    const { recordId } = args as { recordId: string }; // normalized above
+    const record = records.get(recordId);
+    if (!record || record.tenant !== task.tenantId) throw new Error('Record unavailable');
+    return { resourceId: recordId, tenantId: record.tenant, resourceVersion: record.version };
+  },
+  execute: (_args, { action, task, signal }) => {
     signal.throwIfAborted();
-    return { value: { deleted: args } };
+    const record = records.get(action.resourceId);
+    if (!record || record.tenant !== task.tenantId || record.version !== action.resourceVersion)
+      throw new Error('Record changed');
+    // This map operation is synchronous. Use a conditional write/transaction at a real service.
+    records.delete(action.resourceId);
+    return { value: { deleted: action.resourceId } };
   },
 });
 guard.approveTool('records.delete', fingerprint);
@@ -129,9 +166,15 @@ const prepared = await guard.prepare(task, {
   tool: 'records.delete', args: { recordId: 'record-A' },
 });
 
-// Authenticate the reviewer in your approval UI before calling approve().
+// Trusted integration supplied by your application. Deny or close returns false.
+declare function reviewInHostUI(input: {
+  action: typeof prepared.action; digest: string; expiresAt: number;
+}): Promise<false | { authenticatedReviewerId: string; digest: string }>;
+const expiresAt = Date.now() + 30_000;
+const review = await reviewInHostUI({ action: prepared.action, digest: prepared.digest, expiresAt });
+if (!review || review.digest !== prepared.digest) throw new Error('Action not approved');
 const approvalId = guard.approve(prepared, {
-  approverId: 'reviewer-7', expiresAt: Date.now() + 30_000,
+  approverId: review.authenticatedReviewerId, expiresAt,
 });
 const result = await guard.execute(prepared, { approvalId });
 ```
@@ -151,11 +194,13 @@ Cost values must be nonnegative safe integers in a consistent host-defined unit,
 Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
 The [release review](docs/quality-review.md) preserves verification of the published
-`0.1.0-alpha.1` packages. See the [0.1.0-alpha.2 notes](docs/releases/0.1.0-alpha.2.md)
-and [changelog](CHANGELOG.md) for the next release's scope and remaining gates.
+`0.1.0-alpha.1` packages. See the [0.1.0-alpha.3 notes](docs/releases/0.1.0-alpha.3.md)
+and [changelog](CHANGELOG.md) for current changes and remaining deployment gates.
 
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports should include a minimal fixture and an assertion about actual effects. Report security vulnerabilities through [private vulnerability reporting](https://github.com/ShieldaAI/agent-guard/security/advisories/new), following [SECURITY.md](SECURITY.md).
 
 Licensed under [Apache-2.0](LICENSE). Copyright 2026 ShieldaAI contributors.
+
+The [joined MCP isolation acceptance guide](docs/guides/mcp-isolation-acceptance.md) shows how to exercise a disposable peer, credential custody, lifecycle invalidation and unknown-outcome cleanup through the managed connection and durable executor.

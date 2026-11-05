@@ -4,7 +4,7 @@ import { randomBytes } from 'node:crypto';
 import { mkdtemp, open, realpath, rm, stat } from 'node:fs/promises';
 import { cpus, totalmem, platform, release, arch, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { isEntry } from '../examples/providers/replay.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, threadId, Worker, workerData } from 'node:worker_threads';
@@ -131,10 +131,10 @@ function waitMessage(worker, predicate, timeout = 10_000) {
   });
 }
 
-export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250 }) {
+export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false }) {
   if (!['baseline', 'polling'].includes(mode) || !Number.isInteger(samples) || samples < 1 || samples > 1000 ||
       !Number.isInteger(warmup) || warmup < 1 || warmup > 100 || !Number.isInteger(tasks) || tasks < 1 || tasks > 100 ||
-      !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000) throw new Error('ADMISSION_CONFIG_INVALID');
+      !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000 || typeof decisionTraces !== 'boolean') throw new Error('ADMISSION_CONFIG_INVALID');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'agent-guard-admission-')));
   let executor, taskServer, observer, worker, clientWorker, credential;
   let successfulEffects = 0;
@@ -143,6 +143,7 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     successfulEffects: 0, finalCalls: 0, polling: null, cleanup: {} };
   try {
     executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: randomBytes(32),
+      ...(decisionTraces ? { decisionTraces: { maxEventsPerTenant: 4096 } } : {}),
       ...(mode === 'polling' ? { inventory: { companyId: 'synthetic-company', sourceId: 'synthetic-executor', enrollmentGeneration: 'synthetic-1' } } : {}) });
     for (let number = 0; number < grants; number++) {
       const name = `synthetic.read-${number}`;
@@ -180,6 +181,10 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     phase.error = 'ADMISSION_PHASE_FAILED';
   } finally {
     phase.successfulEffects = successfulEffects; phase.coldFirstCall = phase.warmupSamples[0] ?? null;
+    if (decisionTraces && executor) {
+      const trace = executor.decisionTraceSnapshot({ tenantId: 'synthetic-admission' });
+      phase.decisionTraces = { retained: trace.retained, dropped: trace.dropped, events: trace.events.length };
+    }
     try { if (credential) phase.finalCalls = executor.snapshot(credential.taskId).calls; }
     catch { phase.error = 'ADMISSION_PHASE_FAILED'; }
     if (worker) {
@@ -230,6 +235,6 @@ export async function main(argv = process.argv.slice(2)) {
 
 if (!isMainThread && workerData?.kind === 'poll') await pollWorker();
 else if (!isMainThread && workerData?.kind === 'workload') await workloadWorker();
-else if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
+else if (isEntry(import.meta)) {
   try { process.exitCode = await main(); } catch { process.stderr.write('ADMISSION_START_FAILED\n'); process.exitCode = 1; }
 }

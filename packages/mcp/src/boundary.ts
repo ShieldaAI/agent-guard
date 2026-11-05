@@ -1,5 +1,6 @@
 import type { Json } from '@shieldaai/agent-guard';
 import { Ajv } from '@modelcontextprotocol/client/validators/ajv';
+import { isProxy } from 'node:util/types';
 
 export class McpBoundaryError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'McpBoundaryError'; }
@@ -20,7 +21,7 @@ export function boundedJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS)
       bytes += Buffer.byteLength(value); if (bytes > limits.maxBytes) throw new McpBoundaryError('JSON_LIMIT');
       return value;
     }
-    if (typeof value !== 'object' || value === null || seen.has(value)) throw new McpBoundaryError('INVALID_JSON');
+    if (typeof value !== 'object' || value === null || isProxy(value) || seen.has(value)) throw new McpBoundaryError('INVALID_JSON');
     if (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype && Object.getPrototypeOf(value) !== null) throw new McpBoundaryError('INVALID_JSON');
     seen.add(value);
     const descriptors = Object.getOwnPropertyDescriptors(value);
@@ -111,7 +112,9 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
     }
     active.delete(value); return out;
   }
-  const schema = expand(root, new Set(), 0);
+  // Count the expanded tree as well. A compact group of local references may repeat
+  // a large enum or const many times in the source handed to the code generator.
+  const schema = boundedJson(expand(root, new Set(), 0), SCHEMA_LIMITS);
   try {
     const ajv = new Ajv({ strict: true, strictTypes: false, allErrors: false, validateFormats: false, coerceTypes: false, useDefaults: false, removeAdditional: false });
     const validate = ajv.compile(schema as boolean | Record<string, unknown>);

@@ -34,6 +34,18 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - run: npm run check
+      - name: Evaluate task completion and unauthorized effects
+        id: outcome_evaluation
+        if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
+        run: npm run evaluate:providers -- --output provider-evaluation.json
+      - name: Retain provider evaluation evidence
+        if: always() && matrix.node == 24 && matrix.os == 'ubuntu-latest' && steps.outcome_evaluation.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: provider-outcome-evaluation
+          path: provider-evaluation.json
+          if-no-files-found: error
+          retention-days: 7
       - if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
         run: npm run pack
       - if: matrix.node == 24 && matrix.os == 'ubuntu-latest'

@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-scenarios",
-  "version": "0.1.0-alpha.2",
+  "version": "0.1.0-alpha.3",
   "description": "Executable malicious and benign conformance fixtures for AI agent tool authorization, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",
@@ -49,6 +49,6 @@
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.2"
+    "@shieldaai/agent-guard": "0.1.0-alpha.3"
   }
 }

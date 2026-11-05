@@ -126,7 +126,8 @@ test('synthetic demo supplies conditional, absent and boundary evidence without 
   assert.equal(research.data.policyEvidence[0].candidates[0].hasCondition, true);
   assert.equal(release.data.policyEvidence[0].reason, 'no_candidate');
   assert.equal(finance.data.policyEvidence[0].reason, 'boundary_unresolved');
-  const explanation = await queryDemo('explain_access', { taskId: research.data.tasks[0].taskId });
+  const explanation = await queryDemo('explain_access', { taskId: research.data.tasks[0].taskId,
+    tool: research.data.grants[0].tool, resourceId: research.data.grants[0].resources[0] });
   assert.deepEqual(explanation.data.externalEvidence.policyEvidence, research.data.policyEvidence);
   const changes = await queryDemo('get_changes');
   assert.equal(changes.data.policyHistory, 'not_collected');

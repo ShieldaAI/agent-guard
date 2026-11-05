@@ -2,16 +2,46 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { release, arch } from "node:os";
 import { fileURLToPath } from "node:url";
-import { join, resolve } from "node:path";
+import { join } from "node:path";
+import { isEntry } from "../examples/providers/replay.mjs";
 
 export const REQUIRED_RUNTIME_TESTS = Object.freeze([
   "real Linux Docker runtime enforces isolation and copies only selected files",
+  "raw: content swapped as the broker starts staging cannot reach Docker under the old approval",
+  "attested: content swapped as the broker starts staging cannot reach Docker under the old approval",
   "real Docker export rejects symlinks and host input symlinks",
   "real Docker time and output limits terminate workloads and clean up containers",
   "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
   "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+  "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+  "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+  "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+  "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+  "trusted CA does not disable hostname validation or grant private network access",
+  "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup",
 ]);
 const platforms = { Linux: "linux", macOS: "darwin", Windows: "win32" };
+export function requiredPlatformTests(host) {
+  const inputTests = host === "Windows" ? [
+    "Windows pinned workspace read returns exact bytes and rejects junction, hardlink, and alternate-stream inputs",
+    "Windows concurrent workspace junction swaps cannot return outside bytes",
+  ] : [
+    "bounded input capture accepts the selected file and rejects a FIFO without blocking",
+    "a directory swap during capture cannot send an outside file to the guest",
+  ];
+  return [...REQUIRED_RUNTIME_TESTS, ...inputTests];
+}
+export function validatePlatformImages({ image, mcpImage }) {
+  const pinned = (value) =>
+    typeof value === "string" &&
+    /^[a-z0-9][a-z0-9._/:\-]*@sha256:[a-f0-9]{64}$/.test(value) &&
+    !value.includes("..");
+  if (!pinned(image) || !pinned(mcpImage))
+    throw new Error(
+      "Platform gate requires reviewed, locally installed sandbox and MCP image digests",
+    );
+  return { image, mcpImage };
+}
 export function validatePlatformRun({
   expectedHost,
   actualPlatform,
@@ -32,10 +62,11 @@ export function validatePlatformRun({
       throw new Error(`Missing or ambiguous TAP ${name} count`);
     return Number(matches[0][1]);
   };
+  const required = requiredPlatformTests(expectedHost);
   const tests = count("tests"),
     passed = count("pass");
   if (
-    tests < REQUIRED_RUNTIME_TESTS.length ||
+    tests < required.length ||
     passed !== tests ||
     count("fail") !== 0 ||
     count("cancelled") !== 0 ||
@@ -43,7 +74,7 @@ export function validatePlatformRun({
     count("todo") !== 0
   )
     throw new Error("Platform gate requires every test to pass without skips");
-  for (const name of REQUIRED_RUNTIME_TESTS) {
+  for (const name of required) {
     const expected = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
     if (![...tap.matchAll(new RegExp(`^ok \\d+ - ${expected}$`, "gm"))].length)
       throw new Error(`Missing unskipped runtime test: ${name}`);
@@ -52,13 +83,14 @@ export function validatePlatformRun({
     tests,
     passed,
     skipped: 0,
-    runtimeTests: [...REQUIRED_RUNTIME_TESTS],
+    runtimeTests: required,
   };
 }
 
 function main() {
   const root = fileURLToPath(new URL("../", import.meta.url));
   const image = process.env.AGENT_GUARD_SANDBOX_IMAGE;
+  const mcpImage = process.env.AGENT_GUARD_MCP_ISOLATION_IMAGE;
   const expectedHost = process.env.AGENT_GUARD_EXPECTED_HOST;
   const evidence = {
     time: new Date().toISOString(),
@@ -68,6 +100,7 @@ function main() {
     arch: arch(),
     node: process.version,
     image,
+    mcpImage,
     passed: false,
   };
   try {
@@ -78,10 +111,7 @@ function main() {
       throw new Error(
         "Platform gate requires the exact expected matrix host OS",
       );
-    if (!image || !/^[a-z0-9][a-z0-9._/:\-]*@sha256:[a-f0-9]{64}$/.test(image))
-      throw new Error(
-        "Platform gate requires an explicit reviewed, locally installed image digest",
-      );
+    validatePlatformImages({ image, mcpImage });
     const docker = spawnSync("docker", ["version", "--format", "{{json .}}"], {
       cwd: root,
       encoding: "utf8",
@@ -96,13 +126,20 @@ function main() {
         "--test",
         "--test-reporter=tap",
         "packages/executor/test/sandbox.test.mjs",
+        "packages/executor/test/sandbox-staged-input-version.test.mjs",
+        expectedHost === "Windows" ? "packages/executor/test/workspace-input-windows.test.mjs" :
+          "packages/executor/test/workspace-input.test.mjs",
         "packages/executor/test/artifacts.test.mjs",
+        "packages/executor/test/build-artifact-import.test.mjs",
+        "scripts/mcp-isolation.test.mjs",
+        "packages/mcp/test/credentials.test.mjs",
+        "packages/executor/test/network.test.mjs",
       ],
       {
         cwd: root,
         env: process.env,
         encoding: "utf8",
-        timeout: 120_000,
+        timeout: 240_000,
         maxBuffer: 2_097_152,
       },
     );
@@ -130,8 +167,4 @@ function main() {
     process.exitCode = 1;
   }
 }
-if (
-  process.argv[1] &&
-  resolve(process.argv[1]) === fileURLToPath(import.meta.url)
-)
-  main();
+if (isEntry(import.meta)) main();

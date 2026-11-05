@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createCompanyQuerySession, endCompanySession, queryCompanySession, readCompanySession, retryCompanyLogout,
+import { createBearerQuerySession, createCompanyQuerySession, endCompanySession, queryCompanySession, readCompanySession, retryCompanyLogout,
   startCompanyLogin, watchCompanySession } from '../src/view-model.mjs';
 
 const csrf = `agm_csrf_v1.${'c'.repeat(43)}`;
@@ -86,10 +86,12 @@ test('authentication endpoints keep strict body bounds, safe errors, cancellatio
   }
 });
 
-test('company authentication loss aborts sibling reads and discards queued evidence', async () => {
+for (const [mode, factory, credential] of [['company', createCompanyQuerySession, csrf],
+  ['bearer', createBearerQuerySession, `agm_v1.${'b'.repeat(43)}`]])
+test(`${mode} authentication loss aborts sibling reads and discards queued evidence`, async () => {
   for (const status of [401, 403]) {
     let release, signal, ended = 0;
-    const current = createCompanyQuerySession(csrf, { onEnded: () => { ended++; }, fetchImpl: async (_url, options) => {
+    const current = factory(credential, { onEnded: () => { ended++; }, fetchImpl: async (_url, options) => {
       if (JSON.parse(options.body).operation === 'get_inventory_health') { signal = options.signal; return new Promise(resolve => { release = resolve; }); }
       return json({ error: status === 401 ? 'MAP_UNAUTHENTICATED' : 'MAP_REQUEST_DENIED' }, status);
     } });

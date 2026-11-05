@@ -1,0 +1,231 @@
+{
+  "kind": "per-category-target-review",
+  "targetMinimumPerCategory": 9.6,
+  "status": "not-demonstrated",
+  "recordedAt": "2026-11-05T17:05:53+00:00",
+  "source": {
+    "baseCommit": "772f160055725f6a5ed3f08081d74db1e0374fd0",
+    "sourceSha256": "c861a29609ef3b3a5cd8d60fba9966750779284d15a15c7e4fe11d6ad78c703b",
+    "reproduce": "python3 docs/validation/protection-source-id.py",
+    "unpublished": true
+  },
+  "candidate": {
+    "kind": "unsigned-local-review-candidate",
+    "file": "agent-guard-review-candidate.tar.gz",
+    "bytes": 441026,
+    "sha256": "561da7d1ebe587fe365e529e9b7e817eb80dd0c1e4db5eb3332cdf26aff8e892",
+    "manifest": "protection-96-candidate-2026-11-05.json",
+    "manifestSha256": "e2dd20c2ab96f441f3670d0a794da83cf7c99a6870f86d03d93b1289692812df",
+    "npmTarballsRepackedIdentically": 5,
+    "exactInstalledCandidateRejectedStaleRestore": true,
+    "companyBuildAttestation": "not supplied"
+  },
+  "checks": {
+    "node26WorkspaceAndPackedConsumers": {
+      "command": "npm run check with both reviewed Docker images set",
+      "pass": 910,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "tests": 910,
+      "todo": 0,
+      "packedConsumers": "passed"
+    },
+    "minimumNodeTargeted": {
+      "node": "v22.13.0",
+      "pass": 67,
+      "fail": 0,
+      "skipped": 0,
+      "cancelled": 0,
+      "tests": 67,
+      "todo": 0
+    },
+    "cartography": {
+      "unit": 916,
+      "disposableNeo4j": 143
+    },
+    "macOSPlatform": {
+      "host": "macOS arm64 over local Linux VM Docker daemon",
+      "node": "v26.12.0",
+      "tests": 40,
+      "passed": 40,
+      "skipped": 0,
+      "runtimeTests": [
+        "real Linux Docker runtime enforces isolation and copies only selected files",
+        "real Docker export rejects symlinks and host input symlinks",
+        "real Docker time and output limits terminate workloads and clean up containers",
+        "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+        "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+        "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+        "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+        "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+        "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+        "trusted CA does not disable hostname validation or grant private network access",
+        "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup"
+      ]
+    },
+    "linuxPlatform": {
+      "host": "Linux arm64 process + local Docker daemon inside the existing Colima VM; no VM restart, physical Linux host or Windows certification",
+      "kernel": "6.8.0-117-generic",
+      "node": "v22.13.0",
+      "tests": 40,
+      "passed": 40,
+      "skipped": 0,
+      "runtimeTests": [
+        "real Linux Docker runtime enforces isolation and copies only selected files",
+        "real Docker export rejects symlinks and host input symlinks",
+        "real Docker time and output limits terminate workloads and clean up containers",
+        "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+        "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+        "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+        "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+        "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+        "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+        "trusted CA does not disable hostname validation or grant private network access",
+        "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup"
+      ]
+    },
+    "browser": {
+      "chromium": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health"
+      ],
+      "mobileViews": 4,
+      "bearerDenialClearedEvidence": true,
+      "automatedViolations": 0,
+      "representativeHumanObservations": 0
+    },
+    "publicDeterministicReplay": {
+      "gate": {
+        "passed": true,
+        "complete": true,
+        "expectedTrials": 72,
+        "actualTrials": 72,
+        "reasons": []
+      },
+      "report": "protection-96-provider-2026-11-05.json",
+      "reportSha256": "8cb6762da5950debf19fd16d9aae9e1089c974db5c7f68ecbd3079eed80ecfda",
+      "realProviderRequests": 0,
+      "modes": {
+        "openai/guarded/all": {
+          "safeTaskSuccess": {
+            "count": 12,
+            "denominator": 12,
+            "rate": 1
+          },
+          "unauthorizedActions": 0,
+          "disclosures": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        },
+        "openai/permissive/all": {
+          "safeTaskSuccess": {
+            "count": 6,
+            "denominator": 12,
+            "rate": 0.5
+          },
+          "unauthorizedActions": 6,
+          "disclosures": {
+            "count": 1,
+            "denominator": 12,
+            "rate": 0.08333333333333333
+          }
+        },
+        "openai/deny-all/all": {
+          "safeTaskSuccess": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          },
+          "unauthorizedActions": 0,
+          "disclosures": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        },
+        "anthropic/guarded/all": {
+          "safeTaskSuccess": {
+            "count": 12,
+            "denominator": 12,
+            "rate": 1
+          },
+          "unauthorizedActions": 0,
+          "disclosures": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        },
+        "anthropic/permissive/all": {
+          "safeTaskSuccess": {
+            "count": 6,
+            "denominator": 12,
+            "rate": 0.5
+          },
+          "unauthorizedActions": 6,
+          "disclosures": {
+            "count": 1,
+            "denominator": 12,
+            "rate": 0.08333333333333333
+          }
+        },
+        "anthropic/deny-all/all": {
+          "safeTaskSuccess": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          },
+          "unauthorizedActions": 0,
+          "disclosures": {
+            "count": 0,
+            "denominator": 12,
+            "rate": 0
+          }
+        }
+      }
+    },
+    "privateDraftControls": {
+      "policyGroups": 6,
+      "knownGoodCompleted": 120,
+      "plannedControls": 120,
+      "refusalOnlySucceeded": 0,
+      "denyAllSafeCompletions": 0,
+      "crossReportMutationControls": "passed",
+      "realProviderRequests": 0,
+      "limit": "Disposable scaffolding; no paid model behavior or independent participant decisions were measured."
+    },
+    "restoreWitnessTiming": {
+      "method": "docs/validation/benchmark-rollback-witness.mjs",
+      "default": {
+        "measured": 100,
+        "p95Ms": 7.179708000000005
+      },
+      "witnessed": {
+        "measured": 100,
+        "p95Ms": 251.47799999999916
+      },
+      "effects": 240,
+      "limit": "One local filesystem/host; neither latency nor cross-volume durability is a deployment SLO."
+    }
+  },
+  "missingForTarget": [
+    "Approved deployment manifest and independent review covering each enabled surface",
+    "Verified company pilot with enrolled keys/identity/backup/cost boundary",
+    "Independent representative operator observations and backend study receipts",
+    "Approved and completed model-selected provider trials for both providers with independent corpus/billing review",
+    "Target-native isolation, power-loss/restore, and networked-client evidence for any broader platform claims"
+  ],
+  "rolloutDecision": "No production approval; no per-category promotion from these local results."
+}
