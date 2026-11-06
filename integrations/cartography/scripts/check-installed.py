@@ -24,6 +24,7 @@ def main() -> None:
     for filename in (
         "agent-guard-inventory-v1.schema.json",
         "agent-guard-inventory-manifest-v1.schema.json",
+        "agent-guard-inventory-manifest-v2.schema.json",
         "agent-guard-mcp-inventory-v1.schema.json",
     ):
         resource = importlib.resources.files("agent_guard_cartography").joinpath(

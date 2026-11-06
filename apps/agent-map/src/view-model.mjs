@@ -1,10 +1,11 @@
-export const OPERATIONS = Object.freeze(['list_agents', 'get_agent_access', 'explain_access',
+export const OPERATIONS = Object.freeze(['list_agents', 'list_owners', 'list_resources', 'get_agent_inventory', 'get_resource_access', 'get_agent_access', 'explain_access',
   'find_agents_with_access', 'get_changes', 'get_inventory_health']);
 const LABELS = Object.freeze({ GuardAgent: 'Agent', GuardDeployment: 'Deployment', GuardTask: 'Task',
   GuardPrincipal: 'Principal', GuardTool: 'Tool', GuardGrant: 'Declared grant', GuardResource: 'Resource',
   GuardResourceBinding: 'Resource binding', GuardExecutionBinding: 'Execution binding',
-  GuardExternalIdentity: 'Cloud identity', GuardExternalResource: 'Cloud resource',
-  GuardMcpConnection: 'MCP connection', GuardMcpOperation: 'MCP operation' });
+  GuardExternalIdentity: 'Cloud identity', GuardExternalResource: 'External resource',
+  GuardMcpConnection: 'MCP connection', GuardMcpOperation: 'MCP operation', GuardOwner: 'Owner',
+  GuardCredentialReference: 'Credential reference' });
 
 export const kindName = label => LABELS[label] ?? 'Evidence';
 export function evidenceState(node) {
@@ -21,7 +22,7 @@ export function evidenceState(node) {
 export function nodeName(node) {
   const p = node.properties ?? {};
   const value = p.name ?? p.agent_id ?? p.deployment_id ?? p.task_id ?? p.principal_id ??
-    p.connection_id ?? p.resource_id ?? p.arn ?? p.binding_id ?? p.tool ?? kindName(node.label);
+    p.connection_id ?? p.resource_id ?? p.arn ?? p.display_name ?? p.owner_id ?? p.credential_id ?? p.binding_id ?? p.tool ?? kindName(node.label);
   return typeof value === 'string' ? value : kindName(node.label);
 }
 export function graphLabel(value) {
@@ -81,7 +82,8 @@ const POLICY_REASONS = Object.freeze({
   ambiguous: 'Ambiguous policy evidence', malformed: 'Policy evidence unavailable',
   missing: 'Policy evidence unavailable', history_not_collected: 'Policy history not collected',
 });
-const policyText = value => typeof value === 'string' && value.length > 0 && value.length <= 4096;
+const policyText = value => typeof value === 'string' && value.length > 0 &&
+  Array.from(value).length <= 4096 && !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value);
 /** Minimized presentation data; never display unrecognized provider properties. */
 export function policyEvidenceRows(records = [], graph = null) {
   if (!Array.isArray(records) || records.length > 512) throw new Error('VIEWER_POLICY_INVALID');
@@ -148,7 +150,7 @@ export function policyEvidenceRows(records = [], graph = null) {
       candidates, identityNode: identity ?? null, resourceNode: resource ?? null,
       task: task ? nodeName(task) : record.taskId, deployment: deployment ? nodeName(deployment) : record.deploymentId,
       execution: execution ? nodeName(execution) : record.executionBindingId,
-      target: resource ? nodeName(resource) : 'Target not resolved',
+      target: resource ? nodeName(resource) : record.resourceId ?? 'Target not resolved',
       bindingScope: typeof binding?.properties.scope === 'string' ? binding.properties.scope : 'Unknown',
       resourceKind: typeof resource?.properties.kind === 'string' ? resource.properties.kind : 'Unknown',
     });
@@ -196,22 +198,48 @@ export function componentHealth(coverage) {
 export class ReferenceError extends Error {
   constructor(code, status = 0) { super(code); this.code = code; this.status = status; }
 }
-/** Ending a page session aborts transport and discards even an already-queued result. */
+/** Two reads at a time leave gateway capacity for sign-out and other clients. */
 export function createQuerySession(invoke) {
-  const controller = new AbortController();
+  const controller = new AbortController(), pending = [];
+  let running = 0;
   const ended = () => new ReferenceError('VIEWER_SESSION_ENDED');
+  const cancelled = () => new ReferenceError('VIEWER_REQUEST_CANCELLED');
+  function drain() {
+    while (!controller.signal.aborted && running < 2 && pending.length) {
+      const item = pending.shift();
+      item.started = true; running++;
+      void (async () => {
+        try {
+          const result = await invoke(item.operation, item.args, { signal: controller.signal });
+          if (controller.signal.aborted) throw ended();
+          if (item.signal?.aborted) throw cancelled();
+          item.resolve(result);
+        } catch (error) { item.reject(controller.signal.aborted ? ended() : item.signal?.aborted ? cancelled() : error); }
+        finally { item.signal?.removeEventListener('abort', item.cancel); running--; drain(); }
+      })();
+    }
+  }
   return Object.freeze({
-    close: () => controller.abort(),
-    async query(operation, args = {}) {
-      if (controller.signal.aborted) throw ended();
-      try {
-        const result = await invoke(operation, args, { signal: controller.signal });
-        if (controller.signal.aborted) throw ended();
-        return result;
-      } catch (error) {
-        if (controller.signal.aborted) throw ended();
-        throw error;
-      }
+    close() {
+      controller.abort();
+      for (const item of pending.splice(0)) { item.signal?.removeEventListener('abort', item.cancel); item.reject(ended()); }
+    },
+    query(operation, args = {}, { signal } = {}) {
+      if (controller.signal.aborted) return Promise.reject(ended());
+      if (signal?.aborted) return Promise.reject(cancelled());
+      return new Promise((resolve, reject) => {
+        const item = { operation, args, signal, resolve, reject, started: false };
+        item.cancel = () => {
+          // A started read keeps its slot until the response settles. Aborting
+          // fetch alone does not establish that the backend query has stopped.
+          if (item.started) return;
+          const index = pending.indexOf(item);
+          if (index !== -1) pending.splice(index, 1);
+          signal?.removeEventListener('abort', item.cancel); reject(cancelled());
+        };
+        signal?.addEventListener('abort', item.cancel, { once: true });
+        pending.push(item); drain();
+      });
     },
   });
 }

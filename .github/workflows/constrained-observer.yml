@@ -1,0 +1,163 @@
+name: Constrained observer acceptance
+on:
+  pull_request:
+    paths:
+      - packages/core/**
+      - packages/executor/**
+      - scripts/benchmark-admission*
+      - scripts/check-constrained-observer*
+      - scripts/constrained-observer-*
+      - examples/providers/replay.mjs
+      - examples/providers/protected-ticket.mjs
+      - package.json
+      - package-lock.json
+      - tsconfig.base.json
+      - scripts/build.mjs
+      - .github/workflows/constrained-observer.yml
+  workflow_dispatch:
+    inputs:
+      source_commit:
+        description: Optional exact 40-hex source commit; empty uses the current workflow ref
+        required: false
+        type: string
+        default: ''
+      cpu_affinity:
+        description: Single logical CPU acceptance (0), or historical quota-only comparison (none)
+        required: true
+        type: choice
+        options: ['0', 'none']
+        default: '0'
+      worker_scheduling:
+        description: Explicit Linux background observer policy, or historical unchanged default
+        required: true
+        type: choice
+        options: ['linux-background', 'default']
+        default: 'linux-background'
+      owner_cpu_profile:
+        description: Add bounded owner CPU/timing diagnostics; never acceptance evidence
+        required: false
+        type: boolean
+        default: false
+permissions:
+  contents: read
+concurrency:
+  group: constrained-observer-${{ github.ref }}
+  # Let the owned container finish cleanup instead of cancelling a timed sample.
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    name: constrained-observer (${{ inputs.owner_cpu_profile && 'diagnostic' || 'acceptance' }}, ${{ inputs.worker_scheduling || 'linux-background' }}, affinity ${{ inputs.cpu_affinity || '0' }}, 512 MiB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Reviewed Node 24.22.1 image index. Update alongside the runner default.
+      NODE_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+      SOURCE_COMMIT: ${{ inputs.source_commit || '' }}
+      CPU_AFFINITY: ${{ inputs.cpu_affinity || '0' }}
+      WORKER_SCHEDULING: ${{ inputs.worker_scheduling || 'linux-background' }}
+      OWNER_CPU_PROFILE: ${{ inputs.owner_cpu_profile && 'true' || 'false' }}
+      TRIGGER_EVENT: ${{ github.event_name }}
+    steps:
+      - name: Validate manual experiment inputs
+        run: |
+          python3 - <<'PY'
+          import os
+          import re
+
+          source = os.environ['SOURCE_COMMIT']
+          affinity = os.environ['CPU_AFFINITY']
+          profiling = os.environ['OWNER_CPU_PROFILE']
+          scheduling = os.environ['WORKER_SCHEDULING']
+          if source and not re.fullmatch(r'[0-9a-fA-F]{40}', source):
+              raise SystemExit('SOURCE_COMMIT_INVALID')
+          if affinity not in ('none', '0'):
+              raise SystemExit('CPU_AFFINITY_INVALID')
+          if profiling not in ('true', 'false'):
+              raise SystemExit('OWNER_CPU_PROFILE_INVALID')
+          if scheduling not in ('default', 'linux-background'):
+              raise SystemExit('WORKER_SCHEDULING_INVALID')
+          if os.environ['TRIGGER_EVENT'] != 'workflow_dispatch' and (source or affinity != '0' or profiling != 'false' or scheduling != 'linux-background'):
+              raise SystemExit('MANUAL_INPUTS_ON_NONMANUAL_RUN')
+          PY
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.source_commit || github.sha }}
+      - name: Record exact checked-out source and workflow identity
+        env:
+          WORKFLOW_COMMIT: ${{ github.workflow_sha }}
+          TRIGGER_COMMIT: ${{ github.sha }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          import re
+          import subprocess
+
+          commit = subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip()
+          tree = subprocess.check_output(['git', 'rev-parse', 'HEAD^{tree}'], text=True).strip()
+          requested = os.environ['SOURCE_COMMIT'].lower()
+          workflow = os.environ['WORKFLOW_COMMIT']
+          trigger = os.environ['TRIGGER_COMMIT']
+          if any(not re.fullmatch(r'[0-9a-f]{40}', value) for value in (commit, tree, workflow, trigger)):
+              raise SystemExit('CHECKOUT_IDENTITY_INVALID')
+          if commit != (requested or trigger):
+              raise SystemExit('CHECKOUT_SOURCE_MISMATCH')
+          run_id = os.environ['WORKFLOW_RUN_ID']
+          if not re.fullmatch(r'[0-9]{1,30}', run_id):
+              raise SystemExit('WORKFLOW_RUN_ID_INVALID')
+          record = {'schemaVersion': 1, 'sourceCommit': commit, 'sourceTree': tree,
+                    'requestedSourceCommit': requested or None,
+                    'cpuAffinity': os.environ['CPU_AFFINITY'],
+                    'workerScheduling': os.environ['WORKER_SCHEDULING'],
+                    'ownerCpuProfile': os.environ['OWNER_CPU_PROFILE'] == 'true',
+                    'diagnosticOnly': os.environ['OWNER_CPU_PROFILE'] == 'true',
+                    'workflowCommit': workflow, 'triggerCommit': trigger, 'runId': run_id}
+          encoded = (json.dumps(record, indent=2) + '\n').encode()
+          if len(encoded) > 2048:
+              raise SystemExit('CHECKOUT_EVIDENCE_LIMIT')
+          Path('artifacts').mkdir(mode=0o700, exist_ok=True)
+          fd = os.open('artifacts/constrained-source.json', os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+          with os.fdopen(fd, 'wb') as output:
+              output.write(encoded)
+          PY
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require a nonroot native Linux host
+        run: node -e 'if (process.platform !== "linux" || process.arch !== "x64" || process.getuid() === 0) throw Error("NONROOT_NATIVE_LINUX_HOST_REQUIRED"); console.log(JSON.stringify({platform:process.platform,architecture:process.arch,node:process.version}));'
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Pull the reviewed immutable Node image
+        run: docker pull --platform linux/amd64 "$NODE_IMAGE"
+      - name: Run one full constrained workload with explicit diagnostic selection
+        shell: bash
+        run: |
+          mkdir -p artifacts
+          runner_args=(--image "$NODE_IMAGE" --output artifacts/constrained-observer)
+          if [[ "$CPU_AFFINITY" == '0' ]]; then
+            runner_args+=(--cpu-affinity 0)
+          fi
+          if [[ "$OWNER_CPU_PROFILE" == 'true' ]]; then
+            runner_args+=(--diagnostics --cpu-profile)
+          fi
+          if [[ "$WORKER_SCHEDULING" == 'linux-background' ]]; then
+            runner_args+=(--worker-scheduling linux-background)
+          fi
+          node scripts/check-constrained-observer.mjs "${runner_args[@]}"
+      - name: Retain bounded reports, including failed qualification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: constrained-observer-linux-node24
+          path: |
+            artifacts/constrained-source.json
+            artifacts/constrained-observer/admission.json
+            artifacts/constrained-observer/resources.json
+            artifacts/constrained-observer/staged-inputs.json
+            artifacts/constrained-observer/verification.json
+          if-no-files-found: error
+          retention-days: 30

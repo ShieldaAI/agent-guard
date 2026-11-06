@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { immutableJson } from '@shieldaai/agent-guard';
-import { MapQueryError, type JsonObject, type MapEdge, type MapNode, type MapPolicyCandidate, type MapPolicyEvidence } from './types.js';
+import { MapQueryError, mapIdentifier, type JsonObject, type MapEdge, type MapNode, type MapPolicyCandidate, type MapPolicyEvidence } from './types.js';
 
 const MAPPING: Readonly<Record<string, MapPolicyCandidate['relationship']>> = Object.freeze({
   's3:GetObject': 'CAN_READ', 's3:PutObject': 'CAN_WRITE', 's3:ListBucket': 'CAN_LIST',
@@ -65,7 +65,8 @@ export function policyPlan(companyId: string, tenantId: string, nodes: readonly 
             const grantResources = grant.properties.resources;
             if (!Array.isArray(grantResources) || !grantResources.includes(selectorValue!)) continue;
             const actions = binding.properties.actions;
-            if (!Array.isArray(actions) || actions.length > 128 || actions.some(action => typeof action !== 'string' || !action || action.length > 4096)) fail('MAP_UNAVAILABLE');
+            if (!Array.isArray(actions) || actions.length > 128) fail('MAP_UNAVAILABLE');
+            for (const action of actions) mapIdentifier(action, 'MAP_UNAVAILABLE');
             for (const execution of executions.filter(item => value(item, 'tool') === tool)) {
               const identities = linked(execution, 'G_USES_IDENTITY', 'GuardExternalIdentity');
               const resources = linked(binding, 'G_MAPS_TO', 'GuardExternalResource');
@@ -92,7 +93,7 @@ export function policyPlan(companyId: string, tenantId: string, nodes: readonly 
                   identityId: identity?.entityId ?? null, resourceId: resource?.entityId ?? null,
                   action, status: 'not_collected', reason: 'collection_missing', observedAt: null, assessment: 'unknown', candidates: [] };
                 const recordIndex = records.length;
-                const relationship = MAPPING[action];
+                const relationship = Object.hasOwn(MAPPING, action) ? MAPPING[action] : undefined;
                 if (!relationship) { records.push(reason(base, 'not_collected', 'unsupported_action')); continue; }
                 if (value(execution, 'identity_selection') !== 'static') { records.push(reason(base, 'not_collected', 'identity_not_static')); continue; }
                 if (!unambiguous || !identity || !resource || !exact(execution, 'G_USES_IDENTITY', identity) || !exact(binding, 'G_MAPS_TO', resource)) {

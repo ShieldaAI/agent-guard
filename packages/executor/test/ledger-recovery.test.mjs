@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
 import { fileURLToPath } from 'node:url';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { LedgerStore } from '../dist/store.js';
 import { LedgerStore as Schema2Store } from './fixtures/schema2-store.mjs';
@@ -15,6 +15,47 @@ import { createLedgerKeyring,readLedgerKeyring,loadLedgerKey,rotateLedgerKeyring
 const test=(name,fn)=>nodeTest(name,{skip:process.platform==='win32'},fn);
 const worker=fileURLToPath(new URL('./fixtures/ledger-recovery-worker.mjs',import.meta.url));
 const sha=value=>createHash('sha256').update(value).digest('hex');
+function nativeJournalHook(root,source){
+ const library=join(root,process.platform==='darwin'?'native-super-journal.dylib':'native-super-journal.so');
+ const input=fileURLToPath(new URL('./fixtures/native-super-journal.c',import.meta.url));
+ const args=['-std=c11','-Wall','-Wextra','-Werror',...(process.platform==='darwin'?['-dynamiclib']:['-shared','-fPIC']),input,'-o',library,...(process.platform==='darwin'?[]:['-ldl'])];
+ const compiled=spawnSync('/usr/bin/cc',args,{encoding:'utf8',maxBuffer:65536});
+ assert.equal(compiled.status,0,'Native recovery fault tests require a working /usr/bin/cc C compiler (Xcode Command Line Tools on macOS or the system C compiler on Linux); compilation must succeed. '+(compiled.error?.code??compiled.stderr));
+ const env={...process.env,AGENT_GUARD_TEST_MJ_DATABASE:source.witnessPath,AGENT_GUARD_TEST_MJ_ARMED:'0'};
+ // Injection is confined to the disposable child, never the test runner/store.
+ delete env.LD_PRELOAD;delete env.DYLD_INSERT_LIBRARIES;
+ env[process.platform==='darwin'?'DYLD_INSERT_LIBRARIES':'LD_PRELOAD']=library;
+ return env;
+}
+function assertNativeJournalReferences(source){
+ const prefix=source.witnessPath.slice(dirname(source.witnessPath).length+1)+'-mj';
+ const names=fs.readdirSync(dirname(source.witnessPath)).filter(name=>name.startsWith(prefix)&&/^[0-9a-fA-F]{1,32}$/.test(name.slice(prefix.length)));
+ assert.equal(names.length,1,'The killed writer must leave its native super-journal in the surviving witness domain');
+ const master=join(dirname(source.witnessPath),names[0]),fd=fs.openSync(master,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+ let contents;
+ try{
+  const stat=fs.fstatSync(fd);assert.ok(stat.isFile());assert.equal(stat.uid,process.geteuid());assert.equal(stat.nlink,1);assert.ok(stat.size>0&&stat.size<=65536);
+  const bytes=Buffer.alloc(65537);let length=0,count;
+  while(length<bytes.length&&(count=fs.readSync(fd,bytes,length,bytes.length-length,null))!==0)length+=count;
+  assert.ok(length>0&&length<=65536);contents=bytes.subarray(0,length);
+ }finally{fs.closeSync(fd);}
+ const journals=[source.witnessPath+'-journal',source.database+'-journal'];
+ assert.equal(contents.at(-1),0);assert.deepEqual(contents.toString('utf8').split('\0').slice(0,-1).sort(),[...journals].sort());
+ // SQLite appends the master name, length/checksum and journal magic to each
+ // participating rollback journal. Read only that bounded footer, not 24MiB.
+ // https://github.com/sqlite/sqlite/blob/master/src/pager.c (readSuperJournal)
+ const expected=Buffer.from(master),magic=Buffer.from('d9d505f920a163d7','hex');
+ for(const path of journals){
+  const journal=fs.openSync(path,fs.constants.O_RDONLY|fs.constants.O_NOFOLLOW);
+  try{
+   const stat=fs.fstatSync(journal);assert.ok(stat.isFile());assert.equal(stat.uid,process.geteuid());assert.equal(stat.nlink,1);
+   const footer=Buffer.alloc(expected.length+16);assert.ok(stat.size>=footer.length);
+   assert.equal(fs.readSync(journal,footer,0,footer.length,stat.size-footer.length),footer.length);
+   assert.deepEqual(footer.subarray(0,expected.length),expected);assert.equal(footer.readUInt32BE(expected.length),expected.length);
+   assert.equal(footer.readUInt32BE(expected.length+4),expected.reduce((sum,byte)=>(sum+byte)>>>0,0));assert.deepEqual(footer.subarray(-8),magic);
+  }finally{fs.closeSync(journal);}
+ }
+}
 function fixture(t,mirror=true){
  const root=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'guard-current-recovery-')));for(const dir of ['data','witness','keys'])fs.mkdirSync(join(root,dir),{mode:0o700});t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
  const options={keyringFile:join(root,'keys','ring.json'),stores:['a','b'].map(id=>({id,database:join(root,'data',id+'.sqlite'),witnessPath:join(root,'witness',id+'.sqlite')}))};
@@ -54,14 +95,18 @@ for(const point of ['before-commit','after-commit'])test(`process loss ${point} 
  const child=spawnSync(process.execPath,[worker,point],{input:JSON.stringify(f.options),encoding:'utf8'});assert.equal(child.signal,'SIGKILL',child.stderr);fs.mkdirSync(join(f.root,'data'),{mode:0o700});
  f.apply('repair');const recovered=f.open();assert.equal(recovered.read().epoch,point==='after-commit'?42:0);assert.equal(recovered.read().audit[0].event,'previous acknowledged authority');recovered.close();
 });
-test('primary domain loss after native super-journal publication preserves latest acknowledged authority',async t=>{
- const f=fixture(t),source=f.options.stores[0];const s=f.open();s.transaction(state=>{state.largeFixture='A'.repeat(24*1024*1024);});s.close();
- let observed=false,child;const watcher=fs.watch(join(f.root,'witness'),(_event,name)=>{if(String(name).includes('-mj')&&fs.existsSync(join(f.root,'witness',String(name)))&&!observed){observed=true;child.kill('SIGKILL');}});
- try{child=spawn(process.execPath,[worker,'super-journal'],{stdio:['pipe','pipe','pipe']});child.stdin.end(JSON.stringify(f.options));let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);const exit=await new Promise(resolve=>child.on('exit',(code,signal)=>resolve({code,signal})));
-  assert.equal(observed,true,`No surviving-witness super-journal observed: ${err}`);assert.equal(exit.signal,'SIGKILL');fs.rmSync(join(f.root,'data'),{recursive:true});fs.mkdirSync(join(f.root,'data'),{mode:0o700});
-  f.apply('repair');const recovered=f.open(),state=recovered.read();assert.equal(state.audit[0].event,'previous acknowledged authority');assert.ok([0,99].includes(state.epoch));if(out.includes('ACKNOWLEDGED'))assert.equal(state.epoch,99);assert.equal(state.largeFixture[0],state.epoch===99?'B':'A');recovered.close();
-  t.diagnostic('Observed native super-journal in surviving witness domain, killed writer, removed complete primary directory including journals, and repaired authenticated current state; process/storage-loss simulation, not physical power loss.');
- }finally{watcher.close();child?.kill('SIGKILL');}
+test('primary domain loss after native super-journal publication preserves latest acknowledged authority',t=>{
+ const f=fixture(t),source=f.options.stores[0],env=nativeJournalHook(f.root,source);
+ const invoke=mode=>spawnSync(process.execPath,[worker,mode],{input:JSON.stringify(f.options),encoding:'utf8',env,stdio:['pipe','pipe','pipe','pipe'],maxBuffer:65536});
+ const probe=invoke('super-journal-probe');assert.equal(probe.status,0,probe.stderr);assert.equal(probe.stdout,'HOOK_PROBE_OK\n');assert.equal(probe.output[3],'HOOK_LOADED\n','Native preload must load and pass through unarmed and unrelated unlink operations');
+ const s=f.open();s.transaction(state=>{state.largeFixture='A'.repeat(24*1024*1024);});s.close();
+ const child=invoke('super-journal');
+ assert.equal(child.output[3],'HOOK_LOADED\nHOOK_BEFORE_SUPER_JOURNAL_UNLINK\n','The armed native unlink checkpoint must be reached; no watcher or fallback');
+ assert.equal(child.signal,'SIGKILL',child.stderr);assert.equal(child.stdout.includes('ACKNOWLEDGED'),false);
+ assertNativeJournalReferences(source);
+ fs.rmSync(join(f.root,'data'),{recursive:true});fs.mkdirSync(join(f.root,'data'),{mode:0o700});
+ f.apply('repair');const recovered=f.open(),state=recovered.read();assert.equal(state.audit[0].event,'previous acknowledged authority');assert.equal(state.epoch,0);assert.equal(state.largeFixture[0],'A');recovered.close();
+ t.diagnostic('Killed at native super-journal unlink before commit, verified surviving two-way journal references, removed complete primary directory including journals, and recovered prior acknowledged authority; precise process/storage-loss simulation, not arbitrary partial-write or physical power loss coverage.');
 });
 
 test('interrupted multi-store promotion re-previews current mirrors and preserves original files',t=>{

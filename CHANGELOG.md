@@ -1,6 +1,11 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — Unreleased candidate
+
+Publication is held for the Node HIGH review and final candidate acceptance,
+including the unresolved admission-performance gate. See the
+[candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
+release is claimed by this entry.
 
 - Make self-hosted ticket/request capacity, live-store byte limits and retained
   key limits safely configurable through reviewed offline policy changes.
@@ -27,7 +32,9 @@
   and add dependency inventory, production-image comparison and three-browser CI.
 - Patch the Python Cartography OAuthLib dependency and add locked cross-platform
   advisory checks; retain explicit, secret-free benchmark failure diagnostics.
-- Plan the agent/permissions inventory as an extension of Agent Map and Cartography.
+- Implement the Agent Map/Cartography catalog for agents, owners, permissions,
+  host-bound resources, opaque credential references, relationships and retained
+  before/after changes, with scoped pagination and accessible browser workflows.
 
 ## 0.1.0-alpha.3 — 2026-11-05
 

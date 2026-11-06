@@ -29,6 +29,7 @@ MAX_RESOURCE_SELECTORS = 100_000
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 SCHEMA_FILENAME = "agent-guard-inventory-v1.schema.json"
 MANIFEST_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v1.schema.json"
+MANIFEST_V2_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v2.schema.json"
 MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
 UTC_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
 
@@ -45,7 +46,7 @@ def _fail(code: str) -> None:
     raise InventoryValidationError(code)
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=4)
 def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
     # Editable installs can expose both source modules and an older packaged
     # schema. Prefer the canonical schema only in this exact repository layout.
@@ -255,7 +256,7 @@ def _check_manifest(manifest: dict) -> None:
     agents = _unique_records(manifest["agents"], "id")
     deployments = _unique_records(manifest["deployments"], "id")
     _unique_records(manifest["taskBindings"], "taskId")
-    _unique_records(manifest["resourceBindings"], "id")
+    bindings = _unique_records(manifest["resourceBindings"], "id")
     _unique_records(manifest["executionBindings"], "id")
     for deployment in deployments.values():
         if deployment["agentId"] not in agents:
@@ -264,11 +265,18 @@ def _check_manifest(manifest: dict) -> None:
         if binding["deploymentId"] not in deployments:
             _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
     resources = set()
+    host_targets = {}
     for binding in manifest["resourceBindings"]:
         pair = (binding["tool"], binding["resourceRef"])
         if pair in resources or binding["resourceRef"] == "*":
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
         resources.add(pair)
+        if binding["target"]["provider"] == "host":
+            target = binding["target"]
+            previous = host_targets.setdefault(target["id"], target)
+            if previous != target:
+                _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+            continue
         service, resource = _aws_reference(binding["target"])
         kind = binding["target"]["kind"]
         if service == "s3":
@@ -299,12 +307,34 @@ def _check_manifest(manifest: dict) -> None:
             _aws_reference(binding["identity"], identity=True)
         elif binding["identity"] is not None:
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+    if manifest["schemaVersion"] == 2:
+        owners = _unique_records(manifest["owners"], "id")
+        credentials = _unique_records(manifest["credentialReferences"], "id")
+        for item in (*agents.values(), *bindings.values()):
+            owner = item["ownerId"]
+            if item["ownershipStatus"] == "assigned":
+                if owner is None or owner not in owners:
+                    _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            elif owner is not None:
+                _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+        for deployment in deployments.values():
+            if any(ref not in credentials for ref in deployment["credentialReferenceIds"]):
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+        for binding in bindings.values():
+            if any(ref not in bindings or ref == binding["id"] for ref in binding["dependsOn"]):
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
 
 
 def validate_manifest(value: Any) -> dict[str, Any]:
     """Validate host assertions without interpreting them as runtime authority."""
     manifest = _detached_json(value, MAX_MANIFEST_BYTES, MAX_MANIFEST_VALUES)
-    if next(_validator(MANIFEST_SCHEMA_FILENAME).iter_errors(manifest), None) is not None:
+    version = manifest.get("schemaVersion") if type(manifest) is dict else None
+    # JSON Schema integer semantics include 1.0/2.0; JavaScript has the same
+    # numeric values. Booleans must not dispatch as version 1 in Python.
+    if type(version) not in (int, float) or version not in (1, 2):
+        _fail("INVENTORY_SCHEMA_INVALID")
+    filename = MANIFEST_SCHEMA_FILENAME if version == 1 else MANIFEST_V2_SCHEMA_FILENAME
+    if next(_validator(filename).iter_errors(manifest), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
     _check_manifest(manifest)
     return manifest

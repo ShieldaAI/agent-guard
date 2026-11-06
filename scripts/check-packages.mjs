@@ -84,6 +84,13 @@ try {
   }));
   run(process.execPath, [join(root, 'node_modules', 'typescript', 'bin', 'tsc'), '--project', 'tsconfig.json'], consumer);
   console.log(run(process.execPath, ['compiled/consumer.mjs'], consumer).trim());
+  cpSync(join(root, 'examples/agent-cartography.mjs'), join(consumer, 'agent-cartography.mjs'));
+  const catalog = JSON.parse(run(process.execPath, ['agent-cartography.mjs'], consumer));
+  if (catalog.profile !== 'host' || catalog.manifest?.schemaVersion !== 2 ||
+      catalog.manifest.owners.length !== 1 || catalog.manifest.credentialReferences.length !== 1 ||
+      catalog.manifest.resourceBindings[0].target.provider !== 'host' || catalog.tasks[0].usage.calls !== 0 ||
+      JSON.stringify(catalog).includes('private-company-database-selector')) throw new Error('Installed company cartography example failed');
+  console.log('Installed v2 company cartography exports scoped ownership, resource and opaque credential evidence without effects.');
   writeFileSync(join(consumer, 'tool-permissions.mjs'), readFileSync(join(root, 'examples/tool-permissions.mjs')));
   console.log(run(process.execPath, ['tool-permissions.mjs'], consumer).trim());
   // These repository examples must work with the public, packed core API too.

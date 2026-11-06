@@ -14,12 +14,12 @@ export interface ReadScope {
 }
 export const MAP_LABELS = ['GuardAgent', 'GuardDeployment', 'GuardTask', 'GuardPrincipal', 'GuardGrant',
   'GuardTool', 'GuardResource', 'GuardResourceBinding', 'GuardExecutionBinding', 'GuardExternalResource',
-  'GuardExternalIdentity', 'GuardMcpConnection', 'GuardMcpOperation'] as const;
+  'GuardExternalIdentity', 'GuardMcpConnection', 'GuardMcpOperation', 'GuardOwner', 'GuardCredentialReference'] as const;
 export type GuardLabel = typeof MAP_LABELS[number];
 export const MAP_RELATIONSHIPS = ['G_INSTANCE_OF', 'G_ASSIGNED_TO', 'G_ACTS_AS', 'G_DELEGATED_FROM',
   'G_DERIVED_FROM', 'G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS', 'G_BINDS_SELECTOR', 'G_MAPS_TO',
   'G_EXECUTES_FOR', 'G_EXECUTES_TOOL', 'G_USES_IDENTITY', 'G_VIA_CONNECTION', 'G_EXPOSES_OPERATION',
-  'G_OPERATION_TOOL'] as const;
+  'G_OPERATION_TOOL', 'G_OWNED_BY', 'G_RESOURCE_OWNED_BY', 'G_USES_CREDENTIAL', 'G_DEPENDS_ON'] as const;
 export type GuardRelation = typeof MAP_RELATIONSHIPS[number];
 export interface MapNode {
   readonly id: string;

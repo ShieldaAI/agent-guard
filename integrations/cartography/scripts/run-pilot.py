@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import json
+import math
 import os
 import re
 import secrets
@@ -47,13 +48,80 @@ def private_json(path: Path, value: dict) -> None:
         f.write("\n")
 
 
+class PilotFailure(RuntimeError):
+    """Carry only a fixed-schema failure report after owned cleanup finishes."""
+
+    def __init__(self, report: dict):
+        super().__init__("PILOT_FAILED")
+        self.report = report
+
+
+def failure_report(error: BaseException, stage: str, databases: list) -> dict:
+    category = (
+        "readiness-timeout"
+        if isinstance(error, helpers.ReadinessTimeout)
+        else "subprocess-error"
+        if isinstance(error, subprocess.SubprocessError)
+        else "io-error"
+        if isinstance(error, OSError)
+        else "database-error"
+        if isinstance(error, (helpers.Neo4jError, helpers.DriverError))
+        else "setup-error"
+    )
+    report = {
+        "schemaVersion": 1,
+        "kind": "synthetic-live-pilot-failure",
+        "profile": "synthetic-live-pilot",
+        "status": "failed",
+        "stage": stage,
+        "error": "PILOT_FAILED",
+        "failureCategory": category,
+        "databases": [
+            {
+                "role": owned.role,
+                "stage": owned.stage,
+                "containerStateAtFailure": owned.safe_state(),
+            }
+            for owned in databases
+        ],
+    }
+    if isinstance(error, helpers.ReadinessTimeout):
+        value = error.diagnostics
+        attempts, elapsed = value.get("attempts"), value.get("elapsedSeconds")
+        categories = {
+            "no-attempt",
+            "connection-acquisition-timeout",
+            "service-unavailable",
+            "io-error",
+            "authentication-rejected",
+            "database-error",
+            "probe-completed-after-deadline",
+        }
+        if (
+            type(attempts) is int
+            and 0 <= attempts <= 1_000_000
+            and type(elapsed) in (int, float)
+            and math.isfinite(elapsed)
+            and 0 <= elapsed <= 86400
+        ):
+            report["readiness"] = {
+                "code": "PILOT_NEO4J_READINESS_TIMEOUT",
+                "attempts": attempts,
+                "elapsedSeconds": elapsed,
+                "lastFailure": value.get("lastFailure")
+                if value.get("lastFailure") in categories
+                else "unknown",
+            }
+    return report
+
+
 class Database:
     def __init__(self, directory: Path):
         self.run_id = uuid.uuid4().hex
         self.project = "agent-guard-pilot-" + self.run_id
         self.directory = directory
         directory.mkdir(mode=0o700)
-        self.password = secrets.token_urlsafe(32)
+        self.password = helpers.neo4j_initial_password()
         auth = directory / "neo4j-auth.txt"
         with open(auth, "x", opener=lambda p, flags: os.open(p, flags, 0o600)) as file:
             file.write("neo4j/" + self.password)
@@ -61,6 +129,9 @@ class Database:
         self.tunnel = None
         self.uri = ""
         self.container = None
+        self.stage = "not-started"
+        self.role = "original"
+        self.cleanup_verified = False
 
     def compose(self, *args: str) -> str:
         return helpers.docker(
@@ -75,18 +146,83 @@ class Database:
         )
 
     def start(self):
+        self.stage = "container-preflight"
         helpers.require_private_port_support()
         # Unique project names and explicit labels make teardown ownership reviewable.
+        self.stage = "container-start"
         self.compose("up", "--detach", "--no-build")
+        self.stage = "listener-validation"
         self.container = self.compose("ps", "--quiet", "neo4j")
         if not re.fullmatch(r"[a-f0-9]{64}", self.container):
             raise RuntimeError("PILOT_CONTAINER_INVALID")
         port = self.compose("port", "neo4j", "7687")
         if not re.fullmatch(r"127\.0\.0\.1:\d+", port):
             raise RuntimeError("PILOT_BINDING_UNSAFE")
+        self.stage = "loopback-connection"
         self.uri, self.tunnel = helpers.loopback_uri(port, self.directory)
+        self.stage = "database-readiness"
         helpers.wait_ready(self.uri, self.password, self.tunnel)
+        self.stage = "ready"
         return self
+
+    def safe_state(self) -> dict:
+        """Inspect only this owned Compose container before any failure cleanup."""
+        try:
+            container = self.container
+            if container is None or container == "":
+                matches = helpers.docker(
+                    "ps",
+                    "--all",
+                    "--quiet",
+                    "--no-trunc",
+                    "--filter",
+                    f"label=com.docker.compose.project={self.project}",
+                    "--filter",
+                    f"label={LABEL}={self.run_id}",
+                    timeout=5,
+                ).splitlines()
+                if len(matches) != 1:
+                    return {"available": False, "reason": "owned-container-unavailable"}
+                container = matches[0]
+            if not re.fullmatch(r"[a-f0-9]{64}", container):
+                return {"available": False, "reason": "invalid-state"}
+            inspected = json.loads(helpers.docker("inspect", container, timeout=5))
+            if (
+                not isinstance(inspected, list)
+                or len(inspected) != 1
+                or not isinstance(inspected[0], dict)
+            ):
+                return {"available": False, "reason": "invalid-state"}
+            info = inspected[0]
+            config, state = info.get("Config"), info.get("State")
+            if (
+                not isinstance(config, dict)
+                or not isinstance(config.get("Labels"), dict)
+                or not isinstance(state, dict)
+            ):
+                return {"available": False, "reason": "invalid-state"}
+            labels = config["Labels"]
+            if (
+                info.get("Id") != container
+                or labels.get(LABEL) != self.run_id
+                or labels.get("com.docker.compose.project") != self.project
+            ):
+                return {"available": False, "reason": "owner-mismatch"}
+            if (
+                type(state.get("Running")) is not bool
+                or type(state.get("OOMKilled")) is not bool
+                or type(state.get("ExitCode")) is not int
+                or not 0 <= state["ExitCode"] <= 255
+            ):
+                return {"available": False, "reason": "invalid-state"}
+            return {
+                "available": True,
+                "running": state["Running"],
+                "oomKilled": state["OOMKilled"],
+                "exitCode": state["ExitCode"],
+            }
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, KeyError):
+            return {"available": False, "reason": "inspect-failed"}
 
     def connection(self) -> dict:
         return {"uri": self.uri, "username": "neo4j", "password": self.password}
@@ -101,6 +237,7 @@ class Database:
         )
 
     def close(self):
+        self.cleanup_verified = False
         if self.tunnel is not None:
             self.tunnel.terminate()
             try:
@@ -128,6 +265,16 @@ class Database:
                 if labels.get(LABEL) != self.run_id:
                     raise RuntimeError("PILOT_CLEANUP_OWNER_MISMATCH")
         self.compose("down", "--volumes", "--remove-orphans")
+        for listing in [
+            ("ps", "--all", "--quiet"),
+            ("volume", "ls", "--quiet"),
+            ("network", "ls", "--quiet"),
+        ]:
+            if helpers.docker(
+                *listing, "--filter", f"label=com.docker.compose.project={self.project}", timeout=5
+            ):
+                raise RuntimeError("PILOT_CLEANUP_UNVERIFIED")
+        self.cleanup_verified = True
 
 
 class Fixture:
@@ -263,11 +410,14 @@ def run(directory: Path, serve: bool) -> dict:
 
     databases = []
     fixture = None
+    failure = None
+    stage = "original-database-start"
     started = time.monotonic()
     try:
         database = Database(directory / "database-original")
         databases.append(database)
         database.start()
+        stage = "fixture-configuration"
         observer_token = "agi_v1." + secrets.token_urlsafe(32)
         tokens = {team: "agm_v1." + secrets.token_urlsafe(32) for team in ["blue", "red", "beta"]}
         config = directory / "fixture.json"
@@ -283,6 +433,7 @@ def run(directory: Path, serve: bool) -> dict:
             },
         )
         private_json(directory / "reader-credentials.json", tokens)
+        stage = "fixture-start"
         fixture = Fixture(config)
         enrollments = [
             validate_enrollment(
@@ -310,25 +461,30 @@ def run(directory: Path, serve: bool) -> dict:
                         result = collect_and_publish(session, enrollment, observer_token, archive)
                         publication.append(result.duration_ms)
 
+        stage = "initial-collection"
         collect()
         if authority(fixture.ready["inventory"]) != authority(fixture.command("status")):
             raise RuntimeError("PILOT_COLLECTION_CHANGED_AUTHORITY")
+        stage = "scope-and-authority-checks"
         reference_url = fixture.ready["referenceUrl"] + "/v1/query"
         for team, token in tokens.items():
             response = query_reference(reference_url, token, "list_agents", {})
             if [agent["agentId"] for agent in response["data"]["agents"]] != ["pilot-" + team]:
                 raise RuntimeError("PILOT_SCOPE_CHECK_FAILED")
         exercise_authority(fixture)
+        stage = "updated-collection"
         collect()
         expected_pointers = pointers(database)
         expected_graph = logical_graph(database)
         alpha = next(item for item in enrollments if item.source["tenantId"] == "alpha")
+        stage = "report-and-backup"
         report = write_report(
             reference_url, tokens["blue"], source_key(alpha.source), directory / "reports"
         )
         backup = directory / "backup"
         create_backup(archive_dir, backup, enrollments, lock_file=lock)
         if serve:
+            stage = "serving"
             print(
                 json.dumps(
                     {
@@ -343,6 +499,7 @@ def run(directory: Path, serve: bool) -> dict:
             )
             while True:
                 time.sleep(1)
+        stage = "rollback"
         stopped_observer = fixture.command("stop-observer")
         stopped_reference = fixture.command("stop-reference")
         if (
@@ -359,9 +516,12 @@ def run(directory: Path, serve: bool) -> dict:
         authority_before_replay = authority(fixture.command("status"))
         restored = directory / "restored-archive"
         restore_backup(backup, restored, lock_file=directory / "restore.lock")
+        stage = "restored-database-start"
         replacement = Database(directory / "database-restored")
+        replacement.role = "restored"
         databases.append(replacement)
         replacement.start()
+        stage = "replay"
         with replacement.driver() as driver, driver.session() as session, _model_diagnostics():
             replay = replay_published(
                 session,
@@ -374,6 +534,7 @@ def run(directory: Path, serve: bool) -> dict:
             raise RuntimeError("PILOT_RESTORE_POINTER_MISMATCH")
         if logical_graph(replacement) != expected_graph:
             raise RuntimeError("PILOT_RESTORE_CONTENT_MISMATCH")
+        stage = "restored-scope-and-authority-checks"
         restarted = fixture.command("start-reference", neo4j=replacement.connection())
         restored_url = restarted.get("referenceUrl")
         if not restored_url:
@@ -399,11 +560,20 @@ def run(directory: Path, serve: bool) -> dict:
             "replay": replay,
             "differenceReport": report.name,
         }
+    except Exception as error:
+        failure = failure_report(error, stage, databases)
+        raise PilotFailure(failure) from None
     finally:
         cleanup_failed = False
+        cleanup = {
+            "fixtureAttempted": fixture is not None,
+            "fixtureClosed": fixture is None,
+            "databases": [],
+        }
         if fixture is not None:
             try:
                 fixture.close()
+                cleanup["fixtureClosed"] = True
             except Exception:
                 cleanup_failed = True
         for owned in reversed(databases):
@@ -411,8 +581,20 @@ def run(directory: Path, serve: bool) -> dict:
                 owned.close()
             except Exception:
                 cleanup_failed = True
+            cleanup["databases"].append(
+                {"role": owned.role, "attempted": True, "absenceVerified": owned.cleanup_verified}
+            )
+            if not owned.cleanup_verified:
+                cleanup_failed = True
+        if failure is not None:
+            failure["cleanup"] = cleanup
+            failure["cleanupFailed"] = cleanup_failed
         if cleanup_failed:
-            raise RuntimeError("PILOT_CLEANUP_FAILED")
+            if failure is None:
+                failure = failure_report(RuntimeError(), "cleanup", [])
+                failure["cleanup"] = cleanup
+                failure["cleanupFailed"] = True
+                raise PilotFailure(failure) from None
 
 
 def main() -> int:
@@ -454,7 +636,18 @@ def main() -> int:
         return 0
     except KeyboardInterrupt:
         return 0 if args.serve else 130
-    except Exception:
+    except Exception as error:
+        report = (
+            error.report
+            if isinstance(error, PilotFailure)
+            else failure_report(error, "preflight-or-report", [])
+        )
+        if args.output:
+            try:
+                private_json(args.output, report)
+            except (OSError, ValueError, TypeError):
+                report = {**report, "reportWriteFailed": True}
+        print(json.dumps(report, sort_keys=True))
         print("PILOT_FAILED", file=sys.stderr)
         return 1
 

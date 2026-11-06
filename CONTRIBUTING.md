@@ -6,6 +6,12 @@ behavior, and installs tarballs into a clean consumer. The consumer compiles the
 declarations and README TypeScript examples, executes an MCP call through the packed
 adapter, and runs the conformance fixtures.
 
+On Linux and macOS, the native recovery crash test also requires `/usr/bin/cc`
+(the system C compiler or Xcode Command Line Tools). It builds a test-only helper
+in a private temporary directory and stops a disposable SQLite writer immediately
+before its journal commit point. A missing compiler or unavailable native hook
+fails the test; neither the helper nor the compiler is required by published packages.
+
 Release preflight tests use temporary Git repositories to cover dirty checkouts and inconsistent package versions. Local checks and packing support uncommitted work; publication requires a clean committed source checkout. See [the release process](docs/releasing.md).
 
 For a new protection, add an unsafe request that cannot reach its handler and a benign request that completes. Cover concurrent calls, revoked or changed permissions, and failures where relevant. A returned denial alone is not sufficient evidence if a handler has already run.

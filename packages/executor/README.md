@@ -1,4 +1,11 @@
-# Agent Guard executor (experimental alpha)
+# Agent Guard executor
+
+**Unpublished 0.1.0 candidate.** Production release remains held for the Node
+HIGH security review and candidate acceptance gates. See the
+[candidate release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md).
+Evaluate this checkout using matching local workspace tarballs. The registry
+install below selects the earlier published experimental alpha, whose APIs
+and verification are recorded in its own release notes.
 
 Persist AI agent tool approvals and budget admission across restarts, with
 authenticated task APIs. For the in-memory core and MCP integration, see the
@@ -8,7 +15,7 @@ An additive Apache-2.0 package for a single trusted host: encrypted transactiona
 authorization state, task-scoped HTTP credentials, typed adapters, governed memory,
 and a local Docker sandbox. Requires Node.js 22.13 or newer. No account or hosted
 service is required. Install the explicit prerelease tag with
-`npm install @shieldaai/agent-guard-executor@alpha`, or build the workspace tarballs.
+`npm install @shieldaai/agent-guard-executor@0.1.0-alpha.3`, or build the workspace tarballs.
 
 ```ts
 import { randomBytes } from 'node:crypto';
@@ -251,8 +258,9 @@ selectors, 500,000 JSON values and at most 8 MiB encoded JSON (with small serial
 headroom). Exceeding a limit throws `INVENTORY_LIMIT_EXCEEDED`; nothing is truncated.
 Disabled export, invalid configuration/scope, inconsistent state and invalid
 observation time have stable `INVENTORY_*` error codes without source values.
-The API is synchronous and has no interruptible time limit or measured polling
-latency guarantee yet. See the repository's Cartography integration plan and
+The direct `inventorySnapshot()` API remains synchronous and has no interruptible
+time limit. The HTTP observer described below uses a private worker. Neither API
+provides a per-poll latency guarantee. See the repository's Cartography integration plan and
 canonical `schemas/agent-guard-inventory-v1.schema.json` for the consumer contract.
 
 The [Cartography pilot runbook](../../deployment/cartography/RUNBOOK.md) supplies
@@ -266,7 +274,7 @@ ledger. The Python/Neo4j pilot remains optional and outside execution admission.
 ### Host-owned manifest and bindings
 
 `validateInventoryManifest(value)` checks and freezes host-authored configuration
-against the version-1 manifest contract. `composeInventorySnapshot(core, manifest)`
+against the version-1 or version-2 manifest contract. `composeInventorySnapshot(core, manifest)`
 validates both inputs and produces a separate `HostInventorySnapshot` with
 `profile: 'host'`. The original core snapshot stays unchanged. The manifest is
 configuration owned by the trusted operator; it is never read from tool metadata,
@@ -298,6 +306,8 @@ All five source fields must match exactly, including tenant, enrollment generati
 and persistent ledger identity. Every property is allowlisted. Names, owner/team
 IDs and environment labels are host-reviewed metadata; keep secrets out of them.
 No manifest field can set grants, budgets, sensitivity, revocation or approval.
+Version-2 resource sensitivity is a host inventory label; it cannot change the
+executor's task/family sensitivity or data-handling policy.
 Tasks without a binding remain in the complete inventory, without an inferred
 agent or deployment. Unknown fields, duplicate/conflicting bindings, missing
 references and mismatched source identities fail rather than being discarded.
@@ -309,6 +319,22 @@ references and mismatched source identities fail rather than being discarded.
 | `taskBindings` | One deployment per bound task; the task must exist in this snapshot. |
 | `resourceBindings` | One mapping per `(tool, resourceRef)`, with exact AWS target, actions and scope. |
 | `executionBindings` | One mapping per `(deploymentId, tool)`; optional connection ID and static, dynamic or unknown execution identity. |
+
+Version 2 adds a company authority, a bounded owner directory, agent purpose and
+lifecycle, explicit assigned/unassigned/unknown ownership, deployment/build
+references, resource sensitivity/destination/dependency metadata and an opaque
+credential-reference catalog. A generic host resource may represent a repository,
+database, queue, service or storage resource without requiring AWS. These targets
+are scoped observations and never receive inferred AWS permission edges.
+
+Use the [company cartography guide](../../docs/guides/agent-cartography.md) and
+`node examples/agent-cartography.mjs` for the complete version-2 path through the
+authenticated observer. The exact closed fields and compatibility rules are in
+[`agent-guard-inventory-manifest-v2.schema.json`](../../schemas/agent-guard-inventory-manifest-v2.schema.json).
+Credential, runtime, build and destination references use tenant-scoped opaque
+identifiers, never secret bytes or credential URLs. Keep display names and purpose
+free of secrets. Ownership is metadata; a team name or owner record cannot grant
+Map visibility or executor access.
 
 `resourceRef` is the exact **exported** selector under that tool's grant, including
 its opaque value in the default mode. Obtain it from a trusted core snapshot and
@@ -464,12 +490,72 @@ request count times the credential count, capped at 10,000. Quota failures retur
 429 with `Retry-After`; full request capacity returns 503. Slow or disconnected
 clients hold a concurrency slot until their response finishes or closes.
 
-The server serializes and checks the entire snapshot before sending success. A
-response cap failure returns 413 with `INVENTORY_RESPONSE_TOO_LARGE`, without a
-partial snapshot. The deadline spans upload, generation, serialization and writing.
-It is checked after synchronous generation: an overdue snapshot returns 408, but
-JavaScript execution itself cannot be interrupted. A stalled response is closed;
-clients must reject incomplete bodies. Inventory's record/work bounds still apply.
+The server waits for a private worker to become ready before opening its listener
+(startup is bounded to five seconds). Observer listeners for one executor share
+one worker and a four-job queue, counting the running job. `maxConcurrentRequests`
+still bounds each listener's HTTP connections doing request/response work; setting
+it above four does not increase the shared observation queue. Queue exhaustion
+returns 503 `INVENTORY_BUSY`. Closing one listener leaves other listeners usable;
+closing the last listener waits for worker termination. An unverified termination
+leaves observation unavailable for that executor instead of starting another worker.
+
+The trusted host can explicitly select a Linux background scheduling policy:
+
+```js
+const observer = await startInventoryServer({
+  executor,
+  observers: [{ token, tenantIds: ['tenant'] }],
+  workerScheduling: 'linux-background',
+});
+```
+
+The default `workerScheduling: 'default'` leaves native priorities unchanged.
+`linux-background` synchronously verifies the worker's own Linux native thread
+identity and lowers its priority by up to five nice levels, capped at nice 19
+(`min(19, initial nice + 5)`). This is a fixed policy, not a caller-supplied value.
+It never raises priority or requires `CAP_SYS_NICE`. Startup refuses with
+`INVENTORY_SCHEDULING_UNAVAILABLE` if Linux `/proc` identity, the priority operation,
+or exact readback cannot be verified; there is no fallback to default scheduling.
+Listeners sharing an executor must select the same policy, and replacement workers
+retain it. The policy applies to that native worker thread; it does not promise a
+priority for every V8 helper or GC thread. Lower priority can delay observation,
+so qualify both admission overhead and polling cadence for the selected deployment
+without changing request deadlines, quotas or memory limits. The setting is not an
+observer credential or request option. Qualification must bind the exact runtime
+and policy; historical measurements do not qualify a changed implementation.
+
+Each dispatched request captures fresh encrypted state and verifies its current
+witness and recovery mirror on the owning thread. The worker authenticates and
+decodes that captured state, projects the tenant's inventory, composes the host
+profile and serializes the response. It receives detached key copies and validated
+primitive tool flags, with no database handle or tool callbacks. Key copies are
+zeroed after use. No authority or response is cached between polls. The snapshot
+and its timestamp describe the capture point; a concurrent later mutation appears
+in a later snapshot. MCP callbacks remain on the owning thread: two full lifecycle
+digests bracket MCP projection, while only manifest-selected operations are
+transferred. Their aggregate transfer is capped at 8 MiB and 10,000 operations,
+in addition to the existing per-connection validation and final snapshot limits.
+
+The worker's V8 old-generation heap ceiling is
+`128 + 32 * ceil(maxLedgerBytes / MiB)` MiB (640 MiB at the default 16 MiB ledger
+limit; 2,176 MiB at 64 MiB), plus a 32 MiB young-generation ceiling. These are
+ceilings, not reserved memory or whole-process RSS limits. Budget for the host,
+one worker, an encrypted state copy, detached registration metadata (bounded to
+four times the ledger byte cap), MCP inputs and response copies together. A small
+container memory limit can terminate the process before a V8 ceiling is reached;
+raising `maxLedgerBytes` requires workload-specific memory validation. A legal
+byte count alone does not guarantee that every adversarial JSON shape fits the
+available memory. The reference Agent Ops service does not start this observer.
+
+The server checks the entire serialized snapshot before sending success. A response
+cap failure returns 413 with `INVENTORY_RESPONSE_TOO_LARGE`, without a partial
+snapshot. The deadline spans upload, capture, queuing, worker generation,
+serialization and writing. Timeout or disconnect discards pending output and
+terminates running worker work; its slot is retained until termination is verified.
+Owning-thread SQLite checks and MCP callbacks remain synchronous and cannot be
+preempted, so elapsed time is checked again after those stages. An overdue snapshot
+returns 408 and a stalled response is closed; clients must reject incomplete bodies.
+Inventory's record/work bounds still apply.
 The [isolated pilot benchmark](../../deployment/cartography/RUNBOOK.md#performance-gate)
 measures admission with and without actual HTTP inventory polling. Its recorded
 [30 October 2026 result](../../deployment/cartography/validation/admission-2026-10-30.json)

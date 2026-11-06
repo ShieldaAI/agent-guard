@@ -4,7 +4,7 @@ import { ExecutorError } from './store.js';
 // These codes help a caller decide whether to seek approval, check an outcome or stop.
 // Tool exceptions, upstream bodies and arbitrary host-defined codes stay inside the host.
 const codes = new Set<string>([...Object.values(GuardErrorCode),
-  'UNAUTHENTICATED', 'REQUEST_DENIED', 'REQUEST_INVALID', 'REQUEST_TOO_LARGE', 'CAPACITY_EXCEEDED',
+  'UNAUTHENTICATED', 'REQUEST_DENIED', 'REQUEST_INVALID', 'REQUEST_TOO_LARGE', 'REQUEST_TIMEOUT', 'CAPACITY_EXCEEDED',
   'FAMILY_PENDING_LIMIT', 'FAMILY_PENDING_BYTES_LIMIT', 'FAMILY_TASK_LIMIT', 'FAMILY_TASK_BYTES_LIMIT',
   'FAMILY_MEMORY_LIMIT', 'MEMORY_LIMIT', 'MEMORY_UNAVAILABLE', 'MEMORY_VERSION_CHANGED', 'RECONCILIATION_INVALID',
   'OPERATION_FAILED',

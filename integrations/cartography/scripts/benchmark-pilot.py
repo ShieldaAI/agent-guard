@@ -16,7 +16,6 @@ import json
 import os
 import platform
 import re
-import secrets
 import shutil
 import signal
 import subprocess
@@ -78,7 +77,7 @@ def main() -> int:
         parser.error("Neo4j image must match the pinned compatibility baseline")
     run_id = uuid.uuid4().hex
     name = f"agent-guard-pilot-benchmark-{run_id}"
-    password = secrets.token_urlsafe(32)
+    password = runner.neo4j_initial_password()
     docker_env = os.environ.copy()
     docker_env["NEO4J_AUTH"] = f"neo4j/{password}"
     tunnel = None
@@ -125,7 +124,7 @@ def main() -> int:
         container_id = runner.docker(
             "run",
             "--detach",
-            "--rm",
+            # Keep exited state available for safe diagnostics until owned cleanup.
             "--name",
             name,
             "--label",

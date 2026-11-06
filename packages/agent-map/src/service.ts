@@ -1,26 +1,43 @@
 import { canonicalJson, immutableJson, type Json } from '@shieldaai/agent-guard';
+import { safeProperties } from './projection-fields.js';
 import { MapQueryError, mapIdentifier, validateReadScope, type JsonObject, type JsonValue,
   type MapEdge, type MapNode, type MapPolicyEvidence, type MapProjection, type MapSource, type MapStore,
   type MapView, type ReadScope } from './types.js';
 
 export const MAP_OPERATIONS = ['list_agents', 'get_agent_access', 'explain_access',
-  'find_agents_with_access', 'get_changes', 'get_inventory_health'] as const;
+  'find_agents_with_access', 'get_changes', 'get_inventory_health', 'list_owners', 'list_resources',
+  'get_resource_access', 'get_agent_inventory'] as const;
 export type MapOperation = typeof MAP_OPERATIONS[number];
 const idSchema = { type: 'string', minLength: 1, maxLength: 4096 };
 const limitSchema = { type: 'integer', minimum: 1, maximum: 100 };
+const offsetSchema = { type: 'integer', minimum: 0, maximum: 100_000 };
+const choice = (...values: string[]) => ({ type: 'string', enum: values });
+const ownershipSchema = choice('assigned', 'unassigned', 'unknown');
+const lifecycleSchema = choice('active', 'inactive', 'retired', 'unknown');
+const sections = ['overview', 'owners', 'deployments', 'tasks', 'permissions', 'resources',
+  'connections', 'credentials', 'relationships', 'tools', 'bindings', 'identities', 'policies'] as const;
 const schema = (properties: Record<string, unknown>, required: readonly string[] = []): JsonObject =>
   immutableJson({ type: 'object', additionalProperties: false, properties, required }) as JsonObject;
 export const MAP_INPUT_SCHEMAS: Readonly<Record<MapOperation, JsonObject>> = Object.freeze({
   list_agents: schema({ search: { type: 'string', maxLength: 256 }, sourceId: idSchema,
-    ownerId: idSchema, environment: idSchema, limit: limitSchema }),
+    ownerId: idSchema, teamId: idSchema, environment: idSchema, ownershipStatus: ownershipSchema,
+    lifecycleState: lifecycleSchema, limit: limitSchema, offset: offsetSchema }),
   get_agent_access: schema({ sourceId: idSchema, agentId: idSchema }, ['sourceId', 'agentId']),
   explain_access: schema({ sourceId: idSchema, taskId: idSchema, tool: idSchema, resourceId: idSchema },
     ['sourceId', 'taskId', 'tool', 'resourceId']),
   find_agents_with_access: schema({ resourceRef: idSchema,
     action: { type: 'string', minLength: 3, maxLength: 256, pattern: '^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$' },
     sourceId: idSchema, limit: limitSchema }, ['resourceRef', 'action']),
-  get_changes: schema({ sourceId: idSchema, since: idSchema }, ['sourceId']),
+  get_changes: schema({ sourceId: idSchema, since: idSchema, agentId: idSchema, resourceId: idSchema,
+    changeKind: choice('all', 'permissions', 'ownership', 'bindings'), offset: offsetSchema, limit: limitSchema }, ['sourceId']),
   get_inventory_health: schema({ sourceId: idSchema }),
+  list_owners: schema({ sourceId: idSchema, search: { type: 'string', maxLength: 256 },
+    kind: choice('person', 'team', 'service'), offset: offsetSchema, limit: limitSchema }),
+  list_resources: schema({ sourceId: idSchema, search: { type: 'string', maxLength: 256 }, ownerId: idSchema,
+    sensitivity: choice('public', 'internal', 'confidential', 'restricted', 'unknown'), offset: offsetSchema, limit: limitSchema }),
+  get_resource_access: schema({ sourceId: idSchema, resourceId: idSchema, offset: offsetSchema, limit: limitSchema }, ['sourceId', 'resourceId']),
+  get_agent_inventory: schema({ sourceId: idSchema, agentId: idSchema, section: choice(...sections),
+    offset: offsetSchema, limit: limitSchema }, ['sourceId', 'agentId']),
 });
 
 export interface MapResponse {
@@ -56,13 +73,15 @@ export function validateQueryArguments(operation: unknown, value: unknown): Read
   const required = definition.required as readonly string[];
   if (Object.keys(args).some(key => !Object.hasOwn(properties, key)) || required.some(key => !Object.hasOwn(args, key))) fail();
   for (const [key, item] of Object.entries(args)) {
-    if (key === 'limit') {
-      if (typeof item !== 'number' || !Number.isSafeInteger(item) || item < 1 || item > 100) fail();
+    if (key === 'limit' || key === 'offset') {
+      if (typeof item !== 'number' || !Number.isSafeInteger(item) || item < (key === 'offset' ? 0 : 1) || item > (key === 'offset' ? 100_000 : 100)) fail();
     } else if (key === 'search') {
       if (typeof item !== 'string' || [...item].length > 256 || item.includes('\0') ||
           /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(item)) fail();
     } else {
       mapIdentifier(item);
+      const allowed = (properties[key] as JsonObject).enum;
+      if (Array.isArray(allowed) && !allowed.includes(item)) fail();
       if (key === 'action' && (typeof item !== 'string' || item.length > 256 || !/^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$/.test(item))) fail();
     }
   }
@@ -131,6 +150,10 @@ function connected(projection: MapProjection, ids: Set<string>, kind: MapEdge['k
   return [...selected].flatMap(id => index.nodes.get(id) ? [index.nodes.get(id)!] : []);
 }
 const nodeIds = (nodes: readonly MapNode[]): Set<string> => new Set(nodes.map(node => node.id));
+function hostObservation(node: MapNode): JsonObject {
+  return { authorityId: string(node, 'authority_id'), manifestId: string(node, 'manifest_id'),
+    manifestRevision: number(node, 'manifest_revision'), observedAt: string(node, 'manifest_observed_at') };
+}
 function deployments(projection: MapProjection, agent: MapNode, work: QueryWork): MapNode[] {
   return connected(projection, new Set([agent.id]), 'G_INSTANCE_OF', work, true).filter(node => node.label === 'GuardDeployment');
 }
@@ -139,6 +162,10 @@ function agentSummary(source: MapSource, projection: MapProjection, agent: MapNo
     deploymentId: string(node, 'deployment_id'), environment: string(node, 'environment') }));
   return { id: agent.entityId, agentId: string(agent, 'agent_id'), sourceId: source.id,
     name: string(agent, 'name'), ownerId: string(agent, 'owner_id'), teamId: string(agent, 'team_id'),
+    purpose: string(agent, 'purpose'), lifecycleState: string(agent, 'lifecycle_state') ?? 'unknown',
+    ownershipStatus: string(agent, 'ownership_status') ?? 'unknown', ownershipSource: string(agent, 'ownership_source'),
+    ownerName: connected(projection, new Set([agent.id]), 'G_OWNED_BY', work).filter(n => n.label === 'GuardOwner').map(n => string(n, 'name'))[0] ?? null,
+    ownershipObservedAt: string(agent, 'manifest_observed_at'), ...hostObservation(agent),
     environments: unique(items.map(item => item.environment).filter((item): item is string => item !== null)).sort(),
     deployments: items };
 }
@@ -182,6 +209,9 @@ function focus(projection: MapProjection, agent: MapNode, work: QueryWork): { no
     connected(projection, new Set([operation.id]), 'G_OPERATION_TOOL', work).some(tool => toolIds.has(tool.id)));
   const selected = nodeIds([agent, ...deployment, ...tasks, ...executions, ...grants, ...resources, ...resourceBindings,
     ...tools, ...connections, ...operations, ...connected(projection, nodeIds(tasks), 'G_ACTS_AS', work),
+    ...connected(projection, new Set([agent.id]), 'G_OWNED_BY', work),
+    ...connected(projection, nodeIds(resourceBindings), 'G_RESOURCE_OWNED_BY', work),
+    ...connected(projection, nodeIds(deployment), 'G_USES_CREDENTIAL', work),
     ...connected(projection, nodeIds(executions), 'G_USES_IDENTITY', work), ...connected(projection, nodeIds(resourceBindings), 'G_MAPS_TO', work)]);
   work.step(projection.nodes.length + projection.edges.length);
   return { nodes: projection.nodes.filter(node => selected.has(node.id)),
@@ -251,9 +281,15 @@ function validatedPolicyEvidence(projection: MapProjection, work: QueryWork): re
   for (const raw of input) {
     work.step();
     if (!policyObject(raw) || Object.keys(raw).sort().join(',') !== POLICY_FIELDS ||
-        raw.assessment !== 'unknown' || typeof raw.action !== 'string' || raw.action.length > 4096 ||
-        !/^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$/.test(raw.action) ||
+        raw.assessment !== 'unknown' || typeof raw.action !== 'string' ||
         (raw.observedAt !== null && !policyTime(raw.observedAt))) fail('MAP_UNAVAILABLE');
+    mapIdentifier(raw.action, 'MAP_UNAVAILABLE');
+    // Generic host actions carry no cloud-policy inference. Keep their explicit
+    // unsupported observation readable without admitting a cloud candidate.
+    const genericAction = !/^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$/.test(raw.action);
+    if (genericAction) {
+      if (raw.status !== 'not_collected' || raw.reason !== 'unsupported_action') fail('MAP_UNAVAILABLE');
+    }
     if (!Array.isArray(raw.candidates) || raw.candidates.length > 1) fail('MAP_UNAVAILABLE');
     if (raw.status === 'complete') {
       if (!policyTime(raw.observedAt) || !POLICY_ACTIONS[raw.action] ||
@@ -292,6 +328,7 @@ function validatedPolicyEvidence(projection: MapProjection, work: QueryWork): re
       const target = endpoint(raw[key], label);
       if (!(raw.status === 'complete' ? exactLink(owner, target, relation) : link(owner, target, relation))) fail('MAP_UNAVAILABLE');
     }
+    if (genericAction && (raw.resourceId === null || string(endpoint(raw.resourceId, 'GuardExternalResource'), 'provider') !== 'host')) fail('MAP_UNAVAILABLE');
     if (raw.status === 'complete') {
       const agents = connected(projection, new Set([deployment.id]), 'G_INSTANCE_OF', work).filter(node => node.label === 'GuardAgent');
       if (agents.length !== 1 || !exactLink(deployment, agents[0]!, 'G_INSTANCE_OF') ||
@@ -413,7 +450,7 @@ function explain(projection: MapProjection, scope: ReadScope, task: MapNode, too
 const IGNORE_DIFF = new Set(['lastupdated', 'manifest_observed_at', 'manifest_revision', 'observed_at', 'capture_observed_at', 'cloud_observed_at']);
 function nodeState(node: MapNode, projection: MapProjection, work: QueryWork): string {
   const index = work.index(projection);
-  const properties = Object.fromEntries(Object.entries(node.properties).filter(([key]) => !IGNORE_DIFF.has(key)));
+  const properties = Object.fromEntries(Object.entries(safeProperties(node)).filter(([key]) => !IGNORE_DIFF.has(key)));
   const edges = [...(index.outgoing.get(node.id)?.entries() ?? [])].flatMap(([kind, targets]) => {
     work.step(targets.length); return targets.map(target => ({ kind, target: index.nodes.get(target)?.entityId ?? null }));
   })
@@ -427,7 +464,174 @@ function freshness(observedAt: unknown, now: number, staleSeconds: number): Json
 }
 function changeSummary(node: MapNode): JsonObject {
   return { entityId: node.entityId, label: node.label,
-    name: string(node, 'name') ?? string(node, 'task_id') ?? string(node, 'agent_id') ?? string(node, 'deployment_id') ?? string(node, 'tool') ?? string(node, 'binding_id') ?? string(node, 'connection_id') ?? node.entityId };
+    name: string(node, 'name') ?? string(node, 'display_name') ?? string(node, 'task_id') ?? string(node, 'agent_id') ?? string(node, 'deployment_id') ?? string(node, 'binding_id') ?? string(node, 'connection_id') ?? string(node, 'resource_id') ?? string(node, 'tool') ?? node.entityId };
+}
+
+const collection = Object.freeze({ approvals: 'not_collected', requestTimeDecisions: 'not_collected',
+  backendReceipts: 'not_collected', externalPolicyHistory: 'not_collected' });
+const compare = (a: string, b: string): number => a < b ? -1 : a > b ? 1 : 0;
+function ordered(items: JsonObject[]): JsonObject[] {
+  return items.sort((a, b) => compare(JSON.stringify([a.name ?? a.displayName ?? '', a.sourceId ?? '', a.id ?? a.entityId ?? '', a.source ?? '', a.target ?? '', a.kind ?? '']),
+    JSON.stringify([b.name ?? b.displayName ?? '', b.sourceId ?? '', b.id ?? b.entityId ?? '', b.source ?? '', b.target ?? '', b.kind ?? ''])));
+}
+function page(items: readonly JsonObject[], args: Readonly<Record<string, JsonValue>>): JsonObject {
+  const offset = args.offset as number | undefined ?? 0, limit = args.limit as number | undefined ?? 50;
+  return { items: items.slice(offset, offset + limit), total: items.length, offset, limit, truncated: offset + limit < items.length };
+}
+function ownerSummary(source: MapSource, projection: MapProjection, node: MapNode, work: QueryWork): JsonObject {
+  return { id: node.entityId, ownerId: string(node, 'owner_id'), name: string(node, 'name'), kind: string(node, 'kind'), sourceId: source.id,
+    ...hostObservation(node),
+    agentCount: connected(projection, new Set([node.id]), 'G_OWNED_BY', work, true).filter(n => n.label === 'GuardAgent').length,
+    resourceCount: connected(projection, new Set([node.id]), 'G_RESOURCE_OWNED_BY', work, true).filter(n => n.label === 'GuardResourceBinding').length };
+}
+function resourceSummary(source: MapSource, projection: MapProjection, node: MapNode, work: QueryWork): JsonObject {
+  return { id: node.entityId, bindingId: string(node, 'binding_id'), sourceId: source.id,
+    displayName: string(node, 'display_name') ?? string(node, 'resource_ref'), tool: string(node, 'tool'), resourceRef: string(node, 'resource_ref'),
+    scope: string(node, 'scope'), actions: strings(node, 'actions'), ownerId: string(node, 'owner_id'),
+    ownerName: connected(projection, new Set([node.id]), 'G_RESOURCE_OWNED_BY', work).filter(n => n.label === 'GuardOwner').map(n => string(n, 'name'))[0] ?? null,
+    ownershipStatus: string(node, 'ownership_status') ?? 'unknown', ownershipSource: string(node, 'ownership_source'),
+    sensitivity: string(node, 'sensitivity') ?? 'unknown', approvedDestinations: strings(node, 'approved_destinations'),
+    targets: connected(projection, new Set([node.id]), 'G_MAPS_TO', work).filter(n => n.label === 'GuardExternalResource').map(n => ({ id: n.entityId, ...safeProperties(n) })),
+    dependencies: connected(projection, new Set([node.id]), 'G_DEPENDS_ON', work).filter(n => n.label === 'GuardResourceBinding').map(n => ({ id: n.entityId, bindingId: string(n, 'binding_id'), displayName: string(n, 'display_name') ?? string(n, 'resource_ref') })),
+    ...hostObservation(node) };
+}
+function relationshipRows(projection: MapProjection, work: QueryWork): JsonObject[] {
+  const index = work.index(projection); work.step(projection.edges.length);
+  return ordered(projection.edges.flatMap(edge => {
+    const source = index.nodes.get(edge.source), target = index.nodes.get(edge.target);
+    return source && target ? [{ source: source.entityId, target: target.entityId, kind: edge.kind,
+      sourceName: changeSummary(source).name!, sourceLabel: source.label,
+      targetName: changeSummary(target).name!, targetLabel: target.label }] : [];
+  }));
+}
+function inventorySections(source: MapSource, projection: MapProjection, agent: MapNode, work: QueryWork): Record<typeof sections[number], JsonObject[]> {
+  const byLabel = (label: MapNode['label']): MapNode[] => projection.nodes.filter(node => node.label === label);
+  const described = (label: MapNode['label']): JsonObject[] => byLabel(label).map(node => ({ id: node.entityId, ...safeProperties(node) }));
+  const summary = agentSummary(source, projection, agent, work);
+  return {
+    overview: [{ purpose: summary.purpose!, lifecycleState: summary.lifecycleState!, ownershipStatus: summary.ownershipStatus!,
+      ownershipSource: summary.ownershipSource!, ownerName: summary.ownerName!, ...hostObservation(agent) }],
+    owners: ordered(byLabel('GuardOwner').map(node => ownerSummary(source, projection, node, work))),
+    deployments: ordered(byLabel('GuardDeployment').map(node => ({ id: node.entityId, deploymentId: string(node, 'deployment_id'), environment: string(node, 'environment'),
+      runtimeRef: string(node, 'runtime_ref'), workloadGeneration: string(node, 'workload_generation'), buildRef: string(node, 'build_ref'), bindingAuthority: string(node, 'binding_authority'),
+      ...hostObservation(node) }))),
+    tasks: ordered(byLabel('GuardTask').map(taskSummary)), permissions: ordered(byLabel('GuardGrant').map(grantSummary)),
+    resources: ordered(byLabel('GuardResourceBinding').map(node => resourceSummary(source, projection, node, work))),
+    connections: ordered(described('GuardMcpConnection')),
+    credentials: ordered(byLabel('GuardCredentialReference').map(node => ({ id: node.entityId, credentialId: string(node, 'credential_id'), name: string(node, 'name'),
+      issuerRef: string(node, 'issuer_ref'), audienceRefs: strings(node, 'audience_refs'), recipientRefs: strings(node, 'recipient_refs'),
+      lifecycleState: string(node, 'lifecycle_state') ?? 'unknown', expiresAt: string(node, 'expires_at'), rotationStatus: string(node, 'rotation_status') ?? 'unknown',
+      ...hostObservation(node) }))),
+    relationships: relationshipRows(projection, work), tools: ordered(described('GuardTool')),
+    bindings: ordered(projection.nodes.filter(node => ['GuardExecutionBinding', 'GuardResourceBinding'].includes(node.label)).map(node => ({ id: node.entityId, kind: node.label, ...safeProperties(node) }))),
+    identities: ordered(described('GuardExternalIdentity')), policies: [],
+  };
+}
+
+function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonValue>>, work: QueryWork): JsonObject {
+  const current = source.current, since = args.since ?? 'previous';
+  const previous = [current.id, current.snapshotId].includes(since as string) ? current :
+    source.previous && (since === 'previous' || [source.previous.id, source.previous.snapshotId].includes(since as string)) ? source.previous : null;
+  const projections = previous && previous !== current ? [current, previous] : [current];
+  const related = new Map<MapProjection, Map<string, JsonObject[]>>();
+  for (const projection of projections) {
+    const impacted = new Map<string, JsonObject[]>();
+    for (const agent of projection.nodes.filter(node => node.label === 'GuardAgent')) {
+      const brief = { id: agent.entityId, agentId: string(agent, 'agent_id'), name: string(agent, 'name'), sourceId: source.id };
+      for (const node of focus(projection, agent, work).nodes) {
+        const owners = impacted.get(node.entityId) ?? []; owners.push(brief); impacted.set(node.entityId, owners);
+      }
+    }
+    related.set(projection, impacted);
+  }
+  const selectedAgents = new Set<string>(), selectedResources = new Set<string>();
+  for (const projection of projections) {
+    for (const node of projection.nodes) {
+      work.step();
+      if (args.agentId && node.label === 'GuardAgent' && matching(node, args.agentId as string, 'agent_id')) selectedAgents.add(node.entityId);
+      if (args.resourceId && node.label === 'GuardResourceBinding' && matching(node, args.resourceId as string, 'binding_id')) {
+        const selectors = connected(projection, new Set([node.id]), 'G_BINDS_SELECTOR', work);
+        const grants = connected(projection, nodeIds(selectors), 'G_TARGETS', work, true);
+        const tasks = connected(projection, nodeIds(grants), 'G_HAS_GRANT', work, true);
+        const deployment = connected(projection, nodeIds(tasks), 'G_ASSIGNED_TO', work);
+        const tools = connected(projection, nodeIds(grants), 'G_FOR_TOOL', work);
+        const toolIds = nodeIds(tools);
+        const executions = connected(projection, nodeIds(deployment), 'G_EXECUTES_FOR', work, true)
+          .filter(execution => connected(projection, new Set([execution.id]), 'G_EXECUTES_TOOL', work).some(tool => toolIds.has(tool.id)));
+        for (const item of [node, ...selectors, ...grants, ...tasks, ...deployment, ...tools, ...executions,
+          ...connected(projection, new Set([node.id]), 'G_MAPS_TO', work),
+          ...connected(projection, new Set([node.id]), 'G_RESOURCE_OWNED_BY', work),
+          ...connected(projection, nodeIds(executions), 'G_USES_IDENTITY', work)]) selectedResources.add(item.entityId);
+      }
+    }
+  }
+  if ((args.agentId && !selectedAgents.size) || (args.resourceId && !selectedResources.size)) fail('MAP_NOT_FOUND');
+  const uniqueAgents = (items: JsonObject[]): JsonObject[] => ordered([...new Map(items.map(item => [item.id, item])).values()]);
+  const before = new Map(previous?.nodes.map(node => [node.entityId, node]) ?? []), after = new Map(current.nodes.map(node => [node.entityId, node]));
+  const beforeEdges = previous ? relationshipRows(previous, work) : [], afterEdges = relationshipRows(current, work);
+  const edgeKey = (edge: JsonObject): string => JSON.stringify([edge.source, edge.target, edge.kind]);
+  const oldEdges = new Set(beforeEdges.map(edgeKey)), newEdges = new Set(afterEdges.map(edgeKey));
+  const relationships = { added: previous ? afterEdges.filter(edge => !oldEdges.has(edgeKey(edge))) : [],
+    removed: previous ? beforeEdges.filter(edge => !newEdges.has(edgeKey(edge))) : [] };
+  const outgoing = (edges: JsonObject[]): Map<string, JsonObject[]> => {
+    const result = new Map<string, JsonObject[]>();
+    for (const edge of edges) { const list = result.get(edge.source as string) ?? []; list.push(edge); result.set(edge.source as string, list); }
+    return result;
+  };
+  const oldOutgoing = outgoing(beforeEdges), newOutgoing = outgoing(afterEdges), changedOutgoing = outgoing([...relationships.added, ...relationships.removed]);
+  const state = (node: MapNode | undefined, edges: Map<string, JsonObject[]>): JsonObject | null => node ? {
+    properties: Object.fromEntries(Object.entries(safeProperties(node)).filter(([key]) => !IGNORE_DIFF.has(key))),
+    relationships: edges.get(node.entityId) ?? [],
+  } : null;
+  const details: JsonObject[] = [];
+  if (previous) for (const id of new Set([...after.keys(), ...before.keys()])) {
+    work.step();
+    const old = before.get(id), node = after.get(id), display = node ?? old!;
+    if (node && old && nodeState(node, current, work) === nodeState(old, previous, work)) continue;
+    const oldState = state(old, oldOutgoing), newState = state(node, newOutgoing);
+    const oldProps = oldState?.properties as JsonObject | undefined, newProps = newState?.properties as JsonObject | undefined;
+    const fields = [...new Set([...Object.keys(oldProps ?? {}), ...Object.keys(newProps ?? {})])]
+      .filter(key => canonicalJson((oldProps?.[key] ?? null) as Json) !== canonicalJson((newProps?.[key] ?? null) as Json)).sort();
+    const edgeChanges = changedOutgoing.get(id) ?? [];
+    const categories: string[] = [];
+    if (display.label === 'GuardOwner' || fields.some(field => ['owner_id', 'team_id', 'ownership_status', 'ownership_source'].includes(field)) ||
+        edgeChanges.some(edge => ['G_OWNED_BY', 'G_RESOURCE_OWNED_BY'].includes(edge.kind as string))) categories.push('ownership');
+    if (['GuardGrant', 'GuardTool', 'GuardTask'].includes(display.label) || edgeChanges.some(edge => ['G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS'].includes(edge.kind as string))) categories.push('permissions');
+    if (['GuardDeployment', 'GuardResourceBinding', 'GuardExecutionBinding', 'GuardExternalResource', 'GuardExternalIdentity', 'GuardCredentialReference', 'GuardMcpConnection', 'GuardMcpOperation'].includes(display.label) ||
+        edgeChanges.some(edge => !['G_OWNED_BY', 'G_RESOURCE_OWNED_BY', 'G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS'].includes(edge.kind as string))) categories.push('bindings');
+    if (!categories.length) categories.push('inventory');
+    const affected = uniqueAgents([...(related.get(current)?.get(id) ?? []), ...(related.get(previous)?.get(id) ?? [])]);
+    if (args.agentId && !affected.some(agent => selectedAgents.has(agent.id as string))) continue;
+    if (args.resourceId && !selectedResources.has(id)) continue;
+    if (args.changeKind && args.changeKind !== 'all' && !categories.includes(args.changeKind as string)) continue;
+    const navigation = display.label === 'GuardOwner' && string(display, 'owner_id') ?
+      { operation: 'list_agents', args: { sourceId: source.id, ownerId: string(display, 'owner_id') }, scope: 'direct_current_ownership',
+        limitation: 'Lists agents directly owned now; excludes indirect impact through resource ownership.' } :
+      display.label === 'GuardResourceBinding' && node ?
+        { operation: 'get_resource_access', args: { sourceId: source.id, resourceId: node.entityId }, scope: 'current_observations' } : null;
+    details.push({ ...changeSummary(display), kind: !old ? 'added' : !node ? 'removed' : 'changed', categories,
+      changedFields: fields, before: oldState, after: newState, affectedAgents: affected.slice(0, 100),
+      affectedAgentsTotal: affected.length, affectedAgentsTruncated: affected.length > 100, affectedAgentNavigation: navigation });
+  }
+  ordered(details);
+  const { items, ...pagination } = page(details, args);
+  const explicitlyPaged = args.offset !== undefined || args.limit !== undefined;
+  const companion = explicitlyPaged ? items as JsonObject[] : details;
+  const changedIds = new Set(companion.map(item => item.entityId));
+  const relevantEdge = (edge: JsonObject): boolean => changedIds.has(edge.source);
+  const affected = uniqueAgents(companion.flatMap(item => [
+    ...(related.get(current)?.get(item.entityId as string) ?? []), ...(previous ? related.get(previous)?.get(item.entityId as string) ?? [] : []),
+  ]));
+  return { sourceId: source.id, from: previous ? receipt(source, previous) : null, to: receipt(source),
+    changes: Object.fromEntries(['added', 'removed', 'changed'].map(kind => [kind, companion.filter(item => item.kind === kind)
+      .map(item => ({ entityId: item.entityId!, label: item.label!, name: item.name! }))])),
+    details: items!, ...pagination, relationships: { added: relationships.added.filter(relevantEdge), removed: relationships.removed.filter(relevantEdge) },
+    changeSummaryScope: explicitlyPaged ? 'page' : 'retained', affectedAgents: affected.slice(0, 100),
+    affectedAgentsTotal: affected.length, affectedAgentsTruncated: affected.length > 100,
+    coverageGap: previous === null, policyHistory: 'not_collected', collection,
+    limitations: ['Net changes in authorized retained snapshots only; not an invocation or intermediate-event log.',
+      'Declared permission and binding changes do not establish effective access gain or loss.',
+      'Current IAM policy observations are separate from retained Guard snapshots; policy history is not collected.'] };
 }
 
 /** One read-only evidence layer shared by HTTP, MCP and the browser. */
@@ -459,7 +663,7 @@ export class MapService {
     if (!Number.isSafeInteger(now) || now < 0 || now > 253_402_300_799_999) fail('MAP_UNAVAILABLE');
     const request = { ...(args.sourceId ? { sourceId: args.sourceId as string } : {}),
       ...(operation === 'list_agents' ? { summary: true } : {}),
-      ...(operation === 'get_agent_access' ? { agentId: args.agentId as string } : {}),
+      ...(['get_agent_access', 'get_agent_inventory'].includes(operation) ? { agentId: args.agentId as string } : {}),
       ...(operation === 'get_changes' ? { history: true } : {}) };
     let timer: ReturnType<typeof setTimeout> | undefined;
     let view: MapView;
@@ -482,10 +686,48 @@ export class MapService {
       })
         .filter(agent => (!search || [agent.name, agent.agentId].some(value => typeof value === 'string' && value.toLocaleLowerCase('en-US').includes(search))) &&
           (args.ownerId === undefined || agent.ownerId === args.ownerId) &&
+          (args.teamId === undefined || agent.teamId === args.teamId) &&
+          (args.ownershipStatus === undefined || agent.ownershipStatus === args.ownershipStatus) &&
+          (args.lifecycleState === undefined || agent.lifecycleState === args.lifecycleState) &&
           (args.environment === undefined || (agent.environments as readonly string[]).includes(args.environment as string)))
         .sort((a, b) => `${a.name}:${a.sourceId}:${a.id}`.localeCompare(`${b.name}:${b.sourceId}:${b.id}`));
-      const limit = args.limit as number | undefined ?? 50;
-      data = { agents: agents.slice(0, limit), truncated: agents.length > limit };
+      const { items, ...pagination } = page(agents, args);
+      data = { agents: items!, ...pagination };
+    } else if (operation === 'list_owners' || operation === 'list_resources') {
+      const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
+      const ownerIndex = operation === 'list_owners';
+      const rows = ordered(view.sources.flatMap(source => {
+        work.step(source.current.nodes.length);
+        return source.current.nodes.filter(node => node.label === (ownerIndex ? 'GuardOwner' : 'GuardResourceBinding'))
+          .map(node => ownerIndex ? ownerSummary(source, source.current, node, work) : resourceSummary(source, source.current, node, work));
+      }).filter(item => (!search || [item.name, item.displayName, item.ownerId, item.bindingId, item.resourceRef].some(value => typeof value === 'string' && value.toLocaleLowerCase('en-US').includes(search))) &&
+        (args.kind === undefined || item.kind === args.kind) && (args.ownerId === undefined || item.ownerId === args.ownerId) &&
+        (args.sensitivity === undefined || item.sensitivity === args.sensitivity)));
+      const { items, ...pagination } = page(rows, args);
+      data = { [ownerIndex ? 'owners' : 'resources']: items!, ...pagination,
+        ...(!ownerIndex ? { resourceCoverage: 'host_bound_resources', limitations: ['Declared selectors without a host resource binding are not included; see agent permissions.'] } : {}) };
+    } else if (operation === 'get_agent_inventory') {
+      const source = findSource(view, args.sourceId as string), agent = findAgent(source.current, args.agentId as string);
+      const selected = { ...source.current, ...focus(source.current, agent, work) };
+      const groups = inventorySections(source, selected, agent, work), section = (args.section ?? 'overview') as typeof sections[number];
+      const policy = selectedPolicy(source.current, work, { nodes: selected.nodes });
+      groups.policies = policy as unknown as JsonObject[];
+      data = { agent: agentSummary(source, selected, agent, work), section, ...page(groups[section], args),
+        counts: Object.fromEntries(Object.entries(groups).filter(([key]) => key !== 'overview').map(([key, value]) => [key, value.length])),
+        policyEvidence: section === 'policies' ? page(groups.policies, args).items! : [], policyCoverage: policyCoverage(policy),
+        receipt: receipt(source), assessment: 'unknown', graphStatus: 'not_requested', collection,
+        limitations: ['Read-only host observations and declared grants; current execution still requires admission.'] };
+    } else if (operation === 'get_resource_access') {
+      const source = findSource(view, args.sourceId as string), projection = source.current;
+      const resource = projection.nodes.find(node => node.label === 'GuardResourceBinding' && matching(node, args.resourceId as string, 'binding_id'));
+      if (!resource) fail('MAP_NOT_FOUND');
+      const agents = ordered(projection.nodes.filter(node => node.label === 'GuardAgent').filter(agent => {
+        work.step(); return focus(projection, agent, work).nodes.some(node => node.id === resource.id);
+      }).map(agent => agentSummary(source, projection, agent, work)));
+      const { items, ...pagination } = page(agents, args);
+      data = { resource: resourceSummary(source, projection, resource, work), agents: items!, ...pagination,
+        receipt: receipt(source), assessment: 'unknown', collection,
+        limitations: ['Agents have a declared selector mapped to this resource; this is not proof of current effective access.'] };
     } else if (operation === 'get_agent_access') {
       const source = findSource(view, args.sourceId as string), projection = source.current;
       const agent = findAgent(projection, args.agentId as string);
@@ -541,24 +783,7 @@ export class MapService {
       }
       data = { candidates, truncated };
     } else if (operation === 'get_changes') {
-      const source = findSource(view, args.sourceId as string), current = source.current;
-      const since = args.since ?? 'previous';
-      const previous = [current.id, current.snapshotId].includes(since as string) ? current :
-        source.previous && (since === 'previous' || [source.previous.id, source.previous.snapshotId].includes(since as string)) ? source.previous : null;
-      const added: JsonObject[] = [], removed: JsonObject[] = [], changed: JsonObject[] = [];
-      if (previous) {
-        const before = new Map(previous.nodes.map(node => [node.entityId, node])), after = new Map(current.nodes.map(node => [node.entityId, node]));
-        for (const [id, node] of after) {
-          work.step();
-          if (!before.has(id)) added.push(changeSummary(node));
-          else if (nodeState(node, current, work) !== nodeState(before.get(id)!, previous, work)) changed.push(changeSummary(node));
-        }
-        for (const [id, node] of before) if (!after.has(id)) removed.push(changeSummary(node));
-      }
-      data = { sourceId: source.id, from: previous ? receipt(source, previous) : null, to: receipt(source),
-        changes: { added, removed, changed }, coverageGap: previous === null, policyHistory: 'not_collected',
-        limitations: ['Net changes in authorized retained snapshots only; not an invocation or intermediate-event log.',
-          'Current IAM policy observations are separate from retained Guard snapshots; policy history is not collected.'] };
+      data = retainedChanges(findSource(view, args.sourceId as string), args, work);
     } else {
       data = { sources: view.sources.map(source => {
         work.step();

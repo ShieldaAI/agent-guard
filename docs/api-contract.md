@@ -344,6 +344,18 @@ one JSON property, `tenantId`. The tenant must be enrolled for that credential;
 task filters and profile overrides are invalid. Configuration is detached at
 startup and cannot be changed by a request.
 
+The optional trusted-host `workerScheduling` setting is `'default'` (unchanged
+native priority) or `'linux-background'`. The latter requires Linux and verifies
+the worker's own native thread before lowering its priority by up to five nice
+levels (`min(19, initial nice + 5)`); no raised priority or `CAP_SYS_NICE` is required. Exact native
+identity and priority readback must succeed before the listener starts, otherwise
+startup fails with `INVENTORY_SCHEDULING_UNAVAILABLE`. Concurrent listeners sharing
+an executor must agree on the policy; conflicts fail with the same code, and
+replacement workers retain the selected policy. This does not assign a guaranteed
+priority to V8 helper/GC threads or guarantee latency. Caller-selected PIDs and
+priority values are not accepted, and no scheduling metadata is exposed by HTTP.
+Non-Linux hosts retain default behavior and refuse the explicit Linux policy.
+
 Success returns the complete `InventorySnapshot` directly with an exact encoded
 content length and `Cache-Control: no-store`. The listener authenticates independently
 of task/admin HTTP and exposes no authority mutations. Its default limits are 16 KiB

@@ -95,6 +95,21 @@ const composed: HostInventorySnapshot = composeInventorySnapshot(inventorySnapsh
 assert.equal(composed.profile, 'host');
 assert.deepEqual(composed.tasks, inventorySnapshot.tasks);
 assert.equal(Object.isFrozen(composed.manifest.agents), true);
+const catalog = validateInventoryManifest({ ...manifest, schemaVersion: 2, revision: 2,
+  authorityId: 'installed-company-directory', owners: [{ id: 'reports', name: 'Reports team', kind: 'team' }],
+  credentialReferences: [{ id: `opaque:${'a'.repeat(64)}`, name: 'Workload identity', issuerRef: null,
+    audienceRefs: [], recipientRefs: [], lifecycleState: 'unknown', expiresAt: null, rotationStatus: 'unknown' }],
+  agents: [{ ...manifest.agents[0], ownerId: 'reports', purpose: 'Installed catalog check',
+    lifecycleState: 'active', ownershipStatus: 'assigned', ownershipSource: 'company-directory' }],
+  deployments: [{ ...manifest.deployments[0], runtimeRef: null, workloadGeneration: '1', buildRef: null,
+    bindingAuthority: 'installed-host', credentialReferenceIds: [`opaque:${'a'.repeat(64)}`] }] });
+assert.equal(catalog.schemaVersion, 2);
+const catalogSnapshot: HostInventorySnapshot = composeInventorySnapshot(inventorySnapshot, catalog);
+assert.deepEqual(catalogSnapshot.tasks, inventorySnapshot.tasks);
+assert.equal(catalogSnapshot.ledgerRevision, inventorySnapshot.ledgerRevision);
+if (catalog.schemaVersion !== 2) throw new Error('Version 2 manifest was not preserved');
+assert.equal(catalog.owners[0]!.name, 'Reports team');
+assert.equal(catalog.credentialReferences[0]!.issuerRef, null);
 assert.equal(typeof ManagedMcpConnection.prototype.inventory, 'function');
 const connection: McpConnectionInventory = { schemaVersion: 1,
   identity: { serverId: 'consumer', transportRef: `opaque:${'a'.repeat(64)}`, principalId: 'host', tenantId: 'pack-test' },

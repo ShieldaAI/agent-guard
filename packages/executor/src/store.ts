@@ -3,6 +3,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID }
 import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpathSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Action, TaskOptions } from '@shieldaai/agent-guard';
+import { bindLedgerObservation, closeLedgerObservation } from './inventory-observer.js';
 
 export class ExecutorError extends Error {
   constructor(readonly code: string) { super(code); this.name = 'ExecutorError'; }
@@ -72,6 +73,63 @@ function decode(text: string): Ledger {
   // No new depth policy: normalization avoids the old reviver's engine-dependent
   // recursion overflow on unusually deep JSON outside supported workload states.
   return value as Ledger;
+}
+
+/** Shared private decoder for authority reads and host/MCP observations. */
+export function decodeLedgerObservation(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): Ledger {
+  const plaintext = decryptLedgerPayload(payload, key, maxBytes, witnessed);
+  try {
+    const state = decode(plaintext.toString('utf8'));
+    if (![1, 2, 3].includes(state.schema) || !Number.isSafeInteger(state.revision) || !state.tasks || !state.actions) throw new Error();
+    if (Object.hasOwn(state, 'inventoryInstanceId') && (typeof state.inventoryInstanceId !== 'string' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(state.inventoryInstanceId))) throw new Error();
+    return state;
+  } finally { plaintext.fill(0); }
+}
+
+/** Private projection input; deliberately insufficient for an authority Ledger. */
+export type InventoryLedgerState = Readonly<Pick<Ledger,
+  'schema' | 'revision' | 'epoch' | 'inventoryInstanceId' | 'tasks' | 'families' | 'tools'>>;
+
+/**
+ * Core observation only. Fresh authenticated JSON data can retain ordinary nested
+ * prototypes because inventory reads only own data descriptors and constructs a
+ * detached DTO. Never use this path for authority reads or host/MCP composition.
+ */
+export function decodeCoreInventoryObservation(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): InventoryLedgerState {
+  const plaintext = decryptLedgerPayload(payload, key, maxBytes, witnessed);
+  try {
+    const state: Ledger = JSON.parse(plaintext.toString('utf8'));
+    // Base validation and the worker's mirror checks use direct root properties.
+    if (state !== null && typeof state === 'object' && !Array.isArray(state)) Object.setPrototypeOf(state, null);
+    if (![1, 2, 3].includes(state.schema) || !Number.isSafeInteger(state.revision) || !state.tasks || !state.actions) throw new Error();
+    if (Object.hasOwn(state, 'inventoryInstanceId') && (typeof state.inventoryInstanceId !== 'string' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(state.inventoryInstanceId))) throw new Error();
+    return state;
+  } finally { plaintext.fill(0); }
+}
+function decryptLedgerPayload(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): Buffer {
+  const [iv, tag, value] = JSON.parse(payload) as [string, string, string];
+  if (value.length > maxBytes * 2) throw new Error();
+  const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
+  cipher.setAAD(Buffer.from(witnessed ? 'agent-guard-witnessed-ledger-v1' : 'agent-guard-ledger-v1'));
+  cipher.setAuthTag(Buffer.from(tag, 'base64'));
+  let plaintext: Buffer | undefined, final: Buffer | undefined;
+  try {
+    plaintext = cipher.update(Buffer.from(value, 'base64'));
+    // GCM authentication must finish before exposing any plaintext. Its normal
+    // empty final buffer does not require copying the entire update result.
+    final = cipher.final();
+    if (final.byteLength) {
+      const combined = Buffer.concat([plaintext, final]);
+      plaintext.fill(0); plaintext = combined;
+    }
+    if (plaintext.byteLength > maxBytes) throw new Error();
+    return plaintext;
+  } catch (error) {
+    plaintext?.fill(0);
+    throw error;
+  } finally { final?.fill(0); }
 }
 
 function privateDatabasePath(path: string, flags: number): string {
@@ -174,6 +232,14 @@ export class LedgerStore {
       if (error instanceof ExecutorError && error.code === 'STORE_RECOVERY_ENROLLMENT_REQUIRED') throw error;
       throw new ExecutorError(this.#witnessed ? 'STORE_WITNESS_UNAVAILABLE' : 'STORE_UNAVAILABLE');
     }
+    bindLedgerObservation(this, this.maxBytes, () => {
+      if (this.#closed) throw new ExecutorError('STORE_CLOSED');
+      try {
+        const payload = this.#payload();
+        if (this.#mirror && this.#prepare("SELECT payload FROM witness.ledger WHERE id=1 AND typeof(payload)='text' AND length(CAST(payload AS BLOB))<=?").get(this.maxBytes * 2 + 512)?.payload !== payload) throw new Error();
+        return { payload, key: new Uint8Array(this.#key), maxBytes: this.maxBytes, witnessed: this.#witnessed, mirror: this.#mirror };
+      } catch { throw new ExecutorError('STORE_CORRUPT'); }
+    });
   }
   // The witness is SQLite's physical main database, so the super-journal is
   // retained with the independent witness if primary authority storage is lost.
@@ -223,7 +289,9 @@ export class LedgerStore {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(this.#aad());
-    const encrypted = Buffer.concat([typeof value === 'string' ? cipher.update(value, 'utf8') : cipher.update(value), cipher.final()]);
+    const updated = typeof value === 'string' ? cipher.update(value, 'utf8') : cipher.update(value);
+    const final = cipher.final();
+    const encrypted = final.byteLength ? Buffer.concat([updated, final]) : updated;
     return JSON.stringify([iv.toString('base64'), cipher.getAuthTag().toString('base64'), encrypted.toString('base64')]);
   }
   #aad(): Buffer { return Buffer.from(this.#witnessed ? 'agent-guard-witnessed-ledger-v1' : 'agent-guard-ledger-v1'); }
@@ -234,24 +302,12 @@ export class LedgerStore {
     return row.payload;
   }
   #decrypt(payload: string): Buffer {
-    const [iv, tag, value] = JSON.parse(payload) as [string, string, string];
-    if (value.length > this.maxBytes * 2) throw new Error();
-    const cipher = createDecipheriv('aes-256-gcm', this.#key, Buffer.from(iv, 'base64'));
-    cipher.setAAD(this.#aad());
-    cipher.setAuthTag(Buffer.from(tag, 'base64'));
-    const plaintext = Buffer.concat([cipher.update(Buffer.from(value, 'base64')), cipher.final()]);
-    if (plaintext.byteLength > this.maxBytes) { plaintext.fill(0); throw new Error(); }
-    return plaintext;
+    return decryptLedgerPayload(payload, this.#key, this.maxBytes, this.#witnessed);
   }
   read(): Ledger {
     if (this.#closed) throw new ExecutorError('STORE_CLOSED');
     try {
-      const payload = this.#payload(), plaintext = this.#decrypt(payload);
-      let state: Ledger;
-      try { state = decode(plaintext.toString('utf8')); } finally { plaintext.fill(0); }
-      if (![1, 2, 3].includes(state.schema) || !Number.isSafeInteger(state.revision) || !state.tasks || !state.actions) throw new Error();
-      if (Object.hasOwn(state, 'inventoryInstanceId') && (typeof state.inventoryInstanceId !== 'string' ||
-          !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(state.inventoryInstanceId))) throw new Error();
+      const payload = this.#payload(), state = decodeLedgerObservation(payload, this.#key, this.maxBytes, this.#witnessed);
       const mode = (state as Ledger & {recoveryMirror?:unknown}).recoveryMirror;
       if (mode !== undefined || state.schema === 3 || this.#mirror) {
         if (!this.#witnessed || mode !== 1 || state.schema !== 3 ||
@@ -379,5 +435,5 @@ export class LedgerStore {
       throw new ExecutorError('STORE_ROTATION_FAILED');
     } finally { plaintext?.fill(0); next.fill(0); }
   }
-  close(): void { if (!this.#closed) { this.#db.close(); this.#key.fill(0); this.#closed = true; } }
+  close(): void { if (!this.#closed) { this.#db.close(); this.#key.fill(0); this.#closed = true; closeLedgerObservation(this); } }
 }

@@ -49,21 +49,44 @@ sign-out clears local evidence immediately and revokes the Agent Map browser
 session. A failed sign-out shows an explicit retry state without silently
 reconnecting. The identity provider's own session follows its company policy.
 
-The viewer offers:
+The viewer offers five views: Agent inventory, Owners, Resources, Changes and
+Health. Agent, owner and host-bound resource indexes use server-scoped pagination;
+20 rows appear per page and exact totals remain attached to the active filters.
+Owner links preserve the source as well as the owner ID. Environment suggestions
+come from the current page; an exact environment can also be entered directly.
 
-- Agent search with owner/environment filters and a focused evidence graph.
-- An accessible node selector and evidence panel alongside the canvas.
-- Read-only task/tool/resource explanations with unknown checks retained.
-- Exact resource/action lookup labeled as potential access.
-- Current/previous snapshot comparisons with retention gaps.
-- Visible-source freshness and component coverage.
-- Current IAM policy candidate cards and dashed graph edges tied to exact task,
-  execution and resource bindings; timestamps, conditions and scope stay visible.
+An agent's Overview shows purpose, reported ownership, lifecycle, host assertion
+provenance, deployments and paged tasks. Permissions separates declared grants,
+registered tools, mapped policy candidates and a read-only exact task/tool/selector
+explanation. Connections & resources shows host-bound resources, MCP connections,
+execution bindings, observed identities, opaque credential references and named
+relationships. Resource links open ownership, approved destinations, dependencies
+and connected visible agents. Full relationship identifiers remain available in
+expandable text details. The optional graph has an accessible node selector;
+a graph limit does not prevent using the paged inventory sections.
+
+Agent changes and the Changes view compare authorized retained snapshots, with
+before/after fields, relationship additions/removals and affected visible agents.
+Paging applies to change details and their companion summaries. These are net
+snapshot differences, not a complete intermediate event history. Approval events,
+request-time decisions, backend receipts and external policy history are explicitly
+not collected. Health shows independently timed component coverage and freshness.
+
+Version 2 metadata is host-asserted evidence. A reported legacy owner ID is shown
+separately from ownership status; it does not prove an assigned accountable owner.
+Missing version 1 metadata remains unknown. Credential lifecycle, rotation and
+expiry describe capture-time observations; opaque references are not usable
+credentials. Resources covers exact host bindings: unbound selectors remain in
+agent Permissions, and an empty resource index does not establish no access.
 
 Search and filter changes show a loading state until the scoped query completes.
 An unavailable query hides the previous list and offers **Refresh evidence** to
-retry. The matching count describes the current filter result. Mobile navigation
-keeps all four views and the refresh action visible.
+retry. Detail sections provide their own retry controls. Mobile navigation keeps
+all five views available, and wide evidence tables scroll within labelled regions.
+Each workspace dispatches at most two inventory reads concurrently. Navigation
+cancels obsolete queued reads; already started reads keep their slot until they
+settle and their obsolete results are discarded. Sign-out aborts the session and
+rejects queued work. Queries are not automatically retried.
 
 Policy candidates are always labeled with unknown access. A complete empty
 result does not establish denial; unresolved boundaries, unsupported policies,
@@ -105,8 +128,12 @@ node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/webkit webk
 
 The check opens the demo from the keyboard, inspects one resource, distinguishes
 a missing grant from an unknown outcome, checks matching and empty lookups, and
-compares snapshots. It also checks four navigation views at a 375px viewport. A
-real bearer session loads synthetic protected inventory, checks a failed filter
+compares snapshots. It also checks all five navigation views at a 375px viewport. A
+real bearer session loads a synthetic version 2 projection through the actual
+MapService: 25 agents, 23 owners, 25 resources, legacy unknown ownership, paged
+changes, credential references and a 511-task agent whose graph is too large.
+The walkthrough checks owner and resource navigation, before/after evidence,
+large-agent task paging and mobile owner/resource/change tables. It checks a failed filter
 request and successful retry, then receives a 401 response and verifies the
 inventory disappears. The command exits with
 an error on a failed assertion, an uncaught page error, or an axe WCAG 2/2.1 A/AA

@@ -1,6 +1,134 @@
 # Production readiness acceptance
 
-Status: **Candidate verification passed; production acceptance held for Node HIGH review**.
+Scope note: the candidate results below describe the recorded P0 revisions.
+The subsequent [agent cartography expansion](agent-cartography-review.md) has its
+own contract and verification. Earlier source fingerprints and scores do not
+automatically certify that expansion or remove the release hold below.
+
+The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2,
+one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
+burst, 512 MiB memory, no extra swap and 128 PIDs. The new configured candidate
+also explicitly selects `workerScheduling: 'linux-background'`: only the observer
+worker's native JavaScript-thread priority is lowered by up to five nice points,
+capped at 19, with verified readback and unchanged owner priority. No GC/helper
+priority or real-time guarantee is claimed. Generic SDK/CLI defaults are unchanged.
+
+**6 November checkpoint:** the +10 `b4bf2ce` candidate is rejected after all three
+required native runs failed cold-poll cadence (two busy skips each, zero failed
+polls, all 1,200 effects). Numerical overhead was 7.356%, 5.527% and 11.890%; the
+third also exceeded the ratio limit. Ordinary full graph/admission passed at
+6.883%, but does not replace those failures. All six ordinary workflows and
+11 CI jobs passed, including 195 browser scans, 45 no-skip isolation checks and
+Python 1,022 unit/150 integration tests; platform skips remain recorded. Its local
+full check passed 1,319/1,319 with zero skips and installed consumers.
+
+The new candidate restores +5 and reduces own-field inspection only inside the
+sealed core observer's fresh authenticated JSON projection. Authority reads,
+mirror checks, host/MCP and descriptor validation of external metadata remain
+unchanged. No staged priority, synthetic prewarming or authority cache is adopted.
+Ten prototype checks passed; one local component experiment reduced CPU by
+7.95%/9.32% on repeated/unique fixtures, about 0.25 ms per repeated observation.
+The factored production implementation passed 306 inventory checks, including
+ten new sealed-path checks. Its one ABBA confirmation reduced component CPU
+7.65%/10.56%; repeated-fixture total wall time regressed 5.17%, while unique-fixture
+wall time improved 18.38%. Every sample is retained. This is not overall latency
+qualification or proof of the prior failures' cause. The changed implementation
+passed the full local `npm run check`: **1,329/1,329 tests, zero skips, plus all
+installed-package consumers**. Hosted verification and qualification remain pending. Three native
+runs and one ordinary full graph/admission run are declared before outcomes;
+all four must pass unchanged gates. Later source-bound results belong on
+[PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
+The controlled exact-source
+`e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
+149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
+the Colima-affined failure also remains evidence. The later `9709f70` constrained
+run failed cadence and overhead; an `a91028c` pass used unchanged runtime bytes.
+Neither result establishes the prior failure's cause or a timing fix. See the
+[one-CPU record](validation/one-cpu-observer-2026-11-06.json) and
+[required observer-service resource configuration](../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service).
+This profile belongs to a company's observer-owning executor, not the reference
+Agent Ops service, which does not start an observer. It reserves neither an
+exclusive nor physical core and does not guarantee an unknown deployment's latency.
+Those prior runs used default worker scheduling and cannot qualify the new mode;
+the later `1ef859c` default-mode failures remain retained as well.
+Exact `ba7deb6` then passed both predeclared runs of the configured profile:
+**5.457% and 9.280% overhead**, all 1,200 effects in each, 135/152 polls, zero failed
+or skipped polls, verified controls and cleanup. However, `b82dc4b` used the same
+94 staged input files and failed both declared runs at **12.980% and 13.017%**
+overhead. Its ordinary full admission also failed at **27.422%**. Each completed
+all 1,200 effects; the three runs completed 166/157/104 polls with zero failures
+or skips. Full graph and live recovery passed. The earlier passes do not establish
+repeatable margin: that checkpoint remained unqualified. The decoder-only
+`f28b8e2` follow-up, still using +5, passed its two declared native qualifications
+at **6.863% and 8.003%**, and ordinary full admission at **0.204%**. All 3,600
+effects and 431 polls completed with zero failures/skips; full graph, live recovery,
+controls and cleanup passed. The required `b18b749` native follow-up had identical
+runtime and all 94 staged inputs, but failed at **10.667%**: 1,200 effects and
+161 polls, zero failures/skips, verified controls and cleanup. The earlier passes
+did not establish repeatable margin. The later +10 failures and new +5 own-field
+candidate are recorded above. The Node security hold and fixed-runtime
+requalification remain open.
+
+The current candidate adds one cooperative yield to the public task HTTP server's
+prepare/execute routes after bounded JSON parsing and before fresh second
+authentication. Fresh authority checks, the original monotonic body deadline,
+transport guards and the immutable validated route remain enforced; fixed
+`REQUEST_TIMEOUT` errors do not cause automatic retries. No resource cap,
+immediate first poll, cadence or acceptance gate changes. This is scoped HTTP
+scheduling, not a fairness or real-time guarantee for all SDK embeddings.
+On `1ef859c`, its 98 focused checks and full local check passed: **1,283/1,283 tests,
+zero skips, plus installed consumers**; all 11 hosted CI jobs also passed with
+platform skips recorded. Its CodeQL unresolved-alert gate failed on the temporary
+Windows experiment registration trigger. The subsequent direct core serializer
+and explicit background-worker candidate's first combined local run passed 1,306 of 1,307 tests with
+zero skips; one copied CLI fixture lacked the new helper, and packaging was not
+reached. Its minimal copy-list correction passed the focused regression; the
+second full check passed **1,307/1,307 tests, zero skips, plus installed consumers**.
+On `ba7deb6`, all 11 hosted CI jobs passed, including 195 browser accessibility
+scans and the required 45 Linux isolation checks without skips. The ordinary full
+workflow failed at graph database readiness before graph measurements or admission;
+the PR pilot failed earlier with only `PILOT_FAILED` and no report. Current CodeQL
+alert 23 remained open despite successful analysis. The manual experiment now
+selects only the fixed reviewed historical commit. Its `b82dc4b` scan passed:
+alert 23 is fixed, not dismissed, and the current PR has zero open alerts.
+Historical main-branch alerts remain separate.
+
+The startup follow-up fixes a separately reproduced Neo4j option-parser edge by
+prefixing the complete generated random password, preserving all 256 random bits.
+It also retains bounded, secret-free failure evidence before owned-resource
+cleanup. Historical failure causes remain unproven. Its full local Python sequence
+passed lint/formatting, **1,022 unit tests and 150 authenticated Neo4j integration
+tests**, verified cleanup, package builds and isolated installed-wheel checks.
+Exact `b82dc4b` passed all six ordinary workflows and 11 CI jobs, including 195
+browser scans, 45 required Linux isolation checks without skips, hosted Python
+1,022 unit/150 integration tests and installed consumers. The 100-source,
+10,000-task, 100,000-grant full graph workload and live recovery passed. Admission
+failed only the overhead gate in all three declared runs, as recorded above;
+the smoke pilot cannot substitute for full qualification. A new private core-worker
+decoder follow-up passed 311 focused checks and the full local check:
+**1,316/1,316 tests, zero skips, plus all installed consumers**. Decoder-only hosted
+qualification on exact `f28b8e2` passed as recorded above. All six ordinary workflows
+and 11 CI jobs also passed, including 195 browser scans, 45 no-skip Linux isolation
+checks, Python 1,022 unit/150 integration tests, packaging and installed consumers.
+The separate identifier-cache prototype was rejected
+for its small repeated-string gain and high-cardinality cost; it is not adopted.
+That decoder checkpoint retained +5. The decoder preserves fresh authenticated reads and mirror
+checks; authority and host/MCP decoding remain unchanged. Prototype measurements
+and the separate owner-profile diagnostic do not count as acceptance.
+This is a source-bound `f28b8e2` checkpoint: its tested merge has the same tree,
+94 staged inputs contain only the four expected compiled decoder changes, and
+all five hosted npm payloads match the prepared artifacts. Its documentation-only
+follow-up `b18b749` changed the protected fingerprint through the runbook, while
+preserving runtime/staged/package bytes. All six ordinary workflows and 11 CI
+jobs passed, but the required native result failed as above. Smoke admission
+measured 11.533% with performance enforcement disabled and is not acceptance.
+The controlled exact-`9709f70` Windows serial experiment
+passed the previously failing cases and installed consumers; the maintained
+Windows-only test launcher subsequently passed on `1ef859c`. Prior failures
+remain evidence and their underlying cause is unproven. The Node HIGH hold remains;
+these results authorize no publication, merge, tag or production acceptance.
+
+Recorded P0 status: **Candidate verification passed; production acceptance held for Node HIGH review**.
 The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert

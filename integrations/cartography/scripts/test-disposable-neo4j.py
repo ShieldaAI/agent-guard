@@ -21,11 +21,25 @@ import uuid
 from pathlib import Path
 
 from neo4j import GraphDatabase
-from neo4j.exceptions import DriverError, Neo4jError, ServiceUnavailable
+from neo4j.exceptions import (
+    AuthError,
+    ConnectionAcquisitionTimeoutError,
+    DriverError,
+    Neo4jError,
+    ServiceUnavailable,
+    SessionExpired,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 LABEL = "com.shielda.agent-guard.disposable-test"
 CONFIG_ENV = "AGENT_GUARD_TEST_NEO4J_CONFIG"
+
+
+def neo4j_initial_password() -> str:
+    """Keep all 256 random bits while avoiding an option-like admin argument."""
+    # The pinned Docker entrypoint passes the password to neo4j-admin without
+    # an end-of-options marker. A URL-safe token can begin with a hyphen.
+    return "guard-" + secrets.token_urlsafe(32)
 
 
 def docker(*args: str, timeout: float = 30, env: dict[str, str] | None = None) -> str:
@@ -141,6 +155,21 @@ class ReadinessTimeout(RuntimeError):
         }
 
 
+def database_error_type(error: BaseException) -> str:
+    """Fixed driver categories, never exception text or arbitrary class names."""
+    for kind, category in (
+        (ConnectionAcquisitionTimeoutError, "connection-acquisition-timeout"),
+        (ServiceUnavailable, "service-unavailable"),
+        (SessionExpired, "session-expired"),
+        (AuthError, "authentication-error"),
+        (Neo4jError, "database-error"),
+        (DriverError, "driver-error"),
+    ):
+        if isinstance(error, kind):
+            return category
+    return "other-error"
+
+
 def owned_container_state(name: str, run_id: str) -> dict:
     """Allowlisted lifecycle fields from this run's container, never logs or env."""
     try:
@@ -213,8 +242,15 @@ def wait_ready(
                     "attempts": attempts,
                     "elapsedSeconds": round(completed - started, 3),
                 }
-            except (Neo4jError, ServiceUnavailable, OSError) as exc:
-                if isinstance(exc, ServiceUnavailable):
+            except (
+                Neo4jError,
+                ServiceUnavailable,
+                ConnectionAcquisitionTimeoutError,
+                OSError,
+            ) as exc:
+                if isinstance(exc, ConnectionAcquisitionTimeoutError):
+                    last_failure = "connection-acquisition-timeout"
+                elif isinstance(exc, ServiceUnavailable):
                     last_failure = "service-unavailable"
                 elif isinstance(exc, OSError):
                     last_failure = "io-error"
@@ -239,7 +275,7 @@ def main() -> int:
         pytest_args = pytest_args[1:]
     run_id = uuid.uuid4().hex
     name = f"agent-guard-neo4j-test-{run_id}"
-    password = secrets.token_urlsafe(32)
+    password = neo4j_initial_password()
     env = os.environ.copy()
     env["NEO4J_AUTH"] = f"neo4j/{password}"
     tunnel = None
@@ -262,6 +298,8 @@ def main() -> int:
                 report["readiness"] = error.diagnostics
             elif readiness is not None:
                 report["readiness"] = readiness
+            if isinstance(error, (Neo4jError, DriverError)):
+                report["databaseErrorType"] = database_error_type(error)
             print(json.dumps(report, allow_nan=False), file=sys.stderr, flush=True)
         except (OSError, ValueError, TypeError):
             # Reporting cannot replace the original failure or prevent finally.

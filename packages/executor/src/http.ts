@@ -1,5 +1,7 @@
 import { createServer, type IncomingMessage, type Server } from 'node:http';
 import { createHash, timingSafeEqual } from 'node:crypto';
+import { setImmediate as yieldToEventLoop } from 'node:timers/promises';
+import { performance } from 'node:perf_hooks';
 import { immutableJson, type Json, type TaskOptions } from '@shieldaai/agent-guard';
 import { DurableExecutor } from './executor.js';
 import { ExecutorError } from './store.js';
@@ -54,20 +56,35 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
     res.setHeader('X-Content-Type-Options', 'nosniff');
     try {
       if (req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined || req.method !== 'POST') throw new ExecutorError('REQUEST_DENIED');
-      if (!req.url || !/^\/v1\/(?:task|admin)\/[a-z-]+$/.test(req.url)) throw new ExecutorError('REQUEST_DENIED');
+      const route = req.url;
+      if (!route || !/^\/v1\/(?:task|admin)\/[a-z-]+$/.test(route)) throw new ExecutorError('REQUEST_DENIED');
       const auth = req.headers.authorization;
       if (!auth?.startsWith('Bearer ') || auth.length > 270 || req.headersDistinct.authorization?.length !== 1) throw new ExecutorError('UNAUTHENTICATED');
       const token = auth.slice(7);
-      const admin = req.url.startsWith('/v1/admin/');
+      const admin = route.startsWith('/v1/admin/');
       const taskId = admin ? undefined : executor.authenticate(token);
       if (admin && !timingSafeEqual(digest(token), adminHash)) throw new ExecutorError('UNAUTHENTICATED');
-      const timer = setTimeout(() => req.destroy(), timeout); timer.unref();
+      let bodyTimedOut = false;
+      const bodyDeadline = performance.now() + timeout;
+      const timer = setTimeout(() => { bodyTimedOut = true; req.destroy(); }, timeout); timer.unref();
       let input: Record<string, Json>;
-      try { input = await body(req, limit); } finally { clearTimeout(timer); }
+      try {
+        input = await body(req, limit);
+        if (route === '/v1/task/prepare' || route === '/v1/task/execute') {
+          // Give pending I/O a scheduling opportunity before another synchronous
+          // ledger chain. No authority state or reservation crosses this yield.
+          // Keep the original body timer running: this is not a timeout reset.
+          await yieldToEventLoop();
+          if (bodyTimedOut || performance.now() >= bodyDeadline) throw new ExecutorError('REQUEST_TIMEOUT');
+          // A normally consumed IncomingMessage can be destroyed; that alone
+          // does not mean the peer disconnected. Inspect the live transport.
+          if (req.aborted || res.destroyed || req.socket.destroyed) return;
+        }
+      } finally { clearTimeout(timer); }
       // The bearer (or a provenance ancestor) can expire or be revoked while the body arrives.
       if (!admin && executor.authenticate(token) !== taskId) throw new ExecutorError('UNAUTHENTICATED');
       let output: unknown;
-      switch (req.url) {
+      switch (route) {
         case '/v1/task/prepare': keys(input, ['tool', 'args']);
           if (!Object.hasOwn(input, 'args')) throw new ExecutorError('REQUEST_INVALID');
           output = await executor.prepare(taskId!, { tool: string(input.tool), args: input.args! }); break;

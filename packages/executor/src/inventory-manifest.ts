@@ -77,7 +77,7 @@ export interface InventoryManifestExecutionBinding {
   readonly identity: InventoryAwsReference | null;
 }
 /** Host assertions are inventory evidence. They never grant executor or backend authority. */
-export interface InventoryManifest {
+export interface InventoryManifestV1 {
   readonly schemaVersion: 1;
   readonly evidenceKind: 'host_asserted';
   readonly source: InventorySnapshot['source'];
@@ -90,6 +90,45 @@ export interface InventoryManifest {
   readonly resourceBindings: readonly InventoryManifestResourceBinding[];
   readonly executionBindings: readonly InventoryManifestExecutionBinding[];
 }
+export type InventoryOwnershipStatus = 'assigned' | 'unassigned' | 'unknown';
+export interface InventoryOwner {
+  readonly id: string; readonly name: string; readonly kind: 'person' | 'team' | 'service';
+}
+export interface InventoryCredentialReference {
+  readonly id: string; readonly name: string; readonly issuerRef: string | null;
+  readonly audienceRefs: readonly string[]; readonly recipientRefs: readonly string[];
+  readonly lifecycleState: 'active' | 'rotating' | 'revoked' | 'expired' | 'unknown';
+  readonly expiresAt: string | null; readonly rotationStatus: 'current' | 'due' | 'overdue' | 'unknown';
+}
+export interface InventoryHostResourceReference {
+  readonly provider: 'host'; readonly id: string; readonly name: string;
+  readonly kind: 'service' | 'repository' | 'database' | 'queue' | 'storage' | 'other';
+}
+export interface InventoryManifestAgentV2 extends InventoryManifestAgent {
+  readonly purpose: string | null; readonly lifecycleState: 'active' | 'inactive' | 'retired' | 'unknown';
+  readonly ownershipStatus: InventoryOwnershipStatus; readonly ownershipSource: string | null;
+}
+export interface InventoryManifestDeploymentV2 extends InventoryManifestDeployment {
+  readonly runtimeRef: string | null; readonly workloadGeneration: string | null;
+  readonly buildRef: string | null; readonly bindingAuthority: string | null;
+  readonly credentialReferenceIds: readonly string[];
+}
+export interface InventoryManifestResourceBindingV2 extends Omit<InventoryManifestResourceBinding, 'target'> {
+  readonly target: InventoryAwsResourceReference | InventoryHostResourceReference;
+  readonly displayName: string; readonly ownerId: string | null;
+  readonly ownershipStatus: InventoryOwnershipStatus; readonly ownershipSource: string | null;
+  readonly sensitivity: 'public' | 'internal' | 'confidential' | 'restricted' | 'unknown';
+  readonly approvedDestinations: readonly string[]; readonly dependsOn: readonly string[];
+}
+export interface InventoryManifestV2 extends Omit<InventoryManifestV1, 'schemaVersion' | 'agents' | 'deployments' | 'resourceBindings'> {
+  readonly schemaVersion: 2; readonly authorityId: string;
+  readonly owners: readonly InventoryOwner[];
+  readonly credentialReferences: readonly InventoryCredentialReference[];
+  readonly agents: readonly InventoryManifestAgentV2[];
+  readonly deployments: readonly InventoryManifestDeploymentV2[];
+  readonly resourceBindings: readonly InventoryManifestResourceBindingV2[];
+}
+export type InventoryManifest = InventoryManifestV1 | InventoryManifestV2;
 export interface HostInventorySnapshot extends Omit<InventorySnapshot, 'profile' | 'coverage'> {
   readonly profile: 'host';
   readonly manifest: InventoryManifest;
@@ -99,6 +138,26 @@ export interface HostInventorySnapshot extends Omit<InventorySnapshot, 'profile'
 }
 
 function nullableIdentifier(value: unknown): void { if (value !== null) identifier(value); }
+function choice(value: unknown, allowed: readonly string[]): void {
+  if (typeof value !== 'string' || !allowed.includes(value)) fail();
+}
+function display(value: unknown, maximum = 256): void {
+  if ([...identifier(value)].length > maximum) fail();
+}
+function opaque(value: unknown): string {
+  if (typeof value !== 'string' || value.length !== 71 || !/^opaque:[a-f0-9]{64}$/.test(value)) return fail();
+  return value;
+}
+function opaqueList(value: unknown, maximum: number): readonly string[] {
+  const result = array(value, maximum).map(opaque); unique(result); return result;
+}
+function ownership(item: Record<string, unknown>, owners: ReadonlySet<string>): void {
+  choice(item.ownershipStatus, ['assigned', 'unassigned', 'unknown']);
+  nullableIdentifier(item.ownershipSource);
+  if (item.ownershipStatus === 'assigned') {
+    if (typeof item.ownerId !== 'string' || !owners.has(item.ownerId)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+  } else if (item.ownerId !== null) fail();
+}
 function unique(values: readonly string[], code = INVALID): void {
   if (new Set(values).size !== values.length) fail(code);
 }
@@ -131,20 +190,53 @@ function awsReference(value: unknown, resource: boolean): { service: string; res
 
 /** Validate a complete host-owned configuration without executing accessors or retaining mutable input. */
 export function validateInventoryManifest(value: unknown): InventoryManifest {
-  const manifest = object(copy(value, 2 * 1024 * 1024), ['schemaVersion', 'evidenceKind', 'source', 'manifestId',
-    'revision', 'observedAt', 'agents', 'deployments', 'taskBindings', 'resourceBindings', 'executionBindings']);
-  if (manifest.schemaVersion !== 1 || manifest.evidenceKind !== 'host_asserted') fail();
+  const copied = copy(value, 2 * 1024 * 1024);
+  const v2 = copied !== null && typeof copied === 'object' && !Array.isArray(copied) &&
+    (copied as Record<string, unknown>).schemaVersion === 2;
+  const manifest = object(copied, ['schemaVersion', 'evidenceKind', 'source', 'manifestId',
+    'revision', 'observedAt', 'agents', 'deployments', 'taskBindings', 'resourceBindings', 'executionBindings',
+    ...(v2 ? ['authorityId', 'owners', 'credentialReferences'] : [])]);
+  if (![1, 2].includes(manifest.schemaVersion as number) || manifest.evidenceKind !== 'host_asserted') fail();
   source(manifest.source); identifier(manifest.manifestId); integer(manifest.revision); timestamp(manifest.observedAt);
+  const owners = new Set<string>(); const credentials = new Set<string>();
+  if (v2) {
+    identifier(manifest.authorityId);
+    for (const value of array(manifest.owners, 1000)) {
+      const item = object(value, ['id', 'name', 'kind']);
+      const id = identifier(item.id); display(item.name); choice(item.kind, ['person', 'team', 'service']);
+      if (owners.has(id)) fail(); owners.add(id);
+    }
+    for (const value of array(manifest.credentialReferences, 1000)) {
+      const item = object(value, ['id', 'name', 'issuerRef', 'audienceRefs', 'recipientRefs', 'lifecycleState', 'expiresAt', 'rotationStatus']);
+      const id = opaque(item.id); display(item.name); if (item.issuerRef !== null) opaque(item.issuerRef);
+      opaqueList(item.audienceRefs, 128); opaqueList(item.recipientRefs, 128);
+      choice(item.lifecycleState, ['active', 'rotating', 'revoked', 'expired', 'unknown']);
+      if (item.expiresAt !== null) timestamp(item.expiresAt);
+      choice(item.rotationStatus, ['current', 'due', 'overdue', 'unknown']);
+      if (credentials.has(id)) fail(); credentials.add(id);
+    }
+  }
   const agents = array(manifest.agents, 1000).map(value => {
-    const item = object(value, ['id', 'name', 'ownerId', 'teamId']);
+    const item = object(value, ['id', 'name', 'ownerId', 'teamId',
+      ...(v2 ? ['purpose', 'lifecycleState', 'ownershipStatus', 'ownershipSource'] : [])]);
     identifier(item.id); identifier(item.name); nullableIdentifier(item.ownerId); nullableIdentifier(item.teamId);
+    if (v2) {
+      display(item.name); if (item.purpose !== null) display(item.purpose, 1024);
+      choice(item.lifecycleState, ['active', 'inactive', 'retired', 'unknown']); ownership(item, owners);
+    }
     return item as unknown as InventoryManifestAgent;
   });
   unique(agents.map(agent => agent.id));
   const agentIds = new Set(agents.map(agent => agent.id));
   const deployments = array(manifest.deployments, 1000).map(value => {
-    const item = object(value, ['id', 'agentId', 'environment']);
+    const item = object(value, ['id', 'agentId', 'environment',
+      ...(v2 ? ['runtimeRef', 'workloadGeneration', 'buildRef', 'bindingAuthority', 'credentialReferenceIds'] : [])]);
     identifier(item.id); identifier(item.agentId); nullableIdentifier(item.environment);
+    if (v2) {
+      for (const key of ['runtimeRef', 'buildRef']) if (item[key] !== null) opaque(item[key]);
+      nullableIdentifier(item.workloadGeneration); nullableIdentifier(item.bindingAuthority);
+      for (const id of opaqueList(item.credentialReferenceIds, 32)) if (!credentials.has(id)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+    }
     if (!agentIds.has(item.agentId as string)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
     return item as unknown as InventoryManifestDeployment;
   });
@@ -156,23 +248,48 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
     return item as unknown as InventoryManifestTaskBinding;
   });
   unique(tasks.map(binding => binding.taskId));
+  const hostTargets = new Map<string, string>();
   const resources = array(manifest.resourceBindings, 10_000).map(value => {
-    const item = object(value, ['id', 'tool', 'resourceRef', 'target', 'actions', 'scope']);
+    const item = object(value, ['id', 'tool', 'resourceRef', 'target', 'actions', 'scope',
+      ...(v2 ? ['displayName', 'ownerId', 'ownershipStatus', 'ownershipSource', 'sensitivity', 'approvedDestinations', 'dependsOn'] : [])]);
     identifier(item.id); identifier(item.tool); identifier(item.resourceRef);
     if (item.resourceRef === '*') fail();
-    const target = awsReference(item.target, true);
-    const kind = (item.target as InventoryAwsResourceReference).kind;
-    if (item.scope !== (kind === 'prefix' ? 'prefix' : 'exact')) fail();
+    const host = v2 && item.target !== null && typeof item.target === 'object' &&
+      (item.target as Record<string, unknown>).provider === 'host';
+    let service: string | null = null;
+    if (host) {
+      const target = object(item.target, ['provider', 'id', 'name', 'kind']);
+      const id = opaque(target.id); display(target.name);
+      choice(target.kind, ['service', 'repository', 'database', 'queue', 'storage', 'other']);
+      const definition = JSON.stringify([target.name, target.kind]);
+      if (hostTargets.has(id) && hostTargets.get(id) !== definition) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+      hostTargets.set(id, definition); choice(item.scope, ['exact', 'prefix']);
+    } else {
+      service = awsReference(item.target, true).service;
+      const kind = (item.target as InventoryAwsResourceReference).kind;
+      if (item.scope !== (kind === 'prefix' ? 'prefix' : 'exact')) fail();
+    }
     const actions = array(item.actions, 128).map(value => {
       const action = identifier(value);
-      if (!/^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$/.test(action) || action.split(':')[0] !== target.service) fail();
+      if (service !== null && (!/^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$/.test(action) || action.split(':')[0] !== service)) fail();
       return action;
     });
     if (!actions.length) fail(); unique(actions);
+    if (v2) {
+      display(item.displayName); nullableIdentifier(item.ownerId); ownership(item, owners);
+      choice(item.sensitivity, ['public', 'internal', 'confidential', 'restricted', 'unknown']);
+      opaqueList(item.approvedDestinations, 128); strings(item.dependsOn, 128);
+    }
     return item as unknown as InventoryManifestResourceBinding;
   });
   unique(resources.map(binding => binding.id));
   unique(resources.map(binding => JSON.stringify([binding.tool, binding.resourceRef])));
+  if (v2) {
+    const resourceIds = new Set(resources.map(binding => binding.id));
+    for (const binding of resources as unknown as InventoryManifestResourceBindingV2[]) {
+      if (binding.dependsOn.some(id => id === binding.id || !resourceIds.has(id))) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+    }
+  }
   const executions = array(manifest.executionBindings, 10_000).map(value => {
     const item = object(value, ['id', 'tool', 'deploymentId', 'connectionId', 'identitySelection', 'identity']);
     identifier(item.id); identifier(item.tool); identifier(item.deploymentId); nullableIdentifier(item.connectionId);

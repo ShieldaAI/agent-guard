@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-executor",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0",
   "description": "Durable AI agent tool authorization with SQLite state, authenticated task APIs, approvals and budget admission.",
   "license": "Apache-2.0",
   "type": "module",
@@ -25,12 +25,12 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.3",
+    "@shieldaai/agent-guard": "0.1.0",
     "ipaddr.js": "2.5.0"
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",

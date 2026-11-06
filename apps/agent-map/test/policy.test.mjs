@@ -69,6 +69,16 @@ test('missing and unresolved policy evidence never draw a positive candidate', a
   assert.match(render([{ ...record, status: 'unavailable', reason: 'unsupported_policy', candidates: [] }], graph), /Unsupported policy expression/);
 });
 
+test('generic unsupported actions accept the contract Unicode scalar bound and reject malformed strings', async () => {
+  const { record } = await fixture();
+  const value = { ...record, action: '😀'.repeat(4096), status: 'unavailable', reason: 'unsupported_action', candidates: [] };
+  assert.equal(policyEvidenceRows([value])[0].action, value.action);
+  assert.match(render([value]), /Action outside collected policy mappings/);
+  for (const action of ['😀'.repeat(4097), '\uD800', '\uDC00', 'a\uD800b']) {
+    assert.throws(() => policyEvidenceRows([{ ...value, action }]), /VIEWER_POLICY_INVALID/);
+  }
+});
+
 test('policy presentation preserves exact object scope and its independent observation time', async () => {
   const { graph, record } = await fixture();
   const observedAt = '2026-10-30T01:02:03Z';

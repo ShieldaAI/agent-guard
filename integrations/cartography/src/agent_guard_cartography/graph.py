@@ -91,6 +91,17 @@ def _manifest_hash(manifest: dict) -> str:
     normalized["taskBindings"].sort(key=lambda item: item["taskId"])
     for binding in normalized["resourceBindings"]:
         binding["actions"].sort()
+    if normalized["schemaVersion"] == 2:
+        for field in ("owners", "credentialReferences"):
+            normalized[field].sort(key=lambda item: item["id"])
+        for deployment in normalized["deployments"]:
+            deployment["credentialReferenceIds"].sort()
+        for binding in normalized["resourceBindings"]:
+            binding["approvedDestinations"].sort()
+            binding["dependsOn"].sort()
+        for credential in normalized["credentialReferences"]:
+            credential["audienceRefs"].sort()
+            credential["recipientRefs"].sort()
     return _key(normalized)
 
 
@@ -99,6 +110,7 @@ def _manifest_properties(snapshot: dict) -> dict:
     if manifest is None:
         return {}
     return {
+        "manifest_schema_version": manifest["schemaVersion"],
         "manifest_id": manifest["manifestId"],
         "manifest_revision": manifest["revision"],
         "manifest_hash": _manifest_hash(manifest),
@@ -183,6 +195,8 @@ def _check_component_versions(current: Mapping, candidate: Mapping) -> None:
         raise GraphImportError("PROFILE_CONFLICT")
     if candidate["profile"] not in ("host", "host-mcp"):
         return
+    if candidate.get("manifest_schema_version", 1) < current.get("manifest_schema_version", 1):
+        raise GraphImportError("MANIFEST_SCHEMA_ROLLBACK")
     if current.get("manifest_id") not in (None, candidate["manifest_id"]):
         raise GraphImportError("MANIFEST_ID_CONFLICT")
     if candidate["manifest_revision"] < current.get("manifest_revision", -1):
@@ -305,6 +319,8 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
     if manifest:
         evidence = {
             "evidence_kind": "host_asserted",
+            "authority_id": manifest.get("authorityId"),
+            "manifest_schema_version": manifest["schemaVersion"],
             "manifest_id": manifest["manifestId"],
             "manifest_revision": manifest["revision"],
             "manifest_observed_at": manifest["observedAt"],
@@ -314,6 +330,20 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
         def external(label: str, value: dict) -> dict:
             # Keep account, partition, kind and exact ARN in identity. Host ownership
             # assertions never merge into provider nodes or imply IAM permission.
+            if value["provider"] == "host":
+                return make(
+                    label,
+                    [value["provider"], value["id"]],
+                    provider="host",
+                    partition=None,
+                    account_id=None,
+                    region=None,
+                    arn=None,
+                    kind=value["kind"],
+                    host_resource_id=value["id"],
+                    name=value["name"],
+                    **evidence,
+                )
             return make(
                 label,
                 value,
@@ -322,10 +352,37 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 account_id=value["accountId"],
                 region=value["region"],
                 arn=value["arn"],
-                **({"kind": value["kind"]} if "kind" in value else {}),
+                **(
+                    {"kind": value["kind"], "host_resource_id": None, "name": None}
+                    if "kind" in value
+                    else {}
+                ),
                 **evidence,
             )
 
+        for owner in manifest.get("owners", []):
+            make(
+                "GuardOwner",
+                owner["id"],
+                owner_id=owner["id"],
+                name=owner["name"],
+                kind=owner["kind"],
+                **evidence,
+            )
+        for credential in manifest.get("credentialReferences", []):
+            make(
+                "GuardCredentialReference",
+                credential["id"],
+                credential_id=credential["id"],
+                name=credential["name"],
+                issuer_ref=credential["issuerRef"],
+                audience_refs=sorted(credential["audienceRefs"]),
+                recipient_refs=sorted(credential["recipientRefs"]),
+                lifecycle_state=credential["lifecycleState"],
+                expires_at=credential["expiresAt"],
+                rotation_status=credential["rotationStatus"],
+                **evidence,
+            )
         for agent in manifest["agents"]:
             make(
                 "GuardAgent",
@@ -334,6 +391,13 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 name=agent["name"],
                 owner_id=agent["ownerId"],
                 team_id=agent["teamId"],
+                purpose=agent.get("purpose"),
+                lifecycle_state=agent.get("lifecycleState", "unknown"),
+                ownership_status=agent.get("ownershipStatus", "unknown"),
+                ownership_source=agent.get("ownershipSource"),
+                owner_node_id=node_id("GuardOwner", agent["ownerId"])
+                if manifest["schemaVersion"] == 2 and agent["ownerId"] is not None
+                else None,
                 **evidence,
             )
         for deployment in manifest["deployments"]:
@@ -342,6 +406,14 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 deployment["id"],
                 deployment_id=deployment["id"],
                 environment=deployment["environment"],
+                runtime_ref=deployment.get("runtimeRef"),
+                workload_generation=deployment.get("workloadGeneration"),
+                build_ref=deployment.get("buildRef"),
+                binding_authority=deployment.get("bindingAuthority"),
+                credential_node_ids=[
+                    node_id("GuardCredentialReference", ref)
+                    for ref in deployment.get("credentialReferenceIds", [])
+                ],
                 agent_node_id=node_id("GuardAgent", deployment["agentId"]),
                 **evidence,
             )
@@ -355,6 +427,18 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 resource_ref=binding["resourceRef"],
                 actions=sorted(binding["actions"]),
                 scope=binding["scope"],
+                display_name=binding.get("displayName"),
+                owner_id=binding.get("ownerId"),
+                ownership_status=binding.get("ownershipStatus", "unknown"),
+                ownership_source=binding.get("ownershipSource"),
+                sensitivity=binding.get("sensitivity", "unknown"),
+                approved_destinations=sorted(binding.get("approvedDestinations", [])),
+                owner_node_id=node_id("GuardOwner", binding["ownerId"])
+                if binding.get("ownerId") is not None
+                else None,
+                dependency_node_ids=[
+                    node_id("GuardResourceBinding", ref) for ref in binding.get("dependsOn", [])
+                ],
                 resource_node_id=node_id(
                     "GuardResource", [binding["tool"], binding["resourceRef"]]
                 ),
@@ -586,6 +670,7 @@ def _publish(
         "s.authority_hash=p.authority_hash, "
         "s.profile=p.profile,s.manifest_id=p.manifest_id,s.manifest_revision=p.manifest_revision, "
         "s.manifest_hash=p.manifest_hash,s.manifest_observed_at=p.manifest_observed_at, "
+        "s.manifest_schema_version=p.manifest_schema_version, "
         "s.mcp_watermarks_json=$mcp_watermarks, "
         "p.status='published',p.published_at_ms=$now",
         source=source_id,
@@ -639,8 +724,12 @@ def import_snapshot(
         ("G_DERIVED_FROM", "GuardTask", "GuardTask", "source_task_node_id"),
         ("G_ASSIGNED_TO", "GuardTask", "GuardDeployment", "deployment_node_id"),
         ("G_INSTANCE_OF", "GuardDeployment", "GuardAgent", "agent_node_id"),
+        ("G_OWNED_BY", "GuardAgent", "GuardOwner", "owner_node_id"),
+        ("G_USES_CREDENTIAL", "GuardDeployment", "GuardCredentialReference", "credential_node_ids"),
         ("G_BINDS_SELECTOR", "GuardResourceBinding", "GuardResource", "resource_node_id"),
         ("G_MAPS_TO", "GuardResourceBinding", "GuardExternalResource", "external_resource_node_id"),
+        ("G_RESOURCE_OWNED_BY", "GuardResourceBinding", "GuardOwner", "owner_node_id"),
+        ("G_DEPENDS_ON", "GuardResourceBinding", "GuardResourceBinding", "dependency_node_ids"),
         ("G_EXECUTES_FOR", "GuardExecutionBinding", "GuardDeployment", "deployment_node_id"),
         ("G_EXECUTES_TOOL", "GuardExecutionBinding", "GuardTool", "tool_node_id"),
         ("G_USES_IDENTITY", "GuardExecutionBinding", "GuardExternalIdentity", "identity_node_id"),

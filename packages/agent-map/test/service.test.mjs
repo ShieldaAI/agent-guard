@@ -604,3 +604,39 @@ test('long valid host action remains explicit unsupported evidence without widen
   assert.equal(result.data.policyEvidence[0].reason, 'unsupported_action');
   await assert.rejects(service.query(scope, 'find_agents_with_access', { resourceRef: 'report', action }), { code: 'MAP_REQUEST_INVALID' });
 });
+
+test('structured policy pages do not duplicate the full policy array in every agent section', async () => {
+  const { source, nodes, edges, store } = policyFixture();
+  for (let i = 0; i < 70; i++) {
+    nodes.push({ ...nodes.find(n => n.id === 'task'), id: `paged-task-${i}`, entityId: `entity:paged-task-${i}`, properties: { task_id: `paged-task-${i}` } });
+    edges.push({ source: `paged-task-${i}`, target: 'deployment', kind: 'G_ASSIGNED_TO' }, { source: `paged-task-${i}`, target: 'grant', kind: 'G_HAS_GRANT' });
+    source.current.policyEvidence.push(policyRecord({ taskId: `entity:paged-task-${i}` }));
+  }
+  const service = new MapService(store, { clock: () => NOW, maxResponseBytes: 12_000 });
+  const overview = (await service.query(scope, 'get_agent_inventory', { sourceId: 'source', agentId: 'reader-agent' })).data;
+  assert.equal(overview.counts.policies, 71); assert.deepEqual(overview.policyEvidence, []);
+  const first = (await service.query(scope, 'get_agent_inventory', { sourceId: 'source', agentId: 'reader-agent', section: 'policies', limit: 3 })).data;
+  const next = (await service.query(scope, 'get_agent_inventory', { sourceId: 'source', agentId: 'reader-agent', section: 'policies', limit: 3, offset: 3 })).data;
+  assert.equal(first.total, 71); assert.equal(first.policyEvidence.length, 3); assert.equal(first.truncated, true);
+  assert.deepEqual(first.items, first.policyEvidence); assert.ok(next.items.every(n => !first.items.some(p => p.taskId === n.taskId)));
+  assert.ok(Buffer.byteLength(JSON.stringify(first)) < 12_000);
+});
+
+test('generic host action observations remain explicit unsupported evidence, never AWS candidates', async () => {
+  for (const action of ['read', 'record.read', 'read-record', 'read records', 'x'.repeat(4096), '🦉'.repeat(4096)]) {
+    const { source, nodes, service } = policyFixture();
+    nodes.find(n => n.id === 'resource-binding').properties.actions = [action];
+    nodes.find(n => n.id === 'external-resource').properties = { provider: 'host', host_resource_id: `opaque:${'a'.repeat(64)}`, name: 'Records', kind: 'database' };
+    source.current.policyEvidence = [policyRecord({ action, status: 'not_collected', reason: 'unsupported_action', observedAt: null, candidates: [] })];
+    for (const operation of ['get_agent_access', 'get_agent_inventory']) {
+      const result = await service.query(scope, operation, { sourceId: 'source', agentId: 'reader-agent', ...(operation === 'get_agent_inventory' ? { section: 'policies' } : {}) });
+      assert.equal(result.data.policyEvidence[0].action, action); assert.equal(result.data.policyCoverage.status, 'not_collected');
+      assert.equal(result.data.assessment, 'unknown');
+    }
+    source.current.policyEvidence[0] = policyRecord({ action });
+    await assert.rejects(service.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'reader-agent' }), { code: 'MAP_UNAVAILABLE' });
+    source.current.policyEvidence = [policyRecord({ action, status: 'not_collected', reason: 'unsupported_action', observedAt: null, candidates: [] })];
+    nodes.find(n => n.id === 'external-resource').properties.provider = 'aws';
+    await assert.rejects(service.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'reader-agent' }), { code: 'MAP_UNAVAILABLE' });
+  }
+});

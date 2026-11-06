@@ -4,6 +4,7 @@ on:
     paths:
       - schemas/agent-guard-inventory-v1.schema.json
       - schemas/agent-guard-inventory-manifest-v1.schema.json
+      - schemas/agent-guard-inventory-manifest-v2.schema.json
       - schemas/agent-guard-mcp-inventory-v1.schema.json
       - integrations/cartography/**
       - deployment/cartography/**
@@ -19,6 +20,7 @@ on:
     paths:
       - schemas/agent-guard-inventory-v1.schema.json
       - schemas/agent-guard-inventory-manifest-v1.schema.json
+      - schemas/agent-guard-inventory-manifest-v2.schema.json
       - schemas/agent-guard-mcp-inventory-v1.schema.json
       - integrations/cartography/**
       - deployment/cartography/**

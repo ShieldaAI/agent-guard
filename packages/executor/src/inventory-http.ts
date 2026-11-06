@@ -5,8 +5,10 @@ import { performance } from 'node:perf_hooks';
 import { immutableJson } from '@shieldaai/agent-guard';
 import { DurableExecutor } from './executor.js';
 import { ExecutorError } from './store.js';
-import { composeInventorySnapshot, validateInventoryManifest, type InventoryManifest } from './inventory-manifest.js';
-import { composeMcpInventorySnapshot, validateMcpInventorySources, type InventoryMcpSourceBinding } from './inventory-mcp.js';
+import { validateInventoryManifest, type InventoryManifest } from './inventory-manifest.js';
+import { validateMcpInventorySources, type InventoryMcpSourceBinding } from './inventory-mcp.js';
+import { createInventoryObservationSession } from './inventory-observer.js';
+import type { InventoryWorkerScheduling } from './inventory-scheduling.js';
 
 export interface InventoryObserverCredential {
   readonly token: string;
@@ -21,6 +23,8 @@ export interface InventoryServerOptions {
   manifests?: readonly InventoryManifest[];
   /** Live host-owned readers, selected by tenant and manifest connection ID before capture. */
   mcpSources?: readonly InventoryMcpSourceBinding[];
+  /** Trusted host policy. Linux background mode lowers only the observer worker native thread by up to five nice levels. */
+  workerScheduling?: InventoryWorkerScheduling;
   port?: number;
   maxRequestBytes?: number;
   maxResponseBytes?: number;
@@ -146,9 +150,11 @@ function socketError(socket: Socket, code: string, status: number, retry?: numbe
 /** Read-only loopback observer transport. A separately authenticated TLS bridge is required remotely. */
 export async function startInventoryServer(options: InventoryServerOptions): Promise<{ server: Server; url: string; close(): Promise<void> }> {
   const config = object(options, ['executor', 'observers', 'manifests', 'mcpSources', 'port', 'maxRequestBytes', 'maxResponseBytes',
-    'requestTimeoutMs', 'maxConcurrentRequests', 'maxConnections', 'rateLimit'], ['executor', 'observers']);
+    'requestTimeoutMs', 'maxConcurrentRequests', 'maxConnections', 'rateLimit', 'workerScheduling'], ['executor', 'observers']);
   if (!(config.executor instanceof DurableExecutor)) return fail(CONFIG);
   const executor = config.executor;
+  if (config.workerScheduling !== undefined && config.workerScheduling !== 'default' && config.workerScheduling !== 'linux-background') return fail(CONFIG);
+  const workerScheduling = config.workerScheduling === 'linux-background' ? 'linux-background' : 'default';
   const port = integer(config.port, 0, 0, 65535);
   const requestLimit = integer(config.maxRequestBytes, 16 * 1024, 1, 64 * 1024);
   const responseLimit = integer(config.maxResponseBytes, 8 * 1024 * 1024, 128, 8 * 1024 * 1024);
@@ -186,11 +192,15 @@ export async function startInventoryServer(options: InventoryServerOptions): Pro
     seen.add(observer.token);
     const tenants = new Set(observer.tenantIds.map(value => identifier(value, CONFIG)));
     if (tenants.size !== observer.tenantIds.length) return fail(CONFIG);
-    const profile = observer.profile === 'host-mcp' ? 'host-mcp' : observer.profile === 'host' ? 'host' : 'core';
+    const profile: 'core' | 'host' | 'host-mcp' = observer.profile === 'host-mcp' ? 'host-mcp' : observer.profile === 'host' ? 'host' : 'core';
     if (profile !== 'core' && [...tenants].some(tenant => !manifests.has(tenant))) return fail(CONFIG);
     return { hash: digest(observer.token), tenants, profile, bucket: { started: performance.now(), used: 0 } };
   });
   seen.clear();
+  // Readiness belongs to server startup; no authenticated poll pays module startup.
+  const observation = await createInventoryObservationSession(executor, workerScheduling).catch(error => {
+    for (const observer of observers) observer.hash.fill(0); throw error;
+  });
   const globalBucket = { started: performance.now(), used: 0 };
   const globalMaximum = Math.min(10_000, rateMaximum * observers.length);
   const sockets = new Map<Socket, ReturnType<typeof setTimeout>>();
@@ -255,17 +265,12 @@ export async function startInventoryServer(options: InventoryServerOptions): Pro
       const tenantId = tenantFromBody(bytes);
       if (!matched.tenants.has(tenantId)) fail('INVENTORY_SCOPE_DENIED');
       checkTime();
-      const core = executor.inventorySnapshot({ tenantId });
+      const snapshot = await observation.snapshot({ scope: { tenantId }, profile: matched.profile,
+        ...(matched.profile === 'core' ? {} : { manifest: manifests.get(tenantId)! }),
+        ...(matched.profile === 'host-mcp' ? { mcpSources } : {}), signal: abort.signal, deadline: started + timeout });
       checkTime();
-      if (core.profile !== 'core' || core.source.tenantId !== tenantId) fail('INVENTORY_UNAVAILABLE');
-      const host = matched.profile === 'core' ? undefined : composeInventorySnapshot(core, manifests.get(tenantId)!);
-      checkTime();
-      const snapshot = matched.profile === 'host-mcp' ? composeMcpInventorySnapshot(host!, mcpSources) : host ?? core;
-      checkTime();
-      if (snapshot.profile !== matched.profile || snapshot.source.tenantId !== tenantId) fail('INVENTORY_UNAVAILABLE');
-      const serialized = JSON.stringify(snapshot);
-      const size = Buffer.byteLength(serialized);
-      checkTime();
+      if (snapshot.profile !== matched.profile || snapshot.tenantId !== tenantId) fail('INVENTORY_UNAVAILABLE');
+      const serialized = snapshot.json, size = snapshot.bytes;
       if (size > responseLimit) fail('INVENTORY_RESPONSE_TOO_LARGE');
       responseHeaders(response, size);
       response.writeHead(200); response.end(serialized);
@@ -300,7 +305,7 @@ export async function startInventoryServer(options: InventoryServerOptions): Pro
       server.once('error', reject);
       server.listen(port, '127.0.0.1', () => { server.off('error', reject); resolve(); });
     });
-  } catch (error) { for (const observer of observers) observer.hash.fill(0); throw error; }
+  } catch (error) { for (const observer of observers) observer.hash.fill(0); await observation.close(); throw error; }
   const address = server.address();
   if (!address || typeof address === 'string') return fail(CONFIG);
   expectedHost = `127.0.0.1:${address.port}`;
@@ -308,12 +313,16 @@ export async function startInventoryServer(options: InventoryServerOptions): Pro
   return { server, url: `http://${expectedHost}`, close() {
     if (closePromise) return closePromise;
     closing = true;
-    closePromise = new Promise<void>((resolve, reject) => {
+    const transportClosed = new Promise<void>((resolve, reject) => {
       server.close(error => {
         for (const observer of observers) observer.hash.fill(0);
         if (error) reject(error); else resolve();
       });
       for (const [socket, timer] of sockets) { clearTimeout(timer); socket.destroy(); }
+    });
+    closePromise = Promise.allSettled([transportClosed, observation.close()]).then(results => {
+      const failed = results.find(result => result.status === 'rejected');
+      if (failed?.status === 'rejected') throw failed.reason;
     });
     return closePromise;
   } };

@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { ToolDefinition } from '@shieldaai/agent-guard';
-import { ExecutorError, type Ledger } from './store.js';
+import { ExecutorError, decodeCoreInventoryObservation, type InventoryLedgerState } from './store.js';
+import type { LedgerObservation } from './inventory-observer.js';
 
 /** Trusted host enrollment; changing it creates a separate collector source. */
 export interface InventorySourceOptions {
@@ -50,7 +51,8 @@ export interface InventorySnapshot {
   readonly tools: readonly InventoryTool[];
 }
 
-type Registration = { readonly fingerprint: string; readonly revision: number; readonly definition: ToolDefinition };
+export type InventoryRegistration = { readonly fingerprint: string; readonly revision: number;
+  readonly definition: Pick<ToolDefinition, 'requiresApproval' | 'controlPlane' | 'maxCost'> };
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_VALUES = 500_000;
 const MAX_SELECTORS = 100_000;
@@ -70,11 +72,25 @@ function field(value: unknown, name: string, code = STATE): unknown {
   if (!('value' in descriptor)) return fail(code);
   return descriptor.value;
 }
+// These readers may inspect ONLY descendants of the fresh JSON parsed inside
+// projectCoreInventoryObservation. No caller state, callback, brand or option
+// selects this path; source/scope/registrations always retain field() above.
+function parsedRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail();
+  return value as Record<string, unknown>;
+}
+function parsedField(value: unknown, name: string): unknown {
+  const object = parsedRecord(value);
+  return Object.hasOwn(object, name) ? object[name] : undefined;
+}
+const descriptorStateReader = Object.freeze({ record, field });
+const parsedStateReader = Object.freeze({ record: parsedRecord, field: parsedField });
 function identifier(value: unknown, code = STATE): string {
   if (typeof value !== 'string' || /^[\s\u001c-\u001f\u0085]*$/u.test(value) || value.includes('\0') ||
       // Reject unpaired surrogates: the Python consumer requires UTF-8 scalar values.
       /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)) return fail(code);
-  if ([...value].length > 4096) return fail(code);
+  // UTF-16 length bounds code-point count from above; short identifiers need no array.
+  if (value.length > 4096 && [...value].length > 4096) return fail(code);
   return value;
 }
 function integer(value: unknown): number {
@@ -105,6 +121,23 @@ export function validateInventorySource(value: unknown): InventorySourceOptions 
     companyId: identifier(field(value, 'companyId', code), code),
     sourceId: identifier(field(value, 'sourceId', code), code),
     enrollmentGeneration: identifier(field(value, 'enrollmentGeneration', code), code),
+  });
+}
+
+/** Private worker input: callbacks and every other ToolDefinition field stay with the host. */
+export function captureInventoryRegistrations(live: ReadonlyMap<string, InventoryRegistration>, maximumBytes: number): readonly [string, InventoryRegistration][] {
+  let bytes = 2;
+  return [...live].map(([name, registration]) => {
+    identifier(name);
+    const fingerprint = field(registration, 'fingerprint');
+    if (typeof fingerprint !== 'string' || !/^(?:sha256:)?[a-f0-9]{64}$/.test(fingerprint)) fail();
+    const definition = field(registration, 'definition');
+    const result: [string, InventoryRegistration] = [name, { fingerprint, revision: integer(field(registration, 'revision')), definition: {
+      requiresApproval: optionalBoolean(field(definition, 'requiresApproval')),
+      controlPlane: optionalBoolean(field(definition, 'controlPlane')), maxCost: integer(field(definition, 'maxCost') ?? 0),
+    } }];
+    bytes += Buffer.byteLength(JSON.stringify(result)) + 1; limited(bytes, maximumBytes);
+    return result;
   });
 }
 
@@ -198,15 +231,75 @@ function finalizeConstructedInventory(snapshot: InventorySnapshot): InventorySna
   return visit(snapshot, 0) as InventorySnapshot;
 }
 
-/** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
-export function projectInventory(
-  state: Ledger,
-  live: ReadonlyMap<string, Registration>,
+/**
+ * Encode only our fresh validated constructors, without object serialization hooks.
+ * Their object keys are fixed non-array-index schema fields, so lexical order is
+ * also the synchronous finalizer's JSON property order. Future dynamic/index-key
+ * fields require JavaScript integer-key enumeration, not this lexical traversal.
+ */
+function serializeConstructedInventory(snapshot: InventorySnapshot): { json: string; bytes: number } {
+  const maxBytes = MAX_BYTES - 16 * snapshot.tasks.length;
+  const encoded = new Map<string, { text: string; bytes: number }>();
+  let nodes = 0, bytes = 0;
+  const limit = (): never => fail('INVENTORY_LIMIT_EXCEEDED');
+  const addBytes = (count: number): void => { bytes += count; if (bytes > maxBytes) limit(); };
+  const string = (value: string): string => {
+    if (value.length > maxBytes - bytes) limit();
+    let entry = encoded.get(value);
+    if (entry === undefined) {
+      const text = JSON.stringify(value);
+      entry = { text, bytes: Buffer.byteLength(text, 'utf8') };
+      // Snapshot-local encoded strings never carry authority or suppress charging.
+      if (encoded.size < 1024) encoded.set(value, entry);
+    }
+    addBytes(entry.bytes); return entry.text;
+  };
+  const visit = (value: unknown, depth: number): string => {
+    if (++nodes > MAX_VALUES || depth > 32) return limit();
+    if (typeof value === 'string') return string(value);
+    if (value === null || typeof value === 'boolean') {
+      addBytes(value === false ? 5 : 4); return value === null ? 'null' : value ? 'true' : 'false';
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return limit();
+      const text = JSON.stringify(value); addBytes(text.length); return text;
+    }
+    if (typeof value !== 'object') return limit();
+    addBytes(2);
+    if (Array.isArray(value)) {
+      if (value.length > MAX_VALUES - nodes) return limit();
+      const result: string[] = [];
+      for (let index = 0; index < value.length; index++) {
+        if (index > 0) addBytes(1);
+        result.push(visit(value[index], depth + 1));
+      }
+      return '[' + result.join(',') + ']';
+    }
+    const keys = Object.keys(value).sort();
+    if (keys.length > MAX_VALUES - nodes) return limit();
+    const result: string[] = [];
+    for (let index = 0; index < keys.length; index++) {
+      if (index > 0) addBytes(1);
+      const key = keys[index]!, text = string(key); addBytes(1);
+      result.push(text + ':' + visit((value as Record<string, unknown>)[key], depth + 1));
+    }
+    return '{' + result.join(',') + '}';
+  };
+  const json = visit(snapshot, 0);
+  return { json, bytes };
+}
+
+/** Fresh snapshot-local constructors shared by synchronous and worker output. */
+function constructInventory(
+  state: InventoryLedgerState,
+  live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
   scope: InventoryScope,
   generatedAt: number,
   referenceKey?: Uint8Array,
+  stateReader = descriptorStateReader,
 ): InventorySnapshot {
+  const stateRecord = stateReader.record, stateField = stateReader.field;
   const enrollment = validateInventorySource(source);
   const scopeCode = 'INVENTORY_SCOPE_INVALID';
   closed(scope, ['tenantId'], scopeCode);
@@ -234,23 +327,23 @@ export function projectInventory(
   const tasks: InventoryTask[] = [];
   const names = new Set<string>();
   let selectors = 0;
-  const storedTasks = record(field(state, 'tasks'));
-  const families = record(field(state, 'families'));
+  const storedTasks = stateRecord(stateField(state, 'tasks'));
+  const families = stateRecord(stateField(state, 'families'));
   for (const key of Object.keys(storedTasks).sort()) {
-    const stored = field(storedTasks, key);
-    const options = field(stored, 'options');
+    const stored = stateField(storedTasks, key);
+    const options = stateField(stored, 'options');
     // Tenant membership must be known before claiming complete coverage.
-    const taskTenant = identifier(field(options, 'tenantId'));
+    const taskTenant = identifier(stateField(options, 'tenantId'));
     if (taskTenant !== tenantId) continue;
     limited(tasks.length + 1, 10_000);
-    const taskId = identifier(field(options, 'id'));
+    const taskId = identifier(stateField(options, 'id'));
     if (taskId !== key) fail();
-    const familyId = identifier(field(stored, 'family'));
+    const familyId = identifier(stateField(stored, 'family'));
     const grants = new Map<string, Set<string>>();
-    for (const raw of array(field(options, 'grants'))) {
-      const tool = identifier(field(raw, 'tool'));
+    for (const raw of array(stateField(options, 'grants'))) {
+      const tool = identifier(stateField(raw, 'tool'));
       const resources = grants.get(tool) ?? new Set<string>();
-      for (const resource of array(field(raw, 'resources'))) {
+      for (const resource of array(stateField(raw, 'resources'))) {
         resources.add(identifier(resource)); limited(resources.size, 1024);
       }
       grants.set(tool, resources); limited(grants.size, 2048); names.add(tool);
@@ -259,42 +352,42 @@ export function projectInventory(
       selectors += resources.size; limited(selectors, MAX_SELECTORS);
       return { tool, resources: [...resources].map(value => reference('resource', value)).sort() };
     });
-    const rawBudget = field(options, 'budget');
-    const deadline = field(rawBudget, 'deadline');
+    const rawBudget = stateField(options, 'budget');
+    const deadline = stateField(rawBudget, 'deadline');
     if (typeof deadline !== 'number' || !Number.isFinite(deadline) || deadline < 0 || deadline > Number.MAX_SAFE_INTEGER) fail();
-    const parent = field(stored, 'parent');
-    const provenance = field(stored, 'sourceTaskId');
+    const parent = stateField(stored, 'parent');
+    const provenance = stateField(stored, 'sourceTaskId');
     tasks.push({
-      id: taskId, tenantId, principalId: identifier(field(options, 'principalId')),
+      id: taskId, tenantId, principalId: identifier(stateField(options, 'principalId')),
       parentTaskId: parent === null ? null : identifier(parent),
       sourceTaskId: provenance === undefined ? null : identifier(provenance),
       familyId, grants: normalized,
-      budget: { maxCalls: integer(field(rawBudget, 'maxCalls')), maxConcurrent: integer(field(rawBudget, 'maxConcurrent')),
-        maxCost: integer(field(rawBudget, 'maxCost')), deadline },
-      allowedRecipients: strings(field(options, 'allowedRecipients') ?? [], 1024).map(value => reference('recipient', value)).sort(),
-      allowControlPlane: optionalBoolean(field(options, 'allowControlPlane')),
-      revoked: boolean(field(stored, 'revoked')), sensitive: boolean(field(field(families, familyId), 'sensitive')),
-      usage: { calls: integer(field(stored, 'calls')), concurrent: integer(field(stored, 'concurrent')),
-        spent: integer(field(stored, 'spent')), reserved: integer(field(stored, 'reserved')) },
+      budget: { maxCalls: integer(stateField(rawBudget, 'maxCalls')), maxConcurrent: integer(stateField(rawBudget, 'maxConcurrent')),
+        maxCost: integer(stateField(rawBudget, 'maxCost')), deadline },
+      allowedRecipients: strings(stateField(options, 'allowedRecipients') ?? [], 1024).map(value => reference('recipient', value)).sort(),
+      allowControlPlane: optionalBoolean(stateField(options, 'allowControlPlane')),
+      revoked: boolean(stateField(stored, 'revoked')), sensitive: boolean(stateField(stateField(families, familyId), 'sensitive')),
+      usage: { calls: integer(stateField(stored, 'calls')), concurrent: integer(stateField(stored, 'concurrent')),
+        spent: integer(stateField(stored, 'spent')), reserved: integer(stateField(stored, 'reserved')) },
     });
   }
   relations(tasks);
   const tools: InventoryTool[] = [];
-  const storedTools = record(field(state, 'tools'));
+  const storedTools = stateRecord(stateField(state, 'tools'));
   for (const name of [...names].sort()) {
-    const stored = field(storedTools, name);
+    const stored = stateField(storedTools, name);
     if (stored === undefined) continue; // An unresolved grant is not invented tool metadata.
     limited(tools.length + 1, 10_000);
-    const storedFingerprint = field(stored, 'fingerprint');
+    const storedFingerprint = stateField(stored, 'fingerprint');
     if (typeof storedFingerprint !== 'string' || !/^(?:sha256:)?[a-f0-9]{64}$/.test(storedFingerprint)) fail();
     // Agent Guard's native fingerprint includes the algorithm; inventory v1 fixes SHA-256.
     const fingerprint = storedFingerprint.replace(/^sha256:/, '');
-    const revision = integer(field(stored, 'revision'));
+    const revision = integer(stateField(stored, 'revision'));
     const registration = live.get(name);
     const registered = registration !== undefined && field(registration, 'fingerprint') === storedFingerprint &&
       field(registration, 'revision') === revision;
     const definition = registered ? field(registration, 'definition') : undefined;
-    tools.push({ name, fingerprint, revision, registered, approved: boolean(field(stored, 'approved')),
+    tools.push({ name, fingerprint, revision, registered, approved: boolean(stateField(stored, 'approved')),
       requiresApproval: registered ? optionalBoolean(field(definition, 'requiresApproval')) : null,
       controlPlane: registered ? optionalBoolean(field(definition, 'controlPlane')) : null,
       maxCost: registered ? integer(field(definition, 'maxCost') ?? 0) : null });
@@ -303,16 +396,79 @@ export function projectInventory(
     schemaVersion: 1, profile: 'core',
     source: { companyId: enrollment.companyId, sourceId: enrollment.sourceId,
       enrollmentGeneration: enrollment.enrollmentGeneration,
-      inventoryInstanceId: identifier(field(state, 'inventoryInstanceId')), tenantId },
+      inventoryInstanceId: identifier(stateField(state, 'inventoryInstanceId')), tenantId },
     snapshotId: randomUUID(), generatedAt: timestamp,
-    ledgerRevision: integer(field(state, 'revision')), policyEpoch: integer(field(state, 'epoch')),
+    ledgerRevision: integer(stateField(state, 'revision')), policyEpoch: integer(stateField(state, 'epoch')),
     coverage: { tasks: { status: 'complete', observedAt: timestamp }, tools: { status: 'complete', observedAt: timestamp },
       manifest: { status: 'not_collected' }, mcp: { status: 'not_collected' }, cloud: { status: 'not_collected' } },
     tasks, tools,
   };
-  // Python may serialize a fractional deadline with a longer exponent than JavaScript.
-  // Reserve headroom per task so a producer-accepted snapshot also fits the consumer's 8 MiB cap.
-  // Constructed fields above are JSON data; the remaining failure mode is a bounded output limit.
+  return snapshot;
+}
+
+/** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
+export function projectInventory(
+  state: InventoryLedgerState,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventorySnapshot {
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey);
+  // Both finalizers reserve per-task headroom for the Python numeric serializer.
+  // Constructed fields are JSON data; remaining failures are bounded output limits.
   try { return finalizeConstructedInventory(snapshot); }
   catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
+}
+
+/** Private worker result; intentionally absent from the package's public index. */
+export interface InventoryJson {
+  readonly json: string;
+  readonly bytes: number;
+  readonly profile: 'core';
+  readonly source: InventorySnapshot['source'];
+}
+
+/** Internal direct core wire projection. No parsing, authority cache or host/MCP composition. */
+export function projectInventoryJson(
+  state: InventoryLedgerState,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventoryJson {
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey);
+  try {
+    const { json, bytes } = serializeConstructedInventory(snapshot);
+    return Object.freeze({ json, bytes, profile: snapshot.profile, source: Object.freeze(snapshot.source) });
+  } catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
+}
+
+/**
+ * Private fixed-worker entry: fresh authenticated ciphertext to detached core JSON.
+ * Parsed state never escapes or enters a caller callback. Only this stack selects
+ * the own-field reader; authority, synchronous and host/MCP paths keep descriptors.
+ */
+export function projectCoreInventoryObservation(
+  ledger: LedgerObservation,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventoryJson {
+  if (!(ledger.key instanceof Uint8Array) || ledger.key.byteLength !== 32 || typeof ledger.payload !== 'string' ||
+      ledger.payload.length > ledger.maxBytes * 2 + 512) throw new Error();
+  const state = decodeCoreInventoryObservation(ledger.payload, ledger.key, ledger.maxBytes, ledger.witnessed);
+  const mode = (state as typeof state & { recoveryMirror?: unknown }).recoveryMirror;
+  // A fresh owner-verified mirror capture is mandatory for all mirror semantics.
+  if ((mode !== undefined || state.schema === 3 || ledger.mirror) &&
+      (!ledger.witnessed || !ledger.mirror || mode !== 1 || state.schema !== 3)) throw new Error();
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey, parsedStateReader);
+  try {
+    const { json, bytes } = serializeConstructedInventory(snapshot);
+    return Object.freeze({ json, bytes, profile: snapshot.profile, source: Object.freeze(snapshot.source) });
+  } catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
 }

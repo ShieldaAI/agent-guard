@@ -5,11 +5,12 @@ import {
   type TaskOptions, type TaskSnapshot, type ToolDefinition,
 } from '@shieldaai/agent-guard';
 import { ExecutorError, LedgerStore, type ExecutionReceipt, type Ledger, type LedgerWitness, type MemoryRecord, type StoredAction, type StoredTask } from './store.js';
-import { projectInventory, validateInventorySource, type InventoryOptions, type InventoryScope,
+import { projectInventory, validateInventorySource, captureInventoryRegistrations, type InventoryOptions, type InventoryScope,
   type InventorySnapshot, type InventorySourceOptions } from './inventory.js';
 import { DecisionTraces, decisionTraceCode, type DecisionTraceOptions, type DecisionTraceScope,
   type DecisionTraceSnapshot, type DecisionTraceSink, type DecisionTraceExportResult,
   type TraceContext, type DecisionTraceEventName, type DecisionTraceOutcome } from './traces.js';
+import { bindExecutorObservation, closeExecutorObservation } from './inventory-observer.js';
 import { archivedTaskIdUsed, archivedMemoryIdUsed, TaskFamilyLifecycle, type TaskFamilyScope, type TaskFamilyDecision, type TaskFamilyArchiveScope,
   type TaskFamilyRetirementPreview, type TaskFamilyRetirementResult, type TaskFamilyArchiveReceipt,
   type ExecutionListScope, type ExecutionList, type MaintenanceStatistics } from './lifecycle.js';
@@ -128,6 +129,14 @@ export class DurableExecutor {
       });
       for (const context of recovered) this.#record(context, 'unknown', 'UNKNOWN', 'RECOVERY_UNKNOWN');
     } catch (error) { this.#store.close(); this.#inventoryReferenceKey?.fill(0); this.#traces?.close(); throw error; }
+    bindExecutorObservation(this, this.#store, () => {
+      if (!this.#inventorySource) throw new ExecutorError('INVENTORY_DISABLED');
+      // Every registration also occupies the bounded encrypted tool ledger. Four
+      // times that ceiling accommodates detached flags without a hidden global
+      // 10k-tool cap on a tenant whose own exported tools remain within 10k.
+      return { source: this.#inventorySource, registrations: captureInventoryRegistrations(this.#tools, this.#store.maxBytes * 4),
+        referenceKey: this.#inventoryReferenceKey ? new Uint8Array(this.#inventoryReferenceKey) : undefined };
+    });
     this.#lifecycle = new TaskFamilyLifecycle(this.#store, {
       now: state => this.#now(state),
       activeTaskIds: () => new Set([...this.#active.values()].flatMap(active => active.taskIds)),
@@ -757,6 +766,7 @@ export class DurableExecutor {
   }
   close(): void {
     if (this.#active.size) throw new ExecutorError('EXECUTIONS_ACTIVE');
+    closeExecutorObservation(this);
     this.#store.close();
     this.#policyAdmission.invalidate('TASK_REVOKED');
     this.#inventoryReferenceKey?.fill(0);

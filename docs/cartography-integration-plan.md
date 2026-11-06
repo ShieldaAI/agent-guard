@@ -651,6 +651,15 @@ is checked in; these local results do not claim a completed hosted CI run.
 
 ## Deployment and rollout gates
 
+The November 6 P1 expansion adds version-2 company manifests, owner and resource
+indexes, credential references, structured agent details and scoped permission
+changes. See the [implementation contract](agent-cartography-contract.md),
+[company guide](guides/agent-cartography.md) and
+[verification record](agent-cartography-review.md). The October measurements above
+remain evidence for their recorded revision; they do not certify the expanded
+catalog. Approval events, request-time decisions and backend receipt history are
+not collected by the catalog and remain explicitly labeled as such.
+
 Keep Neo4j on a private network with authentication enabled. Give the collector and query service separate database identities where the selected edition supports enforceable roles. With Community Edition, a driver “read” mode is not a security boundary: protect credentials and allow only fixed queries in the service. Apply company/team visibility there regardless of database edition. A multi-company hosted service requires additional isolation review and is outside this pilot.
 
 Store observer credentials in the existing secret manager or protected deployment files. Protect graph volumes and snapshot backups; record retention and restoration procedures. Graph restoration can rebuild from fresh source snapshots. It must never restore or overwrite Agent Guard's authority ledger. Track snapshot age, source errors, import duration, rejected publication, graph size and query failures.

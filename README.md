@@ -2,7 +2,14 @@
 
 Authorize AI agent tool calls in TypeScript with scoped resources, tenant checks, approvals and budgets. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
 
-**Status: experimental alpha.** The packages use the npm scope `@shieldaai`. The core has no third-party runtime dependencies and requires Node.js 22 or newer. It controls registered calls within one process. It is not an OS sandbox or a universal prompt-injection detector.
+**Status: unpublished 0.1.0 candidate; production release held.** The current
+Node HIGH security prealert and admission-performance acceptance remain open.
+The [candidate release notes](docs/releases/0.1.0.md) track these gates; changing
+the version does not clear them. The latest published version is the experimental
+`0.1.0-alpha.3` release. The packages use the npm scope `@shieldaai`. The core has
+no third-party runtime dependencies and requires Node.js 22 or newer. It controls
+registered calls within one process. It is not an OS sandbox or a universal
+prompt-injection detector.
 
 Start the defensive-project review with the [protection requirements and design](docs/protection-design.md)
 and the [engineering scorecard](docs/protection-assessment.md). The
@@ -51,14 +58,19 @@ digest that locks the cases and criteria for the paid run. [Model-selected trial
 The optional [Agent Map](packages/agent-map/README.md) reads published inventory
 without participating in execution. It provides team-scoped evidence, access
 explanations, snapshot changes and freshness through the same HTTP/MCP contract.
+The [company cartography guide](docs/guides/agent-cartography.md) connects
+company-owned agents, owners, deployments, permissions, resources, credential
+references and relationships. Paged indexes and structured details distinguish
+declared access, host assertions, policy candidates and missing evidence.
 See the [Cartography plan](docs/cartography-integration-plan.md) for milestone
 status and the [viewer](apps/agent-map/README.md) for local preview instructions.
 The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic
 observer-to-viewer deployment, private backups, fresh-graph recovery, operational
 difference reports and reproducible performance/rollback checks.
-The isolated pilot passed recovery, graph-load and provisional admission-latency
-checks. The runbook records the workloads, measured limits and remaining company
-rollout gates.
+The isolated pilot has retained recovery and graph-load evidence. The current
+cartography candidate's uninstrumented admission-performance gate failed; a later
+instrumented diagnostic is not acceptance evidence. The runbook and candidate
+release notes retain these results and the remaining company rollout gates.
 
 The [source lifecycle command](deployment/cartography/SOURCE-LIFECYCLE.md) explicitly
 replaces an enrolled generation after an executor restore or clone. It retires
@@ -80,21 +92,26 @@ candidates to each visible task's execution and resource bindings, retaining
 conditions, freshness and unresolved coverage. Live account enrollment remains
 a deployment step.
 
-## Install the alpha
+## Published package and candidate checkout
+
+The following installs the published experimental alpha, not the unpublished
+candidate:
 
 ```sh
-npm install @shieldaai/agent-guard@alpha
+npm install @shieldaai/agent-guard@0.1.0-alpha.3
 ```
 
-Add `@shieldaai/agent-guard-mcp@alpha` when integrating MCP tools, or
-`@shieldaai/agent-guard-scenarios@alpha` to run the scenario catalog. Both depend on
+Add `@shieldaai/agent-guard-mcp@0.1.0-alpha.3` when integrating MCP tools, or
+`@shieldaai/agent-guard-scenarios@0.1.0-alpha.3` to run the scenario catalog. Both depend on
 the matching core version. Configuration lives in your application: register tools,
 create task grants, and provide an authenticated approval flow where needed.
 
-This checkout targets `0.1.0-alpha.3` for all five npm packages under the `alpha` tag.
-The private viewer and Python Cartography integration are separate source
-components. See the [release notes](docs/releases/0.1.0-alpha.3.md) for changes
-and the published verification record.
+This checkout prepares `0.1.0` for all five npm packages, with the intended
+`latest` tag only after release approval. Build and install its local tarballs
+together to evaluate candidate features. The private viewer and Python
+Cartography integration are separate source components. See the
+[candidate notes](docs/releases/0.1.0.md) for open gates and the
+[alpha.3 notes](docs/releases/0.1.0-alpha.3.md) for the published verification record.
 
 ## Run locally
 
@@ -112,6 +129,7 @@ service. `npm run pack` creates installable tarballs in `artifacts/`. For local 
 install the workspace tarballs together into a separate project. `npm run check` also tests
 packed packages in a clean temporary consumer, so workspace links cannot hide missing
 distribution files.
+Linux and macOS recovery tests require a C compiler; see [contributor setup](CONTRIBUTING.md).
 
 The synthetic [SafeCall/executor integration](examples/safecall-executor.mjs) uses
 the Node SafeCall package installed in the caller's environment, or accepts its
@@ -204,8 +222,9 @@ Cost values must be nonnegative safe integers in a consistent host-defined unit,
 Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
 The [release review](docs/quality-review.md) preserves verification of the published
-`0.1.0-alpha.1` packages. See the [0.1.0-alpha.3 notes](docs/releases/0.1.0-alpha.3.md)
-and [changelog](CHANGELOG.md) for current changes and remaining deployment gates.
+`0.1.0-alpha.1` packages. The [0.1.0-alpha.3 notes](docs/releases/0.1.0-alpha.3.md)
+preserve the latest publication; see the [unpublished 0.1.0 notes](docs/releases/0.1.0.md)
+and [changelog](CHANGELOG.md) for candidate changes and remaining release gates.
 
 ## Contributing
 

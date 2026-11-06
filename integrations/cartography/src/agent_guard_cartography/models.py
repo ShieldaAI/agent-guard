@@ -108,6 +108,8 @@ class TaskProperties(GuardProperties):
 @dataclass(frozen=True)
 class HostProperties(GuardProperties):
     evidence_kind: PropertyRef = PropertyRef("evidence_kind")
+    authority_id: PropertyRef = PropertyRef("authority_id")
+    manifest_schema_version: PropertyRef = PropertyRef("manifest_schema_version")
     manifest_id: PropertyRef = PropertyRef("manifest_id")
     manifest_revision: PropertyRef = PropertyRef("manifest_revision")
     manifest_observed_at: PropertyRef = PropertyRef("manifest_observed_at")
@@ -120,12 +122,39 @@ class AgentProperties(HostProperties):
     name: PropertyRef = PropertyRef("name")
     owner_id: PropertyRef = PropertyRef("owner_id")
     team_id: PropertyRef = PropertyRef("team_id")
+    purpose: PropertyRef = PropertyRef("purpose")
+    lifecycle_state: PropertyRef = PropertyRef("lifecycle_state")
+    ownership_status: PropertyRef = PropertyRef("ownership_status")
+    ownership_source: PropertyRef = PropertyRef("ownership_source")
+
+
+@dataclass(frozen=True)
+class OwnerProperties(HostProperties):
+    owner_id: PropertyRef = PropertyRef("owner_id")
+    name: PropertyRef = PropertyRef("name")
+    kind: PropertyRef = PropertyRef("kind")
+
+
+@dataclass(frozen=True)
+class CredentialReferenceProperties(HostProperties):
+    credential_id: PropertyRef = PropertyRef("credential_id")
+    name: PropertyRef = PropertyRef("name")
+    issuer_ref: PropertyRef = PropertyRef("issuer_ref")
+    audience_refs: PropertyRef = PropertyRef("audience_refs")
+    recipient_refs: PropertyRef = PropertyRef("recipient_refs")
+    lifecycle_state: PropertyRef = PropertyRef("lifecycle_state")
+    expires_at: PropertyRef = PropertyRef("expires_at")
+    rotation_status: PropertyRef = PropertyRef("rotation_status")
 
 
 @dataclass(frozen=True)
 class DeploymentProperties(HostProperties):
     deployment_id: PropertyRef = PropertyRef("deployment_id")
     environment: PropertyRef = PropertyRef("environment")
+    runtime_ref: PropertyRef = PropertyRef("runtime_ref")
+    workload_generation: PropertyRef = PropertyRef("workload_generation")
+    build_ref: PropertyRef = PropertyRef("build_ref")
+    binding_authority: PropertyRef = PropertyRef("binding_authority")
 
 
 @dataclass(frozen=True)
@@ -140,6 +169,8 @@ class ExternalIdentityProperties(HostProperties):
 @dataclass(frozen=True)
 class ExternalResourceProperties(ExternalIdentityProperties):
     kind: PropertyRef = PropertyRef("kind")
+    host_resource_id: PropertyRef = PropertyRef("host_resource_id")
+    name: PropertyRef = PropertyRef("name")
 
 
 @dataclass(frozen=True)
@@ -149,6 +180,12 @@ class ResourceBindingProperties(HostProperties):
     resource_ref: PropertyRef = PropertyRef("resource_ref")
     actions: PropertyRef = PropertyRef("actions")
     scope: PropertyRef = PropertyRef("scope")
+    display_name: PropertyRef = PropertyRef("display_name")
+    owner_id: PropertyRef = PropertyRef("owner_id")
+    ownership_status: PropertyRef = PropertyRef("ownership_status")
+    ownership_source: PropertyRef = PropertyRef("ownership_source")
+    sensitivity: PropertyRef = PropertyRef("sensitivity")
+    approved_destinations: PropertyRef = PropertyRef("approved_destinations")
 
 
 @dataclass(frozen=True)
@@ -225,13 +262,29 @@ SCHEMAS: dict[str, GuardSchema] = {
             ]
         ),
     ),
-    "GuardAgent": GuardSchema(label="GuardAgent", properties=AgentProperties()),
+    "GuardOwner": GuardSchema(label="GuardOwner", properties=OwnerProperties()),
+    "GuardCredentialReference": GuardSchema(
+        label="GuardCredentialReference", properties=CredentialReferenceProperties()
+    ),
+    "GuardAgent": GuardSchema(
+        label="GuardAgent",
+        properties=AgentProperties(),
+        other_relationships=OtherRelationships(
+            [relationship("G_OWNED_BY", "GuardOwner", "owner_node_id")]
+        ),
+    ),
     "GuardDeployment": GuardSchema(
         label="GuardDeployment",
         properties=DeploymentProperties(),
         other_relationships=OtherRelationships(
             [
                 relationship("G_INSTANCE_OF", "GuardAgent", "agent_node_id"),
+                relationship(
+                    "G_USES_CREDENTIAL",
+                    "GuardCredentialReference",
+                    "credential_node_ids",
+                    many=True,
+                ),
             ]
         ),
     ),
@@ -248,6 +301,10 @@ SCHEMAS: dict[str, GuardSchema] = {
             [
                 relationship("G_BINDS_SELECTOR", "GuardResource", "resource_node_id"),
                 relationship("G_MAPS_TO", "GuardExternalResource", "external_resource_node_id"),
+                relationship("G_RESOURCE_OWNED_BY", "GuardOwner", "owner_node_id"),
+                relationship(
+                    "G_DEPENDS_ON", "GuardResourceBinding", "dependency_node_ids", many=True
+                ),
             ]
         ),
     ),

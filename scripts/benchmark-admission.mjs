@@ -7,11 +7,13 @@ import { join, resolve } from 'node:path';
 import { isEntry } from '../examples/providers/replay.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
-import { isMainThread, parentPort, threadId, Worker, workerData } from 'node:worker_threads';
+import { isMainThread, threadId, Worker } from 'node:worker_threads';
 import { DurableExecutor, createInventoryObserverToken, startExecutorServer, startInventoryServer } from '../packages/executor/dist/index.js';
 import { LedgerStore } from '../packages/executor/dist/store.js';
-import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentObserverRequests, instrumentAdmissionMethods } from './benchmark-admission-diagnostics.mjs';
+import { createAdmissionDiagnostics, instrumentInventoryObservation, instrumentObserverRequests, instrumentAdmissionMethods,
+  instrumentAdmissionWorkers, recordAdmissionThreadCounters, DIAGNOSTIC_ROLES } from './benchmark-admission-diagnostics.mjs';
 import { startAdmissionCpuProfile } from './benchmark-admission-profile.mjs';
+import { workerSchedulingMode, validateSchedulingReading, schedulingEvidenceValid } from './benchmark-admission-scheduling.mjs';
 
 export const PHASE_ORDER = Object.freeze(['baseline', 'polling', 'polling', 'baseline']);
 export function percentile95(values) {
@@ -64,117 +66,6 @@ export function admissionGate(phases, { enforcePerformance = true } = {}) {
     ratio, regressionPercent: ratio === null ? null : (ratio - 1) * 100 };
 }
 
-async function pollWorker() {
-  const stats = { scheduled: 0, started: 0, completed: 0, failed: 0, skippedBusy: 0, completedDuringMeasurement: 0, samples: [] };
-  const diagnostics = workerData.diagnostics ? createAdmissionDiagnostics() : null;
-  let stopping = false, pending = null;
-  const phaseStarted = BigInt(workerData.clockOriginNs);
-  const tick = () => {
-    if (stopping) return;
-    stats.scheduled++;
-    if (pending) {
-      stats.skippedBusy++;
-      diagnostics?.add('ticks', { atNs: process.hrtime.bigint().toString(), scheduled: stats.scheduled, skippedBusy: true, poll: stats.started });
-      return;
-    }
-    const startedNs = process.hrtime.bigint();
-    stats.started++;
-    const poll = stats.started;
-    diagnostics?.add('ticks', { atNs: startedNs.toString(), scheduled: stats.scheduled, skippedBusy: false, poll });
-    pending = (async () => {
-      let bytes = 0, ok = false;
-      let headersNs = null, bodyNs = null, parseStartedNs = null, parsedNs = null, status = null;
-      try {
-        const response = await fetch(workerData.url + '/v1/inventory/snapshot', { method: 'POST', redirect: 'error',
-          headers: { authorization: `Bearer ${workerData.token}`, 'content-type': 'application/json' },
-          body: '{"tenantId":"synthetic-admission"}', signal: AbortSignal.timeout(5000) });
-        if (diagnostics) { headersNs = process.hrtime.bigint(); status = response.status; }
-        const chunks = []; const reader = response.body.getReader();
-        try { for (;;) { const item = await reader.read(); if (item.done) break; bytes += item.value.byteLength;
-          if (bytes > 8 * 1024 * 1024) throw new Error('POLL_LIMIT'); chunks.push(item.value); }
-        } finally { await reader.cancel().catch(() => {}); }
-        if (diagnostics) { bodyNs = process.hrtime.bigint(); parseStartedNs = process.hrtime.bigint(); }
-        const value = JSON.parse(Buffer.concat(chunks).toString());
-        if (diagnostics) parsedNs = process.hrtime.bigint();
-        ok = response.status === 200 && value.profile === 'core' && value.tasks.length === workerData.tasks &&
-          value.tasks.reduce((sum, task) => sum + task.grants.length, 0) === workerData.tasks * workerData.grants;
-      } catch { /* Stable metrics only; never retain requests, tokens or backend errors. */ }
-      const completedNs = process.hrtime.bigint();
-      if (ok) stats.completed++; else stats.failed++;
-      stats.samples.push({ startedNs: startedNs.toString(), completedNs: completedNs.toString(),
-        startedAtMs: Number(startedNs - phaseStarted) / 1e6, durationMs: Number(completedNs - startedNs) / 1e6, bytes, ok });
-      diagnostics?.add('polls', { poll, startedNs: startedNs.toString(), headersNs: headersNs?.toString() ?? null,
-        bodyNs: bodyNs?.toString() ?? null, parseStartedNs: parseStartedNs?.toString() ?? null,
-        parsedNs: parsedNs?.toString() ?? null, completedNs: completedNs.toString(), status, bytes, ok });
-    })().finally(() => { pending = null; });
-  };
-  const timer = setInterval(tick, workerData.pollIntervalMs);
-  parentPort.on('message', async message => {
-    if (message === 'stop') {
-      stopping = true; clearInterval(timer);
-      try {
-        if (pending) await pending;
-        if (diagnostics) stats.diagnostics = diagnostics.stop();
-        parentPort.postMessage({ stats });
-      } finally { diagnostics?.stop(); parentPort.close(); }
-    }
-  });
-  parentPort.once('close', () => { clearInterval(timer); diagnostics?.stop(); });
-  tick(); parentPort.postMessage('ready');
-}
-
-// HTTP request initiation must run independently of the executor's event loop:
-// synchronous inventory exports can then queue requests after their timestamp.
-async function workloadWorker() {
-  const diagnostics = workerData.diagnostics ? createAdmissionDiagnostics() : null;
-  try {
-  const call = async (operation, body) => {
-    const response = await fetch(workerData.url + '/v1/task/' + operation, { method: 'POST', redirect: 'error',
-      headers: { authorization: `Bearer ${workerData.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
-    if (response.status !== 200) { await response.body?.cancel(); throw new Error('ADMISSION_REQUEST_FAILED'); }
-    return response.json();
-  };
-  const record = async () => {
-    const startedNs = process.hrtime.bigint();
-    let executeStartedNs = null, enteredNs = null, finishedNs;
-    try {
-      const action = await call('prepare', { tool: 'synthetic.read-0', args: null });
-      executeStartedNs = process.hrtime.bigint();
-      const result = await call('execute', { actionId: action.id });
-      finishedNs = process.hrtime.bigint();
-      if (typeof result.value?.enteredAtNs !== 'string' || !/^\d{1,30}$/.test(result.value.enteredAtNs)) throw new Error('ADMISSION_RESULT_INVALID');
-      enteredNs = BigInt(result.value.enteredAtNs);
-      if (enteredNs < executeStartedNs || enteredNs > finishedNs) throw new Error('ADMISSION_RESULT_INVALID');
-      return { ok: true, startedNs: startedNs.toString(), executeStartedNs: executeStartedNs.toString(),
-        toolEnteredNs: enteredNs.toString(), finishedNs: finishedNs.toString(),
-        admissionMs: Number(enteredNs - executeStartedNs) / 1e6, prepareMs: Number(executeStartedNs - startedNs) / 1e6,
-        executeMs: Number(finishedNs - executeStartedNs) / 1e6, totalMs: Number(finishedNs - startedNs) / 1e6 };
-    } catch {
-      return { ok: false, error: 'ADMISSION_REQUEST_FAILED', startedNs: startedNs.toString(),
-        executeStartedNs: executeStartedNs?.toString() ?? null, toolEnteredNs: enteredNs?.toString() ?? null,
-        finishedNs: process.hrtime.bigint().toString(), admissionMs: null, prepareMs: null, executeMs: null, totalMs: null };
-    }
-  };
-  let ok = true, measurementStartedNs = null, measurementEndedNs = null;
-  for (let index = 0; index < workerData.warmup; index++) {
-    const sample = await record(); parentPort.postMessage({ kind: 'warmup-sample', sample });
-    if (!sample.ok) { ok = false; break; }
-  }
-  if (ok) {
-    measurementStartedNs = process.hrtime.bigint();
-    parentPort.postMessage({ kind: 'measurement-start', measurementStartedNs: measurementStartedNs.toString() });
-    for (let index = 0; index < workerData.samples; index++) {
-      const sample = await record(); parentPort.postMessage({ kind: 'sample', sample });
-      if (!sample.ok) { ok = false; break; }
-    }
-    measurementEndedNs = process.hrtime.bigint();
-  }
-  parentPort.postMessage({ kind: 'complete', ok, clientThreadId: threadId, measurementStartedNs: measurementStartedNs?.toString() ?? null,
-    measurementEndedNs: measurementEndedNs?.toString() ?? null, ...(diagnostics ? { diagnostics: diagnostics.stop() } : {}) });
-  parentPort.close();
-  } finally { diagnostics?.stop(); }
-}
 
 function waitMessage(worker, predicate, timeout = 10_000) {
   return new Promise((resolveMessage, reject) => {
@@ -186,18 +77,21 @@ function waitMessage(worker, predicate, timeout = 10_000) {
   });
 }
 
-export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false, cpuProfile = false }) {
+export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false, cpuProfile = false, workerScheduling = 'default' }) {
   if (!['baseline', 'polling'].includes(mode) || !Number.isInteger(samples) || samples < 1 || samples > 1000 ||
       !Number.isInteger(warmup) || warmup < 1 || warmup > 100 || !Number.isInteger(tasks) || tasks < 1 || tasks > 100 ||
       !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000 || typeof decisionTraces !== 'boolean' || typeof diagnostics !== 'boolean' ||
       typeof cpuProfile !== 'boolean' || (cpuProfile && !diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
+  workerSchedulingMode(workerScheduling);
+  if (workerScheduling === 'linux-background' && process.platform !== 'linux') throw new Error('ADMISSION_WORKER_SCHEDULING_INVALID');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'agent-guard-admission-')));
   let executor, taskServer, observer, worker, clientWorker, credential;
-  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler;
+  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler, workerDiagnostics, readScheduling;
   let successfulEffects = 0;
   const phase = { mode, executorThreadId: threadId, clientThreadId: null, clockOriginNs: process.hrtime.bigint().toString(), warmupSamples: [], coldFirstCall: null, samples: [],
     measurementStartedNs: null, measurementEndedNs: null, measurementDurationMs: 0,
-    successfulEffects: 0, finalCalls: 0, polling: null, cleanup: {} };
+    successfulEffects: 0, finalCalls: 0, polling: null, cleanup: {},
+    workerScheduling: { requested: workerScheduling, before: null, after: null } };
   try {
     executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: randomBytes(32),
       ...(decisionTraces ? { decisionTraces: { maxEventsPerTenant: 4096 } } : {}),
@@ -217,6 +111,8 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     taskServer = await startExecutorServer({ executor, adminToken: randomBytes(32).toString('base64url'), operatorId: 'synthetic-benchmark' });
     if (diagnostics) {
       diagnostic = createAdmissionDiagnostics({ processMetrics: true });
+      workerDiagnostics = instrumentAdmissionWorkers(Worker, diagnostic);
+      recordAdmissionThreadCounters(diagnostic, DIAGNOSTIC_ROLES.owner, 0);
       phase.diagnostics = { diagnosticOnly: true, acceptanceEvidenceEligible: false, main: null, workload: null };
       if (cpuProfile) {
         restoreMethods = instrumentAdmissionMethods(executor, LedgerStore, diagnostic);
@@ -224,16 +120,27 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       }
     }
     if (mode === 'polling') {
-      if (diagnostic) restoreExport = instrumentInventorySnapshot(executor, diagnostic);
+      const { readInventoryWorkerScheduling } = await import('../packages/executor/dist/inventory-observer.js');
+      readScheduling = () => {
+        const result = readInventoryWorkerScheduling(executor);
+        validateSchedulingReading(result, workerScheduling); return result;
+      };
+      if (diagnostic) {
+        const { InventoryObservationSession } = await import('../packages/executor/dist/inventory-observer.js');
+        restoreExport = instrumentInventoryObservation(InventoryObservationSession, diagnostic);
+      }
       const token = createInventoryObserverToken();
       observer = await startInventoryServer({ executor, observers: [{ token, tenantIds: ['synthetic-admission'], profile: 'core' }],
-        rateLimit: { maxRequests: 10000, windowMs: 60_000 } });
+        rateLimit: { maxRequests: 10000, windowMs: 60_000 }, workerScheduling });
+      phase.workerScheduling.before = readScheduling();
       if (diagnostic) restoreRequests = instrumentObserverRequests(observer.server, diagnostic);
-      worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'poll', url: observer.url, token, tasks, grants, pollIntervalMs, clockOriginNs: phase.clockOriginNs, diagnostics } });
+      const create = () => new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: { kind: 'poll', url: observer.url, token, tasks, grants, pollIntervalMs, clockOriginNs: phase.clockOriginNs, diagnostics } });
+      worker = workerDiagnostics ? workerDiagnostics.construct(DIAGNOSTIC_ROLES.poll, create) : create();
       await waitMessage(worker, value => value === 'ready');
     }
-    clientWorker = new Worker(new URL(import.meta.url), { workerData: { kind: 'workload', url: taskServer.url,
+    const createClient = () => new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: { kind: 'workload', url: taskServer.url,
       token: credential.token, samples, warmup, diagnostics } });
+    clientWorker = workerDiagnostics ? workerDiagnostics.construct(DIAGNOSTIC_ROLES.workload, createClient) : createClient();
     clientWorker.on('message', value => {
       if (value?.kind === 'warmup-sample') phase.warmupSamples.push(value.sample);
       if (value?.kind === 'sample') phase.samples.push(value.sample);
@@ -264,6 +171,10 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
             BigInt(sample.completedNs) >= BigInt(phase.measurementStartedNs) && BigInt(sample.completedNs) <= BigInt(phase.measurementEndedNs)).length;
       } catch { phase.error = 'ADMISSION_POLLING_FAILED'; }
     }
+    if (observer) {
+      try { phase.workerScheduling.after = readScheduling(); }
+      catch { phase.error = 'ADMISSION_SCHEDULING_UNVERIFIED'; }
+    }
     for (const [name, close] of [['worker', () => worker?.terminate()], ['clientWorker', () => clientWorker?.terminate()], ['observer', () => observer?.close()],
       ['taskServer', () => taskServer?.close()], ['executor', () => executor?.close()],
       ['directory', () => rm(directory, { recursive: true, force: true })]]) {
@@ -271,14 +182,16 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     }
     } finally {
     if (diagnostic) {
-      for (const restore of [restoreRequests, restoreExport, restoreMethods]) { try { restore?.(); } catch { diagnostic.fail(); } }
+      for (const restore of [restoreRequests, restoreExport, restoreMethods, () => workerDiagnostics?.restore()]) { try { restore?.(); } catch { diagnostic.fail(); } }
       if (profiler) {
         try { phase.diagnostics.cpuProfile = await profiler.stop(); }
         catch { diagnostic.fail(); }
       }
       phase.diagnostics.main = diagnostic.stop();
       phase.diagnostics.complete = phase.diagnostics.main.complete && phase.diagnostics.workload?.complete === true &&
-        (mode === 'baseline' || phase.polling?.diagnostics?.complete === true) &&
+        (mode === 'baseline' || (phase.polling?.diagnostics?.complete === true &&
+          phase.diagnostics.main.streams.observations.observed === phase.polling.started &&
+          phase.polling.diagnostics.streams.fetches.observed === phase.polling.started)) &&
         (!cpuProfile || phase.diagnostics.cpuProfile?.complete === true);
     }
     }
@@ -287,14 +200,17 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false } }, strict: true });
+  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false }, 'worker-scheduling': { type: 'string', default: 'default' } }, strict: true });
   if (!['smoke', 'acceptance'].includes(values.profile) || !values.output || (values['cpu-profile'] && !values.diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
+  const workerScheduling = workerSchedulingMode(values['worker-scheduling']);
+  if (workerScheduling === 'linux-background' && process.platform !== 'linux') throw new Error('ADMISSION_WORKER_SCHEDULING_INVALID');
   const destination = resolve(values.output); await stat(resolve(destination, '..'));
   const output = await open(destination, 'wx', 0o600);
   const acceptance = values.profile === 'acceptance';
   const settings = { samples: acceptance ? 250 : 100, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 };
   const report = { schemaVersion: 2, kind: 'synthetic-admission-polling-benchmark', profile: values.profile,
     diagnosticOnly: values.diagnostics, acceptanceEvidenceEligible: acceptance && !values.diagnostics, cpuProfileEnabled: values['cpu-profile'],
+    workerScheduling, schedulingEvidenceValid: false,
     startedAt: new Date().toISOString(), passed: false, phases: [], workload: settings, phaseOrder: PHASE_ORDER,
     hardware: { platform: platform(), release: release(), architecture: arch(), logicalCpus: cpus().length, memoryBytes: totalmem(), node: process.version },
     measurement: 'Independent workload-worker HTTP execute request initiation to executor-thread governed tool entry, using shared process.hrtime.bigint nanoseconds serialized as strings. Includes durable admission, server event-loop queueing and transport; excludes tool work/settlement. Prepare, complete execute and combined durations and all timestamp boundaries are retained. Successful poll completion membership uses the workload worker exact measured interval.',
@@ -307,34 +223,36 @@ export async function main(argv = process.argv.slice(2)) {
     streamLimit: 4096, heartbeatIntervalMs: 100,
     overhead: 'Opt-in instrumentation adds work to all phases and workers. Diagnostic runs cannot certify acceptance; never filter samples or change cadence/gates.',
     clock: 'Shared process.hrtime.bigint nanoseconds. GC start/duration are calibrated from each thread performance clock, with recorded calibration uncertainty and callback delivery timestamp.',
-    stages: 'Poll start→headers→body drained and reader cancelled→UTF-8 decode/JSON parse→shape validation complete. Server request→finish means handed to the OS, not client delivery. Export includes ledger read/decrypt/decode/projection; it excludes HTTP serialization.',
-    attribution: 'Request→export includes network/body processing/scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations are thread-local. Missing GC or I/O counter changes cannot prove a host cause.',
+    stages: 'Poll start→headers→body drained and reader cancelled→UTF-8 decode/JSON parse→shape validation complete. Server request→finish means handed to the OS, not client delivery. Async observation includes bounded queue wait, fresh ledger ciphertext capture, worker decrypt/decode/projection and serialization through Promise settlement; it is not the historical synchronous export span. This synthetic fixture does not configure a rollback witness, so it does not measure witness or recovery-mirror verification.',
+    attribution: 'Request→observation includes body processing and scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations and the optional CPU profile are thread-local and do not measure the trusted inventory worker. Missing GC or I/O counter changes cannot prove a host cause.',
     privacy: 'Only bounded timestamps, counters, booleans and fixed labels; no request headers, URLs, credentials, bodies, results or error messages.',
+    coldPath: 'Fetch entry/return preserves the original Promise with no added settlement reaction. AsyncLocalStorage and synchronous Undici subscribers add diagnostic overhead. Connection events are pooled, have no request attribution, and join to sends only by socket object identity. Worker online/role-entry brackets include native startup, module evaluation and scheduling; role-entry is after static imports. Parent post/result edges include IPC, worker processing and owner scheduling, not isolated worker CPU. Thread counters are absolute, sampled only at role entry and the first three fetch boundaries; event 0=role entry, 1=before fetch, 2=after fetch. Missing facilities are explicit nulls. No first poll, warmup or outlier is removed.',
   };
   if (values['cpu-profile']) report.diagnosticContract.cpuProfile = {
     methods: 'Public prepare/execute and repo-private LedgerStore read/transaction are wrapped only in this disposable process. this, arguments, return, thrown values and original Promise identity are preserved; Promise reaction/handledness and profiling overhead are added.',
     nesting: 'Spans are independent shared-hrtime intervals, not async parent attribution. Ledger transaction includes nested reads, serialization/encryption and commit; do not add nested/overlapping spans as separate CPU or I/O time. Async endedNs is observation in a settlement reaction.',
+    ownerCapture: 'Observation entry→returnedNs includes synchronous queue admission/capture/post work when immediately dispatched. Worker postStart/postReturn bracket posting; resultReceived→observation settlement includes owner result validation and Promise scheduling. These are overlapping bounds, not private-method spans or proof of native I/O/scheduler cause. Sampled source lines may identify capture frames but are not exact CPU attribution.',
     profiler: 'In-process inspector Session without a port;1ms sampling,120s soft deadline per phase,20000nodes,120000samples,16MiB sanitized output per phase. Deadline overrun, trimming, errors or lost topology make the capture incomplete. Startup/stop hrtime brackets bound V8 relative-clock alignment.',
     privacy: 'Retains only sanitized repo-relative/Node module function labels, bounded call-tree and sampled relative timings. Unknown source paths/function labels are redacted; no arguments, state, source text, headers or credentials. Raw V8 profiles are never written.',
   };
   try {
     for (const mode of PHASE_ORDER) {
       process.stderr.write(`Admission benchmark phase ${report.phases.length + 1}/4: ${mode}\n`);
-      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics, cpuProfile: values['cpu-profile'] }));
+      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics, cpuProfile: values['cpu-profile'], workerScheduling }));
       await sleep(100);
     }
     report.gate = admissionGate(report.phases, { enforcePerformance: acceptance });
+    report.schedulingEvidenceValid = schedulingEvidenceValid(report.phases, workerScheduling);
     if (values.diagnostics) report.diagnosticsComplete = report.phases.every(phase => phase.diagnostics?.complete === true);
-    report.passed = report.gate.passed && (!values.diagnostics || report.diagnosticsComplete);
+    report.passed = report.gate.passed && report.schedulingEvidenceValid && (!values.diagnostics || report.diagnosticsComplete);
   } catch { report.error = 'ADMISSION_BENCHMARK_FAILED'; }
   finally { report.completedAt = new Date().toISOString(); await output.writeFile(JSON.stringify(report, null, 2) + '\n'); await output.close(); }
-  process.stdout.write(JSON.stringify({ passed: report.passed, profile: values.profile,
+  process.stdout.write(JSON.stringify({ passed: report.passed, profile: values.profile, workerScheduling,
     diagnosticOnly: report.diagnosticOnly, acceptanceEvidenceEligible: report.acceptanceEvidenceEligible, output: destination }) + '\n');
   return report.passed ? 0 : 1;
 }
 
-if (!isMainThread && workerData?.kind === 'poll') await pollWorker();
-else if (!isMainThread && workerData?.kind === 'workload') await workloadWorker();
-else if (isEntry(import.meta)) {
+if (!isMainThread) throw new Error('ADMISSION_CLIENT_ENTRY_REQUIRED');
+if (isEntry(import.meta)) {
   try { process.exitCode = await main(); } catch { process.stderr.write('ADMISSION_START_FAILED\n'); process.exitCode = 1; }
 }
