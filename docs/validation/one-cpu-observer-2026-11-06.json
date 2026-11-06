@@ -1011,6 +1011,248 @@
         "sha256": "0bad1368fdf826173f612e10f58c651109434ceef7882c64644046ae3fabc38d"
       },
       "interpretation": "Final candidate failed: one phase-3 busy skip (maximum poll 273.761514 ms) and numerical p95 overhead 13.8372%, above the unchanged 10% limit. The original gate lists only the cadence failure because ratio denial is conditional on profile validity. All effects, charged calls, resource controls and cleanup passed. No stall cause or fix is proven."
+    },
+    {
+      "directory": "artifacts/agent-cartography/hosted-a91028c-owner-profile",
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-a91028c-owner-profile/verification.json",
+        "sha256": "458df42abc070b90f704e0b4fbfed5a57e85d3cc1ed749e08ce3bf1d90f18917"
+      },
+      "sourceCommit": "a91028c72b0390c2348ebc4485b09510303cdadd",
+      "testedCommit": "90eb43ebf9e6c2cf86b6f2e1b059c73eb27d9626",
+      "sourceTree": "b631c6b8cb086905f1fd70aef9a614b0e9c05bff",
+      "testedTreeEqualsSource": true,
+      "runId": 42277261209,
+      "jobId": 128096680333,
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "passed": true,
+      "diagnosticOnly": false,
+      "acceptanceEvidenceEligible": true,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 41.609237,
+        "pollingP95Ms": 42.766574,
+        "ratio": 1.0278144249556895,
+        "regressionPercent": 2.781442495568953
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 142,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "pollingPhases": [
+        {
+          "phase": 2,
+          "polls": 71,
+          "failed": 0,
+          "busySkips": 0,
+          "measured": 62,
+          "firstMs": 112.438522,
+          "maxMs": 163.472053
+        },
+        {
+          "phase": 3,
+          "polls": 71,
+          "failed": 0,
+          "busySkips": 0,
+          "measured": 63,
+          "firstMs": 93.563918,
+          "maxMs": 176.091542
+        }
+      ],
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 179904512,
+      "cpuCounterDelta": {
+        "usage_usec": 70191580,
+        "user_usec": 46567844,
+        "system_usec": 23623735,
+        "nr_periods": 706,
+        "nr_throttled": 22,
+        "throttled_usec": 2491
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactId": 13533144870,
+      "artifactSha256": "280c964d841d3370bc1ce4e00de50a50680b1982e386f1906e64925da1248900",
+      "artifactDigestVerified": true,
+      "admissionSha256": "87853c6f088119fc41698585e0557a0998cfbdeed7444e84787521fd25fd4a1f",
+      "runtimeComparison": {
+        "stagedFiles": 91,
+        "bothCurrentManifestsEqual": true,
+        "compiledRuntimeFiles": 78,
+        "allRuntimeBytesEqualTo9709": true,
+        "changedStagedFilesFrom9709": [
+          "scripts/benchmark-admission.mjs",
+          "scripts/constrained-observer-payload.mjs",
+          "scripts/constrained-observer-validation.mjs"
+        ]
+      },
+      "interpretation": "Valid point-in-time full native pinned-profile acceptance pass. All 78 compiled runtime files are unchanged from the failed 9709 candidate; this does not establish a fix, explain the prior misses, or establish universal stability."
+    },
+    {
+      "directory": "artifacts/agent-cartography/hosted-a91028c-owner-profile",
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-a91028c-owner-profile/verification.json",
+        "sha256": "458df42abc070b90f704e0b4fbfed5a57e85d3cc1ed749e08ce3bf1d90f18917"
+      },
+      "sourceCommit": "a91028c72b0390c2348ebc4485b09510303cdadd",
+      "testedCommit": "a91028c72b0390c2348ebc4485b09510303cdadd",
+      "sourceTree": "b631c6b8cb086905f1fd70aef9a614b0e9c05bff",
+      "testedTreeEqualsSource": true,
+      "runId": 42277275225,
+      "jobId": 128096739565,
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "passed": false,
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 67.950076,
+        "pollingP95Ms": 60.68376,
+        "ratio": 0.8930639017975491,
+        "regressionPercent": -10.693609820245086
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 174,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "pollingPhases": [
+        {
+          "phase": 2,
+          "polls": 87,
+          "failed": 0,
+          "busySkips": 0,
+          "measured": 77,
+          "firstMs": 115.963976,
+          "maxMs": 234.074523
+        },
+        {
+          "phase": 3,
+          "polls": 87,
+          "failed": 0,
+          "busySkips": 0,
+          "measured": 77,
+          "firstMs": 100.134784,
+          "maxMs": 217.149283
+        }
+      ],
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 194068480,
+      "cpuCounterDelta": {
+        "usage_usec": 84185100,
+        "user_usec": 58787049,
+        "system_usec": 25398050,
+        "nr_periods": 849,
+        "nr_throttled": 97,
+        "throttled_usec": 219902
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactId": 13534345233,
+      "artifactSha256": "b157c5832c6b3197aa9d1d7286717ef3d90407e1f7b68b6d8c25fdddaf3328e3",
+      "artifactDigestVerified": true,
+      "admissionSha256": "6e74f23a1f4286c58d071b2c534468e05c94f58f260ba322542a6530c7ba4a35",
+      "runtimeComparison": {
+        "stagedFiles": 91,
+        "bothCurrentManifestsEqual": true,
+        "compiledRuntimeFiles": 78,
+        "allRuntimeBytesEqualTo9709": true,
+        "changedStagedFilesFrom9709": [
+          "scripts/benchmark-admission.mjs",
+          "scripts/constrained-observer-payload.mjs",
+          "scripts/constrained-observer-validation.mjs"
+        ]
+      },
+      "diagnosticsComplete": false,
+      "profileCompleteByPhase": [
+        false,
+        true,
+        true,
+        true
+      ],
+      "incompleteProfile": {
+        "phase": 1,
+        "invalid": 1,
+        "droppedSamples": 1,
+        "observedSamples": 15508,
+        "rawMalformedInputRetained": false
+      },
+      "interpretation": "Overall diagnostic failed because phase 1 CPU profiling was incomplete. The raw admission gate passed, but instrumentation and incompleteness make this ineligible as acceptance evidence. The prior missed-poll stall did not recur."
     }
   ],
   "decisions": [
@@ -1022,7 +1264,11 @@
     "The local Colima single-logical-CPU experiment also failed. It substantially reduced aggregate quota throttling but does not qualify either profile or prove the remaining stall cause.",
     "Native Linux CI and disposable worker-stage CPU diagnostics were subsequently collected below. Release remains blocked for final candidate and fixed-Node verification.",
     "Only the native Linux single-logical-CPU profile passed exact-source full acceptance. Its required CPU placement is a stricter deployment setting, not an increase to bandwidth or other limits. Final changed source and future fixed Node images still require their own qualification; no broader profile is promoted.",
-    "Final candidate 9709f70 did not qualify: native single-logical-CPU acceptance failed cadence and the numerical 10% target, and Windows ordinary CI failed four tests. Ordinary full performance passed on its separate unconstrained hosted profile. A manual exact-source serial Windows test-file experiment is prepared but not yet dispatched; this is a diagnostic scheduling comparison, not a timeout change or proven fix."
+    "Final candidate 9709f70 did not qualify: native single-logical-CPU acceptance failed cadence and the numerical 10% target, and Windows ordinary CI failed four tests. Ordinary full performance passed on its separate unconstrained hosted profile. A manual exact-source serial Windows test-file experiment is prepared but not yet dispatched; this is a diagnostic scheduling comparison, not a timeout change or proven fix.",
+    "Subsequent a910 automatic native pinned acceptance passed with unchanged 9709 runtime bytes; its separate owner-profile diagnostic failed completeness. Preserve both observations and every prior failure. No observer stall fix has been proved.",
+    "Both private fresh-decoder traversal microexperiments were neutral and remain unadopted. The direct serializer prototype showed local projection improvement and passed differential checks, but was not adopted as a one-CPU latency fix.",
+    "The registered exact-9709 Windows serial test-file experiment passed all previously failing cases and installed consumers, with the same 147 platform skips and unchanged assertions/deadlines. The initial pre-registration 404 is setup evidence only. A maintained Windows-only launcher is implemented and awaits final changed-source CI; other platforms retain their original file concurrency.",
+    "The frozen HTTP fairness candidate passed 98 focused checks and the local 1,283-test full check with zero skips plus installed consumers. Final hosted Windows and unchanged full constrained performance qualification remain pending; these functional results do not establish a fix for prior observer timing failures."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -1080,6 +1326,147 @@
       "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
       "command": "npm run check",
       "scope": "Local full functional suite and installed consumers; does not replace the failed native Windows or constrained timing qualifications."
+    },
+    "windowsSerialExperiment": {
+      "verification": {
+        "path": "artifacts/agent-cartography/windows-serial-9709f70/verification.json",
+        "sha256": "6b0b8ffce8d06ba4bcb998b587983e05dec3fe97efe79c0addda74fb6d60b9d3"
+      },
+      "source": {
+        "schemaVersion": 1,
+        "experiment": "windows-test-file-concurrency-1",
+        "requestedSourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+        "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+        "sourceTree": "3861aab888278cce81ba2cb4d2868fd731bd1e55",
+        "workflowCommit": "6f3f0e72aa980cb487f085f37e7f16700281fa15",
+        "triggerCommit": "6f3f0e72aa980cb487f085f37e7f16700281fa15",
+        "runId": "42277524732",
+        "runAttempt": "1",
+        "node": "v24.22.2",
+        "npm": "11.19.1",
+        "platform": "win32",
+        "architecture": "x64",
+        "availableParallelism": 4,
+        "testFileConcurrency": 1,
+        "globs": [
+          "packages/core/test/*.test.mjs",
+          "packages/mcp/test/*.test.mjs",
+          "packages/scenarios/test/*.test.mjs",
+          "packages/executor/test/*.test.mjs",
+          "packages/agent-map/test/*.test.mjs",
+          "apps/agent-map/test/*.test.mjs",
+          "apps/agent-ops/test/*.test.mjs",
+          "scripts/*.test.mjs"
+        ],
+        "packageSha256": "939f71645c5304d803a64679233fd3d465206f361f68a6dd11303a5899544bbc",
+        "lockSha256": "478eb27bdde0119ec40af98f8abee55d868a5abdff3fa5dcec65689d1a6502e1",
+        "maximumLogBytes": 16777216,
+        "originalAssertionsAndDeadlines": true,
+        "retries": 0,
+        "performanceAcceptanceEvidence": false
+      },
+      "runId": 42277524732,
+      "jobId": 128097636076,
+      "attempt": 1,
+      "workflowId": 409696537,
+      "artifactId": 13533802557,
+      "archiveSha256": "87f1ad4275b245978cb92c9acebcd227ad8e00e378721cce7ea7408283397fb9",
+      "archiveDigestVerified": true,
+      "mainSuite": {
+        "tests": 1259,
+        "pass": 1112,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 147
+      },
+      "mainSuiteDurationMs": 125525.2389,
+      "priorFailingCases": [
+        {
+          "test": "invalid receipts and unsafe paths fail before a sandbox can read input",
+          "passed": true,
+          "durationMs": 3197.5348
+        },
+        {
+          "test": "strict governed tools reject omitted receipts and content replacement before dispatch",
+          "passed": true,
+          "durationMs": 925.9466
+        },
+        {
+          "test": "diagnostic phase retains exact effects and correlated bounded poll and executor spans",
+          "passed": true,
+          "durationMs": 1718.5552
+        },
+        {
+          "test": "CPU profiling requires diagnostics and captures real method spans in a tiny functional phase",
+          "passed": true,
+          "durationMs": 892.1908
+        }
+      ],
+      "installedConsumersPassed": true,
+      "allPhaseExitZero": true,
+      "allPhaseSourceUnchanged": true,
+      "allLogsWithinBound": true,
+      "parallelControl": {
+        "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+        "runId": 42273796813,
+        "jobId": 128084817947,
+        "record": "artifacts/agent-cartography/hosted-9709f70/ci-9709f70.json",
+        "sha256": "a94757a6a5a5a8b2c79db87e67de9781bc88a91c2ba585aa695eceeebfee3a4b",
+        "tests": 1259,
+        "pass": 1108,
+        "fail": 4,
+        "skipped": 147
+      },
+      "setupHistory": {
+        "path": "artifacts/agent-cartography/windows-serial-9709f70/setup-history.json",
+        "sha256": "daf894c48e88f096df31bb3eb8cbf9ab50c33650f1f118ecdff4446d68fbf632"
+      },
+      "initialDispatch": {
+        "stage": "workflow-registration",
+        "testStarted": false,
+        "evidenceType": "parent-reported tool output; no API artifact",
+        "message": "HTTP 404: workflow windows-serial-experiment.yml not found on the default branch"
+      },
+      "interpretation": [
+        "Same source, Node24.22.2, original8testglobs and all assertions/deadlines; only test-file scheduling changed to concurrency1. All four previously failing cases and the installed consumer gate passed.",
+        "This supports Windows serial functional test-file scheduling. It does not prove resource contention, compiler internals, or a production fix caused the different result; hosted machines were separate.",
+        "No retries, filtering, per-test concurrency override, timeout increase, fixture prewarming, production edits, or release approval. The147existing Windows/platform fixture skips remain explicit.",
+        "Initial404was workflow registration resolution before any test started and is retained separately as parent-reported tool output. This run is attempt1 after registration.",
+        "Ordinary and constrained performance qualifications and Node security hold are separate and unchanged."
+      ]
+    },
+    "maintainedWindowsScheduling": {
+      "status": "implemented_pending_final_ci",
+      "source": {
+        "path": "scripts/test-workspace.mjs",
+        "sha256": "9bd51d597c7fe5c0952ceec568259093e28a2ffc5e58260def8456d5a42c6c47"
+      },
+      "package": {
+        "path": "package.json",
+        "sha256": "5fc9521cc6d70fd05654fbcec694bcaf5f3cc403250e4c2eb13387857d7dba56"
+      },
+      "testCommand": "npm run build && node scripts/test-workspace.mjs packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs packages/executor/test/*.test.mjs packages/agent-map/test/*.test.mjs apps/agent-map/test/*.test.mjs apps/agent-ops/test/*.test.mjs scripts/*.test.mjs",
+      "windowsOnlyFlag": "--test-concurrency=1",
+      "otherPlatformsFileConcurrencyUnchanged": true,
+      "originalEightGlobsUnchanged": true,
+      "stdioEnvironmentWorkingDirectoryInherited": true,
+      "originalAssertionsAndDeadlines": true,
+      "retries": 0,
+      "filtering": false,
+      "prewarming": false,
+      "exitHandling": "Empty arguments and spawn failure deny; child exit status is forwarded; the first forwarded signal is retained and re-raised after child close.",
+      "lightweightChecks": {
+        "syntaxAndExactGlobComparisonPassed": true,
+        "temporaryPosixCliProbes": {
+          "successExit": 0,
+          "deliberateFailureExit": 1,
+          "emptyArgumentsExit": 1,
+          "terminationSignal": "SIGTERM"
+        }
+      },
+      "finalWorkspaceCheckPassed": null,
+      "finalHostedMatrixPassed": null,
+      "interpretation": "The exact-source serial Windows experiment supports maintained Windows test-file scheduling. Final changed-source CI remains pending; this is not a production capture fix, proof of the original timeout cause, or performance qualification."
     }
   },
   "nativeAffinityQualification": {
@@ -1510,5 +1897,423 @@
       "scope": "Prepared local npm tarballs only, bound to 9709f70. The manifest retains each archive SHA256 and SHA512 integrity. No approval, tag, merge, or publication performed."
     },
     "interpretation": "Local functional and ordinary full performance checks passed, but Windows ordinary CI and exact-candidate one-CPU acceptance failed. Prior baseline successes and all earlier failures remain retained. No underlying stall cause or fix is proven; all timing, effect, cleanup and security limits remain unchanged. The Node security and release qualification holds remain."
+  },
+  "ownerProfileFollowup": {
+    "verification": {
+      "path": "artifacts/agent-cartography/hosted-a91028c-owner-profile/verification.json",
+      "sha256": "458df42abc070b90f704e0b4fbfed5a57e85d3cc1ed749e08ce3bf1d90f18917"
+    },
+    "analysis": {
+      "path": "artifacts/agent-cartography/hosted-a91028c-owner-profile/owner-profile-analysis.json",
+      "sha256": "fcfdb172b20e362ce0bbd6578f74f90843c4b08f828df3b59d90b4a8700731b5"
+    },
+    "diagnosticOnly": true,
+    "acceptanceEvidenceEligible": false,
+    "complete": false,
+    "completePhases": [
+      2,
+      3,
+      4
+    ],
+    "excludedPhase": {
+      "phase": 1,
+      "invalid": 1,
+      "droppedSamples": 1,
+      "observedSamples": 15508,
+      "rawMalformedInputRetained": false
+    },
+    "definitePollingMeasurementSamples": {
+      "total": 28444,
+      "decode": 7631,
+      "garbageCollection": 4640
+    },
+    "findings": [
+      "Complete phases identify ordinary owner-ledger work; late-quarter synchronous read medians roughly double and transaction medians more than double.",
+      "Direct capture, post and validation spans are small. Pre-handler time and overlapping admission work dominate observed late polls.",
+      "The 112.006 ms transaction overlaps a 101.569 ms sampling gap on a redacted frame. Samples do not identify that interval as JavaScript CPU, native SQLite/fsync, or a specific decoder/GC substep.",
+      "The prior 273 ms missed-poll stall was not reproduced. The incomplete four-phase profile cannot qualify acceptance or prove the cause of a prior failure."
+    ]
+  },
+  "unadoptedMicroexperiments": {
+    "scope": "Ignored local copies only. These experiments did not change tracked production source, authentication/read frequency, authority caching, durable transactions, bounds, or the acceptance workload.",
+    "decoder": [
+      {
+        "change": "Null-prototype for-in traversal instead of Object.values",
+        "adopted": false,
+        "trackedRuntimeModified": false,
+        "diagnosticOnly": true,
+        "acceptanceEvidenceEligible": false,
+        "preparation": {
+          "path": "artifacts/agent-cartography/decoder-microbenchmark-1/preparation.json",
+          "sha256": "3ecf88926806128c658e743545ac45129f05392ce524ee606f22a0468ad2020d"
+        },
+        "result": {
+          "path": "artifacts/agent-cartography/decoder-microbenchmark-1/result.json",
+          "sha256": "5858f55712660d7a53d2ffeb2bceeadb476610a1518d189ce9010dc7e4c6ac18"
+        },
+        "review": {
+          "path": "artifacts/agent-cartography/decoder-microbenchmark-1/review.json",
+          "sha256": "4ca3401e21dec2e853fd5b4b0a9501db5984d804ec35d1e2abf893a8e0a7af45"
+        },
+        "sourceCommit": "6f3f0e72aa980cb487f085f37e7f16700281fa15",
+        "originalCompiledStoreSha256": "ec4e1626c0900ee3e8eb1524ee24e283f088fd7dc9a218b5c73dee12d9aa354f",
+        "runtime": {
+          "node": "v26.12.0",
+          "platform": "darwin",
+          "architecture": "arm64"
+        },
+        "fixture": {
+          "tasks": 100,
+          "grants": 1000,
+          "completedActions": 300,
+          "auditEntries": 1200,
+          "plaintextBytes": 426660,
+          "plaintextSha256": "44dfe5b52d6352f86ec2481f84a5a48d65ffe9c3893abb3f062dcd9bf29efe9f"
+        },
+        "warmupPerVariant": 50,
+        "measuredIterationsPerVariant": 400,
+        "order": [
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A"
+        ],
+        "baseline": {
+          "iterations": 400,
+          "medianMs": 1.5478749999999764,
+          "p95Ms": 2.708417000000054,
+          "totalWallMs": 690.1917910000002,
+          "totalCpuMs": 659.03
+        },
+        "candidate": {
+          "iterations": 400,
+          "medianMs": 1.5890419999999494,
+          "p95Ms": 2.548917000000074,
+          "totalWallMs": 696.0726240000001,
+          "totalCpuMs": 658.149
+        },
+        "wallRatio": 1.0085205780142348,
+        "cpuRatio": 0.9986631868048496,
+        "differential": {
+          "tests": 12,
+          "passed": 12,
+          "failed": 0,
+          "skipped": 0
+        },
+        "interpretation": "Neutral local pure-decode evidence; not adopted. The small total CPU/wall differences do not establish a reliable constrained observer improvement or explain prior stalls.",
+        "limits": [
+          "Single local same-process pure JSON parse and fresh prototype normalization only, not a cgroup/HTTP/worker/durable admission acceptance test.",
+          "No authority caching, read omission, altered encrypted bytes, forced GC, filtering or retries; all measured samples retained.",
+          "Process maxRSS covers both variants and cannot attribute memory improvement.",
+          "CPU profile of the owner remains required before any production adoption or oneCPU cause claim."
+        ]
+      },
+      {
+        "change": "Object enumeration before assigning the null prototype",
+        "adopted": false,
+        "trackedRuntimeModified": false,
+        "diagnosticOnly": true,
+        "acceptanceEvidenceEligible": false,
+        "preparation": {
+          "path": "artifacts/agent-cartography/decoder-enumeration-order-1/preparation.json",
+          "sha256": "b5e350e93a0155c013d5e82fcc20f1307b832f93b94487f24b5814e6575af480"
+        },
+        "result": {
+          "path": "artifacts/agent-cartography/decoder-enumeration-order-1/result.json",
+          "sha256": "40d3807b5ff84ab11aa13cab4d1b6f83bd5eff66ec4020e7117e27ff69f6a5a7"
+        },
+        "review": {
+          "path": "artifacts/agent-cartography/decoder-enumeration-order-1/review.json",
+          "sha256": "9e9838eb203bc6dadc5a2b4ca00be07366ede754dcb4e1f53e6270152418658b"
+        },
+        "sourceCommit": "6f3f0e72aa980cb487f085f37e7f16700281fa15",
+        "originalCompiledStoreSha256": "ec4e1626c0900ee3e8eb1524ee24e283f088fd7dc9a218b5c73dee12d9aa354f",
+        "runtime": {
+          "node": "v26.12.0",
+          "platform": "darwin",
+          "architecture": "arm64"
+        },
+        "fixture": {
+          "tasks": 100,
+          "grants": 1000,
+          "completedActions": 300,
+          "auditEntries": 1200,
+          "plaintextBytes": 426660,
+          "plaintextSha256": "44dfe5b52d6352f86ec2481f84a5a48d65ffe9c3893abb3f062dcd9bf29efe9f"
+        },
+        "warmupPerVariant": 50,
+        "measuredIterationsPerVariant": 400,
+        "order": [
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A",
+          "A",
+          "B",
+          "B",
+          "A"
+        ],
+        "baseline": {
+          "iterations": 400,
+          "medianMs": 1.5959169999999858,
+          "p95Ms": 1.9725840000000119,
+          "totalWallMs": 656.908251,
+          "totalCpuMs": 663.25
+        },
+        "candidate": {
+          "iterations": 400,
+          "medianMs": 1.5883330000000342,
+          "p95Ms": 1.8652500000000032,
+          "totalWallMs": 648.2008749999997,
+          "totalCpuMs": 654.483
+        },
+        "wallRatio": 0.9867449130274354,
+        "cpuRatio": 0.986781756502073,
+        "differential": {
+          "tests": 12,
+          "passed": 12,
+          "failed": 0,
+          "skipped": 0
+        },
+        "interpretation": "Neutral local pure-decode evidence; not adopted. The small total CPU/wall differences do not establish a reliable constrained observer improvement or explain prior stalls.",
+        "limits": [
+          "Single local same-process pure JSON parse and fresh prototype normalization only, not a cgroup/HTTP/worker/durable admission acceptance test.",
+          "No authority caching, read omission, altered encrypted bytes, forced GC, filtering or retries; all measured samples retained.",
+          "Process maxRSS covers both variants and cannot attribute memory improvement.",
+          "CPU profile of the owner remains required before any production adoption or oneCPU cause claim."
+        ]
+      }
+    ],
+    "serializer": {
+      "change": "Direct canonical JSON from the private constructed inventory finalizer",
+      "adopted": false,
+      "trackedRuntimeModified": false,
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "preparation": {
+        "path": "artifacts/agent-cartography/serializer-microbenchmark-1/preparation.json",
+        "sha256": "811189cc9a6966763ae829eb5a67371dbd0b3ebd28880328f984e763db79b048"
+      },
+      "result": {
+        "path": "artifacts/agent-cartography/serializer-microbenchmark-1/result.json",
+        "sha256": "7f4b9d8a58ea84e1eee6f0647164d8d85adc7f8bc908d2531711998b2f8324e6"
+      },
+      "review": {
+        "path": "artifacts/agent-cartography/serializer-microbenchmark-1/review.json",
+        "sha256": "f992d96ad4c95e300f85408a80911a47ba5f8508dbbe4ffd695017152c98e7cf"
+      },
+      "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+      "runtime": {
+        "node": "v26.12.0",
+        "platform": "darwin",
+        "architecture": "arm64"
+      },
+      "warmupPerVariant": 50,
+      "measuredIterationsPerVariantPerMode": 400,
+      "order": [
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A"
+      ],
+      "rows": [
+        {
+          "mode": "opaque",
+          "bytes": 158865,
+          "equalBytesExceptSnapshotId": true,
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 1.9836249999998472,
+            "p95Ms": 5.3670840000002045,
+            "totalWallMs": 1038.4635,
+            "totalCpuMs": 968.571
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 1.3827499999999873,
+            "p95Ms": 4.068125000000009,
+            "totalWallMs": 757.6532080000001,
+            "totalCpuMs": 757.5330000000001
+          },
+          "wallRatio": 0.7295905999584964,
+          "cpuRatio": 0.7821140628823289
+        },
+        {
+          "mode": "raw",
+          "bytes": 103865,
+          "equalBytesExceptSnapshotId": true,
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 2.0410830000000715,
+            "p95Ms": 4.979499999999916,
+            "totalWallMs": 998.8857899999998,
+            "totalCpuMs": 811.883
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 1.3885000000000218,
+            "p95Ms": 4.316542000000027,
+            "totalWallMs": 752.1492900000003,
+            "totalCpuMs": 639.262
+          },
+          "wallRatio": 0.7529882770681926,
+          "cpuRatio": 0.7873819257208242
+        }
+      ],
+      "differential": {
+        "tests": 42,
+        "passed": 42,
+        "failed": 0,
+        "skipped": 0
+      },
+      "priorFixtureFailure": {
+        "log": {
+          "path": "artifacts/agent-cartography/serializer-microbenchmark-1/differential.log",
+          "sha256": "488d5d5fb4b7809ede5be04a3bbab2ff8b99070e37087eb2d8c09309d6031f5f"
+        },
+        "cause": "Test-only adapter applied whole-object JSON.stringify while original differential case deliberately installed inherited Array.prototype.toJSON trap. Direct serializer had returned successfully. Adapter now skips only its extra string roundtrip assertion during that trap; original trap and all42 assertions retained."
+      },
+      "correctedDifferentialLog": {
+        "path": "artifacts/agent-cartography/serializer-microbenchmark-1/differential-corrected.log",
+        "sha256": "f14ea1133409e813e0e7e301603f636e81148fa5156802276df210e51cdb8373"
+      },
+      "interpretation": "Local projection CPU reduction and output/boundary equivalence were demonstrated in the prototype. It was not adopted: projection was only 2.23% of measured whole-cgroup CPU in the earlier worker trace, and this experiment does not establish a one-CPU tail-latency fix.",
+      "limits": [
+        "Single local process; no cgroup limit, HTTP, fresh capture, crypto decode, worker transport, durable admission, disk commits or scheduler gate.",
+        "All samples retained; no outlier filtering or forced GC. Warmup explicit and excluded from microbenchmark only.",
+        "The prior measured projection stage was2.23% of whole-cgroup CPU; a projection speedup cannot independently explain or resolve owner-tail failures.",
+        "The prototype only changes private constructed finalization, not public sync behavior or any tracked runtime source."
+      ]
+    }
+  },
+  "httpFairnessCandidateCheckpoint": {
+    "status": "local_functional_passed_hosted_qualification_pending",
+    "sourceBinding": {
+      "baseCommit": "6f3f0e72aa980cb487f085f37e7f16700281fa15",
+      "candidateCommit": null,
+      "bindingType": "precommit frozen file SHA-256; final commit not yet available",
+      "files": [
+        {
+          "path": "packages/executor/src/http.ts",
+          "sha256": "e61203f13e376c09614641f214914df94b7f43677dfb9c0a91fbda151c96c94f"
+        },
+        {
+          "path": "packages/executor/src/response-code.ts",
+          "sha256": "9afa6b1cb308cdca4cb40cc77ff9bd295b10044c6766baad1aa1b4e9428ed3c7"
+        },
+        {
+          "path": "packages/executor/test/http-fairness.test.mjs",
+          "sha256": "e26c60f69d5ddeb898252c0f1a14fcb527cfca6c5537d53b4f38465ccc8b4ce5"
+        }
+      ]
+    },
+    "review": {
+      "path": "artifacts/agent-cartography/http-fairness-review.json",
+      "sha256": "0c5671727fc59d9e7bb391d880a17ccb7a530363abdc86c9d8f54c9a6fdb19ae"
+    },
+    "reviewStatusAtCapture": "source_frozen_focused_passed_full_check_pending",
+    "independentReviews": {
+      "root": "Approved final runtime diff, route binding, timeout handling and fixed response code.",
+      "mapux": "Independent read-only security/lifecycle review: no remaining actionable issue."
+    },
+    "implementation": {
+      "yield": "One timers/promises.setImmediate only after a parsed task prepare/execute body and before existing fresh second authentication.",
+      "route": "Immutable validated route is reused for auth classification, yield selection and dispatch.",
+      "deadline": "Original body timer is not reset or cleared until after yield; timeout flag and original monotonic deadline refuse late dispatch.",
+      "disconnect": "Request abort or destroyed response/socket refuses dispatch; completed IncomingMessage.destroyed alone does not.",
+      "error": "Fixed REQUEST_TIMEOUT allowlisted; arbitrary host codes remain redacted.",
+      "preserved": [
+        "Every authentication and ledger read",
+        "Provenance/revocation/deadline/approval/budget/revision checks",
+        "Transactions and reservation ordering",
+        "Prompt admin revocation and task cancellation",
+        "Workload, first polls, cadence, benchmark gates and resource caps"
+      ]
+    },
+    "functionalProof": [
+      "Real server listener + real DurableExecutor: queued immediate precedes second authentication only on prepare/execute.",
+      "Task/ancestor revoke, task/approval expiry, tool revision and policy replacement deny with no effect/charge.",
+      "Mutable URL cannot convert task-authenticated request into administrative dispatch.",
+      "Mocked timeout delivery with real immediate/monotonic clock covers overdue-undelivered timer; separate20+10ms mock ticks prove original30ms timer remains armed.",
+      "Malformed/oversized body denies before yield; other routes stay prompt.",
+      "Real keep-alive HTTP succeeds and real peer socket closure during yield has zero effect.",
+      "Concurrent one-use approval remains at most one effect; fixed timeout reaches client with no retry."
+    ],
+    "focusedTests": {
+      "command": "node --test packages/executor/test/http-fairness.test.mjs packages/executor/test/executor.test.mjs packages/executor/test/capacity.test.mjs packages/executor/test/lifecycle.test.mjs packages/executor/test/inventory-http.test.mjs packages/executor/test/inventory-http-boundaries.test.mjs packages/executor/test/inventory-manifest-http.test.mjs packages/executor/test/inventory-mcp-http.test.mjs",
+      "total": 98,
+      "passed": 98,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 3738.788834,
+      "log": "artifacts/agent-cartography/http-fairness-focused.log",
+      "logSha256": "d2990586592bbfd9f090704aee5ff3936e019cce4b6870845fba1470e304747e"
+    },
+    "fullLocalCheck": {
+      "command": "npm run check (both immutable isolation image variables set)",
+      "log": {
+        "path": "artifacts/agent-cartography/http-fairness-full-check-1.log",
+        "sha256": "7c44d7d3201d01ad27efba2c5cbd4e1ceab030b8db84fdc2afe2b9fec47bc2e6"
+      },
+      "exitCode": 0,
+      "tests": 1283,
+      "passed": 1283,
+      "failed": 0,
+      "skipped": 0,
+      "installedConsumersPassed": true
+    },
+    "windowsScheduling": {
+      "launcher": {
+        "path": "scripts/test-workspace.mjs",
+        "sha256": "9bd51d597c7fe5c0952ceec568259093e28a2ffc5e58260def8456d5a42c6c47"
+      },
+      "package": {
+        "path": "package.json",
+        "sha256": "5fc9521cc6d70fd05654fbcec694bcaf5f3cc403250e4c2eb13387857d7dba56"
+      },
+      "staticAndControlledProof": "functionalVerification.maintainedWindowsScheduling and functionalVerification.windowsSerialExperiment",
+      "localFullCheckPassed": true,
+      "finalHostedWindowsCiPassed": null,
+      "interpretation": "Local full check includes the maintained launcher on this host. Exact-9709 serial Windows control and static launcher proof remain retained separately; hosted Windows verification of the changed candidate is pending."
+    },
+    "hostedQualification": {
+      "ordinaryCi": "pending",
+      "windowsCi": "pending",
+      "constrainedPerformance": "pending",
+      "performanceAcceptanceEvidence": false
+    },
+    "interpretation": "Functional and security regression evidence supports the cooperative yield and preserved authority checks. It offers a scheduling opportunity, not guaranteed QoS, and has not yet demonstrated a constrained timing fix. The 250 ms cadence, first poll, workload, resource caps, 10% ratio and all earlier failures remain unchanged."
   }
 }

@@ -186,7 +186,9 @@ workload on native Linux/cgroup v2 with placement on one logical CPU, a one-CPU
 bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
 period and zero burst. It **passed on exact source `e4e42f`** at 7.2766% admission
 overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
-cleanup. The final identifier-guard candidate remains pending hosted qualification.
+cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
+with unchanged runtime bytes. Both remain evidence, without a proven cause or fix.
+The HTTP fairness candidate's two declared native qualification runs remain pending.
 This profile does not replace the graph or ordinary hosted admission gate. Build
 first and run once per reviewed candidate without a competing local workload:
 
@@ -235,6 +237,15 @@ attempts remain separate failed/unqualified evidence. A single native placement
 pass does not certify Colima or arbitrary CPU/host placement. Use the
 [release checklist](../../docs/releasing.md#node-update-checklist-for-010) for the
 pending exact final candidate and Node-update verification; the security hold remains.
+
+The current public task HTTP server yields once on prepare/execute after bounded
+JSON parsing and before fresh second authentication. It preserves fresh authority
+reads, the original monotonic body deadline, transport guards and the immutable
+validated route. A fixed `REQUEST_TIMEOUT` does not cause automatic retry. The
+98 focused checks and local 1,283-test full check passed with zero skips, plus
+installed consumers; hosted qualification remains pending. This scheduling change
+does not alter the immediate first poll, cadence, resource limits or acceptance
+gates, and is not a real-time guarantee or a change to every SDK embedding.
 
 ### Matching the observer-owning service
 

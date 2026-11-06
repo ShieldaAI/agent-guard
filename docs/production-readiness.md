@@ -10,13 +10,29 @@ one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
 burst, 512 MiB memory, no extra swap and 128 PIDs. The controlled exact-source
 `e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
 149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
-the Colima-affined failure also remains evidence. The final identifier-guard
-candidate still requires exact hosted/full acceptance. See the
+the Colima-affined failure also remains evidence. The later `9709f70` constrained
+run failed cadence and overhead; an `a91028c` pass used unchanged runtime bytes.
+Neither result establishes the prior failure's cause or a timing fix. See the
 [one-CPU record](validation/one-cpu-observer-2026-11-06.json) and
 [required observer-service resource configuration](../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service).
 This profile belongs to a company's observer-owning executor, not the reference
 Agent Ops service, which does not start an observer. It reserves neither an
 exclusive nor physical core and does not guarantee an unknown deployment's latency.
+
+The current candidate adds one cooperative yield to the public task HTTP server's
+prepare/execute routes after bounded JSON parsing and before fresh second
+authentication. Fresh authority checks, the original monotonic body deadline,
+transport guards and the immutable validated route remain enforced; fixed
+`REQUEST_TIMEOUT` errors do not cause automatic retries. No resource cap,
+immediate first poll, cadence or acceptance gate changes. This is scoped HTTP
+scheduling, not a fairness or real-time guarantee for all SDK embeddings.
+Its 98 focused checks and full local check passed: **1,283/1,283 tests, zero skips,
+plus installed consumers**. Hosted full and both declared native qualification
+runs remain pending. The controlled exact-`9709f70` Windows serial experiment
+passed the previously failing cases and installed consumers; the maintained
+Windows-only test launcher still requires final changed-source CI. Prior failures
+remain evidence and their underlying cause is unproven. The Node HIGH hold remains;
+these results authorize no publication, merge, tag or production acceptance.
 
 Recorded P0 status: **Candidate verification passed; production acceptance held for Node HIGH review**.
 The configurable self-hosted profile, durable approvals, archival, key custody
