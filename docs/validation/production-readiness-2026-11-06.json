@@ -17,8 +17,10 @@
     "uiCorrectionIntroducedAt": "ab567668522c908f18ef8ccfb264d68387e9141b",
     "gitTree": "c335a9948361aade11996fbfa71cc4d098beb5b7",
     "inventoryFinalizerIntroducedAt": "c38cf472107b89e574d466d8ae26cf68704a4c44",
-    "evidenceRole": "Current verified implementation; overall production acceptance remains held for Node HIGH applicability.",
-    "decoderIntroducedAt": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
+    "evidenceRole": "Verified fef2e37 implementation and performance baseline. Later docs-only head 1a612c9 has an integration readiness failure despite unchanged protected inputs; current integration acceptance is pending.",
+    "decoderIntroducedAt": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "latestEvidenceCommit": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+    "latestEvidenceCommitScope": "Documentation/evidence only; protected enforcement/test/deployment inputs unchanged."
   },
   "acceptance": {
     "targetPerCategory": 9.5,
@@ -80,14 +82,16 @@
       {
         "id": "R10",
         "name": "Evaluation and release controls",
-        "status": "internal-engineering-judgment-reviewed",
-        "score": 9.7
+        "status": "current-integration-verification-pending",
+        "score": null,
+        "priorReviewedScore": 9.7,
+        "evidence": "docs/validation/cartography-readiness-failure-2026-11-06-1a612c9.json"
       }
     ],
-    "scoreMeaning": "Scores are subjective engineering judgments against the documented supported boundary, not statistical confidence, external certification or a guarantee of safety. The production target is unmet while R5 remains withheld. No averaging compensates for that hold.",
+    "scoreMeaning": "Subjective internal engineering judgments within the documented profile, not statistical confidence or certification. The prior R10 judgment is retained; current R10 verification is pending after the latest integration readiness failure. R5 remains withheld for Node HIGH applicability; the every-category target is unmet and no aggregate score is assigned.",
     "allCategoriesMeetTarget": false,
     "reviewEvidence": "docs/validation/production-category-review-2026-11-06.json",
-    "reviewStatus": "internal-engineering-review-complete-R5-withheld"
+    "reviewStatus": "internal-engineering-review-recorded-R5-withheld-R10-current-verification-pending"
   },
   "fullLocalCheck": {
     "command": "npm run check",
@@ -704,7 +708,7 @@
       "scope": "Ordinary non-container matrix; mandatory Linux isolation is separate.",
       "logEvidence": "node24-summary.log"
     },
-    "evidenceRole": "Current fef2e37 exact-artifact verification.",
+    "evidenceRole": "Verified fef2e37 exact-artifact baseline; latestHeadVerification separately records the 1a612c9 integration failure.",
     "ordinaryParentFollowup": {
       "head": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
       "allSixWorkflowsPassed": true,
@@ -910,7 +914,7 @@
       "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json",
       "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json"
     ],
-    "evidenceRole": "Current fef2e37 hosted verification; separately labeled local and prior-hosted entries remain historical.",
+    "evidenceRole": "Verified fef2e37 browser artifacts; all three browser jobs also passed on 1a612c9, whose separate integration job failed.",
     "currentSignedArchiveSteps": {
       "chromium": "success",
       "firefox": "success",
@@ -1769,7 +1773,8 @@
     ]
   },
   "remainingVerification": [
-    "R5 Node HIGH applicability remains the only open production acceptance blocker; any required runtime/image change must receive the documented revalidation."
+    "Diagnose the nested disposable Neo4j readiness failure and complete the required current integration/packaging/installed-consumer gate without weakening deadlines, resource bounds or assertions. Underlying cause remains unproven.",
+    "R5 Node HIGH applicability remains unresolved; any required runtime/image change must receive the documented revalidation."
   ],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
@@ -2022,7 +2027,7 @@
     "status": "draft-pr-production-acceptance-held",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
     "newNpmRelease": false,
-    "reason": "Current functional, Linux, ordinary CI and one eligible full-performance run passed, and internal category review is complete. R5 remains withheld for undisclosed Node HIGH applicability; the every-category target is unmet and no new npm release is asserted."
+    "reason": "Verified fef2e37 functional, Linux and one eligible full-performance run remain retained. Latest docs-only 1a612c9 passed five workflows but failed nested Neo4j readiness in integration, so current integration/R10 verification is pending. R5 remains withheld for Node HIGH applicability; no aggregate score or new release."
   },
   "followUpCandidate": {
     "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
@@ -2384,7 +2389,7 @@
       "scope": "Historical exact-artifact baseline. The immutable prior index retains the complete Linux/browser/security snapshots and pending-decoder state; it is not current candidate acceptance."
     }
   },
-  "reconciledAt": "2026-11-06T10:41:22.829163+00:00",
+  "reconciledAt": "2026-11-06T10:56:36.736495+00:00",
   "historicalLocalChecks": [
     {
       "command": "npm run check",
@@ -2645,7 +2650,67 @@
       "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
       "previousFailuresPreserved": true
     },
-    "productionAcceptance": "Internal category review complete; overall production acceptance remains pending Node HIGH applicability. R5 is withheld, every-category target unmet, no aggregate score or new release asserted.",
+    "productionAcceptance": "Prior functional, Linux and full-performance evidence is preserved. Overall acceptance remains held for Node HIGH applicability and latest-head integration verification; R5 withheld, R10 current verification pending, no aggregate score or new release.",
     "implementationCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
+  },
+  "latestHeadVerification": {
+    "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+    "protectedInputsUnchanged": true,
+    "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+    "sourceFiles": 411,
+    "status": "five-workflows-passed-integration-readiness-failed",
+    "workflows": [
+      {
+        "id": 42204781519,
+        "name": "Dependency Review",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42204781376,
+        "name": "Python dependency audit",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42204781357,
+        "name": "CodeQL",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42204781403,
+        "name": "Cartography pilot",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42204781351,
+        "name": "CI",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42204781372,
+        "name": "Cartography integration",
+        "status": "completed",
+        "conclusion": "failure"
+      }
+    ],
+    "ciPassedJobs": 11,
+    "integration": {
+      "run": 42204781372,
+      "job": 127848569421,
+      "unitPassed": 928,
+      "passed": 142,
+      "failed": 1,
+      "failureStage": "nested-owned-Neo4j-readiness",
+      "underlyingCause": "unproven",
+      "packagingAndInstalledConsumer": "skipped-after-failure"
+    },
+    "evidence": "docs/validation/cartography-readiness-failure-2026-11-06-1a612c9.json",
+    "evidenceSha256": "3ae4b09b3e1a0a366e0d1d0383e9cd4d4a94524d4f6c4e5aafc00039f4ad6e56",
+    "priorVerifiedImplementationEvidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json",
+    "performanceScope": "No new full-performance run on the docs-only commit; fef2e37 eligible full result remains retained for unchanged protected inputs."
   }
 }

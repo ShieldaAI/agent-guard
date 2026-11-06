@@ -21,7 +21,7 @@ import uuid
 from pathlib import Path
 
 from neo4j import GraphDatabase
-from neo4j.exceptions import Neo4jError, ServiceUnavailable
+from neo4j.exceptions import DriverError, Neo4jError, ServiceUnavailable
 
 ROOT = Path(__file__).resolve().parents[1]
 LABEL = "com.shielda.agent-guard.disposable-test"
@@ -49,15 +49,34 @@ def require_private_port_support() -> str:
     return version
 
 
-def remove_owned_container(name: str, run_id: str) -> None:
-    """Never remove a container unless its unique ownership label matches."""
+def remove_owned_container(name: str, run_id: str) -> bool:
+    """Remove only our container; confirm absence rather than guessing after errors."""
     try:
-        info = json.loads(docker("inspect", name))[0]
-    except (subprocess.SubprocessError, ValueError, IndexError):
-        return
-    if info.get("Config", {}).get("Labels", {}).get(LABEL) != run_id:
+        inspected = json.loads(docker("inspect", name))
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    if not isinstance(inspected, list) or len(inspected) != 1 or not isinstance(inspected[0], dict):
+        return False
+    info = inspected[0]
+    config = info.get("Config")
+    if not isinstance(config, dict) or not isinstance(config.get("Labels"), dict):
+        return False
+    if config["Labels"].get(LABEL) != run_id:
         raise RuntimeError("Refusing to remove a container with a different test owner")
+    if not isinstance(info.get("Id"), str) or not re.fullmatch(r"[0-9a-f]{64}", info["Id"]):
+        return False
     docker("rm", "--force", "--volumes", info["Id"], timeout=45)
+    remaining = docker(
+        "ps",
+        "--all",
+        "--no-trunc",
+        "--filter",
+        f"id={info['Id']}",
+        "--format",
+        "{{.ID}}",
+        timeout=5,
+    )
+    return not remaining
 
 
 def loopback_uri(address: str, directory: Path) -> tuple[str, subprocess.Popen | None]:
@@ -146,6 +165,7 @@ def owned_container_state(name: str, run_id: str) -> dict:
             type(state.get("Running")) is not bool
             or type(state.get("OOMKilled")) is not bool
             or type(state.get("ExitCode")) is not int
+            or not 0 <= state["ExitCode"] <= 255
         ):
             return {"available": False, "reason": "invalid-state"}
         return {
@@ -182,9 +202,16 @@ def wait_ready(
                 driver.verify_connectivity()
                 with driver.session(database="neo4j") as session:
                     session.run("RETURN 1 AS ready").consume()
+                completed = time.monotonic()
+                # The acquisition limit does not bound the complete query. A
+                # probe finishing late must not turn a missed deadline into PASS.
+                if completed >= deadline:
+                    raise ReadinessTimeout(
+                        attempts, completed - started, "probe-completed-after-deadline"
+                    )
                 return {
                     "attempts": attempts,
-                    "elapsedSeconds": round(time.monotonic() - started, 3),
+                    "elapsedSeconds": round(completed - started, 3),
                 }
             except (Neo4jError, ServiceUnavailable, OSError) as exc:
                 if isinstance(exc, ServiceUnavailable):
@@ -216,6 +243,29 @@ def main() -> int:
     env = os.environ.copy()
     env["NEO4J_AUTH"] = f"neo4j/{password}"
     tunnel = None
+    stage = "container-preflight"
+    readiness = None
+    result_code = 1
+
+    def report_failure(reason: str, error: BaseException | None = None) -> None:
+        # Fixed fields and coarse categories only; no exception text, logs,
+        # environment, connection details or Docker's unfiltered inspection.
+        try:
+            report = {
+                "kind": "disposable-neo4j-setup",
+                "stage": stage,
+                "status": "failed",
+                "reason": reason,
+                "containerStateAtFailure": owned_container_state(name, run_id),
+            }
+            if isinstance(error, ReadinessTimeout):
+                report["readiness"] = error.diagnostics
+            elif readiness is not None:
+                report["readiness"] = readiness
+            print(json.dumps(report, allow_nan=False), file=sys.stderr, flush=True)
+        except (OSError, ValueError, TypeError):
+            # Reporting cannot replace the original failure or prevent finally.
+            pass
 
     def interrupted(signum: int, _frame: object) -> None:
         raise KeyboardInterrupt(f"Signal {signum}")
@@ -224,10 +274,13 @@ def main() -> int:
     signal.signal(signal.SIGINT, interrupted)
     try:
         require_private_port_support()
+        stage = "container-start"
         container_id = docker(
             "run",
             "--detach",
-            "--rm",
+            # Keep an exited container inspectable until label-checked finally
+            # cleanup. An uncatchable kill can leave this private owned fixture;
+            # it must never be mistaken for confirmed cleanup.
             "--name",
             name,
             "--label",
@@ -264,18 +317,23 @@ def main() -> int:
         )
         if not re.fullmatch(r"[0-9a-f]{64}", container_id):
             raise RuntimeError("Docker returned an invalid disposable container identifier")
+        stage = "listener-validation"
         address = docker("port", container_id, "7687/tcp")
         if not re.fullmatch(r"127\.0\.0\.1:\d+", address):
             raise RuntimeError("The disposable Bolt listener is not restricted to loopback")
         with tempfile.TemporaryDirectory(prefix="agent-guard-neo4j-") as directory:
+            stage = "loopback-connection"
             uri, tunnel = loopback_uri(address, Path(directory))
-            wait_ready(uri, password, tunnel)
+            stage = "database-readiness"
+            readiness = wait_ready(uri, password, tunnel)
+            stage = "ownership-marker"
             with GraphDatabase.driver(uri, auth=("neo4j", password)) as driver:
                 with driver.session(database="neo4j") as session:
                     session.run(
                         "CREATE (:GuardDisposableTestRun {id: $runId})", runId=run_id
                     ).consume()
-            print(f"Testing against disposable {image.split('@')[0]} on {uri}", flush=True)
+            print(f"Testing against disposable {image.split('@')[0]}", flush=True)
+            stage = "test-configuration"
             config = Path(directory) / "connection.json"
             config.write_text(
                 json.dumps(
@@ -298,38 +356,77 @@ def main() -> int:
                 if key.startswith("NEO4J_") or key == CONFIG_ENV:
                     test_env.pop(key)
             test_env[CONFIG_ENV] = str(config)
+            stage = "integration-tests"
             result = subprocess.run(
                 [sys.executable, "-m", "pytest", "tests/integration", *pytest_args],
                 cwd=ROOT,
                 env=test_env,
                 check=False,
             )
-            return result.returncode
+            result_code = result.returncode
+            if result_code:
+                report_failure("test-process-failed")
     except KeyboardInterrupt:
-        return 130
-    except (subprocess.SubprocessError, RuntimeError, OSError) as exc:
-        # Do not print command environments or authentication material.
-        reason = str(exc).replace(password, "[redacted]")
-        print(
-            f"Disposable Neo4j test setup failed: {type(exc).__name__}: {reason}", file=sys.stderr
+        result_code = 130
+        report_failure("interrupted")
+    except (
+        subprocess.SubprocessError,
+        RuntimeError,
+        OSError,
+        Neo4jError,
+        DriverError,
+    ) as exc:
+        result_code = result_code or 1
+        reason = (
+            "readiness-timeout"
+            if isinstance(exc, ReadinessTimeout)
+            else "subprocess-error"
+            if isinstance(exc, subprocess.SubprocessError)
+            else "io-error"
+            if isinstance(exc, OSError)
+            else "database-error"
+            if isinstance(exc, (Neo4jError, DriverError))
+            else "setup-error"
         )
-        try:
-            tail = docker("logs", "--tail", "30", name)
-            if tail:
-                print(tail.replace(password, "[redacted]"), file=sys.stderr)
-        except subprocess.SubprocessError:
-            pass
-        return 1
+        report_failure(reason, exc)
     finally:
-        if tunnel is not None:
-            tunnel.terminate()
-            try:
-                tunnel.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                tunnel.kill()
-                tunnel.wait(timeout=5)
-        # Label verification also handles interrupted `docker run` outcomes.
-        remove_owned_container(name, run_id)
+        tunnel_closed = tunnel is None
+        try:
+            if tunnel is not None:
+                tunnel.terminate()
+                try:
+                    tunnel.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    tunnel.kill()
+                    tunnel.wait(timeout=5)
+                tunnel_closed = True
+        except (OSError, subprocess.SubprocessError):
+            pass
+        # Also handles interrupted docker run. Inspection failure, owner mismatch,
+        # removal failure or unavailable absence verification remain unconfirmed.
+        removed = False
+        try:
+            removed = remove_owned_container(name, run_id)
+        except (OSError, RuntimeError, subprocess.SubprocessError):
+            pass
+        if not removed or not tunnel_closed:
+            result_code = result_code or 1
+        try:
+            print(
+                json.dumps(
+                    {
+                        "kind": "disposable-neo4j-cleanup",
+                        "containerCleanupAttempted": True,
+                        "containerRemovalConfirmed": removed,
+                        "tunnelClosedConfirmed": tunnel_closed,
+                    }
+                ),
+                file=sys.stderr,
+                flush=True,
+            )
+        except OSError:
+            result_code = result_code or 1
+    return result_code
 
 
 if __name__ == "__main__":

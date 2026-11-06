@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "all-declared-checks-passed-production-held-upstream-security",
+  "status": "prior-candidate-checks-passed-latest-integration-readiness-hold",
   "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
   "purpose": "Reduce observed ledger decode/reviver work without caching authority or removing fresh authenticated reads.",
   "evidence": "admission-diagnostics-2026-11-06.json",
@@ -416,9 +416,19 @@
     "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
     "previousFailuresPreserved": true
   },
-  "productionAcceptance": "Held only for the upstream undisclosed Node HIGH applicability/fixed-runtime review. Declared product checks passed; internal category review is complete but R5 remains unscored, so the all-category target is not achieved. No production release is asserted.",
+  "productionAcceptance": "Held for undisclosed Node HIGH applicability and reopened current integration verification after a nested disposable Neo4j readiness timeout. Prior candidate checks and all measured performance samples remain retained.",
   "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
   "sourceFiles": 411,
   "implementationCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
-  "categoryReview": "production-category-review-2026-11-06.json"
+  "categoryReview": "production-category-review-2026-11-06.json",
+  "latestVerificationHold": {
+    "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+    "workflowRun": 42204781372,
+    "jobId": 127848569421,
+    "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
+    "status": "required-integration-verification-reopened",
+    "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
+    "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
+    "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+  }
 }

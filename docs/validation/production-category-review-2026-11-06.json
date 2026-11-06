@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "internal-engineering-review-complete-R5-withheld",
+  "status": "internal-review-retained-R5-withheld-R10-verification-reopened",
   "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
   "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
   "sourceFiles": 411,
@@ -548,7 +548,7 @@
     }
   },
   "rootReview": {
-    "status": "accepted-with-explicit-scope-and-upstream-hold",
+    "status": "prior-judgment-preserved-current-R10-reopened",
     "reviewedEveryCategoryAndRationale": true,
     "scoreTotalsChecked": true,
     "ordinaryEvidence": "production-readiness-ci-2026-11-06-fef2e37.json",
@@ -557,5 +557,57 @@
     "runtimeScopeClarification": "R6 refers to the documented Linux container isolation profile, including a VM host where Docker requires it; this does not add a separate generic VM product profile.",
     "evidenceReconciliation": "The independently verified ordinary CI artifacts and matching head/merge trees close the draft review's hosted binding condition. Dated hashes in the independent draft identify the documents as read; subsequent evidence-only reconciliation does not change reviewed runtime inputs.",
     "remainingBlocker": "Published Node HIGH issue details and an applicable fixed runtime or evidence-backed non-applicability are required before R5 can be scored or production released."
+  },
+  "latestVerificationHold": {
+    "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+    "workflowRun": 42204781372,
+    "jobId": 127848569421,
+    "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
+    "status": "required-integration-verification-reopened",
+    "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
+    "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
+    "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+  },
+  "currentJudgments": {
+    "R1": {
+      "total": 9.7,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R2": {
+      "total": 9.8,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R3": {
+      "total": 9.8,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R4": {
+      "total": 9.7,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R5": {
+      "total": null,
+      "status": "withheld-upstream-advisory"
+    },
+    "R6": {
+      "total": 9.7,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R7": {
+      "total": 9.8,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R8": {
+      "total": 9.6,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R9": {
+      "total": 9.6,
+      "status": "candidate-judgment-subject-to-final-evidence-binding"
+    },
+    "R10": {
+      "total": null,
+      "status": "withheld-pending-current-integration"
+    }
   }
 }
