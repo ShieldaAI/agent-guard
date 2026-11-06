@@ -75,7 +75,8 @@ function identifier(value: unknown, code = STATE): string {
   if (typeof value !== 'string' || /^[\s\u001c-\u001f\u0085]*$/u.test(value) || value.includes('\0') ||
       // Reject unpaired surrogates: the Python consumer requires UTF-8 scalar values.
       /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)) return fail(code);
-  if ([...value].length > 4096) return fail(code);
+  // UTF-16 length bounds code-point count from above; short identifiers need no array.
+  if (value.length > 4096 && [...value].length > 4096) return fail(code);
   return value;
 }
 function integer(value: unknown): number {

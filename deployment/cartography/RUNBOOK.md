@@ -181,17 +181,20 @@ volumes. Local measurements do not establish a completed hosted CI run.
 
 ## Constrained observer qualification
 
-The committed runner measures the same uninstrumented full admission workload
-under a one-CPU bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the
-default 100 ms CPU period and zero burst. This additional profile is **unqualified**;
-it does not replace the graph or ordinary hosted admission gate. Build first and
-run once per reviewed candidate without a competing local workload:
+The configured acceptance profile measures the same uninstrumented full admission
+workload on native Linux/cgroup v2 with placement on one logical CPU, a one-CPU
+bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
+period and zero burst. It **passed on exact source `e4e42f`** at 7.2766% admission
+overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
+cleanup. The final identifier-guard candidate remains pending hosted qualification.
+This profile does not replace the graph or ordinary hosted admission gate. Build
+first and run once per reviewed candidate without a competing local workload:
 
 ```sh
 export NODE_IMAGE='node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53'
 docker pull "$NODE_IMAGE"
 mkdir -p artifacts/constrained-observer-runs
-node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" \
+node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --cpu-affinity 0 \
   --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
 ```
 
@@ -204,29 +207,64 @@ controls and retains `admission.json`, `resources.json`, `staged-inputs.json` an
 `verification.json`. Exact owned-container removal, absence and staging cleanup
 are required for success. It never mounts the whole checkout or company data.
 
-An explicit `--cpu-affinity SINGLE_INDEX` selects a separate, stricter
+An explicit `--cpu-affinity SINGLE_INDEX` selects the stricter
 `single-logical-cpu` profile. Supply one canonical decimal index in 0–4095 that
 is available to the Docker host. This constrains placement to one logical CPU;
 it does not reserve exclusive capacity or identify a physical core. The one-CPU
 quota, 100 ms period, zero burst, memory/swap/PID limits and all workload/gate
 requirements remain unchanged. Both the kernel effective CPU set and process
 allowed CPU list must match that singleton before and after the workload. Without
-the option the profile stays `bandwidth-only`; a pass under one placement cannot
-qualify the other. The [hosted workflow](../../.github/workflows/constrained-observer.yml)
-keeps the unaffined default and executes one full run without diagnostics or retries.
+the option the generic runner stays `bandwidth-only`; a pass under one placement
+cannot qualify the other. The [hosted workflow](../../.github/workflows/constrained-observer.yml)
+explicitly selects affinity `0` for PR/default manual acceptance and executes one
+full run without diagnostics or retries. Manual `none` remains available for
+historical quota-only comparisons; no default resource cap or threshold changes.
 
 The [6 November evidence](../../docs/validation/one-cpu-observer-2026-11-06.json)
 retains the first setup failure caused by an unshared macOS temporary directory
 and the private-sibling correction. The subsequent bandwidth-only full run
 completed all 1,200 effects and 222 polls but failed with 10 skipped polls and a
-1.239 p95 ratio. The single-logical-CPU-0 run completed 1,200 effects and 116 polls
+1.239 p95 ratio. The Colima single-logical-CPU-0 run completed 1,200 effects and 116 polls
 but failed with three skipped polls despite a 0.476 ratio and less throttling.
 Lower latency or throttling does not satisfy a failed cadence requirement.
-Neither profile is promoted or recommended as production configuration. Earlier
-diagnostic, control and 10 ms-period attempts remain separate failed/unqualified
-evidence. Use the [release checklist](../../docs/releasing.md#node-update-checklist-for-010)
-for candidate/source/image binding and the unresolved Node security update;
-these runs do not clear that hold.
+The later native Linux controlled affinity-0 run passed with the exact same
+`e4e42f` source, 91 staged files and image as the original native quota-only run.
+Native quota-only runs still failed at 14.89% and 13.31% overhead; neither was
+discarded or relabeled as a pass. Earlier diagnostic, control and 10 ms-period
+attempts remain separate failed/unqualified evidence. A single native placement
+pass does not certify Colima or arbitrary CPU/host placement. Use the
+[release checklist](../../docs/releasing.md#node-update-checklist-for-010) for the
+pending exact final candidate and Node-update verification; the security hold remains.
+
+### Matching the observer-owning service
+
+To match this profile at company rollout, merge these **resource fields only**
+into the company's existing service that owns the executor and its inventory
+observer. They do not define a complete service; identity, storage, networking
+and hardening still belong to that service's reviewed deployment. The reference
+Agent Ops service does not start an inventory observer and is not the target of
+these settings.
+
+```yaml
+cpus: 1.0
+cpuset: "${OBSERVER_LOGICAL_CPU:?Set one available logical CPU index}"
+mem_limit: 512m
+memswap_limit: 512m
+pids_limit: 128
+```
+
+Set `OBSERVER_LOGICAL_CPU` to one allowed decimal index, not a range or list.
+Equal memory and memory-plus-swap limits leave no swap allowance; `cpuset`
+restricts eligible CPUs. [Docker Compose resource semantics](https://docs.docker.com/reference/compose-file/services/#cpuset).
+See also [Docker's memory/swap semantics](https://docs.docker.com/reference/compose-file/services/#memswap_limit).
+Keep the original 100 ms CFS period and zero burst. Verify actual cgroup v2 values
+`cpu.max = 100000 100000`, `cpu.max.burst = 0`, `memory.max = 536870912`,
+`memory.swap.max = 0`, `pids.max = 128`, and matching singleton
+`cpuset.cpus.effective`/process allowed CPU lists before claiming the profile.
+The setting grants neither exclusive use nor a physical-core guarantee. Qualify
+the exact installed candidate, image, selected logical CPU and company workload;
+the synthetic fixture is not a universal latency guarantee or completed company
+acceptance. Changing resources or placement requires fresh scoped evidence.
 
 ## Private backups and reconstruction
 

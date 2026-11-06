@@ -5,7 +5,20 @@ The subsequent [agent cartography expansion](agent-cartography-review.md) has it
 own contract and verification. Earlier source fingerprints and scores do not
 automatically certify that expansion or remove the release hold below.
 
-Status: **Candidate verification passed; production acceptance held for Node HIGH review**.
+The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2,
+one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
+burst, 512 MiB memory, no extra swap and 128 PIDs. The controlled exact-source
+`e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
+149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
+the Colima-affined failure also remains evidence. The final identifier-guard
+candidate still requires exact hosted/full acceptance. See the
+[one-CPU record](validation/one-cpu-observer-2026-11-06.json) and
+[required observer-service resource configuration](../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service).
+This profile belongs to a company's observer-owning executor, not the reference
+Agent Ops service, which does not start an observer. It reserves neither an
+exclusive nor physical core and does not guarantee an unknown deployment's latency.
+
+Recorded P0 status: **Candidate verification passed; production acceptance held for Node HIGH review**.
 The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert

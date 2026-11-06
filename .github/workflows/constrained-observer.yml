@@ -22,11 +22,11 @@ on:
         type: string
         default: ''
       cpu_affinity:
-        description: Separate placement profile; no change to resource or acceptance limits
+        description: Single logical CPU acceptance (0), or historical quota-only comparison (none)
         required: true
         type: choice
-        options: ['none', '0']
-        default: 'none'
+        options: ['0', 'none']
+        default: '0'
 permissions:
   contents: read
 concurrency:
@@ -35,14 +35,14 @@ concurrency:
   cancel-in-progress: false
 jobs:
   acceptance:
-    name: constrained-observer (linux, one CPU, 512 MiB)
+    name: constrained-observer (linux, affinity ${{ inputs.cpu_affinity || '0' }}, 512 MiB)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
       # Reviewed Node 24.22.1 image index. Update alongside the runner default.
       NODE_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
       SOURCE_COMMIT: ${{ inputs.source_commit || '' }}
-      CPU_AFFINITY: ${{ inputs.cpu_affinity || 'none' }}
+      CPU_AFFINITY: ${{ inputs.cpu_affinity || '0' }}
       TRIGGER_EVENT: ${{ github.event_name }}
     steps:
       - name: Validate manual experiment inputs
@@ -57,7 +57,7 @@ jobs:
               raise SystemExit('SOURCE_COMMIT_INVALID')
           if affinity not in ('none', '0'):
               raise SystemExit('CPU_AFFINITY_INVALID')
-          if os.environ['TRIGGER_EVENT'] != 'workflow_dispatch' and (source or affinity != 'none'):
+          if os.environ['TRIGGER_EVENT'] != 'workflow_dispatch' and (source or affinity != '0'):
               raise SystemExit('MANUAL_INPUTS_ON_NONMANUAL_RUN')
           PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

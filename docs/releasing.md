@@ -47,7 +47,8 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    Record actual runner/runtime versions; a major-only `setup-node` selection is
    not an exact runtime identity. Preserve the real alpha.3 upgrade fixture.
 4. Require the uninstrumented full graph/admission acceptance and the additional
-   measured 512 MiB/one-CPU observer profile with no swap. Keep ABBA order, 100 tasks/1,000 grants,
+   native Linux/cgroup v2 observer profile: one selected logical CPU, one-CPU
+   bandwidth quota, 512 MiB memory and no extra swap. Keep ABBA order, 100 tasks/1,000 grants,
    250 measured plus 50 warmup calls per phase, 250 ms serial polling, all 1,200
    effects, zero failed/skipped polls, cleanup and the 10% p95 bound unchanged.
    Retain every measured sample and actual cgroup/resource settings. Instrumented
@@ -62,15 +63,16 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
 
    This graph/admission workflow does not impose the one-CPU/512 MiB/no-extra-swap
    limits. The separate [constrained workflow](../.github/workflows/constrained-observer.yml)
-   runs the committed runner once with full uninstrumented defaults, the original
-   100 ms CPU period and zero burst. To run that same qualification locally after
+   explicitly uses affinity `0` for PR and default manual runs, with the original
+   100 ms CPU period and zero burst. Manual affinity `none` is retained only for
+   historical quota-only comparison. To run the configured profile after
    building, cache the reviewed image, create only the output's parent, and use a
    new output directory:
 
    ```sh
    docker pull "$NODE_IMAGE"
    mkdir -p artifacts/constrained-observer-runs
-   node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" \
+   node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --cpu-affinity 0 \
      --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
    ```
 
@@ -81,18 +83,22 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    mounts only that stage read-only and fresh output writable, and checks actual
    cgroup limits and cleanup. Keep `admission.json`, `resources.json`, `staged-inputs.json`
    and `verification.json` with the platform/image/source binding. Local and hosted
-   qualifications are separate records. Qualification remains pending until an
-   actual full run passes; prior diagnostic, control and 10 ms-period failures
-   remain unqualified. Do not add diagnostics, change limits, or retry away failures.
-   The optional `--cpu-affinity SINGLE_INDEX` restricts execution to one selected
+   qualifications are separate records. The exact `e4e42f` native Linux run passed
+   at 7.2766% overhead, 1,200 effects and 149 polls without failures/skips; final
+   identifier-guard candidate verification is still pending. Prior quota-only,
+   Colima-affined, diagnostic and 10 ms-period failures remain recorded. Do not add
+   diagnostics, change limits, or retry away failures.
+   The runner's generic default remains bandwidth-only; the configured acceptance
+   command must explicitly include `--cpu-affinity 0`. `--cpu-affinity SINGLE_INDEX`
+   restricts execution to one selected
    logical CPU while retaining the same one-CPU quota, 100 ms period, zero burst,
    512 MiB memory, no extra swap and 128-PID limit. It provides neither exclusivity
    nor a physical-core guarantee. Its requested and effective CPU sets are checked
-   before and after the workload and recorded as a separate profile; its result
-   cannot qualify the default bandwidth-only profile. Both remain unqualified in
-   the [current evidence](validation/one-cpu-observer-2026-11-06.json).
-   Keep the workflow unaffined; no placement profile is promoted or recommended
-   for production on these results.
+   before and after the workload and recorded as a separate profile. Its result
+   does not qualify bandwidth-only placement, other platforms or unknown company
+   installations. Match the [documented observer-service resources](../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service)
+   and retain exact candidate evidence. The [one-CPU record](validation/one-cpu-observer-2026-11-06.json)
+   preserves the controlled pass and the failed quota-only controls.
 5. Bind reports to `git rev-parse HEAD`, `git rev-parse HEAD^{tree}` and
    `python3 docs/validation/protection-source-id.py`. Retain workflow/run/job IDs,
    actual tested merge/tree, artifact/log hashes, package integrity, dependency

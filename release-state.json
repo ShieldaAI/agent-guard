@@ -4,12 +4,13 @@
   "status": "blocked",
   "blockers": [
     "Node HIGH security prealert for 22.x, 24.x and 26.x remains unresolved; fixed versions and applicability are not yet disclosed.",
-    "Observer-change acceptance under the unchanged full and constrained profiles, updated-runtime verification, merged release-commit checks and final security review remain pending."
+    "Publication requires final-candidate full graph/admission and native Linux single-logical-CPU qualification on reviewed fixed Node images, followed by exact merged-commit verification and final security review."
   ],
   "evidence": [
     "docs/releases/0.1.0.md",
     "docs/production-readiness.md",
     "docs/agent-cartography-review.md",
-    "docs/validation/polling-and-map-timeouts-2026-11-06.json"
+    "docs/validation/polling-and-map-timeouts-2026-11-06.json",
+    "docs/validation/one-cpu-observer-2026-11-06.json"
   ]
 }

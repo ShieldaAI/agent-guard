@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "qualification_pending",
+  "status": "native_single_logical_cpu_baseline_passed_final_candidate_pending",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -723,16 +723,167 @@
         "staged-inputs.json": "05c525f7168cba00584c9ae3591f00da1d796b7698e95bc1b3deaf3ae045cc05",
         "admission.json": "0d967049055048d1ac489f3a4925d1ea8bb1601ee19bdf6fc214d82e713ccf93"
       }
+    },
+    {
+      "directory": "artifacts/agent-cartography/identifier-constrained-acceptance-1",
+      "profile": "acceptance",
+      "resourceProfile": "bandwidth-only",
+      "cpuAffinity": null,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "stage": "complete",
+      "controlsVerified": true,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "stagingRemoved": true,
+      "stagedInputsUnchanged": true,
+      "admission": {
+        "gate": {
+          "passed": false,
+          "correctnessPassed": false,
+          "effectAccountingPassed": true,
+          "stressProfileValid": false,
+          "latencySamplesValid": true,
+          "failureReasons": [
+            {
+              "phase": 2,
+              "code": "POLL_CADENCE_SKIPPED"
+            },
+            {
+              "phase": 3,
+              "code": "POLL_CADENCE_SKIPPED"
+            }
+          ],
+          "performanceEnforced": true,
+          "performancePassed": false,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": 81.65587,
+          "pollingP95Ms": 98.464169,
+          "ratio": 1.2058431194230128,
+          "regressionPercent": 20.58431194230128
+        },
+        "diagnosticsComplete": true,
+        "acceptanceEvidenceEligible": false,
+        "effects": 1200,
+        "polls": 226
+      },
+      "resources": {
+        "schemaVersion": 1,
+        "kind": "constrained-observer-resources",
+        "diagnosticOnly": false,
+        "resourceProfile": "bandwidth-only",
+        "cpuAffinity": null,
+        "affinity": {
+          "before": {
+            "cpusetCpusEffective": "0-3",
+            "processCpusAllowedList": "0-3"
+          },
+          "after": {
+            "cpusetCpusEffective": "0-3",
+            "processCpusAllowedList": "0-3"
+          }
+        },
+        "acceptanceEvidenceEligible": false,
+        "runtime": {
+          "node": "v24.22.1",
+          "architecture": "arm64",
+          "platform": "linux"
+        },
+        "controls": {
+          "memoryMaxBytes": 536870912,
+          "memorySwapMaxBytes": 0,
+          "cpuQuotaUs": 100000,
+          "cpuPeriodUs": 100000,
+          "cpuBurstUs": 0,
+          "pidsMax": 128
+        },
+        "before": {
+          "memoryPeakBytes": 21389312,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 565162,
+            "user_usec": 305343,
+            "system_usec": 259819,
+            "nr_periods": 5,
+            "nr_throttled": 2,
+            "throttled_usec": 14601
+          }
+        },
+        "after": {
+          "memoryPeakBytes": 166621184,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 111728132,
+            "user_usec": 72371113,
+            "system_usec": 39357018,
+            "nr_periods": 1122,
+            "nr_throttled": 1109,
+            "throttled_usec": 58406392
+          }
+        },
+        "sampler": {
+          "enabled": false,
+          "intervalMs": 100,
+          "limit": 4096,
+          "observed": 0,
+          "dropped": 0,
+          "errors": 0,
+          "closed": true,
+          "samples": []
+        },
+        "checksPassed": true
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 125,
+          "started": 121,
+          "completed": 121,
+          "failed": 0,
+          "skippedBusy": 4,
+          "completedDuringMeasurement": 107,
+          "firstPollMs": 213.443321,
+          "maximumPollMs": 679.322829
+        },
+        {
+          "phase": 3,
+          "scheduled": 109,
+          "started": 105,
+          "completed": 105,
+          "failed": 0,
+          "skippedBusy": 4,
+          "completedDuringMeasurement": 95,
+          "firstPollMs": 216.045642,
+          "maximumPollMs": 348.268251
+        }
+      ],
+      "artifactSha256": {
+        "resources.json": "6da3e487b78fd0743f70ca0162f01f647a23265f3a5d39cc9bc759d084b6f334",
+        "verification.json": "6dcdfe474fda4f518582b02ff537981d042915900a515c0b3515ab6c136d9162",
+        "staged-inputs.json": "f29c07ec9d287eb9924206ae4b20bc672149579f2ef2cb7838061b689aaf7eb8",
+        "admission.json": "f52ff1b40ea2c80adecbb3333359e49ec14e803d3ce7c4ab03b44a176756ac7b"
+      }
     }
   ],
   "decisions": [
     "Preserve all prior failed and diagnostic attempts. Smoke and instrumentation cannot certify full acceptance.",
     "A 10 ms CPU quota/period experiment kept one-CPU bandwidth but failed, so the default 100 ms CPU period remains unchanged.",
-    "Remove unused server/SDK imports from HTTP-only synthetic clients, without moving the first poll, warming clients, changing request logic, filtering samples, or changing the gate. New qualification is pending.",
+    "Remove unused server/SDK imports from HTTP-only synthetic clients, without moving the first poll, warming clients, changing request logic, filtering samples, or changing the gate. Subsequent attempts and native affinity qualification are recorded separately below.",
     "No production enforcement changes are justified by these traces alone. No host processes or system settings were changed.",
     "Node HIGH security review and fixed-runtime qualification remain a publication hold.",
-    "The single-logical-CPU experiment also failed. It substantially reduced aggregate quota throttling but does not qualify either profile or prove the remaining stall cause.",
-    "A fresh native Linux CI check and disposable worker-stage CPU diagnostics are pending. The release remains blocked."
+    "The local Colima single-logical-CPU experiment also failed. It substantially reduced aggregate quota throttling but does not qualify either profile or prove the remaining stall cause.",
+    "Native Linux CI and disposable worker-stage CPU diagnostics were subsequently collected below. Release remains blocked for final candidate and fixed-Node verification.",
+    "Only the native Linux single-logical-CPU profile passed exact-source full acceptance. Its required CPU placement is a stricter deployment setting, not an increase to bandwidth or other limits. Final changed source and future fixed Node images still require their own qualification; no broader profile is promoted."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -771,6 +922,132 @@
       "log": "artifacts/agent-cartography/observer-full-check-2.log",
       "sha256": "99dd534acb2e86c8fa2844240b66455b6c902e2cf01ece8da07a438e935224db",
       "interpretation": "Full functional check with improved connection diagnostics passed. The prior isolated connection failure remains unexplained; no deadline was increased."
+    },
+    "hostedE4Checkpoint": {
+      "path": "artifacts/agent-cartography/hosted-e4e42f/ci-e4e42f.json",
+      "sha256": "019d7b6a45899b57416de0c92d38ced8f1ab53c207b0ae1646b1185d128644dc",
+      "ordinaryWorkflowsPassed": 6,
+      "ciJobsPassed": 11,
+      "constrainedAcceptancePassed": false
     }
+  },
+  "nativeAffinityQualification": {
+    "path": "artifacts/agent-cartography/native-affinity-comparison-e4e42f.json",
+    "sha256": "a14722272716f1144732e901b2dc6f2691ec2136fdbec653cea044ef2c69421e",
+    "sourceCommit": "e4e42f9877f85ac767203555f9403029d636e911",
+    "sourceTree": "f706422c5ab45dee6fe6f23e7d02558847a43b62",
+    "sourceFingerprint": "a8250cb771b1abedfe44e99ee9219bfd41309ba8217dfb74b9a34215b10cead9",
+    "workflowCommit": "e85f5bc1d0000b3e8bb31d00f0ad7c2ddc42f5cc",
+    "runId": 42272328232,
+    "jobId": 128079776351,
+    "resourceProfile": "single-logical-cpu",
+    "cpuAffinity": "0",
+    "sameStagedFilesAsFailedNativeControl": 91,
+    "passed": true,
+    "baselineP95Ms": 44.280705,
+    "pollingP95Ms": 47.502851,
+    "ratio": 1.0727663662988203,
+    "effects": 1200,
+    "completedPolls": 149,
+    "failedPolls": 0,
+    "skippedPolls": 0,
+    "memoryPeakBytes": 178311168,
+    "cleanupVerified": true,
+    "scope": "Native Linux x64 cgroupv2, one allowed logical CPU plus unchanged one-CPU quota/100ms period/burst0,512MiB/no-extra-swap/PIDs128,exact synthetic workload. Not an exclusive physical CPU or universal timing guarantee. Local Colima and bandwidth-only failures remain unqualified."
+  },
+  "nativeQuotaOnlyControls": [
+    {
+      "path": "artifacts/agent-cartography/hosted-e4e42f-constrained/independent-verification.json",
+      "sha256": "fe79e7fea8143f1f643c88ee1a80995fea3bab9a270527dd3837fc001d4b9b45",
+      "runId": 42269091543,
+      "passed": false,
+      "baselineP95Ms": 61.16799,
+      "pollingP95Ms": 70.27713,
+      "ratio": 1.1489200478877921,
+      "effects": 1200,
+      "polls": 176,
+      "failedPolls": 0,
+      "skippedPolls": 0
+    },
+    {
+      "path": "artifacts/agent-cartography/hosted-e85f5bc-unaffined-control/independent-verification.json",
+      "sha256": "d58ecab920f4f50a1ea3b0214321335fde6d6ae851b6f38a80e8a43282f78f54",
+      "runId": 42272294246,
+      "passed": false,
+      "baselineP95Ms": 67.753378,
+      "pollingP95Ms": 76.772492,
+      "ratio": 1.1331168166995305,
+      "effects": 1200,
+      "polls": 214,
+      "failedPolls": 0,
+      "skippedPolls": 0
+    }
+  ],
+  "workerStageDiagnostic": {
+    "path": "artifacts/agent-cartography/worker-stage-diagnostic-1/analysis.json",
+    "sha256": "42af8d52569a145a6165c0293b43bc98f636b352073d2c23aa57b4e7714601f3",
+    "diagnosticOnly": true,
+    "acceptanceEvidenceEligible": false,
+    "complete": true,
+    "onlyChangedStagedFile": [
+      "packages/executor/dist/inventory-worker.js"
+    ],
+    "effects": 600,
+    "polls": 95,
+    "skips": 4,
+    "workerStageCpuMs": 1495.047,
+    "projectionCpuMs": 1004.088,
+    "wholeCgroupCpuMs": 45108.424,
+    "projectionPercentOfWorkerStages": 67.16096550810778,
+    "projectionPercentOfWholeCgroupCpu": 2.225943429103176,
+    "findings": [
+      "Projection is the largest measured worker stage CPU cost; identifier spread arrays are one source-visible allocation candidate, not independently measured attribution.",
+      "Long poll gaps also precede worker execution and follow publication before owner result delivery. No stage optimization has yet been shown to resolve those stalls.",
+      "The short-string UTF-16 length guard is semantically safe with existing scalar validation; any implementation still needs tests and unchanged acceptance validation.",
+      "CPU counters and hrtime are sampled non-atomically and include diagnostic work. Short-span CPU may exceed wall due to counter/accounting granularity; never interpret subtraction as exact scheduler wait.",
+      "This single modified-stage diagnostic failed cadence; it cannot qualify acceptance or identify a universal host cause."
+    ]
+  },
+  "identifierOptimization": {
+    "sourceSha256": "421b97af1fa9237a5b70175024e2255ce94734a4a575daa006ae1b43e0382095",
+    "compiledSha256": "ce61ad565e92ab781af63650d5107d13e1d042b314916dd3377f577b485342eb",
+    "focusedTests": 276,
+    "focusedTestsPassed": 276,
+    "focusedTestsSkipped": 0,
+    "microcost": {
+      "path": "artifacts/agent-cartography/identifier-fastpath-1/projection-cost.json",
+      "sha256": "59501a117a8abd731d7a4ab89fd427f0cf50eb761350246693e9c130b2441c12",
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "summaries": {
+        "before": {
+          "samples": 200,
+          "meanCpuMs": 2.0470299999999995,
+          "medianCpuMs": 1.591,
+          "p95CpuMs": 3.712,
+          "medianWallMs": 1.596083,
+          "p95WallMs": 3.005334
+        },
+        "after": {
+          "samples": 200,
+          "meanCpuMs": 2.4522800000000005,
+          "medianCpuMs": 1.335,
+          "p95CpuMs": 8.507,
+          "medianWallMs": 1.343958,
+          "p95WallMs": 3.828084
+        }
+      },
+      "interpretation": "Mixed timing: lower median, higher mean and p95. Not evidence of a reliable overall performance gain or stall fix."
+    },
+    "fullFunctionalCheck": {
+      "path": "artifacts/agent-cartography/identifier-full-check-1.log",
+      "sha256": "5d4fb4fbd4e8cf0ced750b9681186716a38cbf5ebd84ae0532cd0416100085ec",
+      "tests": 1258,
+      "passed": 1258,
+      "failed": 0,
+      "skipped": 0,
+      "installedConsumersPassed": true
+    },
+    "finalNativeProfileQualification": "pending"
   }
 }
