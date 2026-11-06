@@ -2,6 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { DurableExecutor, ExecutorError, createInventoryObserverToken, startInventoryServer, startExecutorServer } from '../dist/index.js';
+import { DatabaseSync } from 'node:sqlite';
+import { InventoryObservationSession } from '../dist/inventory-observer.js';
 import { LedgerStore } from '../dist/store.js';
 
 function executor(t, options = {}) {
@@ -34,9 +36,11 @@ test('observer returns a complete single-tenant snapshot with exact bounded JSON
   const service = await observer(t, value);
   assert.deepEqual(service.server.address().address, '127.0.0.1');
   const before = value.inventorySnapshot({ tenantId: 'alpha' });
-  const read = LedgerStore.prototype.read;
+  const prepare = DatabaseSync.prototype.prepare;
   let reads = 0;
-  const spy = t.mock.method(LedgerStore.prototype, 'read', function () { reads++; return read.call(this); });
+  const spy = t.mock.method(DatabaseSync.prototype, 'prepare', function (sql) {
+    if (/SELECT payload FROM main\.ledger/.test(sql)) reads++; return prepare.call(this, sql);
+  });
   const auth = t.mock.method(value, 'authenticate', () => assert.fail('observer called task authentication'));
   const write = t.mock.method(LedgerStore.prototype, 'transaction', () => assert.fail('observer wrote authority'));
   const result = await post(service);
@@ -66,7 +70,7 @@ test('credentials select only host-enrolled tenants; denied requests never read 
   const config = [{ token: alpha, tenantIds: ['alpha'], profile: 'core' }, { token: both, tenantIds: ['alpha', 'beta', 'empty'] }];
   const service = await observer(t, value, { observers: config });
   config[0].tenantIds.push('beta'); config[1].tenantIds.length = 0; config[0].profile = 'expanded';
-  const snapshot = t.mock.method(value, 'inventorySnapshot', () => assert.fail('unauthorized request reached exporter'));
+  const snapshot = t.mock.method(InventoryObservationSession.prototype, 'snapshot', () => assert.fail('unauthorized request reached exporter'));
   for (const tenantId of ['beta', 'unknown-tenant']) {
     const result = await post(service, alpha, { tenantId });
     assert.equal(result.response.status, 403);
@@ -121,15 +125,15 @@ test('oversized output fails as a complete safe error before any snapshot bytes 
   assert.equal(value.inventorySnapshot({ tenantId: 'alpha' }).ledgerRevision, before.ledgerRevision);
 });
 
-test('synchronous generation overruns return timeout, never a late successful snapshot', async t => {
+test('asynchronous generation overruns return timeout, never a late successful snapshot', async t => {
   const { value } = executor(t);
   const timeoutMs = 5000;
   let elapsed = 0;
   t.mock.method(performance, 'now', () => elapsed);
   const service = await observer(t, value, { requestTimeoutMs: timeoutMs });
-  const original = value.inventorySnapshot.bind(value);
-  const slow = t.mock.method(value, 'inventorySnapshot', scope => {
-    const snapshot = original(scope);
+  const original = InventoryObservationSession.prototype.snapshot;
+  const slow = t.mock.method(InventoryObservationSession.prototype, 'snapshot', async function (request) {
+    const snapshot = await original.call(this, request);
     // Advance time during generation without tying the next successful request to host scheduling.
     elapsed += timeoutMs + 1;
     return snapshot;
@@ -146,14 +150,15 @@ test('exporter failures use safe codes without secrets and do not disable later 
   const { value } = executor(t);
   const service = await observer(t, value);
   for (const error of [new Error('private-error-canary'), new ExecutorError('private-error-canary')]) {
-    const mock = t.mock.method(value, 'inventorySnapshot', () => { throw error; });
+    const mock = t.mock.method(InventoryObservationSession.prototype, 'snapshot', async () => { throw error; });
     const result = await post(service);
     assert.equal(result.response.status, 503); assert.deepEqual(result.body, { error: 'INVENTORY_UNAVAILABLE' });
     mock.mock.restore();
   }
   const actual = value.inventorySnapshot({ tenantId: 'alpha' });
-  for (const invalid of [{ ...actual, source: { ...actual.source, tenantId: 'beta' } }, { ...actual, profile: 'expanded' }]) {
-    const mock = t.mock.method(value, 'inventorySnapshot', () => invalid);
+  for (const invalid of [{ json: JSON.stringify(actual), bytes: Buffer.byteLength(JSON.stringify(actual)), tenantId: 'beta', profile: 'core' },
+    { json: JSON.stringify(actual), bytes: Buffer.byteLength(JSON.stringify(actual)), tenantId: 'alpha', profile: 'expanded' }]) {
+    const mock = t.mock.method(InventoryObservationSession.prototype, 'snapshot', async () => invalid);
     const result = await post(service);
     assert.equal(result.response.status, 503); assert.deepEqual(result.body, { error: 'INVENTORY_UNAVAILABLE' });
     mock.mock.restore();

@@ -50,7 +50,8 @@ export interface InventorySnapshot {
   readonly tools: readonly InventoryTool[];
 }
 
-type Registration = { readonly fingerprint: string; readonly revision: number; readonly definition: ToolDefinition };
+export type InventoryRegistration = { readonly fingerprint: string; readonly revision: number;
+  readonly definition: Pick<ToolDefinition, 'requiresApproval' | 'controlPlane' | 'maxCost'> };
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_VALUES = 500_000;
 const MAX_SELECTORS = 100_000;
@@ -105,6 +106,23 @@ export function validateInventorySource(value: unknown): InventorySourceOptions 
     companyId: identifier(field(value, 'companyId', code), code),
     sourceId: identifier(field(value, 'sourceId', code), code),
     enrollmentGeneration: identifier(field(value, 'enrollmentGeneration', code), code),
+  });
+}
+
+/** Private worker input: callbacks and every other ToolDefinition field stay with the host. */
+export function captureInventoryRegistrations(live: ReadonlyMap<string, InventoryRegistration>, maximumBytes: number): readonly [string, InventoryRegistration][] {
+  let bytes = 2;
+  return [...live].map(([name, registration]) => {
+    identifier(name);
+    const fingerprint = field(registration, 'fingerprint');
+    if (typeof fingerprint !== 'string' || !/^(?:sha256:)?[a-f0-9]{64}$/.test(fingerprint)) fail();
+    const definition = field(registration, 'definition');
+    const result: [string, InventoryRegistration] = [name, { fingerprint, revision: integer(field(registration, 'revision')), definition: {
+      requiresApproval: optionalBoolean(field(definition, 'requiresApproval')),
+      controlPlane: optionalBoolean(field(definition, 'controlPlane')), maxCost: integer(field(definition, 'maxCost') ?? 0),
+    } }];
+    bytes += Buffer.byteLength(JSON.stringify(result)) + 1; limited(bytes, maximumBytes);
+    return result;
   });
 }
 
@@ -201,7 +219,7 @@ function finalizeConstructedInventory(snapshot: InventorySnapshot): InventorySna
 /** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
 export function projectInventory(
   state: Ledger,
-  live: ReadonlyMap<string, Registration>,
+  live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
   scope: InventoryScope,
   generatedAt: number,

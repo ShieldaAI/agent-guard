@@ -12,7 +12,13 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
-from neo4j.exceptions import Neo4jError, ServiceUnavailable, SessionExpired
+from neo4j.exceptions import (
+    ConnectionAcquisitionTimeoutError,
+    DriverError,
+    Neo4jError,
+    ServiceUnavailable,
+    SessionExpired,
+)
 
 SCRIPT = Path(__file__).resolve().parents[2] / "scripts" / "test-disposable-neo4j.py"
 spec = importlib.util.spec_from_file_location("disposable_neo4j_runner", SCRIPT)
@@ -79,6 +85,67 @@ def test_readiness_retries_connectivity_then_requires_a_successful_database_quer
     session.run.assert_called_once_with("RETURN 1 AS ready")
     session.run.return_value.consume.assert_called_once_with()
     driver.__exit__.assert_called_once()
+
+
+def test_readiness_retries_only_bounded_acquisition_timeout_then_requires_ready_query(monkeypatch):
+    driver = MagicMock()
+    driver.__enter__.return_value = driver
+    driver.verify_connectivity.side_effect = [
+        ConnectionAcquisitionTimeoutError("private-canary"),
+        None,
+    ]
+    factory = MagicMock(return_value=driver)
+    monkeypatch.setattr(runner.GraphDatabase, "driver", factory)
+    monkeypatch.setattr(runner.time, "sleep", lambda _duration: None)
+    clock = iter([0, 0, 0.25, 0.5])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+
+    assert runner.wait_ready("bolt://private-canary", "private-canary", None) == {
+        "attempts": 2,
+        "elapsedSeconds": 0.5,
+    }
+    assert factory.call_args.kwargs["connection_acquisition_timeout"] == 2
+    assert factory.call_args.kwargs["max_transaction_retry_time"] == 0
+    driver.session.return_value.__enter__.return_value.run.assert_called_once_with(
+        "RETURN 1 AS ready"
+    )
+
+
+def test_acquisition_timeout_exhaustion_preserves_overall_deadline_and_safe_cause(monkeypatch):
+    driver = MagicMock()
+    driver.__enter__.return_value = driver
+    driver.verify_connectivity.side_effect = ConnectionAcquisitionTimeoutError("private-canary")
+    monkeypatch.setattr(runner.GraphDatabase, "driver", lambda *_args, **_kwargs: driver)
+    monkeypatch.setattr(runner.time, "sleep", lambda _duration: None)
+    clock = iter([0, 0, 120, 120])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+
+    with pytest.raises(runner.ReadinessTimeout) as failed:
+        runner.wait_ready("bolt://private-canary", "private-canary", None)
+    assert failed.value.diagnostics == {
+        "code": "PILOT_NEO4J_READINESS_TIMEOUT",
+        "attempts": 1,
+        "elapsedSeconds": 120,
+        "lastFailure": "connection-acquisition-timeout",
+    }
+    assert "private-canary" not in json.dumps(failed.value.diagnostics)
+    driver.session.assert_not_called()
+
+
+@pytest.mark.parametrize("error_type", [DriverError, SessionExpired])
+def test_other_driver_errors_escape_readiness_without_retry(monkeypatch, error_type):
+    error = error_type("private-canary")
+    driver = MagicMock()
+    driver.__enter__.return_value = driver
+    driver.verify_connectivity.side_effect = error
+    monkeypatch.setattr(runner.GraphDatabase, "driver", lambda *_args, **_kwargs: driver)
+    sleep = MagicMock()
+    monkeypatch.setattr(runner.time, "sleep", sleep)
+    with pytest.raises(error_type) as failed:
+        runner.wait_ready("bolt://private-canary", "private-canary", None)
+    assert failed.value is error
+    driver.verify_connectivity.assert_called_once()
+    sleep.assert_not_called()
 
 
 def test_readiness_timeout_preserves_safe_cause_without_connection_details(monkeypatch):
@@ -350,6 +417,30 @@ def test_runner_generic_setup_failure_does_not_print_exception_or_logs(owned_mai
     assert "readiness" not in failure
     assert cleanup["containerRemovalConfirmed"] is True
     assert "private-canary" not in captured.out + captured.err
+
+
+@pytest.mark.parametrize(
+    ("error_type", "category"),
+    [
+        (ConnectionAcquisitionTimeoutError, "connection-acquisition-timeout"),
+        (SessionExpired, "session-expired"),
+        (DriverError, "driver-error"),
+    ],
+)
+def test_uncaught_readiness_driver_errors_retain_only_fixed_subtype(
+    owned_main, capsys, error_type, category
+):
+    owned_main.readiness.side_effect = error_type("private-canary bolt://user:secret@host")
+    assert runner.main() == 1
+    captured = capsys.readouterr()
+    report, cleanup = [json.loads(line) for line in captured.err.splitlines()]
+    assert report["stage"] == "database-readiness"
+    assert report["reason"] == "database-error"
+    assert report["databaseErrorType"] == category
+    assert cleanup["containerRemovalConfirmed"] is True
+    assert "private-canary" not in captured.out + captured.err
+    assert "bolt://" not in captured.out + captured.err
+    owned_main.pytest.assert_not_called()
 
 
 @pytest.mark.parametrize("error_type", [Neo4jError, ServiceUnavailable, SessionExpired])

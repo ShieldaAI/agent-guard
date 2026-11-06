@@ -3,7 +3,7 @@ import { performance, PerformanceObserver } from 'node:perf_hooks';
 import { threadId } from 'node:worker_threads';
 import { isPromise } from 'node:util/types';
 
-const STREAMS = ['polls', 'ticks', 'exports', 'requests', 'heartbeats', 'gc', 'prepare', 'execute', 'ledgerRead', 'ledgerTransaction'];
+const STREAMS = ['polls', 'ticks', 'exports', 'observations', 'requests', 'heartbeats', 'gc', 'prepare', 'execute', 'ledgerRead', 'ledgerTransaction'];
 const RESOURCE_COUNTERS = ['minorPageFault', 'majorPageFault', 'fsRead', 'fsWrite',
   'voluntaryContextSwitches', 'involuntaryContextSwitches'];
 const FIELDS = {
@@ -15,7 +15,7 @@ const FIELDS = {
     'eventLoopUtilization', 'processCpuUserUs', 'processCpuSystemUs', ...RESOURCE_COUNTERS],
   gc: ['startedNs', 'endedNs', 'deliveredNs', 'durationMs', 'kind', 'flags'],
 };
-for (const name of ['prepare', 'execute', 'ledgerRead', 'ledgerTransaction'])
+for (const name of ['observations', 'prepare', 'execute', 'ledgerRead', 'ledgerTransaction'])
   FIELDS[name] = ['id', 'startedNs', 'returnedNs', 'endedNs', 'durationMs', 'ok', 'asynchronous'];
 const elapsed = (start, end) => Number(end - start) / 1e6;
 const finite = value => Number.isFinite(value) ? value : null;
@@ -173,7 +173,7 @@ export function instrumentObserverRequests(server, diagnostics) {
  * include nested reads and commit work; overlapping durations must not be summed.
  * Async spans end in a Promise reaction, not an invented synchronous completion.
  */
-export function instrumentAdmissionMethods(executor, LedgerStore, diagnostics) {
+function instrumentMethods(hooks, diagnostics) {
   const restores = []; let pending = 0, restored = false;
   const fail = () => { try { diagnostics.fail(); } catch { /* never affect the original call */ } };
   const install = (target, method, stream, asynchronous) => {
@@ -217,9 +217,20 @@ export function instrumentAdmissionMethods(executor, LedgerStore, diagnostics) {
     for (const release of restores.reverse()) { try { release(); } catch { fail(); } }
   };
   try {
-    install(executor, 'prepare', 'prepare', true); install(executor, 'execute', 'execute', true);
-    install(LedgerStore.prototype, 'read', 'ledgerRead', false);
-    install(LedgerStore.prototype, 'transaction', 'ledgerTransaction', false);
+    for (const hook of hooks) install(...hook);
   } catch (error) { restore(); throw error; }
   return restore;
+}
+
+/** Async HTTP observation includes its bounded queue, trusted worker and serialization. */
+export function instrumentInventoryObservation(ObservationSession, diagnostics) {
+  return instrumentMethods([[ObservationSession.prototype, 'snapshot', 'observations', true]], diagnostics);
+}
+
+export function instrumentAdmissionMethods(executor, LedgerStore, diagnostics) {
+  return instrumentMethods([
+    [executor, 'prepare', 'prepare', true], [executor, 'execute', 'execute', true],
+    [LedgerStore.prototype, 'read', 'ledgerRead', false],
+    [LedgerStore.prototype, 'transaction', 'ledgerTransaction', false],
+  ], diagnostics);
 }

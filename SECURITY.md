@@ -1,6 +1,12 @@
 # Security policy
 
-This project is an experimental alpha and has not been certified for enforcing production permissions without human oversight. Security fixes target the current alpha; older versions have no long-term support commitment.
+The latest published version is the experimental `0.1.0-alpha.3`. This checkout
+prepares an **unpublished 0.1.0 candidate**; production release remains held for
+the Node HIGH security review and candidate acceptance gates in the
+[release notes](docs/releases/0.1.0.md). It is not a production certification.
+Security fixes target the current maintained release/candidate; older versions
+have no long-term support commitment. A version without an alpha suffix does
+not extend the documented deployment boundary or promise 1.x API stability.
 
 Please report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/ShieldaAI/agent-guard/security/advisories/new). Include the affected version, a synthetic reproduction, expected behavior and observed effects. Avoid real credentials or customer data. Do not post an exploitable issue publicly while private reporting is available.
 

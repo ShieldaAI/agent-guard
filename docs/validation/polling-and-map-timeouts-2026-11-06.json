@@ -1,0 +1,317 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "status": "verification-in-progress-publication-held",
+  "candidateVersion": "0.1.0",
+  "baseCommit": "01f1e330894b64f97627cd0a6446acd7a100edb3",
+  "testedSourceFingerprint": {
+    "sha256": "e6e06d8148d0860da76238063fe89ed704d4a978fca490d048c3fc6fa0b2d611",
+    "files": 431,
+    "method": "docs/validation/protection-source-id.py"
+  },
+  "changes": {
+    "polling": "A single bounded trusted worker per executor authenticates, decodes, projects, composes and serializes each fresh observer capture. The owner still verifies current witness/mirror bytes and captures live primitive tool metadata. No authority, response or cross-poll state cache is introduced.",
+    "workerSafety": [
+      "Four active-plus-queued jobs shared across listeners; queued jobs capture only when dispatched.",
+      "Verified teardown before replacement; failed teardown permanently refuses replacement for that executor.",
+      "Exact detached key copies, zeroing, no inherited environment/preloads or database handles.",
+      "MCP full lifecycle digests bracket projection; only manifest-selected operations are transferred with aggregate byte/count bounds.",
+      "Authentication, tenant/profile/source binding, deadlines and final response bounds remain enforced."
+    ],
+    "database": "Fixed templates selected from validated access and current/history modes omit logically irrelevant branches while preserving all enforced scope predicates and bounds. No cross-request data cache or retry was added.",
+    "readiness": "Fixed allowlisted databaseErrorType plus retry of only bounded ConnectionAcquisitionTimeoutError. Overall120s deadline,2s acquisition,0drivertransactionretry and late-success rejection remain unchanged; generic DriverError/SessionExpired still escape. This does not establish the cause of the earlier generic readiness failure.",
+    "release": "All npm workspace versions and exact internal dependencies prepared as 0.1.0; public distribution metadata uses latest. Stable publication requires a matching reviewed release-state record without unresolved blockers. Normal checks and packing remain available while blocked."
+  },
+  "unchangedAcceptance": {
+    "admissionMaximumRatio": 1.1,
+    "pollIntervalMs": 250,
+    "phaseOrder": [
+      "baseline",
+      "polling",
+      "polling",
+      "baseline"
+    ],
+    "measuredSamplesPerPhase": 250,
+    "warmupSamplesPerPhase": 50,
+    "tasks": 100,
+    "grants": 1000,
+    "mapReadDeadlineMs": 5000,
+    "neo4jReadinessDeadlineSeconds": 120,
+    "neo4jAcquisitionTimeoutSeconds": 2,
+    "neo4jTransactionRetries": 0,
+    "neo4jFixtureMemoryBytes": 1073741824,
+    "neo4jFixtureCpus": 2,
+    "privacyAndVisibility": [
+      "company, tenant, source and published snapshot membership",
+      "selected-agent and team restrictions before dependent paths",
+      "previous-projection agent/task visible-now-or-absent fences for team-scoped readers",
+      "administrative all-teams behavior and selected-agent administrative path restrictions",
+      "exact source-pointer and policy rereads",
+      "field allowlists, row/node/edge/materialized-byte bounds,5sabsolute deadline,8active read cap",
+      "read-only transactions and rollback/close behavior"
+    ]
+  },
+  "priorFailuresRetained": {
+    "hostedAdmission": {
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42217685599",
+      "baselineP95Ms": 35.69461,
+      "pollingP95Ms": 88.157117,
+      "regressionPercent": 146.97599,
+      "accepted": false
+    },
+    "laterInstrumentedAdmission": {
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42219348389",
+      "regressionPercent": 8.1308,
+      "acceptanceEligible": false
+    },
+    "fullLocalQueryDiagnostic": {
+      "passed": 148,
+      "failed": 1,
+      "elapsedSeconds": 542.14,
+      "failedStage": "Selected-agent get_agent_access read exceeded the unchanged five-second deadline.",
+      "summarySha256": "542b5380ad4d9404e846b1988304bdd80e9b5c595430e84ff5b1b37cc8856e5b",
+      "diagnosticOnly": true
+    },
+    "queryPlanComparison": {
+      "summarySha256": "84d9e56fca868541d399257da9c1fcec8e8214b8398be7293b47936dcf47fdbd",
+      "equalPayloadComparisons": 6,
+      "oldOperators": 18,
+      "candidateOperators": 14,
+      "oldProfileDbHits": 30,
+      "candidateProfileDbHits": 34,
+      "limits": "Fixed-order, cache-sensitive diagnostic. It does not establish one cause for every historical timeout; fewer operators do not imply fewer database hits."
+    }
+  },
+  "verification": {
+    "npmCheck": {
+      "command": "npm run check",
+      "node": "26.12.0",
+      "platform": "darwin-arm64",
+      "passed": 1215,
+      "failed": 0,
+      "skipped": 0,
+      "testDurationMs": 110002.778875,
+      "installedConsumers": "passed",
+      "pinnedIsolationFixturesEnabled": true,
+      "log": "artifacts/agent-cartography/polling-map-fix-npm-check.log",
+      "logSha256": "07c6b3ed1522ee0e9947832aa909967a0f869772f9e5254e5445163b98c9fa33"
+    },
+    "focusedMap": {
+      "command": "node --test packages/agent-map/test/store.test.mjs",
+      "passed": 25,
+      "failed": 0,
+      "skipped": 0
+    },
+    "focusedLiveMap": {
+      "log": "python-static-query-v2-focused.log",
+      "sha256": "279742a642e771c526a28a64ffd4823474887a4df6445455e862021b8cd403b0",
+      "passed": 7,
+      "failed": 0,
+      "deselected": 143,
+      "elapsedSeconds": 53.72,
+      "containerRemovalConfirmed": true,
+      "tunnelClosedConfirmed": true
+    },
+    "readiness": {
+      "command": ".venv/bin/python -m pytest tests/unit/test_disposable_neo4j.py -q",
+      "passed": 41,
+      "failed": 0,
+      "log": "python-readiness-hardening.log",
+      "logSha256": "c688eed3601fd8c88d3fc2c67ba770eb8d5ea1772f5c5c24c9aa62774fa27da6"
+    },
+    "python": {
+      "schemaVersion": 1,
+      "status": "local_validation_passed",
+      "acceptanceScope": "Final local static-query/readiness implementation on the combined final Node build; does not substitute for polling performance or hosted release gates.",
+      "baseCommit": "01f1e330894b64f97627cd0a6446acd7a100edb3",
+      "rootFinalSourceFingerprint": {
+        "sha256": "e6e06d8148d0860da76238063fe89ed704d4a978fca490d048c3fc6fa0b2d611",
+        "files": 431,
+        "provenance": "Root final npm check checkpoint supplied before this serial run."
+      },
+      "ownedFiles": {
+        "packages/agent-map/src/store.ts": "c7a9e9527f06df07f8b91750bbe05924c2a7cf83c1a592fa8b70ee531688f9ae",
+        "packages/agent-map/test/store.test.mjs": "7b13856ee414646c2945a7f0d7bf4a06e4d34174e86eb942ff7c2b0244b2939d",
+        "integrations/cartography/scripts/test-disposable-neo4j.py": "c194749c6d58e150c5f7558dba69cf2c7f451bbc924fc6ea7b071a21059f8dd0",
+        "integrations/cartography/tests/unit/test_disposable_neo4j.py": "6c0ecf261b515abf9b8df8516db6cf88ce6b4aeed1b47dab176b8e89a62fbf7e",
+        "integrations/cartography/tests/integration/test_manifest_v2_graph.py": "9329de02ece9f94267073da06477599fab05feaa2bcc38bf3bcb0e83ca35941b"
+      },
+      "compiledMapStoreSha256": "c6afbdca8b0daef813cf6e23f7b64845c4a019f4bd61bc8f1b9761d7b5256ee1",
+      "validation": {
+        "pythonUnit": {
+          "passed": 1011,
+          "failed": 0,
+          "skipped": 0,
+          "elapsedSeconds": 19.36
+        },
+        "ruffCheck": "passed",
+        "ruffFormat": "passed",
+        "wheel": "passed",
+        "sdist": "passed",
+        "wheelFromSdist": "passed",
+        "isolatedInstalledConsumer": "passed",
+        "integration": {
+          "passed": 150,
+          "failed": 0,
+          "skipped": 0,
+          "elapsedSeconds": 262.85,
+          "diagnosticsEnabled": false,
+          "serialLocalHeavySlot": true,
+          "containerRemovalConfirmed": true,
+          "tunnelClosedConfirmed": true
+        }
+      },
+      "logs": {
+        "unit": {
+          "file": "artifacts/agent-cartography/python-query-fix-final-unit.log",
+          "sha256": "60478e7bddeed9492c09ef91485676b623d479db8dc4fa169f4540375a2f2644"
+        },
+        "package": {
+          "file": "artifacts/agent-cartography/python-query-fix-final-package.log",
+          "sha256": "e90fda4f19db3418db84f221cd5dde98db4a700f6490d8ce80864d2bfac01fe8"
+        },
+        "integration": {
+          "file": "artifacts/agent-cartography/python-query-fix-final-integration.log",
+          "sha256": "125a0c811698b2abda55300d30e58f964a0e439773005af8a181773ea127adad"
+        }
+      },
+      "packageArtifacts": {
+        "artifacts/agent-cartography/python-query-fix-final-dist/.gitignore": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1",
+        "artifacts/agent-cartography/python-query-fix-final-dist/agent_guard_cartography-0.1.0a1-py3-none-any.whl": "d8ad80750bfa4f7415c68ef5a13fd4209c69b863a20011fd7e01ced632b47610",
+        "artifacts/agent-cartography/python-query-fix-final-dist/agent_guard_cartography-0.1.0a1.tar.gz": "3e7416c06eb67ccc6adf176ba44d33c66b3da5b060c48a693fbdbb7ddce760b8",
+        "artifacts/agent-cartography/python-query-fix-final-dist/from-sdist/.gitignore": "684888c0ebb17f374298b65ee2807526c066094c701bcc7ebbe1c1095f494fc1",
+        "artifacts/agent-cartography/python-query-fix-final-dist/from-sdist/agent_guard_cartography-0.1.0a1-py3-none-any.whl": "d8ad80750bfa4f7415c68ef5a13fd4209c69b863a20011fd7e01ced632b47610"
+      },
+      "unchangedLimits": {
+        "mapReadDeadlineMs": 5000,
+        "readinessDeadlineSeconds": 120,
+        "connectionAcquisitionSeconds": 2,
+        "driverTransactionRetrySeconds": 0,
+        "databaseMemoryBytes": 1073741824,
+        "databaseCpus": 2,
+        "databasePids": 256
+      },
+      "causalEvidence": {
+        "fullOrderBefore": {
+          "file": "artifacts/agent-cartography/map-full-diagnostic/summary.json",
+          "sha256": "542b5380ad4d9404e846b1988304bdd80e9b5c595430e84ff5b1b37cc8856e5b",
+          "diagnosticOnly": true
+        },
+        "isolatedPlanProbe": {
+          "file": "artifacts/agent-cartography/map-plan-diagnostic/summary.json",
+          "sha256": "84d9e56fca868541d399257da9c1fcec8e8214b8398be7293b47936dcf47fdbd",
+          "diagnosticOnly": true
+        },
+        "focusedFixReview": {
+          "file": "artifacts/agent-cartography/static-query-fix-review.json",
+          "sha256": "172946d6947009a8dbcff442d5911ad4a2efdec45c1afefa2250acc62a837b87",
+          "statusAtCapture": "focused verified; full gate was pending at that historical checkpoint"
+        }
+      },
+      "conclusion": "The full local suite that previously reproduced the timeout now passes on the reviewed static-query implementation, without increasing limits or removing privacy checks. Readiness now retries only the specific bounded connection-acquisition timeout and retains other driver failures.",
+      "limits": [
+        "This is one complete uninstrumented final-source local verification, not an unlimited stability guarantee.",
+        "The isolated plan probe establishes exact row equivalence for its fixture and removes irrelevant current/history planning branches; its timing is cache/order-sensitive and not a performance acceptance result.",
+        "Earlier full-suite failures and the unusable initial plan-sanitizer probe remain preserved.",
+        "No claim that the earlier generic readiness failure cause has been conclusively identified.",
+        "Root still owns final polling-latency acceptance, hosted checks, source reconciliation and release."
+      ]
+    },
+    "localAdmission": {
+      "passed": true,
+      "acceptanceEligible": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 28.602709,
+        "pollingP95Ms": 22.263167,
+        "ratio": 0.7783586862349297,
+        "regressionPercent": -22.164131376507036
+      },
+      "workload": {
+        "samples": 250,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "successfulEffects": 1200,
+      "completedPolls": 66,
+      "completedPollsDuringMeasurement": 58,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "cleanupConfirmed": true,
+      "report": "artifacts/agent-cartography/polling-worker-full-admission.json",
+      "sha256": "d3950865158c7921b23369bf12672fc10c27037db06419d8c8a9f835dfcd65c5"
+    },
+    "constrainedEmbedding": {
+      "schemaVersion": 1,
+      "kind": "synthetic-constrained-observer-embedding",
+      "passed": false,
+      "node": "v24.22.1",
+      "architecture": "arm64",
+      "limitBytes": 536870912,
+      "peakBytes": 163872768,
+      "memoryEvents": {
+        "oom": 0,
+        "oomKill": 0
+      },
+      "cpuQuota": 100000,
+      "cpuPeriod": 100000,
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "successfulEffects": 600,
+      "completedPolls": 66,
+      "correctnessPassed": false,
+      "performanceAcceptanceEligible": false,
+      "limits": [
+        "Synthetic observer and executor embedding, not an Agent Ops exporter deployment.",
+        "512 MiB cgroup with one CPU; V8 heap ceilings and workload settings are unchanged.",
+        "This representative workload does not establish a maximum supported ledger or JSON shape."
+      ],
+      "overallSmokePassed": false,
+      "failure": "The first poll in phase 2 took 343.016575 ms and skipped one 250 ms tick. No polling cadence sample was excluded.",
+      "pollingFailures": 0,
+      "skippedTicks": 1,
+      "containerExitCode": 1,
+      "containerOomKilled": false,
+      "containerRemoved": true,
+      "cleanupConfirmed": true,
+      "followUp": "One separately labeled diagnostic run; not a rerun for acceptance."
+    }
+  },
+  "publication": {
+    "published": false,
+    "tagCreated": false,
+    "status": "held",
+    "securityNotice": "https://nodejs.org/en/blog/vulnerability/november-2026-security-releases",
+    "reason": "Supported Node lines have an unresolved HIGH security prealert; issue details and fixed releases are not yet available. This is an applicability-review hold, not a finding that Agent Guard is exploitable."
+  },
+  "pending": [
+    "Separate constrained-embedding diagnostic; one-CPU 250 ms stress remains unqualified",
+    "Final hosted workflows and capacity acceptance",
+    "Final source and artifact reconciliation"
+  ],
+  "limits": [
+    "Synthetic and automated evidence is not independent penetration testing, provider evaluation or a representative human usability study.",
+    "The unchanged five-second deadline is a fail-closed bound, not a guarantee for arbitrary host load.",
+    "The reference Agent Ops service does not itself start the observer; the constrained embedding test is a separate synthetic workload."
+  ],
+  "candidateSourceFingerprint": {
+    "sha256": "576b6c275b14924ea16184b85bbdb8af3f887d1b91f913d7e61b1233b03e6942",
+    "files": 431,
+    "differenceFromLocalTestedInputs": "Only release-state.json blocker descriptions were reconciled after local verification. Runtime, tests, dependency graph and enforced limits are identical; hosted checks will cover this candidate record."
+  }
+}

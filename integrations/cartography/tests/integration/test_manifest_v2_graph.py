@@ -323,6 +323,54 @@ def test_same_opaque_owner_credential_and_resource_ids_never_merge_tenants(
     )
 
 
+def test_current_selected_admin_and_historical_modes_preserve_team_transfer_fences(
+    neo4j_session, v2_snapshot
+):
+    before = deepcopy(v2_snapshot)
+    publish(neo4j_session, before)
+    after = advanced(before)
+    first, second = after["manifest"]["agents"]
+    first["teamId"], second["teamId"] = second["teamId"], first["teamId"]
+    receipt = publish(neo4j_session, validate_snapshot(after))
+
+    def agents(projection):
+        return {
+            node["properties"]["agent_id"]
+            for node in projection["nodes"]
+            if node["label"] == "GuardAgent"
+        }
+
+    request = {"sourceId": receipt.source_id, "history": True}
+    restricted = query(scope(after), request)
+    assert restricted["ok"], restricted
+    visible = restricted["view"]["sources"][0]
+    assert agents(visible["current"]) == {second["id"]}
+    # Neither the old visible agent now transferred out, nor the newly visible
+    # agent's previously hidden ownership, may reappear through history.
+    assert visible["previous"]["nodes"] == []
+    assert visible["previous"]["edges"] == []
+
+    hidden_selection = query(scope(after), {**request, "agentId": first["id"]})
+    assert hidden_selection["ok"], hidden_selection
+    assert hidden_selection["view"]["sources"] == []
+    visible_selection = query(scope(after), {**request, "agentId": second["id"]})
+    assert visible_selection["ok"], visible_selection
+    assert agents(visible_selection["view"]["sources"][0]["current"]) == {second["id"]}
+    assert visible_selection["view"]["sources"][0]["previous"]["nodes"] == []
+
+    administrative = query(scope(after, all_teams=True), request)
+    assert administrative["ok"], administrative
+    for projection in ("current", "previous"):
+        assert agents(administrative["view"]["sources"][0][projection]) == {
+            first["id"],
+            second["id"],
+        }
+    selected_admin = query(scope(after, all_teams=True), {**request, "agentId": first["id"]})
+    assert selected_admin["ok"], selected_admin
+    for projection in ("current", "previous"):
+        assert agents(selected_admin["view"]["sources"][0][projection]) == {first["id"]}
+
+
 def test_visible_generic_actions_remain_uncollected_without_breaking_aws_evidence(
     neo4j_session, v2_snapshot
 ):

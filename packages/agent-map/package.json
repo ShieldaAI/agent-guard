@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-map",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0",
   "description": "Read-only AI agent and MCP inventory queries over HTTP and MCP, with scoped access to Cartography projections.",
   "license": "Apache-2.0",
   "type": "module",
@@ -26,13 +26,13 @@
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
-    "@shieldaai/agent-guard": "0.1.0-alpha.3",
+    "@shieldaai/agent-guard": "0.1.0",
     "neo4j-driver": "6.3.0",
     "openid-client": "6.8.8"
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",

@@ -10,22 +10,32 @@ import { POLICY_COLUMNS, POLICY_QUERY, policyEvidence, policyParameters, policyP
 
 import { MAP_PROPERTIES as FIELDS } from './projection-fields.js';
 
-const SOURCES = `MATCH (s:GuardSource)
-WHERE s.company_id=$companyId AND s.tenant_id IN $tenantIds AND ($sourceId IS NULL OR s.id=$sourceId)
+interface QueryAccess { readonly allTeams: boolean; readonly agentSelected: boolean }
+const QUERY_ACCESS: readonly QueryAccess[] = Array.from({ length: 4 }, (_, mode) => ({
+  allTeams: Boolean(mode & 2), agentSelected: Boolean(mode & 1),
+}));
+function agentPredicate(variable: string, access: QueryAccess): string {
+  return [!access.allTeams ? `${variable}.team_id IN $teamIds` : '',
+    access.agentSelected ? `(${variable}.agent_id=$agentId OR ${variable}.entity_id=$agentId)` : '']
+    .filter(Boolean).join(' AND ') || 'true';
+}
+// Only validated scope/selection flags choose these fixed templates. Avoid asking
+// Neo4j to plan irrelevant administrative, selection and historical branches.
+const SOURCES = QUERY_ACCESS.map(access => [false, true].map(sourceSelected => `MATCH (s:GuardSource)
+WHERE s.company_id=$companyId AND s.tenant_id IN $tenantIds ${sourceSelected ? 'AND s.id=$sourceId' : ''}
 AND coalesce(s.lifecycle_status,'active')='active'
 MATCH (p:GuardSnapshot {id:s.current_snapshot_id})
-WHERE p.source_id=s.id AND p.status='published' AND
- (($allTeams AND $agentId IS NULL) OR EXISTS {
+WHERE p.source_id=s.id AND p.status='published'
+ ${access.allTeams && !access.agentSelected ? '' : `AND EXISTS {
    MATCH (a:GuardAgent)-[:G_IN_SNAPSHOT]->(p)
    WHERE a.source_id=s.id AND a.projection_id=p.id AND a.tenant_id=s.tenant_id
-   AND ($allTeams OR a.team_id IN $teamIds)
-   AND ($agentId IS NULL OR a.agent_id=$agentId OR a.entity_id=$agentId)
- })
+   AND ${agentPredicate('a', access)}
+ }`}
 RETURN s.id AS id,s.tenant_id AS tenantId,s.native_source_id AS nativeSourceId,s.profile AS profile,
  p.id AS currentId,p.snapshot_id AS currentSnapshotId,p.generated_at AS currentGeneratedAt,
  substring(p.coverage_json,0,4097) AS currentCoverage,
  s.previous_snapshot_id AS previousId,substring(p.cloud_coverage_json,0,16385) AS policyCoverage
-ORDER BY s.id LIMIT $sourceLimit`;
+ORDER BY s.id LIMIT $sourceLimit`));
 
 const scoped = (variable: string): string => `${variable}.source_id=$sourceId AND ${variable}.projection_id=$projectionId AND ${variable}.tenant_id=$tenantId`;
 // Derive each next set only from previously authorized nodes, with bounds after every set.
@@ -33,7 +43,7 @@ const READ_ORDER: readonly GuardLabel[] = ['GuardAgent', 'GuardDeployment', 'Gua
   'GuardGrant', 'GuardExecutionBinding', 'GuardTool', 'GuardResource', 'GuardResourceBinding',
   'GuardExternalResource', 'GuardExternalIdentity', 'GuardMcpConnection', 'GuardMcpOperation', 'GuardOwner', 'GuardCredentialReference'];
 const historicalVisibility = (label: 'GuardAgent' | 'GuardTask', parameter: string): string =>
-  `($projectionId=$currentId OR $allTeams OR n.entity_id IN $${parameter} OR NOT EXISTS {
+  `(n.entity_id IN $${parameter} OR NOT EXISTS {
     MATCH (current:${label})-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$currentId})
     WHERE current.entity_id=n.entity_id AND current.source_id=$sourceId
       AND current.projection_id=$currentId AND current.tenant_id=$tenantId
@@ -41,12 +51,9 @@ const historicalVisibility = (label: 'GuardAgent' | 'GuardTask', parameter: stri
 function through(path: string, label: GuardLabel): string {
   return `EXISTS { MATCH ${path} WHERE ${scoped('visible')} AND visible.id IN $${label}Ids }`;
 }
-const predicates: Readonly<Record<GuardLabel, string>> = {
-  GuardAgent: `($allTeams OR n.team_id IN $teamIds) AND ($agentId IS NULL OR n.agent_id=$agentId OR n.entity_id=$agentId)
-    AND ${historicalVisibility('GuardAgent', 'currentAgentEntityIds')}`,
+const predicates: Readonly<Record<Exclude<GuardLabel, 'GuardAgent'>, string>> = {
   GuardDeployment: through('(n)-[:G_INSTANCE_OF]->(visible:GuardAgent)', 'GuardAgent'),
-  GuardTask: `${through('(n)-[:G_ASSIGNED_TO]->(visible:GuardDeployment)', 'GuardDeployment')}
-    AND ${historicalVisibility('GuardTask', 'currentTaskEntityIds')}`,
+  GuardTask: through('(n)-[:G_ASSIGNED_TO]->(visible:GuardDeployment)', 'GuardDeployment'),
   GuardPrincipal: through('(n)<-[:G_ACTS_AS]-(visible:GuardTask)', 'GuardTask'),
   GuardGrant: through('(n)<-[:G_HAS_GRANT]-(visible:GuardTask)', 'GuardTask'),
   GuardExecutionBinding: through('(n)-[:G_EXECUTES_FOR]->(visible:GuardDeployment)', 'GuardDeployment'),
@@ -66,16 +73,27 @@ const predicates: Readonly<Record<GuardLabel, string>> = {
       AND c.id IN $GuardMcpConnectionIds AND b.id IN $GuardExecutionBindingIds AND tool.id IN $GuardToolIds
   }`,
 };
+function nodePredicate(label: GuardLabel, access: QueryAccess, historical: boolean): string {
+  if (access.allTeams && !access.agentSelected) return 'true';
+  const predicate = label === 'GuardAgent' ? agentPredicate('n', access) : predicates[label];
+  // The historical fence remains mandatory for team-scoped previous projections.
+  // A current projection (or an all-teams reader) bypassed it in the original query.
+  if (historical && !access.allTeams && (label === 'GuardAgent' || label === 'GuardTask')) {
+    return `(${predicate}) AND ${historicalVisibility(label,
+      label === 'GuardAgent' ? 'currentAgentEntityIds' : 'currentTaskEntityIds')}`;
+  }
+  return predicate;
+}
 
 // Labels/property names below are static source allowlists, never request-supplied strings.
 // Separate bounded templates avoid the planner's combinatorial work for a large OR of paths.
-const NODES = Object.fromEntries(MAP_LABELS.map(label => [label,
+const NODES = QUERY_ACCESS.map(access => [false, true].map(historical => Object.fromEntries(MAP_LABELS.map(label => [label,
   `MATCH (p:GuardSnapshot {id:$projectionId,source_id:$sourceId,status:'published'})
 MATCH (n:${label})-[:G_IN_SNAPSHOT]->(p)
 WHERE ${scoped('n')} AND size([label IN labels(n) WHERE label IN $labels])=1 AND
- (($allTeams AND $agentId IS NULL) OR (${predicates[label]}))
+ (${nodePredicate(label, access, historical)})
 RETURN '${label}' AS label,n { .id,.entity_id,.source_id,.projection_id,${FIELDS[label].map(field => `.${field}`).join(',')} } AS node
-ORDER BY n.id LIMIT $nodeLimit`])) as Readonly<Record<GuardLabel, string>>;
+ORDER BY n.id LIMIT $nodeLimit`])) as Readonly<Record<GuardLabel, string>>));
 const EDGES = `MATCH (n)-[r]->(m)
 WHERE n.id IN $nodeIds AND m.id IN $nodeIds AND type(r) IN $relationships
  AND n.source_id=$sourceId AND m.source_id=$sourceId
@@ -226,6 +244,8 @@ export class Neo4jMapStore implements MapStore {
       if (copied.summary !== undefined && typeof copied.summary !== 'boolean') throw new Error();
       selection = copied as MapReadRequest;
     } catch { throw new MapQueryError('MAP_REQUEST_INVALID'); }
+    const accessMode = (scope.allTeams ? 2 : 0) + (selection.agentId !== undefined ? 1 : 0);
+    const sourceQuery = SOURCES[accessMode]![selection.sourceId !== undefined ? 1 : 0]!;
     if (this.#active >= 8) throw new MapQueryError('MAP_UNAVAILABLE');
     this.#active++;
     const deadline = Date.now() + this.#timeout;
@@ -250,7 +270,7 @@ export class Neo4jMapStore implements MapStore {
         const common = { companyId: scope.companyId, tenantIds: [...scope.tenantIds], teamIds: [...scope.teamIds],
           allTeams: scope.allTeams, sourceId: selection.sourceId ?? null, agentId: selection.agentId ?? null,
           sourceLimit: neo4j.int(this.#sources + 1) };
-        const selected = await run(SOURCES, common);
+        const selected = await run(sourceQuery, common);
         if (selected.length > this.#sources) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
         let nodeCount = 0; let edgeCount = 0; let materializedBytes = 0;
         const charge = (value: unknown): void => {
@@ -297,9 +317,10 @@ export class Neo4jMapStore implements MapStore {
               currentAgentEntityIds: currentNodes.filter(node => node.label === 'GuardAgent').map(node => node.entityId),
               currentTaskEntityIds: currentNodes.filter(node => node.label === 'GuardTask').map(node => node.entityId) };
             const nodes: MapNode[] = [];
+            const nodeQueries = NODES[accessMode]![id === currentId ? 0 : 1]!;
             for (const label of selection.summary ? ['GuardAgent', 'GuardDeployment', 'GuardOwner'] as const : READ_ORDER) {
               const authorized = Object.fromEntries(MAP_LABELS.map(kind => [`${kind}Ids`, nodes.filter(node => node.label === kind).map(node => node.id)]));
-              await run(NODES[label], { ...params, ...authorized, nodeLimit: neo4j.int(this.#nodes - nodeCount + 1) }, item => {
+              await run(nodeQueries[label], { ...params, ...authorized, nodeLimit: neo4j.int(this.#nodes - nodeCount + 1) }, item => {
                 if (++nodeCount > this.#nodes) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
                 if (item.get('label') !== label) throw new MapQueryError('MAP_UNAVAILABLE');
                 const node = safeNode(item.get('node'), label, sourceId, id);
@@ -355,7 +376,7 @@ export class Neo4jMapStore implements MapStore {
           sources.push({ id: sourceId, tenantId, sourceId: text(record.get('nativeSourceId')), profile, current, previous });
         }
         // Publication may advance while the read transaction is open. Never return mixed generations.
-        const after = await run(SOURCES, common);
+        const after = await run(sourceQuery, common);
         const pointers = (items: typeof selected): string => JSON.stringify(items.map(record => [record.get('id'), record.get('currentId'), record.get('previousId'), record.get('currentCoverage'), record.get('policyCoverage')]));
         if (pointers(selected) !== pointers(after)) throw new MapQueryError('MAP_UNAVAILABLE');
         for (const checked of policyChecks) {

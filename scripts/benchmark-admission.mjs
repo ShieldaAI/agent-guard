@@ -10,7 +10,7 @@ import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import { DurableExecutor, createInventoryObserverToken, startExecutorServer, startInventoryServer } from '../packages/executor/dist/index.js';
 import { LedgerStore } from '../packages/executor/dist/store.js';
-import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentObserverRequests, instrumentAdmissionMethods } from './benchmark-admission-diagnostics.mjs';
+import { createAdmissionDiagnostics, instrumentInventoryObservation, instrumentObserverRequests, instrumentAdmissionMethods } from './benchmark-admission-diagnostics.mjs';
 import { startAdmissionCpuProfile } from './benchmark-admission-profile.mjs';
 
 export const PHASE_ORDER = Object.freeze(['baseline', 'polling', 'polling', 'baseline']);
@@ -124,7 +124,7 @@ async function pollWorker() {
 }
 
 // HTTP request initiation must run independently of the executor's event loop:
-// synchronous inventory exports can then queue requests after their timestamp.
+// owner-thread work can then queue requests after their timestamp.
 async function workloadWorker() {
   const diagnostics = workerData.diagnostics ? createAdmissionDiagnostics() : null;
   try {
@@ -224,7 +224,10 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       }
     }
     if (mode === 'polling') {
-      if (diagnostic) restoreExport = instrumentInventorySnapshot(executor, diagnostic);
+      if (diagnostic) {
+        const { InventoryObservationSession } = await import('../packages/executor/dist/inventory-observer.js');
+        restoreExport = instrumentInventoryObservation(InventoryObservationSession, diagnostic);
+      }
       const token = createInventoryObserverToken();
       observer = await startInventoryServer({ executor, observers: [{ token, tenantIds: ['synthetic-admission'], profile: 'core' }],
         rateLimit: { maxRequests: 10000, windowMs: 60_000 } });
@@ -278,7 +281,8 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       }
       phase.diagnostics.main = diagnostic.stop();
       phase.diagnostics.complete = phase.diagnostics.main.complete && phase.diagnostics.workload?.complete === true &&
-        (mode === 'baseline' || phase.polling?.diagnostics?.complete === true) &&
+        (mode === 'baseline' || (phase.polling?.diagnostics?.complete === true &&
+          phase.diagnostics.main.streams.observations.observed === phase.polling.started)) &&
         (!cpuProfile || phase.diagnostics.cpuProfile?.complete === true);
     }
     }
@@ -307,8 +311,8 @@ export async function main(argv = process.argv.slice(2)) {
     streamLimit: 4096, heartbeatIntervalMs: 100,
     overhead: 'Opt-in instrumentation adds work to all phases and workers. Diagnostic runs cannot certify acceptance; never filter samples or change cadence/gates.',
     clock: 'Shared process.hrtime.bigint nanoseconds. GC start/duration are calibrated from each thread performance clock, with recorded calibration uncertainty and callback delivery timestamp.',
-    stages: 'Poll start→headers→body drained and reader cancelled→UTF-8 decode/JSON parse→shape validation complete. Server request→finish means handed to the OS, not client delivery. Export includes ledger read/decrypt/decode/projection; it excludes HTTP serialization.',
-    attribution: 'Request→export includes network/body processing/scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations are thread-local. Missing GC or I/O counter changes cannot prove a host cause.',
+    stages: 'Poll start→headers→body drained and reader cancelled→UTF-8 decode/JSON parse→shape validation complete. Server request→finish means handed to the OS, not client delivery. Async observation includes bounded queue wait, fresh witnessed ciphertext capture, worker decrypt/decode/projection and serialization through Promise settlement; it is not the historical synchronous export span.',
+    attribution: 'Request→observation includes body processing and scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations and the optional CPU profile are thread-local and do not measure the trusted inventory worker. Missing GC or I/O counter changes cannot prove a host cause.',
     privacy: 'Only bounded timestamps, counters, booleans and fixed labels; no request headers, URLs, credentials, bodies, results or error messages.',
   };
   if (values['cpu-profile']) report.diagnosticContract.cpuProfile = {

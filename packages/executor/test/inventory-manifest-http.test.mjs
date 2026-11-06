@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { DurableExecutor, createInventoryObserverToken, startInventoryServer } from '../dist/index.js';
+import { DatabaseSync } from 'node:sqlite';
 import { LedgerStore } from '../dist/store.js';
 
 function setup(t) {
@@ -51,9 +52,11 @@ test('host observer composes one ledger read while core credentials never receiv
   const { executor, core, manifest } = setup(t);
   const server = await service(t, executor, manifest);
   manifest.agents[0].name = 'changed-caller-canary'; manifest.taskBindings.length = 0;
-  const original = LedgerStore.prototype.read;
+  const original = DatabaseSync.prototype.prepare;
   let reads = 0;
-  const reader = t.mock.method(LedgerStore.prototype, 'read', function () { reads++; return original.call(this); });
+  const reader = t.mock.method(DatabaseSync.prototype, 'prepare', function (sql) {
+    if (/SELECT payload FROM main\.ledger/.test(sql)) reads++; return original.call(this, sql);
+  });
   const write = t.mock.method(LedgerStore.prototype, 'transaction', () => assert.fail('composition wrote authority'));
   const result = await post(server, server.hostToken);
   assert.equal(reads, 1);

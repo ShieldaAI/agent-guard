@@ -207,6 +207,66 @@ test('previous and current projections retain their own original capture timesta
   assert.ok(backend.calls.some(call => /substring\(p\.coverage_json,0,4097\) AS coverage/.test(call.query)));
 });
 
+for (const allTeams of [false, true]) for (const agentSelected of [false, true]) {
+  test(`fixed query modes preserve team/history fences (allTeams=${allTeams}, selected=${agentSelected})`, async () => {
+    const backend = fake({ run: async (query, params) => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [{ ...source, previousId: 'previous' }];
+      if (query.startsWith('MATCH (p:GuardSnapshot') && !query.includes(' AS node')) {
+        return [{ id: 'previous', snapshotId: 'old', generatedAt: source.currentGeneratedAt,
+          coverage: source.currentCoverage }];
+      }
+      if (query.includes("RETURN 'GuardAgent' AS label")) return [{ label: 'GuardAgent',
+        node: { ...agent, id: `${params.projectionId}-agent`, projection_id: params.projectionId } }];
+      return [];
+    } });
+    await new Neo4jMapStore(backend.driver).read({ ...scope, allTeams }, {
+      sourceId: 'source', history: true, ...(agentSelected ? { agentId: 'agent' } : {}),
+    });
+    const sources = backend.calls.filter(call => call.query.startsWith('MATCH (s:GuardSource)'));
+    assert.equal(sources.length, 2);
+    assert.equal(sources[0].query, sources[1].query, 'publication recheck uses the same authorized source template');
+    for (const { query } of sources) {
+      assert.match(query, /s\.company_id=\$companyId AND s\.tenant_id IN \$tenantIds AND s\.id=\$sourceId/);
+      assert.equal(query.includes('a.team_id IN $teamIds'), !allTeams);
+      assert.equal(query.includes('a.agent_id=$agentId OR a.entity_id=$agentId'), agentSelected);
+      assert.equal(query.includes('EXISTS'), !allTeams || agentSelected);
+      assert.equal(query.includes('$allTeams'), false);
+    }
+    for (const label of ['GuardAgent', 'GuardTask']) for (const projectionId of ['projection', 'previous']) {
+      const call = backend.calls.find(item => item.query.includes(`RETURN '${label}' AS label`) &&
+        item.params.projectionId === projectionId);
+      assert.ok(call);
+      assert.match(call.query, /n\.source_id=\$sourceId AND n\.projection_id=\$projectionId AND n\.tenant_id=\$tenantId/);
+      assert.match(call.query, /size\(\[label IN labels\(n\) WHERE label IN \$labels\]\)=1/);
+      const fenced = projectionId === 'previous' && !allTeams;
+      assert.equal(call.query.includes('NOT EXISTS'), fenced);
+      assert.equal(call.query.includes('$allTeams'), false);
+      if (fenced) {
+        assert.match(call.query, /current\.source_id=\$sourceId/);
+        assert.match(call.query, /current\.projection_id=\$currentId AND current\.tenant_id=\$tenantId/);
+      }
+      if (label === 'GuardAgent') {
+        assert.equal(call.query.includes('n.team_id IN $teamIds'), !allTeams);
+        assert.equal(call.query.includes('n.agent_id=$agentId OR n.entity_id=$agentId'), agentSelected);
+      } else assert.equal(call.query.includes('G_ASSIGNED_TO'), !allTeams || agentSelected);
+    }
+  });
+}
+
+test('unselected source template retains company and tenant bounds without nullable identity branches', async () => {
+  const backend = fake();
+  await new Neo4jMapStore(backend.driver).read(scope);
+  const sources = backend.calls.filter(call => call.query.startsWith('MATCH (s:GuardSource)'));
+  assert.equal(sources.length, 2);
+  for (const { query, params } of sources) {
+    assert.match(query, /s\.company_id=\$companyId AND s\.tenant_id IN \$tenantIds/);
+    assert.equal(query.includes('s.id=$sourceId'), false);
+    assert.equal(query.includes('$agentId'), false);
+    assert.equal(params.companyId, scope.companyId);
+    assert.deepEqual(params.tenantIds, scope.tenantIds);
+  }
+});
+
 test('original coverage changes during a read reject the complete view', async () => {
   let reads = 0;
   const backend = fake({ run: async query => query.startsWith('MATCH (s:GuardSource)')

@@ -4,6 +4,7 @@ import { connect } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 import { setTimeout as delay } from 'node:timers/promises';
+import { InventoryObservationSession } from '../dist/inventory-observer.js';
 import { DurableExecutor } from '../dist/index.js';
 import { createInventoryObserverToken, startInventoryServer } from '../dist/inventory-http.js';
 
@@ -19,8 +20,8 @@ async function setup(t, options = {}, credentials) {
   catch (error) { executor.close(); throw error; }
   t.after(async () => { await service.close(); executor.close(); });
   let exports = 0;
-  const original = executor.inventorySnapshot.bind(executor);
-  t.mock.method(executor, 'inventorySnapshot', scope => { exports++; return original(scope); });
+  const original = InventoryObservationSession.prototype.snapshot;
+  t.mock.method(InventoryObservationSession.prototype, 'snapshot', function (...args) { exports++; return Reflect.apply(original, this, args); });
   return { ...service, executor, token: observers[0].token, exports: () => exports };
 }
 function parseResponse(bytes) {

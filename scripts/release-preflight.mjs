@@ -8,7 +8,7 @@ function git(root, args) {
   return result.stdout.trim();
 }
 
-/** Require a clean checkout and matching versions before publication. */
+/** Require a clean checkout, matching versions and reviewed stable-release approval. */
 export function validateRelease(root) {
   const repository = git(root, ['rev-parse', '--show-toplevel']);
   // Resolve native directory aliases, including Windows short names returned by
@@ -38,6 +38,20 @@ export function validateRelease(root) {
           throw new Error(`Release dependency mismatch: ${manifest.name} ${field}.${name} must be exactly ${workspace.version}.`);
         }
       }
+    }
+  }
+  if (/^\d+\.\d+\.\d+(?:\+[0-9A-Za-z.-]+)?$/.test(workspace.version)) {
+    let state;
+    try {
+      state = JSON.parse(readFileSync(join(root, 'release-state.json'), 'utf8'));
+    } catch {
+      throw new Error('Stable release is blocked: a valid release-state.json approval record is required.');
+    }
+    if (state?.schemaVersion !== 1 || state.version !== workspace.version ||
+        state.status !== 'approved' || !Array.isArray(state.blockers) || state.blockers.length !== 0 ||
+        !Array.isArray(state.evidence) || state.evidence.length === 0 ||
+        state.evidence.some(reference => typeof reference !== 'string' || reference.trim().length === 0)) {
+      throw new Error('Stable release is blocked: release-state.json must approve this exact version with evidence and no unresolved blockers.');
     }
   }
 }

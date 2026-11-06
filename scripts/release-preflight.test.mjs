@@ -12,12 +12,14 @@ function fixture(t, options = {}) {
   const write = (path, value) => writeFileSync(join(root, path), JSON.stringify(value));
   mkdirSync(join(root, 'packages', 'core'), { recursive: true });
   mkdirSync(join(root, 'packages', 'adapter'), { recursive: true });
-  write('package.json', { private: true, version: '0.1.0-alpha.1', workspaces: ['packages/core', 'packages/adapter'] });
-  write('packages/core/package.json', { name: '@fixture/core', version: options.coreVersion ?? '0.1.0-alpha.1' });
+  const version = options.version ?? '0.1.0-alpha.1';
+  write('package.json', { private: true, version, workspaces: ['packages/core', 'packages/adapter'] });
+  write('packages/core/package.json', { name: '@fixture/core', version: options.coreVersion ?? version });
   write('packages/adapter/package.json', {
-    name: '@fixture/adapter', version: '0.1.0-alpha.1',
-    [options.dependencyField ?? 'dependencies']: { '@fixture/core': options.dependencyVersion ?? '0.1.0-alpha.1' },
+    name: '@fixture/adapter', version,
+    [options.dependencyField ?? 'dependencies']: { '@fixture/core': options.dependencyVersion ?? version },
   });
+  if (options.releaseState !== undefined) write('release-state.json', options.releaseState);
   writeFileSync(join(root, '.gitignore'), 'artifacts/\n');
   const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git(['init', '--quiet']);
@@ -78,4 +80,37 @@ test('release rejects an extracted package or nested directory', t => {
   const extracted = mkdtempSync(join(tmpdir(), 'agent-guard-extracted-'));
   t.after(() => rmSync(extracted, { recursive: true, force: true }));
   assert.throws(() => validateRelease(extracted), /complete Git source checkout/);
+});
+
+const approvedState = {
+  schemaVersion: 1, version: '0.1.0', status: 'approved', blockers: [],
+  evidence: ['docs/releases/0.1.0.md'],
+};
+
+test('stable release rejects a missing approval record', t => {
+  const { root } = fixture(t, { version: '0.1.0' });
+  assert.throws(() => validateRelease(root), /Stable release is blocked/);
+});
+
+for (const [name, releaseState] of [
+  ['unresolved hold', { ...approvedState, status: 'blocked', blockers: ['Node security review pending'] }],
+  ['different version', { ...approvedState, version: '0.1.1' }],
+  ['approved with blockers', { ...approvedState, blockers: ['Acceptance pending'] }],
+  ['invalid status', { ...approvedState, status: true }],
+  ['invalid blockers type', { ...approvedState, blockers: '' }],
+  ['missing evidence', { ...approvedState, evidence: [] }],
+  ['invalid evidence type', { ...approvedState, evidence: 'docs/releases/0.1.0.md' }],
+  ['empty evidence reference', { ...approvedState, evidence: [' '] }],
+  ['unknown schema', { ...approvedState, schemaVersion: 2 }],
+  ['null record', null],
+]) {
+  test(`stable release rejects ${name}`, t => {
+    const { root } = fixture(t, { version: '0.1.0', releaseState });
+    assert.throws(() => validateRelease(root), /Stable release is blocked/);
+  });
+}
+
+test('stable release accepts a committed version-matched approval with evidence and no blockers', t => {
+  const { root } = fixture(t, { version: '0.1.0', releaseState: approvedState });
+  assert.doesNotThrow(() => validateRelease(root));
 });

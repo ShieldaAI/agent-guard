@@ -1,8 +1,15 @@
 # @shieldaai/agent-guard-mcp
 
-Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+**Unpublished 0.1.0 candidate.** Production release remains held for the Node
+HIGH security review and candidate acceptance gates. See the
+[candidate release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md).
+Evaluate this checkout using matching local workspace tarballs. The registry
+install below selects the earlier published experimental alpha, whose APIs
+and verification are recorded in its own release notes.
 
-Install with `npm install @shieldaai/agent-guard-mcp@alpha`. The host supplies
+Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM.
+
+Install with `npm install @shieldaai/agent-guard-mcp@0.1.0-alpha.3`. The host supplies
 identity, resource resolution and transport policy. For the core API and related
 packages, see the [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 

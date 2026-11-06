@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentObserverRequests } from './benchmark-admission-diagnostics.mjs';
+import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentInventoryObservation, instrumentObserverRequests } from './benchmark-admission-diagnostics.mjs';
 import { admissionGate, runAdmissionPhase } from './benchmark-admission.mjs';
 
 test('inventory instrumentation preserves private this, arguments, returns and thrown identity', () => {
@@ -45,6 +45,48 @@ test('instrumentation recording failure cannot replace the original result or ex
     assert.throws(() => executor.inventorySnapshot(true), error => error === thrown);
     assert.equal(failures, 2);
   } finally { restore(); }
+});
+
+test('async observation instrumentation preserves private receivers, Promise identity and rejection without retaining payloads', async () => {
+  const secret = { data: 'PRIVATE-SNAPSHOT' }, failure = new Error('PRIVATE-FAILURE');
+  const resolved = Promise.resolve(secret), rejected = Promise.reject(failure);
+  class Observation {
+    #result;
+    constructor(result) { this.#result = result; }
+    snapshot(request, signal) { assert.equal(request, secret); assert.equal(signal, controller.signal); return this.#result; }
+  }
+  const controller = new AbortController(), first = new Observation(resolved), second = new Observation(rejected);
+  const descriptor = Object.getOwnPropertyDescriptor(Observation.prototype, 'snapshot');
+  const diagnostics = createAdmissionDiagnostics(), restore = instrumentInventoryObservation(Observation, diagnostics);
+  try {
+    assert.equal(first.snapshot(secret, controller.signal), resolved);
+    assert.equal(first.snapshot.call(second, secret, controller.signal), rejected);
+    assert.equal(await resolved, secret);
+    await assert.rejects(rejected, error => error === failure);
+  } finally { restore(); }
+  restore();
+  assert.deepEqual(Object.getOwnPropertyDescriptor(Observation.prototype, 'snapshot'), descriptor);
+  const result = diagnostics.stop();
+  assert.equal(result.errors, 0);
+  assert.deepEqual(result.streams.observations.samples.map(sample => sample.ok), [true, false]);
+  assert.ok(result.streams.observations.samples.every(sample => sample.asynchronous &&
+    BigInt(sample.endedNs) >= BigInt(sample.returnedNs) && BigInt(sample.returnedNs) >= BigInt(sample.startedNs)));
+  assert.equal(JSON.stringify(result).includes('PRIVATE'), false);
+});
+
+test('unfinished observation capture is incomplete and synchronous throws preserve identity', async () => {
+  const failure = new Error('PRIVATE-FAILURE'); let resolve;
+  const pending = new Promise(done => { resolve = done; });
+  class Observation { snapshot(fail) { if (fail) throw failure; return pending; } }
+  const diagnostics = createAdmissionDiagnostics(), restore = instrumentInventoryObservation(Observation, diagnostics);
+  const instance = new Observation();
+  assert.throws(() => instance.snapshot(true), error => error === failure);
+  assert.equal(instance.snapshot(false), pending);
+  restore();
+  const result = diagnostics.stop();
+  assert.equal(result.complete, false); assert.equal(result.errors, 1);
+  assert.deepEqual(result.streams.observations.samples.map(sample => [sample.ok, sample.asynchronous]), [[false, false]]);
+  resolve(); await pending;
 });
 
 test('bounded diagnostic streams expose loss and stop timers and observers idempotently', async () => {
@@ -114,13 +156,14 @@ test('diagnostic phase retains exact effects and correlated bounded poll and exe
   }
   assert.equal(phase.diagnostics.main.processMetrics, true);
   assert.equal(phase.polling.diagnostics.processMetrics, false);
-  const polls = phase.polling.diagnostics.streams.polls.samples, exports = phase.diagnostics.main.streams.exports.samples;
-  assert.equal(polls.length, phase.polling.started); assert.equal(exports.length, polls.length);
+  const polls = phase.polling.diagnostics.streams.polls.samples, observations = phase.diagnostics.main.streams.observations.samples;
+  assert.equal(phase.diagnostics.main.streams.exports.observed, 0);
+  assert.equal(polls.length, phase.polling.started); assert.equal(observations.length, polls.length);
   for (const [index, sample] of polls.entries()) {
     const timeline = ['startedNs', 'headersNs', 'bodyNs', 'parseStartedNs', 'parsedNs', 'completedNs'].map(key => BigInt(sample[key]));
     assert.ok(timeline.every((value, i) => i === 0 || value >= timeline[i - 1]));
-    assert.ok(BigInt(exports[index].startedNs) >= timeline[0]);
-    assert.ok(BigInt(exports[index].endedNs) <= timeline.at(-1));
+    assert.ok(BigInt(observations[index].startedNs) >= timeline[0]);
+    assert.ok(BigInt(observations[index].endedNs) <= timeline.at(-1));
     assert.equal(sample.status, 200); assert.equal(sample.ok, true);
     assert.equal(sample.startedNs, phase.polling.samples[index].startedNs);
     assert.equal(sample.completedNs, phase.polling.samples[index].completedNs);
