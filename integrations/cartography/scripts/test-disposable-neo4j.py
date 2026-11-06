@@ -109,11 +109,62 @@ def loopback_uri(address: str, directory: Path) -> tuple[str, subprocess.Popen |
     return f"bolt://127.0.0.1:{host_port}", tunnel
 
 
+class ReadinessTimeout(RuntimeError):
+    """Safe diagnostics only: never retain a driver message, URI or credential."""
+
+    def __init__(self, attempts: int, elapsed: float, last_failure: str):
+        super().__init__("Disposable Neo4j did not become ready before its deadline")
+        self.diagnostics = {
+            "code": "PILOT_NEO4J_READINESS_TIMEOUT",
+            "attempts": attempts,
+            "elapsedSeconds": round(elapsed, 3),
+            "lastFailure": last_failure,
+        }
+
+
+def owned_container_state(name: str, run_id: str) -> dict:
+    """Allowlisted lifecycle fields from this run's container, never logs or env."""
+    try:
+        inspected = json.loads(docker("inspect", name, timeout=5))
+        if (
+            not isinstance(inspected, list)
+            or len(inspected) != 1
+            or not isinstance(inspected[0], dict)
+        ):
+            return {"available": False, "reason": "invalid-state"}
+        info = inspected[0]
+        config, state = info.get("Config"), info.get("State")
+        if (
+            not isinstance(config, dict)
+            or not isinstance(config.get("Labels"), dict)
+            or not isinstance(state, dict)
+        ):
+            return {"available": False, "reason": "invalid-state"}
+        if config["Labels"].get(LABEL) != run_id:
+            return {"available": False, "reason": "owner-mismatch"}
+        if (
+            type(state.get("Running")) is not bool
+            or type(state.get("OOMKilled")) is not bool
+            or type(state.get("ExitCode")) is not int
+        ):
+            return {"available": False, "reason": "invalid-state"}
+        return {
+            "available": True,
+            "running": state["Running"],
+            "oomKilled": state["OOMKilled"],
+            "exitCode": state["ExitCode"],
+        }
+    except (OSError, subprocess.SubprocessError, ValueError, KeyError, IndexError, TypeError):
+        return {"available": False, "reason": "inspect-failed"}
+
+
 def wait_ready(
     uri: str, password: str, tunnel: subprocess.Popen | None, timeout: float = 120
-) -> None:
-    deadline = time.monotonic() + timeout
-    last_error = "no connection attempt completed"
+) -> dict:
+    started = time.monotonic()
+    deadline = started + timeout
+    attempts = 0
+    last_failure = "no-attempt"
     with GraphDatabase.driver(
         uri,
         auth=("neo4j", password),
@@ -127,14 +178,29 @@ def wait_ready(
             if tunnel is not None and tunnel.poll() is not None:
                 raise RuntimeError("Colima loopback tunnel terminated before Neo4j became ready")
             try:
+                attempts += 1
                 driver.verify_connectivity()
                 with driver.session(database="neo4j") as session:
                     session.run("RETURN 1 AS ready").consume()
-                return
+                return {
+                    "attempts": attempts,
+                    "elapsedSeconds": round(time.monotonic() - started, 3),
+                }
             except (Neo4jError, ServiceUnavailable, OSError) as exc:
-                last_error = f"{type(exc).__name__}: {exc}"
+                if isinstance(exc, ServiceUnavailable):
+                    last_failure = "service-unavailable"
+                elif isinstance(exc, OSError):
+                    last_failure = "io-error"
+                elif getattr(exc, "code", None) in (
+                    "Neo.ClientError.Security.Unauthorized",
+                    "Neo.ClientError.Security.AuthenticationRateLimit",
+                    "Neo.ClientError.Security.CredentialsExpired",
+                ):
+                    last_failure = "authentication-rejected"
+                else:
+                    last_failure = "database-error"
                 time.sleep(0.5)
-    raise RuntimeError(f"Disposable Neo4j did not become ready within 120 seconds: {last_error}")
+    raise ReadinessTimeout(attempts, time.monotonic() - started, last_failure)
 
 
 def main() -> int:

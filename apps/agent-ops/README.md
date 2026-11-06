@@ -170,6 +170,16 @@ lists remain scoped to the signed-in tenant.
 | `maxLedgerBytes` | 16 MiB | 1–64 MiB |
 | `maxRetainedKeys` | 4 | 1–64 |
 
+The recovery profile also has a **fixed deployment-wide limit of 10,000 business
+history segments** across all tenants. A pending compaction reserves one slot;
+committed plus reserved segments consume the limit. Setup, Maintenance, status,
+stdout monitoring and metrics report this breakdown, with warnings at 80% and
+critical alerts at 95%. This is not a `configure-limits` setting. At exhaustion,
+stop new compaction and preserve all records, history, witnesses and keys. The
+deployment owner needs a separately reviewed compatible recovery adapter or
+migration plan before the profile can retain more history. Existing over-limit
+history requires migration review and cannot start as a repairable installation.
+
 Limit changes must retain all existing rows and keys. A smaller setting that
 cannot hold current usage fails. Increasing a setting does not allocate storage
 or validate host sizing; preflight and monitoring remain deployment duties.

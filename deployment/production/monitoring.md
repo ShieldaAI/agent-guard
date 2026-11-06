@@ -42,6 +42,7 @@ the availability denominator only when its approved interval is recorded.
 | At least 95% of requests complete within two seconds | Warning when the recent window has at least 20 requests and the 95th-percentile bucket exceeds two seconds | Inspect host saturation and data size. No timeout-driven resubmission. |
 | No unresolved effect left unattended | Warning for any unconfirmed submission; critical when the oldest request is at least five minutes old | Open its original request and check the backend receipt. Reconciliation never submits the change again. |
 | Capacity has enough reviewed headroom | Warning at 80%, critical at 95% of any configured capacity | Review retention, backup custody and offline maintenance. Do not auto-raise limits or delete unresolved records. |
+| History stays within the recovery-supported closure | Warning at 8,000, critical at 9,500 committed plus reserved segments, across all tenants | Plan before the fixed 10,000-segment ceiling. Pause new compaction at critical capacity; preserve records, history, witnesses and keys for a separately reviewed compatible recovery adapter or migration. |
 | Served TLS remains valid | Warning below 14 days; critical below seven days; expired certificate fails readiness | Renew trusted material, preflight, then restart and verify HTTPS. |
 | Security events reach the configured logger | Critical for any logger callback failure; warning if no logger is configured | Investigate collector health. Authorization outcomes must remain unchanged by logging errors. |
 | Bounded client request rate | Warning at ten rate-limited requests within the recent window | Inspect workload volume and retry behavior; do not bypass the limit. |
@@ -68,6 +69,23 @@ bytes, decoded executor ledger bytes and retained keys. These limits do not
 describe physical disk usage or archive/backup storage. Maintenance labels global
 usage separately from tenant-specific request lists. Raising a limit changes no
 agent grant, action budget, deadline or consumed approval.
+
+Business history has a separate fixed recovery limit. `historyCapacity` in the
+operator-only Setup/Maintenance response reports deployment-wide `committed`,
+`reserved`, `total` and `limit`; `total` includes a pending compaction's reserved
+slot. Status/stdout expose the same breakdown under `history_segments`. Prometheus
+exports `agent_ops_capacity_used{resource="history_segments"}` and the matching
+limit, plus `agent_ops_history_segments_committed` and
+`agent_ops_history_segments_reserved`. Alert on the total so a reservation cannot
+hide an exhausted slot. The limit is not configurable by `configure-limits`.
+
+At `HISTORY_SEGMENT_CAPACITY`, stop new compaction and retain the current state.
+`HISTORY_MIGRATION_REQUIRED` means existing history exceeds this supported
+recovery profile and normal startup refuses it. The response is a separately
+reviewed compatible streaming/partitioned recovery adapter or migration protocol;
+deleting segments, resetting identifiers or removing witnesses cannot create safe
+capacity. Plan this work before exhaustion. The count limit does not replace disk
+space monitoring for either the primary history or its independent recovery copy.
 
 ## Activity snapshots and authoritative history
 

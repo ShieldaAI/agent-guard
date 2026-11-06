@@ -3,7 +3,8 @@ import { lstatSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { TaskFamilyLifecycle, readTaskFamilyArchiveTransfer, verifyTransferredTaskFamilyArchive,
   compactExportedTaskFamilies, externalTaskHistoryHead } from '../../packages/executor/dist/lifecycle.js';
-import { companyHistory, historyState, historyFailure as fail, namespaceValid, validHistoryHead } from './history-state.mjs';
+import { companyHistory, historyState, historyFailure as fail, namespaceValid, validHistoryHead,
+  assertHistorySegmentCapacity, HISTORY_SEGMENT_LIMIT } from './history-state.mjs';
 import { privateHistoryDirectory, privateHistoryMirrorDirectory, historyFilename, historyHash, historyJson, encryptHistorySegment,
   decryptHistorySegment, readHistoryFile, publishHistoryFile } from './history-files.mjs';
 
@@ -83,11 +84,14 @@ export function previewBusinessHistory(stores, config, { tenantId, limit = 100 }
   const { data, guard } = current(stores), pending = pendingState(data);
   if (pending) {
     if (pending.tenantId !== tenantId) fail('HISTORY_RECOVERY_REQUIRED');
+    assertHistorySegmentCapacity(data);
     return { status: 'recovery-required', tenantId, count: pending.requestIds.length, operationId: pending.operationId,
       digest: previewDigest(stores, config, tenantId, pending.requestIds, pending), blockers: [] };
   }
+  const selected = selectedRequests(data, tenantId, limit, Date.now());
+  assertHistorySegmentCapacity(data, selected.rows.length ? 1 : 0);
   verifyHistoryStorage(stores, config);
-  const selected = selectedRequests(data, tenantId, limit, Date.now()), blockers = new Set(), life = lifecycle(stores);
+  const blockers = new Set(), life = lifecycle(stores);
   try {
     for (const request of selected.rows) {
       try {
@@ -178,6 +182,7 @@ function validatePayload(payload, guardInstanceId, company) {
 export function verifyHistoryStorage(stores, config, { allowPending = false, includeFiles = false, ignoreEnrollment = false,
   verifyMirror = true, source = 'primary', ignoreMirrorEnrollment = false } = {}) {
   const { backend, guard, data } = current(stores), history = historyState(data), pending = pendingState(data);
+  assertHistorySegmentCapacity(data);
   if (pending && !allowPending) fail('HISTORY_RECOVERY_REQUIRED');
   const companies = Object.entries(history?.companies ?? {});
   // Check the complete SDK commitment set, including a head absent from the
@@ -208,7 +213,7 @@ export function verifyHistoryStorage(stores, config, { allowPending = false, inc
     result.segments++; result.bytes += bytes.length;
     if (!Number.isSafeInteger(result.segments) || !Number.isSafeInteger(result.bytes)) fail('HISTORY_COUNTER_CAPACITY');
     if (includeFiles) {
-      if (result.files.length >= 10_000) fail('HISTORY_BACKUP_FILE_LIMIT');
+      if (result.files.length >= HISTORY_SEGMENT_LIMIT) fail('HISTORY_BACKUP_FILE_LIMIT');
       result.files.push({ path: join(directory, filename), sha256: head.hash, bytes: bytes.length });
     }
     return payload;
@@ -316,6 +321,7 @@ export function applyBusinessHistory(stores, config, { tenantId, limit = 100, di
   if (!pending) {
     const selected = selectedRequests(data, tenantId, limit, Date.now());
     stores.backend.transaction(state => {
+      assertHistorySegmentCapacity(state.ticketService, 1);
       if (state.schema === 1) state.schema = 2;
       const history = historyState(state.ticketService, true), company = companyHistory(state.ticketService, tenantId, true);
       if (history.pending) fail('HISTORY_RECOVERY_REQUIRED');

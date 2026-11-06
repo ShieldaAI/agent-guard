@@ -21,6 +21,8 @@ const messages = {
   ARCHIVE_PREVIEW_STALE: 'The archive preview expired or state changed. Preview again.',
   RECORD_CAPACITY_REACHED: 'The durable record limit was reached. Ask the deployment owner to follow the capacity runbook.',
   LIMITS_BELOW_USAGE: 'The configured storage capacity cannot accept this change. Ask the deployment owner to review capacity offline; retained records will not be deleted.',
+  HISTORY_SEGMENT_CAPACITY: 'History recovery capacity is exhausted. Stop new compaction and ask the deployment owner for a reviewed migration plan. Preserve all records, history, witnesses and keys.',
+  HISTORY_MIGRATION_REQUIRED: 'History exceeds this recovery profile. Stop maintenance changes and ask the deployment owner for a reviewed compatible recovery or migration plan. Preserve all records, history, witnesses and keys.',
   RATE_LIMITED: 'Too many requests. Wait a minute and try again.', INVALID_INPUT: 'Check the requested values.',
 };
 function enroll(values) {
@@ -253,7 +255,7 @@ export async function startOpsServer(options) {
           data: { kind: 'local-tickets', tickets: Object.values(data.tickets).filter(t => t.tenantId === tenant).length,
             requests: Object.values(data.requests).filter(r => r.tenantId === tenant).length,
             receipts: Object.values(data.receipts).filter(r => r.tenantId === tenant).length },
-          limits: maintenance.limits, usage: maintenance.usage, recovery,
+          limits: maintenance.limits, usage: maintenance.usage, historyCapacity: maintenance.historyCapacity, recovery,
           ...(options.keyringPolicy ? { keyring: options.keyringPolicy() } : {}),
           checks: [{ id: 'identity', label: 'Company sign-in', status: 'passed', message: 'OIDC discovery and this signed-in identity were verified.' },
             { id: 'storage', label: 'Private durable storage', status: 'passed', message: 'Both encrypted stores and their independent witnesses are readable.' },
@@ -285,7 +287,7 @@ export async function startOpsServer(options) {
       if (url.pathname === '/api/maintenance/archive/apply') { authorized(session, 'operator'); return send(response, 200, workflow.archive(session.operator, input)); }
       fail('NOT_FOUND', 404);
     } catch (error) {
-      const capacityError = error?.code === 'LIMITS_BELOW_USAGE';
+      const capacityError = ['LIMITS_BELOW_USAGE', 'HISTORY_SEGMENT_CAPACITY', 'HISTORY_MIGRATION_REQUIRED'].includes(error?.code);
       const code = error instanceof OpsError || capacityError ? error.code : 'SERVICE_UNAVAILABLE';
       if (isAuthFlow) securityEvent('SIGN_IN_FAILED', requestSession,
         ['AUTH_FAILED', 'FORBIDDEN', 'CSRF_INVALID', 'UNAUTHENTICATED', 'RATE_LIMITED'].includes(code) ? code : 'SIGN_IN_UNAVAILABLE');

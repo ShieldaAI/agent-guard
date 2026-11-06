@@ -17,12 +17,16 @@
   checks and a Linux production-profile CI job.
 - Add reviewed company-history compaction with permanent retirement fences,
   independent encrypted history mirrors and exact receipt lookup.
+- Stop history growth before it exceeds the backup/recovery closure limit,
+  reserve capacity for interrupted compaction and expose operator capacity alerts.
 - Add managed offline key escrow, authenticated complete backups, active-key
   retirement and schema-3 current-state repair without witness rollback.
 - Add authenticated operational status, bounded metrics, minimized activity
   exports and explicit distinction between readable storage and enrolled recovery.
 - Enforce startup TLS/custody checks, remove unused runtime package managers,
   and add dependency inventory, production-image comparison and three-browser CI.
+- Patch the Python Cartography OAuthLib dependency and add locked cross-platform
+  advisory checks; retain explicit, secret-free benchmark failure diagnostics.
 - Plan the agent/permissions inventory as an extension of Agent Map and Cartography.
 
 ## 0.1.0-alpha.3 — 2026-11-05

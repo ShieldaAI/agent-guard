@@ -1,6 +1,6 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { normalizeLimits, assertCapacity, LIMIT_BOUNDS } from './limits.mjs';
-import { allocateRequestIdentity, assertHistoryIdle, historyState } from './history-state.mjs';
+import { allocateRequestIdentity, assertHistoryIdle, historyState, historySegmentUsage } from './history-state.mjs';
 
 export class OpsError extends Error {
   constructor(code, status = 400) { super(code); this.code = code; this.status = status; }
@@ -260,17 +260,18 @@ export class TicketWorkflow {
   }
   maintenance(operator) {
     const data = this.data(), usage = { ...assertCapacity(data, this.limits), backendBytes: Buffer.byteLength(JSON.stringify(this.store.read())) };
+    const historyCapacity = historySegmentUsage(data);
     const requests = Object.values(data.requests).filter(r => r.tenantId === operator.tenantId);
     return { archiveCandidates: requests.filter(r => !r.archived && !r.noTask && !this.busy.has(r.id) && (terminal.has(r.state) || r.state === 'pending' && r.expiresAt <= this.clock())).slice(0, 500).map(r => ({ taskId: r.taskId, label: `${r.ticketId} · ${this.public(r).state}` })),
       archiveCandidatesTruncated: requests.filter(r => !r.archived && !r.noTask && terminal.has(this.public(r).state)).length > 500,
       unresolvedCount: requests.filter(r => r.state === 'unconfirmed' || r.state === 'dispatching').length,
-      records: requests.length, recordLimit: this.limits.maxRequests, limits: this.limits, usage,
+      records: requests.length, recordLimit: this.limits.maxRequests, limits: this.limits, usage, historyCapacity,
       history: { archivedRequests: historyState(data)?.companies?.[operator.tenantId]?.archivedRequests ?? '0',
         segments: historyState(data)?.companies?.[operator.tenantId]?.head?.index ?? 0,
         lastCommittedAt: historyState(data)?.companies?.[operator.tenantId]?.lastCommittedAt ?? null,
         commitment: historyState(data)?.companies?.[operator.tenantId]?.head?.hash ?? null,
         pending: !!historyState(data)?.pending, mode: 'reviewed-offline' },
-      capacityWarning: usage.requests >= this.limits.maxRequests * .8 || usage.tickets >= this.limits.maxTickets * .8 || usage.backendBytes >= this.limits.maxBackendBytes * .8,
+      capacityWarning: usage.requests >= this.limits.maxRequests * .8 || usage.tickets >= this.limits.maxTickets * .8 || usage.backendBytes >= this.limits.maxBackendBytes * .8 || historyCapacity.total >= historyCapacity.limit * .8,
       statistics: this.executor.maintenanceStatistics({ tenantId: operator.tenantId }),
       keyRotation: { state: 'offline', message: 'Stop the service; use reviewed offline custody rotation for the enrolled store group, verify every store, then restart. Keys never enter this browser.' } };
   }

@@ -195,12 +195,30 @@ rescan old media. Protect the read-only runtime history mount, monitor storage a
 schedule verification/custody checks. Budget maintenance windows and startup health
 grace periods using measurements on the deployment's retained history and storage.
 
-The custody adapter derives the closure from authenticated store heads. Its collected
-manifest is capped at 10,000 segment references and refuses larger collections with
-`HISTORY_BACKUP_FILE_LIMIT`; it never returns a truncated backup. Before approaching
-that operational limit, deploy a reviewed streaming/partitioned custody adapter.
-Do not discard segments to fit the bound. Independent custody verification is still
-required for actual off-host backup and restore acceptance.
+The supported backup and exact-current repair manifest holds at most **10,000
+segments across the whole deployment**, not per company. Usage is the sum of
+authenticated company head indexes plus one reserved slot for a durable pending
+compaction intent. New compaction refuses with `HISTORY_SEGMENT_CAPACITY` before
+committing intent, archiving tasks, publishing files or advancing either head when
+that additional segment would exceed the ceiling. The transaction rechecks the
+reservation. The ceiling protects recovery and is not a configurable business limit.
+
+A pending operation that reserved the final slot can still resume. Even after the
+SDK head advances, the business head remains at the previous segment until its
+head update and pending-intent removal commit together; the slot is counted once.
+Operator capacity status includes committed and reserved deployment-wide usage,
+with warnings at 80% and critical alerts at 95%.
+
+An existing history or pending intent from an older writer above this ceiling
+requires a separately reviewed migration. Normal startup and compaction refuse
+with `HISTORY_MIGRATION_REQUIRED` before executor recovery or authority changes;
+the stores, witnesses and retained evidence are preserved. Before reaching the
+ceiling, plan a reviewed compatible streaming/partitioned custody and repair
+implementation or migration. Do not delete segments, reset counters or alter
+witnesses to fit the bound. The custody adapter also retains its defensive
+`HISTORY_BACKUP_FILE_LIMIT` check and never returns a truncated closure. Independent
+custody verification is still required for actual off-host backup and restore
+acceptance.
 
 `apps/agent-ops/test/retention.test.mjs` checks recurring capacity reuse, legacy
 budget/tombstone preservation, unresolved gaps, all commit-phase recovery points,

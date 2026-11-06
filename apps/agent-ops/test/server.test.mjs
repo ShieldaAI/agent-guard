@@ -90,6 +90,7 @@ test('setup is operator-only, exposes only safe configuration and pages company 
   assert.equal((await requester.get('/api/setup')).status, 403);
   const settings = (await operator.get('/api/setup')).json();
   assert.equal(settings.deployment, 'self-hosted'); assert.equal(settings.data.tickets, 505);
+  assert.deepEqual(settings.historyCapacity, { committed: 0, reserved: 0, total: 0, limit: 10_000 });
   assert.equal(settings.recovery.mode, 'current-state-mirror');
   for (const key of ['executorMirror', 'backendMirror', 'historyMirror']) assert.equal(settings.recovery[key], true);
   assert.ok(Number.isSafeInteger(settings.recovery.verifiedAt));

@@ -129,6 +129,8 @@ const errors = {
   ARCHIVE_UNAVAILABLE: 'This task is currently unavailable for archival. Refresh maintenance to check its state.',
   RECORD_CAPACITY_REACHED: 'The durable record limit was reached. Contact the deployment owner to follow the capacity runbook.',
   LIMITS_BELOW_USAGE: 'A configured storage limit was reached. Refresh to check the request outcome. The deployment owner must review and adjust limits offline.',
+  HISTORY_SEGMENT_CAPACITY: 'History recovery capacity is exhausted. Stop new compaction and ask the deployment owner for a reviewed migration plan. Preserve all records, history, witnesses and keys.',
+  HISTORY_MIGRATION_REQUIRED: 'History exceeds this recovery profile. Stop maintenance changes and ask the deployment owner for a reviewed compatible recovery or migration plan. Preserve all records, history, witnesses and keys.',
   RATE_LIMITED: 'Too many requests. Wait briefly, then refresh current state.',
 };
 
@@ -688,10 +690,10 @@ function maintenanceView() {
     operationalPanel(),
     node('section', { class: 'panel setup-wide' }, node('div', { class: 'panel-head' }, node('h2', {}, 'Deployment capacity')),
       node('div', { class: 'panel-body' },
-        maintenance.capacityWarning === true && notice('The deployment is nearing a configured capacity limit. Review usage with the deployment owner before accepting more work.', 'warning'),
-        capacityTable(maintenance.usage, maintenance.limits, maintenance.keyring ?? state.setup?.keyring),
+        maintenance.capacityWarning === true && notice('The deployment is nearing a capacity limit. Review usage with the deployment owner before accepting more work.', 'warning'),
+        capacityTable(maintenance.usage, maintenance.limits, maintenance.keyring ?? state.setup?.keyring, maintenance.historyCapacity),
         node('p', { class: 'subtle' }, 'Usage is a snapshot from the last refresh. Backend bytes measure the decoded ledger, not database disk usage. Archival preserves business requests and receipts.'),
-        node('p', { class: 'review-note' }, 'Limits are read-only here. Raising a limit requires reviewed offline host configuration or keyring CLI changes and a service restart. Preserve existing evidence and verify the new configuration.'))),
+        node('p', { class: 'review-note' }, 'Configurable record, byte and key limits require reviewed offline host changes and restart. The history segment limit belongs to the fixed recovery profile and has no configuration override. Preserve existing evidence.'))),
     maintenance.history && node('section', { class: 'panel setup-wide' }, node('div', { class: 'panel-head' }, node('h2', {}, 'Business history retention')),
       node('div', { class: 'panel-body' },
         node('dl', { class: 'fields' }, field('Archived requests in this tenant', text(maintenance.history.archivedRequests, 'Not reported')),
@@ -728,7 +730,19 @@ function maintenanceView() {
         node('p', { class: 'subtle' }, 'Secret keys stay in the host secret store. This workspace displays maintenance guidance.'))));
 }
 
-function capacityTable(usage = {}, limits = {}, keyring) {
+function historyCapacityNote(capacity) {
+  if (!capacity || !['committed', 'reserved', 'total', 'limit'].every(key => Number.isSafeInteger(capacity[key]) && capacity[key] >= 0) ||
+      capacity.limit === 0 || capacity.committed + capacity.reserved !== capacity.total)
+    return notice('History recovery capacity is not reported. Ask the deployment owner to verify usage before further compaction.', 'warning');
+  const ratio = capacity.total / capacity.limit;
+  return node('div', {},
+    node('p', { class: 'review-note' }, `Deployment-wide history: ${quantity(capacity.committed)} committed + ${quantity(capacity.reserved)} reserved = ${quantity(capacity.total)} segments. Pending compaction reserves its slot before creating history.`),
+    node('p', { class: 'subtle' }, 'This fixed recovery limit includes every tenant. The configure-limits command cannot raise it.'),
+    ratio >= .95 ? notice(`History recovery capacity is ${ratio >= 1 ? 'exhausted' : 'nearly exhausted'}. Pause new compaction. The deployment owner must arrange a separately reviewed compatible recovery adapter or migration before more history can be retained. Preserve all records, history, witnesses and keys.`, 'error')
+      : ratio >= .8 ? notice('History has reached 80% of the fixed recovery limit. Arrange a capacity review with the deployment owner before it fills.', 'warning') : null);
+}
+
+function capacityTable(usage = {}, limits = {}, keyring, historyCapacity) {
   const rows = [
     ['Tickets', quantity(usage.tickets), quantity(limits.maxTickets)],
     ['Requests', quantity(usage.requests), quantity(limits.maxRequests)],
@@ -736,10 +750,12 @@ function capacityTable(usage = {}, limits = {}, keyring) {
     ['Backend data', quantity(usage.backendBytes, true), quantity(limits.maxBackendBytes, true)],
     ['Executor ledger', quantity(usage.ledgerBytes ?? state.maintenance?.statistics?.ledgerBytes, true), quantity(limits.maxLedgerBytes, true)],
     ['Retained keys', quantity(keyring?.keyCount), quantity(keyring?.maxKeys ?? limits.maxRetainedKeys)],
+    ['History segments (committed + reserved)', quantity(historyCapacity?.total), `${quantity(historyCapacity?.limit)} · fixed`],
   ];
-  return node('table', { class: 'capacity-table' }, node('caption', {}, 'Deployment-wide usage and configured limits'),
+  return node('div', {}, node('table', { class: 'capacity-table' }, node('caption', {}, 'Deployment-wide usage and capacity limits'),
     node('thead', {}, node('tr', {}, ['Resource', 'Current', 'Limit'].map(label => node('th', { scope: 'col' }, label)))),
-    node('tbody', {}, rows.map(([label, current, limit]) => node('tr', {}, node('th', { scope: 'row' }, label), node('td', {}, current), node('td', {}, limit)))));
+    node('tbody', {}, rows.map(([label, current, limit]) => node('tr', {}, node('th', { scope: 'row' }, label), node('td', {}, current), node('td', {}, limit))))),
+    historyCapacityNote(historyCapacity));
 }
 
 function setupView() {
@@ -782,8 +798,8 @@ function setupView() {
           ['Company environment', 'Trusted HTTPS and actual company IdP enrollment, host sizing and the supported deployment profile.'],
         ].map(([label, message]) => node('li', {}, node('div', { class: 'check-title' }, node('strong', {}, label), badge('Not verified here')), node('p', {}, message)))),
         node('p', { class: 'review-note' }, 'Keep the resulting receipts and acknowledgements in the installation acceptance record. Runtime green checks do not substitute for these records.'))),
-    node('section', { class: 'panel setup-wide' }, node('div', { class: 'panel-head' }, node('h2', {}, 'Configured capacity')),
-      node('div', { class: 'panel-body' }, capacityTable(setup.usage, setup.limits, setup.keyring),
+    node('section', { class: 'panel setup-wide' }, node('div', { class: 'panel-head' }, node('h2', {}, 'Capacity limits')),
+      node('div', { class: 'panel-body' }, capacityTable(setup.usage, setup.limits, setup.keyring, setup.historyCapacity),
         node('p', { class: 'subtle' }, 'Usage is a snapshot from the last refresh. Limits remain finite and changes must stay within supported ceilings. These host configuration values are read-only; changes require the offline host workflow and restart.'))),
     node('section', { class: 'panel setup-wide' }, node('div', { class: 'panel-head' }, node('div', {}, node('h2', {}, 'Host onboarding steps'),
       node('p', {}, 'Run these commands on the deployment host using the private configuration.'))),

@@ -55,6 +55,7 @@ try {
   const keyRow = page.getByRole('row', { name: 'Retained keys 1 4', exact: true });
   await keyRow.waitFor();
   assert.equal((await page.getByRole('row', { name: /^Executor ledger / }).innerText()).includes('Not reported'), false);
+  await page.getByRole('row', { name: 'History segments (committed + reserved) 0 10,000 · fixed', exact: true }).waitFor();
   await page.getByRole('heading', { name: 'Company acceptance checks', exact: true }).waitFor();
   await page.getByText('Current-state recovery enrolled', { exact: true }).waitFor();
   await page.getByText('Enrollment checked at service startup', { exact: true }).waitFor();

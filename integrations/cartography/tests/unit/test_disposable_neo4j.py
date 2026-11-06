@@ -1,6 +1,7 @@
 """Exercise readiness deadlines against local sockets without starting Docker."""
 
 import importlib.util
+import json
 import socket
 import threading
 import time
@@ -75,3 +76,69 @@ def test_readiness_retries_connectivity_then_requires_a_successful_database_quer
     session.run.assert_called_once_with("RETURN 1 AS ready")
     session.run.return_value.consume.assert_called_once_with()
     driver.__exit__.assert_called_once()
+
+
+def test_readiness_timeout_preserves_safe_cause_without_connection_details(monkeypatch):
+    driver = MagicMock()
+    driver.__enter__.return_value = driver
+    driver.verify_connectivity.side_effect = ServiceUnavailable("private-password@private-host")
+    monkeypatch.setattr(runner.GraphDatabase, "driver", lambda *_args, **_kwargs: driver)
+    clock = iter([0, 0, 121, 121])
+    monkeypatch.setattr(runner.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(runner.time, "sleep", lambda _duration: None)
+    with pytest.raises(runner.ReadinessTimeout) as failed:
+        runner.wait_ready("bolt://private-host", "private-password", None)
+    assert failed.value.diagnostics == {
+        "code": "PILOT_NEO4J_READINESS_TIMEOUT",
+        "attempts": 1,
+        "elapsedSeconds": 121,
+        "lastFailure": "service-unavailable",
+    }
+    assert "private-" not in str(failed.value)
+    assert "private-" not in json.dumps(failed.value.diagnostics)
+    driver.__exit__.assert_called_once()
+
+
+def test_failure_container_diagnostics_require_owner_and_allowlist_fields(monkeypatch):
+    info = {
+        "Config": {"Labels": {runner.LABEL: "our-run"}, "Env": ["SECRET=private-canary"]},
+        "State": {
+            "Running": False,
+            "OOMKilled": True,
+            "ExitCode": 137,
+            "Error": "private-canary",
+            "Status": "private-canary",
+        },
+    }
+    monkeypatch.setattr(runner, "docker", lambda *_args, **_kwargs: json.dumps([info]))
+    assert runner.owned_container_state("owned-container", "our-run") == {
+        "available": True,
+        "running": False,
+        "oomKilled": True,
+        "exitCode": 137,
+    }
+    assert runner.owned_container_state("owned-container", "other-run") == {
+        "available": False,
+        "reason": "owner-mismatch",
+    }
+
+
+@pytest.mark.parametrize(
+    "inspected",
+    [
+        None,
+        "private-canary",
+        [],
+        [None],
+        [{"Config": None}],
+        [{"Config": {"Labels": None}}],
+        [{"Config": {"Labels": "private-canary"}}],
+        [{"Config": {"Labels": {runner.LABEL: "our-run"}}, "State": None}],
+    ],
+)
+def test_malformed_failure_diagnostics_cannot_prevent_cleanup(monkeypatch, inspected):
+    monkeypatch.setattr(runner, "docker", lambda *_args, **_kwargs: json.dumps(inspected))
+    assert runner.owned_container_state("owned-container", "our-run") == {
+        "available": False,
+        "reason": "invalid-state",
+    }

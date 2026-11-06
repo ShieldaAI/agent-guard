@@ -37,6 +37,7 @@ let archiveBlocked = true;
 let dropApprovalResponse = true;
 let operatorRoles = ['requester', 'reviewer', 'operator'];
 let recoveryMode = 'current-state-mirror';
+let historyCapacity = { committed: 7998, reserved: 1, total: 7999, limit: 10_000 };
 const limits = { maxTickets: 1000, maxRequests: 8000, maxBackendBytes: 32 * 1_048_576, maxLedgerBytes: 32 * 1_048_576, maxRetainedKeys: 8 };
 const counts = { preparations: 0, approvals: 0, denials: 0, reconciliations: 0, backendWrites: 0, archives: 0 };
 const tickets = [
@@ -142,6 +143,7 @@ try {
       await reply({ archiveCandidates: [{ taskId: 'settled-task', label: 'Completed reporting task' }], archiveCandidatesTruncated: true,
         limits, records: requests.length, recordLimit: limits.maxRequests, usage: { tickets: 820, requests: 42, receipts: 20, backendBytes: 1_048_576 }, capacityWarning: true,
         statistics: { ledgerBytes: 524_288, ledgerByteLimit: limits.maxLedgerBytes },
+        historyCapacity,
         history: { archivedRequests: '123', segments: 2, lastCommittedAt: now - 60_000, commitment: 'e'.repeat(64), pending: false, mode: 'reviewed-offline' },
         keyRotation: { state: 'offline_required', keyId: 'ledger-key-generation-2', message: 'Stop the executor and use the host rotation CLI. Verify the new key before removing recovery material.' } }); return;
     }
@@ -164,7 +166,7 @@ try {
       await reply({ deployment: 'self-hosted', identity: { issuer: metadata.publicAuthIssuer, callbackUrl: 'https://ops.fixture.example/auth/callback' },
         recovery: recoveryMode === 'unverified' ? { mode: 'unverified', verifiedAt: null }
           : { mode: recoveryMode, executorMirror: recoveryMode === 'current-state-mirror', backendMirror: recoveryMode === 'current-state-mirror', historyMirror: recoveryMode === 'current-state-mirror', verifiedAt: now },
-        data: { kind: 'local-tickets', tickets: tickets.length, requests: requests.length, receipts: 20 }, limits, usage: { tickets: 820, requests: 42, receipts: 20, backendBytes: 1_048_576 }, keyring: { keyCount: 5, maxKeys: 8 },
+        data: { kind: 'local-tickets', tickets: tickets.length, requests: requests.length, receipts: 20 }, limits, historyCapacity, usage: { tickets: 820, requests: 42, receipts: 20, backendBytes: 1_048_576 }, keyring: { keyCount: 5, maxKeys: 8 },
         checks: [{ id: 'owner', label: 'Storage ownership', status: 'ok', message: 'Encrypted stores are owned by this deployment.' },
           { id: 'preflight', label: 'Host preflight', status: 'warning', message: 'Repeat preflight after changing host configuration.' }],
         commands: [{ label: 'Check host configuration', command: 'node apps/agent-ops/cli.mjs preflight --config PATH' },
@@ -262,6 +264,17 @@ try {
   await page.getByText('Local history head fingerprint', { exact: true }).waitFor();
   await page.getByText('e'.repeat(64), { exact: true }).waitFor();
   assert.equal(await page.getByText('No history committed yet', { exact: true }).count(), 0);
+  for (const [total, stateName] of [[8000, 'warning'], [9500, 'critical'], [10_000, 'full']]) {
+    historyCapacity = { committed: total - 1, reserved: 1, total, limit: 10_000 };
+    await button('Refresh').click();
+    await page.getByRole('row', { name: `History segments (committed + reserved) ${total.toLocaleString('en-US')} 10,000 · fixed`, exact: true }).waitFor();
+    await page.getByText(`Deployment-wide history: ${(total - 1).toLocaleString('en-US')} committed + 1 reserved = ${total.toLocaleString('en-US')} segments. Pending compaction reserves its slot before creating history.`, { exact: true }).waitFor();
+    await page.getByText(total < 9500 ? /History has reached 80%/ : total < 10_000 ? /History recovery capacity is nearly exhausted/ : /History recovery capacity is exhausted/).waitFor();
+    await page.getByText('This fixed recovery limit includes every tenant. The configure-limits command cannot raise it.', { exact: true }).waitFor();
+    await scan(`history-capacity-${stateName}`);
+  }
+  historyCapacity = { committed: 7998, reserved: 1, total: 7999, limit: 10_000 };
+  await button('Refresh').click();
   await page.locator('#nav-setup').click();
   await heading('Your company workspace').waitFor();
   await page.getByText('https://ops.fixture.example/auth/callback', { exact: true }).waitFor();

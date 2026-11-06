@@ -172,7 +172,8 @@ jobs:
           retention-days: 7
   browser:
     name: browser (${{ matrix.browser }})
-    runs-on: ubuntu-latest
+    # Keep the browser host stable across ubuntu-latest image transitions.
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     strategy:
       fail-fast: false

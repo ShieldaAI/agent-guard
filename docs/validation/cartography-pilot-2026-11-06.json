@@ -1,0 +1,235 @@
+{
+  "schemaVersion": 1,
+  "kind": "cartography-pilot-failure-diagnosis",
+  "reviewedAt": "2026-11-06",
+  "sourceRevision": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+  "workflowRun": 42138768296,
+  "checkoutMergeRevision": "a9f91398498337a7f0bead0672cda0e6cc724510",
+  "scope": "Original synthetic hosted failures, preserved before diagnostic-only changes. Both original attempts are retained; this review performed no new benchmark retry. No customer deployment, physical storage or production latency claim.",
+  "attempts": [
+    {
+      "attempt": 1,
+      "jobId": 127633480475,
+      "jobUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768296/job/127633480475",
+      "artifactId": 13467680634,
+      "artifactZipSha256": "b06dc2026eebcce8aa525e598e1b7c9b8e1be4b27712b79c925fde38b44d6796",
+      "result": "failed",
+      "failure": "Declared 250ms observer stress cadence missed; all executed effects and charged calls matched.",
+      "publicationAndHttp": {
+        "passed": true,
+        "gates": {
+          "passed": true,
+          "checks": {
+            "published_source_count": true,
+            "task_count": true,
+            "grant_count": true,
+            "publication_deadline": true,
+            "query_success": true,
+            "query_p95": true
+          },
+          "query_p95_seconds": {
+            "get_agent_access": 0.10635435700000016,
+            "explain_access": 0.11195881800000007
+          },
+          "publication_max_seconds": 8.027867899,
+          "targets": {
+            "publication_per_source_seconds": 120.0,
+            "query_p95_seconds": 2.0
+          },
+          "expected": {
+            "sources": 2,
+            "tasks": 40,
+            "grants": 400
+          }
+        }
+      },
+      "admission": {
+        "originalGate": {
+          "passed": false,
+          "correctnessPassed": false,
+          "performanceEnforced": false,
+          "performancePassed": false,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": null,
+          "pollingP95Ms": null,
+          "ratio": null,
+          "regressionPercent": null
+        },
+        "workload": {
+          "samples": 100,
+          "warmup": 50,
+          "tasks": 100,
+          "grants": 10,
+          "pollIntervalMs": 250
+        },
+        "phases": [
+          {
+            "mode": "baseline",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 8749.505696,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            }
+          },
+          {
+            "mode": "polling",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 9100.854903,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "polling": {
+              "scheduled": 49,
+              "started": 48,
+              "completed": 48,
+              "failed": 0,
+              "skippedBusy": 1,
+              "completedDuringMeasurement": 35,
+              "durationsOverCadenceMs": [
+                258.988385
+              ]
+            }
+          },
+          {
+            "mode": "polling",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 12049.413343,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "polling": {
+              "scheduled": 60,
+              "started": 57,
+              "completed": 57,
+              "failed": 0,
+              "skippedBusy": 3,
+              "completedDuringMeasurement": 45,
+              "durationsOverCadenceMs": [
+                318.900145,
+                425.707866,
+                274.21043
+              ]
+            }
+          },
+          {
+            "mode": "baseline",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 11643.904028,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            }
+          }
+        ],
+        "diagnosticRecalculation": {
+          "baselineP95Ms": 118.974674,
+          "pollingP95Ms": 155.593738,
+          "ratio": 1.3077887315749233,
+          "qualification": "Nearest-rank p95 from all retained measured samples; cadence invalid, so these metrics do not certify the performance profile. Original report intentionally retained null gate metrics."
+        }
+      }
+    },
+    {
+      "attempt": 2,
+      "jobId": 127636161223,
+      "jobUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768296/job/127636161223",
+      "artifactId": 13468310494,
+      "artifactZipSha256": "7e5e97ea0ddd2ab825c235bee9992b138734bc49eef06975ff50a4fb0b7a07be",
+      "result": "failed",
+      "reportedError": "PILOT_FAILED_RUNTIMEERROR",
+      "elapsedSeconds": 120.394234,
+      "publicationOrHttpMeasurementsPresent": false,
+      "disposableCleanup": true,
+      "inference": "Failure before publication metrics at approximately the 120-second Neo4j readiness deadline. Underlying startup/authentication/container failure cannot be determined: the old report discarded the exception details and the disposable container was removed.",
+      "notEstablished": [
+        "Neo4j OOM or stopped state",
+        "Specific network or registry fault",
+        "Product query latency regression",
+        "Successful admission rerun"
+      ]
+    }
+  ],
+  "rawFiles": [
+    {
+      "name": "attempt-1-agent-guard-pilot-admission.json",
+      "sha256": "6a00a3ebf0ad3b129710a5a7250ebbb2e7c29e7044f7c48c4f2351dd2a6c95d2"
+    },
+    {
+      "name": "attempt-1-agent-guard-pilot-benchmark.json",
+      "sha256": "b827da9205ca29702e5c98a997effa41a5b5be011c9268338cd755d9dace451c"
+    },
+    {
+      "name": "attempt-1-agent-guard-pilot-verification.json",
+      "sha256": "d3fe43aad14d41e64a6053715a8ab2fd77801b8dfccffae903ec1bb2750a6fff"
+    },
+    {
+      "name": "attempt-1-artifact.zip",
+      "sha256": "b06dc2026eebcce8aa525e598e1b7c9b8e1be4b27712b79c925fde38b44d6796"
+    },
+    {
+      "name": "attempt-1-job-127633480475.log",
+      "sha256": "18e350e749311032f744904c1342e2ad8993d07843ebecc8ff1d07b669e12417"
+    },
+    {
+      "name": "attempt-2-agent-guard-pilot-benchmark.json",
+      "sha256": "ee2b963a53fdd53a7c640f268812a3fbb8f22bc198f1e626e69ce6de782876c7"
+    },
+    {
+      "name": "attempt-2-agent-guard-pilot-verification.json",
+      "sha256": "187e0c087d6b9b48563a0bd081f0c92da43680ad3e8599b73bba040a7ae398c6"
+    },
+    {
+      "name": "attempt-2-artifact.zip",
+      "sha256": "7e5e97ea0ddd2ab825c235bee9992b138734bc49eef06975ff50a4fb0b7a07be"
+    },
+    {
+      "name": "attempt-2-job-127636161223.log",
+      "sha256": "3bb9ce264dd46e98c9eb37a3980d00fbd8d88e3623e2ea026ef60f93a4fa73d0"
+    }
+  ],
+  "sourceComparison": {
+    "previousRevision": "e59edb1",
+    "changedPaths": [
+      "docs/validation/codeql-triage-2026-11-06.md",
+      "packages/executor/src/ledger-recovery.ts",
+      "packages/executor/test/ledger-recovery.test.mjs",
+      "scripts/trusted-npm.mjs",
+      "scripts/trusted-npm.test.mjs"
+    ],
+    "finding": "No admission benchmark, observer, executor/store or Neo4j benchmark/readiness code changed between these commits. Earlier success does not invalidate these failed observations."
+  },
+  "diagnosticChangeContract": [
+    "Preserve all pass/fail cadence, effect, timing, coverage and cleanup gates.",
+    "Report benchmark stage, safe readiness class/attempts/elapsed time and allowlisted owned-container state without logs, environment, credentials, addresses or raw driver messages.",
+    "Expose explicit admission failure reasons and diagnostic latency validity while keeping stress-profile failure."
+  ],
+  "limitations": [
+    "The original artifacts remain the source of truth; recalculations are labeled.",
+    "This diagnosis does not replace failed runs with a success or waive any existing gate.",
+    "The four-per-second stress cadence differs from the deployed five-minute polling default.",
+    "Physical host contention was not measured and is not asserted as root cause."
+  ]
+}

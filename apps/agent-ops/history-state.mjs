@@ -3,6 +3,9 @@ import { randomUUID } from 'node:crypto';
 const own = (value, key) => Object.hasOwn(value, key) ? value[key] : undefined;
 const plain = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const integer = value => Number.isSafeInteger(value) && value >= 0;
+// Shared by compaction, backup and exact-current repair. Never admit history
+// that the supported recovery manifest cannot enumerate completely.
+export const HISTORY_SEGMENT_LIMIT = 10_000;
 export const historyFailure = code => { throw Object.assign(new Error(code), { code, status: 409 }); };
 export const namespaceValid = value => typeof value === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(value);
 export function validHistoryHead(head) {
@@ -33,6 +36,25 @@ export function historyState(data, create = false) {
     namespaces.add(company.namespace);
   }
   return value;
+}
+/** Deployment-wide authenticated heads plus one slot for the durable intent. */
+export function historySegmentUsage(data) {
+  const history = historyState(data);
+  let committed = 0;
+  for (const company of Object.values(history?.companies ?? {})) {
+    committed += company.head?.index ?? 0;
+    if (!Number.isSafeInteger(committed)) historyFailure('HISTORY_COUNTER_CAPACITY');
+  }
+  const reserved = history?.pending ? 1 : 0, total = committed + reserved;
+  if (!Number.isSafeInteger(total)) historyFailure('HISTORY_COUNTER_CAPACITY');
+  return { committed, reserved, total, limit: HISTORY_SEGMENT_LIMIT };
+}
+export function assertHistorySegmentCapacity(data, additional = 0) {
+  if (!integer(additional)) historyFailure('HISTORY_SCOPE_INVALID');
+  const usage = historySegmentUsage(data);
+  if (usage.total > usage.limit) historyFailure('HISTORY_MIGRATION_REQUIRED');
+  if (additional > usage.limit - usage.total) historyFailure('HISTORY_SEGMENT_CAPACITY');
+  return usage;
 }
 export function companyHistory(data, tenantId, create = false) {
   const state = historyState(data, create);

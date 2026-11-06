@@ -1,8 +1,15 @@
 # Production readiness acceptance
 
-Status: **implementation and verification in progress**. No production score is
-assigned to this candidate yet. Earlier construction scores and alpha release
-checks do not establish acceptance of the changed source tree.
+Status: **P0 implementation complete; final production acceptance pending**.
+The configurable self-hosted profile, durable approvals, archival, key custody
+and exact-current recovery are implemented. Final acceptance still needs the
+remaining hosted browser/Python gates and a resolved Cartography pilot result,
+as well as the upstream Node HIGH security prealert review described below.
+The final history-capacity guard is covered by focused tests; its full follow-up
+suite and image verification are still being collected. The evidence record
+retains pending and failed checks explicitly. No final
+production score or new production release is asserted. Earlier construction
+scores and alpha release checks do not establish acceptance of this candidate.
 
 The target is at least **9.5/10 independently in every R1–R10 category**, with no
 open critical or high security defect, broken supported workflow, misleading
@@ -61,25 +68,146 @@ logging concerns in [OWASP ASVS 5.0.0](https://github.com/OWASP/ASVS/tree/v5.0.0
 as additional review prompts. It is not an ASVS certification or a substitute
 for a deployment-specific assessment.
 
-## Candidate work and open verification
+## Implemented P0 behavior
 
-- Implement safe reusable history capacity with authenticated exported evidence,
-  permanent retirement fences and recoverable offline transitions.
-- Implement managed cold backups and active-key retirement with retained escrow;
-  do not claim that a filesystem scan proves all off-host backups were found.
-- Close the primary-data-loss recovery gap: cold checkpoints become stale after
-  subsequent authority changes. Add an exact-current encrypted recovery mirror
-  in independent witness custody, including archive/catalog and immutable history
-  closure. Verify primary loss and interrupted repair without rewinding witnesses.
-- Complete operational status, minimized activity snapshots, security events,
-  metrics/alerts and clear operator guidance.
-- Verify mandatory startup TLS/custody and tenant-enrolled initialization.
-- Run the full current candidate suite, installed-package checks, three-browser
-  walkthroughs and persistent-volume Linux recovery. Review screenshots.
-- Retain current dependency audits and software inventory, then obtain hosted
-  checks for the exact source revision. A configured workflow is not a passing run.
-- Review all changes against this matrix, record remaining limitations and score
-  each category only after the authoritative checks finish.
+Companies supply their own OIDC issuer/client/subjects, TLS, private storage and
+ticket records. [Onboarding](../deployment/production/README.md#company-onboarding)
+creates a fresh private bundle atomically, reports the exact callback URL and
+creates no authority before explicit initialization. Empty company data is valid;
+fixtures and hosted accounts are not required. Preflight explains missing setup,
+and actual startup independently enforces TLS, file custody and tenant enrollment.
+
+[Capacity settings](../deployment/production/README.md#reviewed-capacity-changes-and-ticket-imports)
+have bounded integer ranges. Offline preview/apply binds an exact digest;
+persisted policy must match configuration, and a decrease cannot discard existing
+records or keys. Storage capacity never increases an agent's grants or budget.
+Add-only company imports bind exact bytes and tenant enrollment, retain existing
+ticket versions/receipts and provide paginated results.
+
+The durable reference workflow binds a signed-in reviewer's decision to the exact
+ticket/version/change/deadline. Restart, stale review, denial and replay cannot
+repeat the effect. Unknown outcomes remain explicit until trusted reconciliation.
+Task retirement preserves permanent identity fences. The supported ticket
+profile compacts completed history into authenticated immutable segments while
+retaining live and uncertain work.
+The global 10,000-segment closure ceiling is enforced before compaction intent
+or task archival, including one reserved slot for interrupted work. Existing
+over-cap history refuses startup without changing authority. Operators see
+committed/reserved capacity and 80%/95% warning thresholds.
+
+[Managed custody](../deployment/production/custody.md) supports complete registered
+store groups, authenticated cold backups, recoverable rotation and active-key
+retirement with historical escrow. New stores mirror exact-current encrypted
+state in independent witness custody, and history mirrors are durable before
+head advancement. Reviewed repair can recreate lost primary directories without
+rewinding witnesses, task identities or spent authority. Legacy stores need
+explicit enrollment. Setup distinguishes enrolled recovery from unverified legacy
+state; neither label claims that a backup or company recovery drill occurred.
+
+[Operations guidance](../deployment/production/monitoring.md) covers authenticated
+status/activity, bounded metrics and security events, capacity/TLS alerts, unknown
+receipts, and recovery actions. [Agent Map planning](production-plan.md#p1--extend-agent-map-and-cartography-inventory)
+extends the existing inventory with ownership, permissions and relationships.
+Observed inventory is never presented as an effective grant or confirmed effect.
+
+## Requirement-to-test traceability
+
+The paths below identify representative normal and failure coverage, not an
+exhaustive list or a substitute for the full suite. All paths are relative to the
+repository root. Tests use disposable synthetic identities, records and keys.
+
+| Category | Direct verification |
+| --- | --- |
+| R1 | `packages/core/test/security.test.mjs`, `packages/executor/test/executor.test.mjs`, `apps/agent-ops/test/workflow.test.mjs`: scoped registration, backend effects, substitution, denial and replay. |
+| R2 | `packages/agent-map/test/oidc.test.mjs`, `identity-http.test.mjs`, `packages/mcp/test/credentials.test.mjs`, Ops `server.test.mjs`: signed identity, tenant/role narrowing, credential lifecycle and restart invalidation. |
+| R3 | Ops `workflow.test.mjs`, `server.test.mjs`, `check-browser-service.mjs`: exact authenticated review, stale/changed/denied decisions, receipts and unknown-result reconciliation. |
+| R4 | Ops `onboarding-boundaries.test.mjs`, `tls-policy.test.mjs`; executor `network.test.mjs`, `workspace-input.test.mjs`; Map `asset-input.test.mjs`: canonical private paths, bounded parsing, TLS identity, origin restrictions and no secret forwarding. |
+| R5 | `scripts/check-packages.mjs`, `scripts/trusted-npm.test.mjs`, executor artifact/build-admission tests, `deployment/production/check-images.mjs`, dependency workflows and CodeQL's open-alert gate. Upstream Node applicability remains unassessed. |
+| R6 | `scripts/verify-platform.mjs`, `scripts/verify-mcp-isolation.mjs`, executor sandbox/approved-input tests: actual Linux isolation, exact capture, credential custody, termination and cleanup; the dedicated hosted gate refuses skipped runtime checks. |
+| R7 | Executor `memory.test.mjs`, `lifecycle.test.mjs`; Ops `retention.test.mjs`, `history-recovery.test.mjs`: provenance/revocation, descendant and unknown-work fences, immutable history integrity and interrupted transitions. |
+| R8 | Executor `capacity.test.mjs`, `recovery.test.mjs`, `ledger-maintenance.test.mjs`, `ledger-custody.test.mjs`, `ledger-recovery.test.mjs`; Ops custody/history and `history-capacity.test.mjs` tests, plus `deployment/production/check-linux.mjs`: atomic reservations, crash phases, stale-backup refusal, rotation/retirement, current primary-loss repair, shared recovery-capacity bounds and unchanged witnesses. |
+| R9 | Ops onboarding/limits/observability/recovery-status tests, `check-browser.mjs`, `check-browser-service.mjs`, Map `check-browser.mjs`: setup, empty/stale/error/mobile/keyboard states, explicit uncertain outcomes, data import, policy explanations and accessible operation. |
+| R10 | `npm run check`, all five installed tarball consumers, the actual alpha.3 upgrade/downgrade-fence consumer, hosted platform/browser/Linux/isolation/security gates, and the dated validation record linked below. |
+
+## Recorded candidate verification
+
+The [dated evidence record](validation/production-readiness-2026-11-06.json)
+identifies source revisions, image IDs, command results and hashes. It separates
+the runtime candidate from subsequent documentation or Python integration changes.
+It is the authoritative index for exact hosted run status; a workflow definition
+alone is not passing evidence.
+
+- The final local runtime check passed **1,086/1,086 tests, zero skips**, plus the
+  installed-package and public README/type consumers. Actual published alpha.3
+  state upgrades preserve spent authority; the old reader refuses new semantics.
+- Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
+  runtime commit `48ff3fa`. The separate Linux isolation gate passed **44/44**, zero
+  skips, and every MCP lifecycle/cleanup observation.
+- Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
+  AMD64. Production and verification images share **4,327 application entries**;
+  the two test-only fixtures are explicitly excluded from production. Both
+  architectures share the same application manifest. Runtime package-manager
+  files and shims are absent.
+- Both Linux runs imported 2,000 company records, verified 2,001 paginated tickets,
+  recovered current state after primary-directory loss, retained historical and
+  latest receipts, and reopened in a fresh container with read-only config/history.
+  At eight clients and 40 measured 500-row reads, p95 was **276 ms on local ARM64**
+  and **188 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
+  run refused 27 reads through the documented rate/busy responses without effects.
+- Local Chromium, Firefox and WebKit runs covered 22 Ops contract states, 14 real
+  HTTPS/OIDC service states and 13 Map states per engine: **147 accessibility
+  scans**, zero axe violations or page errors. These are repeated automated
+  scenarios, not 147 distinct human tasks. Selected screenshots were reviewed;
+  graph label fitting was corrected and checked in all three engines.
+- CodeQL analyzed the runtime candidate and its **Unresolved security alerts**
+  gate passed with zero open alerts for the PR merge ref. The
+  [triage record](validation/codeql-triage-2026-11-06.md) documents the fixes and
+  two reviewed loopback-healthcheck false positives. Default-branch alerts are
+  not claimed closed before merge.
+
+## Remaining acceptance and operational limits
+
+**R5 acceptance is pending; its production score is withheld.** The
+[official Node security prealert](https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md)
+announces HIGH issues in all supported Node release lines without identifying
+features or fixed versions. This does not establish that Agent Guard is
+exploitable, but application non-applicability cannot yet be established. Empty
+npm or Alpine findings do not clear native Node exposure. The
+[dated dependency review](../deployment/production/advisories-2026-11-06.md)
+also records two builder-only moderate findings and their restricted-input
+assumptions; those findings are not dismissed or included in the runtime tree.
+
+To close R5, review each published issue, adopt the applicable fixed immutable
+Node image or record evidence-backed non-applicability, and refresh exact-image
+inventories, advisories, installed-package checks, supported-platform checks and
+Linux recovery evidence. Final hosted gates must pass for the reviewed source.
+The target score remains an acceptance objective, not a number assigned to make
+unfinished work appear complete.
+
+The supported operational boundary remains material:
+
+- One owner on local Linux POSIX storage; no HA, distributed quota or live
+  third-party ticket connector is certified by the bundled backend.
+- Current repair requires surviving independent witnesses/mirrors and keys.
+  A simultaneous loss or rollback of those domains cannot be repaired by this
+  protocol. Process crashes and file-loss fixtures do not prove physical
+  power-loss durability on a company's storage controller.
+- Sustainable ticket history is the documented single-root, no-memory profile.
+  Collected ticket-history closure is bounded to **10,000 segments** for backup,
+  mirror enrollment and exact-current repair. Use a reviewed replacement adapter
+  before that ceiling; surviving mirrors alone do not remove it. Other SDK
+  archives retain finite safe-stop limits, and full-chain verification grows with
+  history. Raising capacity is not a memory/latency guarantee for every
+  maximum-sized combination.
+- Historical escrow remains necessary for retained evidence/backups. Active-key
+  retirement does not destroy every off-host historical copy or find backups
+  outside the enrolled catalog.
+- Automated browser/accessibility checks and visual inspection provide product
+  regression evidence. They are not a representative human usability study,
+  live provider evaluation or acceptance of an unknown company installation.
+- Cartography's admission benchmark smoke has a strict polling-cadence gate.
+  Preserve failed attempts and measured overhead; passing smoke must not be
+  described as achieving the separate 10% performance acceptance target.
 
 The old [construction assessment](protection-assessment.md),
 [P0 implementation record](production-p0-review.md), and

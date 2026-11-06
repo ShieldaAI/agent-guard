@@ -1,0 +1,1448 @@
+{
+  "schema": 1,
+  "measuredAt": "2026-11-06T00:53:29.392728+00:00",
+  "status": "production-acceptance-pending",
+  "productionScore": null,
+  "candidate": {
+    "runtimeCommit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+    "runtimeSourceSha256": "66e890009620f638fb7117d47c55b86be7bd500caaf0b4c932201e4b2f8823c3",
+    "runtimeSourceFiles": 399,
+    "sourceIdentifier": "python3 docs/validation/protection-source-id.py",
+    "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
+    "hostedMergeCommit": "a9f91398498337a7f0bead0672cda0e6cc724510",
+    "mergeTreeMatchesHead": true,
+    "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
+    "followupSourceSha256": "e0f76abe5b11583f731e3911b158123be45407e00012d7a7b60da2b166acfc01",
+    "followupSourceFiles": 401,
+    "followupScope": "Python advisory patch/workflow, benchmark failure diagnostics and acceptance documentation. Runtime application source is unchanged from 48ff3fa; final hosted follow-up checks pending.",
+    "finalSourceSha256": "18306c2f7739ccd4cc253ea0e7022b56211c7275b910507354c880b9979050d8",
+    "finalSourceFiles": 403,
+    "finalScope": "Runtime48ff candidate plus shared history recovery-capacity guard/operator warnings, Python advisory patch/gate, benchmark failure diagnostics and stable browser CI host. Full final verification pending."
+  },
+  "acceptance": {
+    "targetPerCategory": 9.5,
+    "categories": [
+      {
+        "id": "R1",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R2",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R3",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R4",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R5",
+        "status": "pending-upstream-advisory",
+        "score": null
+      },
+      {
+        "id": "R6",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R7",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R8",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R9",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      },
+      {
+        "id": "R10",
+        "status": "implemented-with-recorded-verification",
+        "score": null
+      }
+    ],
+    "scoreMeaning": "No final numerical score assigned while the R5 production acceptance gate is unresolved; test totals do not imply a score."
+  },
+  "fullLocalCheck": {
+    "command": "npm run check",
+    "status": "passed",
+    "tests": 1086,
+    "passed": 1086,
+    "failed": 0,
+    "skipped": 0,
+    "node": "v26.12.0",
+    "platform": "darwin-arm64",
+    "sandboxImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+    "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+    "logSha256": "cd8b63dc157d362a5ed16973e6ffe81a65673fd37b6ecc663ab56f136e62e12e",
+    "installedPackageChecks": "All five tarballs, public examples/types, real published alpha.3 upgrade and old-reader rejection, exact-current primary-loss recovery, MCP/identity/build admission and synthetic model loops passed."
+  },
+  "linux": {
+    "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+    "localArm64": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T00:47:55.002Z",
+      "status": "passed",
+      "verificationImage": "sha256:94fb3c8f88e978c1f7ad4221541e49cf3b84b30c956b51adda3b3ea76a1a8b18",
+      "imagePlatform": "linux/arm64",
+      "docker": {
+        "version": "29.5.2",
+        "os": "linux",
+        "arch": "arm64"
+      },
+      "composeControls": "passed",
+      "maintenance": {
+        "status": "passed",
+        "platform": "linux",
+        "node": "24.22.1",
+        "twoStoreRotation": true,
+        "interruptedReceiptReconciled": true,
+        "duplicateEffectPrevented": true,
+        "archivePersisted": true,
+        "rollbackRejected": true,
+        "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+        "repairLeavesWitnessesUnchanged": true
+      },
+      "storage": {
+        "driver": "local",
+        "separateDataWitnessConfigAndHistoryVolumes": true,
+        "freshContainerReopen": true
+      },
+      "cli": {
+        "status": "passed",
+        "platform": "linux",
+        "arch": "arm64",
+        "node": "24.22.1",
+        "companyOnboarding": true,
+        "noAuthorityBeforeInit": true,
+        "preflight": true,
+        "startupTlsAndCustodyEnforced": true,
+        "unenrolledSeedRefused": true,
+        "rejectedStartupLeavesAuthorityUnchanged": true,
+        "configuredLimitsRaised": true,
+        "rotationBeyondLegacyFourKeyDefault": true,
+        "ticketImportPreviewAndApply": true,
+        "bulkImportedTickets": 2000,
+        "paginatedTicketsVerified": 2001,
+        "setupCountsAndLimits": true,
+        "signedOidc": true,
+        "reviewedUpdate": true,
+        "processKillRestart": true,
+        "sessionsInvalidated": true,
+        "pendingReviewInvalidated": true,
+        "secondOwnerRejected": true,
+        "coldRestoreWithoutWitnessRollback": true,
+        "partialRotationRecoverable": true,
+        "bothStoresRotated": true,
+        "subsequentUpdate": true,
+        "archiveViaHttps": true,
+        "staleRestoreRejected": true,
+        "healthcheck": true,
+        "hardenedContainer": true,
+        "historyCompacted": true,
+        "historicalReceiptVerified": true,
+        "managedCustodyEnrolled": true,
+        "activeKeyRetirementWithHistoricalEscrow": true,
+        "custodySecretRotated": true,
+        "managedBypassRefused": true,
+        "authenticatedBackupAndRestore": true,
+        "missingHistoryRecovered": true,
+        "latestStateRecoveredAfterPrimaryDirectoryLoss": true,
+        "repairLeavesWitnessesUnchanged": true,
+        "relocatedHistoryReenrolled": true,
+        "historicalAndLatestReceiptsPreserved": true,
+        "persistentVolumes": true,
+        "load": {
+          "tickets": 2001,
+          "concurrentClients": 8,
+          "measuredReads": 40,
+          "pageSize": 500,
+          "p95ReadMs": 276,
+          "targetP95Ms": 2000,
+          "overloadRefusals": 27,
+          "effectsUnchanged": true
+        },
+        "reopenedInFreshContainer": true,
+        "runtimeConfigAndHistoryReadOnly": true
+      },
+      "limits": [
+        "Disposable local Linux containers; no customer deployment",
+        "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+        "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
+      ]
+    },
+    "hostedAmd64": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T00:44:22.379Z",
+      "status": "passed",
+      "verificationImage": "sha256:3970cd1bc9514d9fbd5eb59b2601c3eadbd9cab8caee89203938738f17295eea",
+      "imagePlatform": "linux/amd64",
+      "docker": {
+        "version": "29.4.2",
+        "os": "linux",
+        "arch": "amd64"
+      },
+      "composeControls": "passed",
+      "maintenance": {
+        "status": "passed",
+        "platform": "linux",
+        "node": "24.22.1",
+        "twoStoreRotation": true,
+        "interruptedReceiptReconciled": true,
+        "duplicateEffectPrevented": true,
+        "archivePersisted": true,
+        "rollbackRejected": true,
+        "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+        "repairLeavesWitnessesUnchanged": true
+      },
+      "storage": {
+        "driver": "local",
+        "separateDataWitnessConfigAndHistoryVolumes": true,
+        "freshContainerReopen": true
+      },
+      "cli": {
+        "status": "passed",
+        "platform": "linux",
+        "arch": "x64",
+        "node": "24.22.1",
+        "companyOnboarding": true,
+        "noAuthorityBeforeInit": true,
+        "preflight": true,
+        "startupTlsAndCustodyEnforced": true,
+        "unenrolledSeedRefused": true,
+        "rejectedStartupLeavesAuthorityUnchanged": true,
+        "configuredLimitsRaised": true,
+        "rotationBeyondLegacyFourKeyDefault": true,
+        "ticketImportPreviewAndApply": true,
+        "bulkImportedTickets": 2000,
+        "paginatedTicketsVerified": 2001,
+        "setupCountsAndLimits": true,
+        "signedOidc": true,
+        "reviewedUpdate": true,
+        "processKillRestart": true,
+        "sessionsInvalidated": true,
+        "pendingReviewInvalidated": true,
+        "secondOwnerRejected": true,
+        "coldRestoreWithoutWitnessRollback": true,
+        "partialRotationRecoverable": true,
+        "bothStoresRotated": true,
+        "subsequentUpdate": true,
+        "archiveViaHttps": true,
+        "staleRestoreRejected": true,
+        "healthcheck": true,
+        "hardenedContainer": true,
+        "historyCompacted": true,
+        "historicalReceiptVerified": true,
+        "managedCustodyEnrolled": true,
+        "activeKeyRetirementWithHistoricalEscrow": true,
+        "custodySecretRotated": true,
+        "managedBypassRefused": true,
+        "authenticatedBackupAndRestore": true,
+        "missingHistoryRecovered": true,
+        "latestStateRecoveredAfterPrimaryDirectoryLoss": true,
+        "repairLeavesWitnessesUnchanged": true,
+        "relocatedHistoryReenrolled": true,
+        "historicalAndLatestReceiptsPreserved": true,
+        "persistentVolumes": true,
+        "load": {
+          "tickets": 2001,
+          "concurrentClients": 8,
+          "measuredReads": 40,
+          "pageSize": 500,
+          "p95ReadMs": 188,
+          "targetP95Ms": 2000,
+          "overloadRefusals": 27,
+          "effectsUnchanged": true
+        },
+        "reopenedInFreshContainer": true,
+        "runtimeConfigAndHistoryReadOnly": true
+      },
+      "limits": [
+        "Disposable local Linux containers; no customer deployment",
+        "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+        "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
+      ]
+    },
+    "localImageComparison": {
+      "status": "passed",
+      "measuredAt": "2026-11-06T00:47:54.784Z",
+      "productionImage": "sha256:8b14ec10c087d9b5418610ab7e86e27072fa364d7515073808cb00b1693de303",
+      "verificationImage": "sha256:94fb3c8f88e978c1f7ad4221541e49cf3b84b30c956b51adda3b3ea76a1a8b18",
+      "node": "24.22.1",
+      "identicalApplicationEntries": 4327,
+      "globalPackageManagersAbsent": true,
+      "applicationManifestSha256": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b",
+      "excludedVerificationFixtures": [
+        "/app/deployment/production/verify-cli.mjs",
+        "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+      ]
+    },
+    "hostedImageComparison": {
+      "status": "passed",
+      "measuredAt": "2026-11-06T00:44:22.318Z",
+      "productionImage": "sha256:801440d5c17d31c3b1064ab32170985e8444051cf6248b3b789fc5afafb62290",
+      "verificationImage": "sha256:3970cd1bc9514d9fbd5eb59b2601c3eadbd9cab8caee89203938738f17295eea",
+      "node": "24.22.1",
+      "identicalApplicationEntries": 4327,
+      "globalPackageManagersAbsent": true,
+      "applicationManifestSha256": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b",
+      "excludedVerificationFixtures": [
+        "/app/deployment/production/verify-cli.mjs",
+        "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+      ]
+    },
+    "sharedApplicationManifest": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b"
+  },
+  "runtimeIsolation": {
+    "host": {
+      "platform": "linux",
+      "release": "7.0.0-1019-azure",
+      "arch": "x64",
+      "node": "v24.22.2"
+    },
+    "passed": true,
+    "counts": {
+      "tests": 44,
+      "passed": 44,
+      "skipped": 0,
+      "runtimeTests": [
+        "real Linux Docker runtime enforces isolation and copies only selected files",
+        "raw: content swapped as the broker starts staging cannot reach Docker under the old approval",
+        "attested: content swapped as the broker starts staging cannot reach Docker under the old approval",
+        "real Docker export rejects symlinks and host input symlinks",
+        "real Docker time and output limits terminate workloads and clean up containers",
+        "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+        "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+        "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+        "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+        "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+        "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+        "trusted CA does not disable hostname validation or grant private network access",
+        "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup",
+        "bounded input capture accepts the selected file and rejects a FIFO without blocking",
+        "a directory swap during capture cannot send an outside file to the guest"
+      ]
+    },
+    "platformEvidenceSha256": "996a4188f92ebe93a85fc3af21c12a71829b4ee90cdc11efb5fbfda327bd8030",
+    "mcp": {
+      "version": 1,
+      "expectedHost": "Linux",
+      "time": "2026-11-06T00:44:20.250Z",
+      "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+      "isolation": "linux-container-network-none",
+      "host": {
+        "platform": "linux",
+        "architecture": "x64",
+        "node": "v24.22.2"
+      },
+      "checks": [
+        {
+          "name": "runtime-image",
+          "passed": true
+        },
+        {
+          "name": "guest-isolation",
+          "passed": true
+        },
+        {
+          "name": "host-secret-custody",
+          "passed": true
+        },
+        {
+          "name": "foreign-tenant-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "approval-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "approved-effect",
+          "passed": true
+        },
+        {
+          "name": "metadata-quarantine",
+          "passed": true
+        },
+        {
+          "name": "reviewed-refresh",
+          "passed": true
+        },
+        {
+          "name": "reconnect-invalidates-work",
+          "passed": true
+        },
+        {
+          "name": "revocation-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "inflight-unknown-no-replay",
+          "passed": true
+        },
+        {
+          "name": "unknown-reconciliation",
+          "passed": true
+        },
+        {
+          "name": "bounded-stdio",
+          "passed": true
+        },
+        {
+          "name": "remote-approved-dispatch",
+          "passed": true
+        },
+        {
+          "name": "remote-credential-custody",
+          "passed": true
+        },
+        {
+          "name": "remote-claim-binding",
+          "passed": true
+        },
+        {
+          "name": "remote-refresh-review",
+          "passed": true
+        },
+        {
+          "name": "remote-redirect-no-forward",
+          "passed": true
+        },
+        {
+          "name": "remote-private-address-denied",
+          "passed": true
+        },
+        {
+          "name": "trace-privacy",
+          "passed": true
+        },
+        {
+          "name": "cleanup",
+          "passed": true
+        }
+      ],
+      "cleanup": true,
+      "passed": true,
+      "guestNode": "v24.22.1",
+      "local": {
+        "approvedWrites": 1
+      },
+      "remote": {
+        "approvedCalls": 1,
+        "redirectLeaks": 0,
+        "claimDenials": 7,
+        "reconciledAuthFailures": 7
+      },
+      "sourceSha256": "87ef99ffef9af8546989b92dfb4d7cd13ee5173c4b97debffffeed21f636b5cf",
+      "fixtureSha256": "731d6d74484731865e129253b6902168a50b72118b70d6f274f5ff9471b4f50e",
+      "limitations": [
+        "Synthetic disposable MCP fixture and loopback credential gateway, not a real identity provider or production MCP service.",
+        "Kernel isolation is the Linux Docker daemon/VM boundary. Native host ACL and separate Linux/Windows matrix evidence remain required.",
+        "Remote authorization proofs are verified with a synthetic Ed25519 fixture key and bind the gateway token fingerprint. Production OAuth discovery/JWKS/token renewal is outside this report.",
+        "Denied or cancelled admitted calls may be UNKNOWN; container disposal establishes termination before reconciliation."
+      ]
+    }
+  },
+  "hosted": {
+    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768310",
+    "status": "browser-infrastructure-timeouts",
+    "passedJobs": [
+      "check (22)",
+      "check (24)",
+      "check (26)",
+      "check (macos-latest, 24)",
+      "check (windows-latest, 24)",
+      "production-profile (linux, node24)",
+      "runtime-isolation (linux, node24)",
+      "dependency-inventory"
+    ],
+    "artifacts": [
+      {
+        "name": "dependency-inventory",
+        "id": 13466249540,
+        "digest": "sha256:d7d72e08df9c30d36c1b78fe000aa7c728639f603c62808929df5baf613bd2cd"
+      },
+      {
+        "name": "production-profile-linux-node24",
+        "id": 13467445814,
+        "digest": "sha256:91b08ff30c1b9348ed21c7553d5b42f70247093431b90d93816f5dc1da58dbb5"
+      },
+      {
+        "name": "provider-outcome-evaluation",
+        "id": 13468030006,
+        "digest": "sha256:6b81035fe7abb8b7ad4d934191dee445504dc9738a309c63260eb0ffd880a3c5"
+      },
+      {
+        "name": "runtime-isolation-linux-node24",
+        "id": 13467740206,
+        "digest": "sha256:cddcf702cc0f6ed858a16128e935a81bcf7ac684c32902abdc799f9a4c7edc24"
+      }
+    ],
+    "cartographyPilot": {
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768296",
+      "status": "unresolved-performance-failures",
+      "attempts": [
+        {
+          "attempt": 1,
+          "step": "Admission during inventory polling",
+          "summary": "All 600 effects and charged calls agree; skippedBusy counts of 1 and 3 failed the strict 250 ms polling cadence."
+        },
+        {
+          "attempt": 2,
+          "step": "Bounded publication and HTTP performance",
+          "summary": "No measurements were retained. A 120.394-second failure strongly suggests Neo4j readiness timeout, but the original generic error discarded the definitive cause. New safe stage diagnostics do not change gates."
+        }
+      ],
+      "retainedFailureRecord": "docs/validation/cartography-pilot-2026-11-06.json",
+      "diagnosticsFix": "Safe startup stage/readiness/owned-container state; exact effect accounting and diagnostic latency values survive stress-profile failure. Existing gates and deadlines unchanged; new source requires hosted check."
+    }
+  },
+  "browsers": {
+    "local": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T00:17:08.986584+00:00",
+      "status": "passed",
+      "inputCount": 374,
+      "inputSha256Before": "008930439ba307bcfee11626a87436a22648b274334c48596777e0a9cdaf0544",
+      "inputSha256After": "008930439ba307bcfee11626a87436a22648b274334c48596777e0a9cdaf0544",
+      "sourceAndDistStable": true,
+      "results": [
+        {
+          "engine": "chromium",
+          "suite": "ops-contract",
+          "states": 22,
+          "mobileViews": 4,
+          "passed": true
+        },
+        {
+          "engine": "chromium",
+          "suite": "ops-service",
+          "states": 14,
+          "mobileViews": 5,
+          "passed": true
+        },
+        {
+          "engine": "chromium",
+          "suite": "map",
+          "states": 13,
+          "mobileViews": 4,
+          "passed": true
+        },
+        {
+          "engine": "firefox",
+          "suite": "ops-contract",
+          "states": 22,
+          "mobileViews": 4,
+          "passed": true
+        },
+        {
+          "engine": "firefox",
+          "suite": "ops-service",
+          "states": 14,
+          "mobileViews": 5,
+          "passed": true
+        },
+        {
+          "engine": "firefox",
+          "suite": "map",
+          "states": 13,
+          "mobileViews": 4,
+          "passed": true
+        },
+        {
+          "engine": "webkit",
+          "suite": "ops-contract",
+          "states": 22,
+          "mobileViews": 4,
+          "passed": true
+        },
+        {
+          "engine": "webkit",
+          "suite": "ops-service",
+          "states": 14,
+          "mobileViews": 5,
+          "passed": true
+        },
+        {
+          "engine": "webkit",
+          "suite": "map",
+          "states": 13,
+          "mobileViews": 4,
+          "passed": true
+        }
+      ],
+      "axeViolations": 0,
+      "pageErrors": 0,
+      "automaticResubmissions": 0,
+      "evidenceType": "Automated functional/accessibility checks using synthetic identities and records; local real HTTPS/OIDC/encrypted SQLite in service suites. Not a representative human usability study or customer deployment acceptance.",
+      "visualReview": "Setup states are distinct and readable. The initial graph fit had small labels; see final-map-fit-run.json and the replaced Map screenshots for the verified label-clearance correction.",
+      "mapFollowup": "final-map-fit-run.json"
+    },
+    "graphFit": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T00:21:21.871388+00:00",
+      "status": "passed",
+      "inputCount": 374,
+      "inputSha256Before": "6c9ba5cd6f0ad7e99fcbf68dfa9adc07757a4b1e0bb954c9e9db8a50fc965a43",
+      "inputSha256After": "6d93c0a20bb179ae76fbad02f2a159854969dbff167a4817c0d73c01e0b337f2",
+      "sourceAndDistStable": false,
+      "changedSinceFullBrowserGate": [
+        "apps/agent-map/check-browser.mjs",
+        "apps/agent-map/dist/app.js",
+        "apps/agent-map/src/app.jsx",
+        "apps/agent-ops/test/history-recovery.test.mjs",
+        "packages/agent-map/test/identity-http.test.mjs"
+      ],
+      "results": [
+        {
+          "engine": "chromium",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        },
+        {
+          "engine": "firefox",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        },
+        {
+          "engine": "webkit",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        }
+      ],
+      "axeViolations": 0,
+      "pageErrors": 0,
+      "focusedTests": {
+        "viewer": 16,
+        "identityGateway": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "visualReview": "Default fitted 660px graph has separate compact node labels at 10.03px; full identifiers remain in the evidence selector/detail. Actual Chromium image reviewed. No product source changed during this rerun.",
+      "evidenceType": "Automated synthetic inventory and local signed OIDC tests, not a human participant study.",
+      "changedDuringMapRun": [
+        "apps/agent-ops/test/history-recovery.test.mjs"
+      ],
+      "productionAndConsumedBrowserInputsStable": true,
+      "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
+    },
+    "hostedStatus": "chromium-passed-firefox-webkit-install-timeouts",
+    "priorHostedInstallFailure": {
+      "run": 42138768310,
+      "chromium": "All three suites passed: 49 scans",
+      "firefox": "Job timed out during system dependency installation; browser suites skipped",
+      "webkit": "Job timed out during system dependency installation; browser suites skipped",
+      "host": "Ubuntu 26.04.1, image ubuntu26/20261101.186",
+      "observedCause": "Slow/retried apt retrieval from azure.archive.ubuntu.com; no failed application assertions observed",
+      "followup": "Pin browser job to supported Ubuntu 24.04; keep all engines, gates and timeout unchanged. Final follow-up result pending."
+    },
+    "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json"
+  },
+  "security": {
+    "codeql": {
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768341",
+      "passed": true,
+      "headCommit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+      "ref": "refs/pull/8/merge",
+      "openAlerts": 0,
+      "gate": "Unresolved security alerts",
+      "clearedThroughChanges": [
+        15,
+        16,
+        17,
+        19,
+        20,
+        22
+      ],
+      "reviewedFalsePositives": [
+        18,
+        21
+      ],
+      "triage": "docs/validation/codeql-triage-2026-11-06.md",
+      "scope": "PR candidate only; does not claim default-branch alerts closed before merge."
+    },
+    "runtimeNpm": {
+      "image": "sha256:8b14ec10c087d9b5418610ab7e86e27072fa364d7515073808cb00b1693de303",
+      "summary": {
+        "installedPackages": 36,
+        "thirdPartyPackages": 31,
+        "publishedNpmAdvisories": 0,
+        "nodeBinaryMatchesReviewedBase": true,
+        "manifestMatchesHostedAmd64": true,
+        "globalPackageManagersAbsent": true
+      },
+      "query": {
+        "@modelcontextprotocol/client": [
+          "2.4.0"
+        ],
+        "@modelcontextprotocol/core": [
+          "2.4.0"
+        ],
+        "@modelcontextprotocol/server": [
+          "2.4.0"
+        ],
+        "@shieldaai/agent-guard": [
+          "0.1.0-alpha.3"
+        ],
+        "@shieldaai/agent-guard-executor": [
+          "0.1.0-alpha.3"
+        ],
+        "@shieldaai/agent-guard-mcp": [
+          "0.1.0-alpha.3"
+        ],
+        "@shieldaai/agent-guard-scenarios": [
+          "0.1.0-alpha.3"
+        ],
+        "@shieldaai/agent-map": [
+          "0.1.0-alpha.3"
+        ],
+        "base64-js": [
+          "1.5.1"
+        ],
+        "buffer": [
+          "6.0.3"
+        ],
+        "cross-spawn": [
+          "7.0.6"
+        ],
+        "cytoscape": [
+          "3.34.4"
+        ],
+        "eventsource": [
+          "3.0.7"
+        ],
+        "eventsource-parser": [
+          "3.1.1"
+        ],
+        "ieee754": [
+          "1.2.1"
+        ],
+        "ipaddr.js": [
+          "2.5.0"
+        ],
+        "isexe": [
+          "2.0.0"
+        ],
+        "jose": [
+          "6.2.13"
+        ],
+        "neo4j-driver": [
+          "6.3.0"
+        ],
+        "neo4j-driver-bolt-connection": [
+          "6.3.0"
+        ],
+        "neo4j-driver-core": [
+          "6.3.0"
+        ],
+        "oauth4webapi": [
+          "3.8.8"
+        ],
+        "openid-client": [
+          "6.8.8"
+        ],
+        "path-key": [
+          "3.1.1"
+        ],
+        "pkce-challenge": [
+          "5.0.1"
+        ],
+        "react": [
+          "19.3.1"
+        ],
+        "react-dom": [
+          "19.3.1"
+        ],
+        "rxjs": [
+          "7.8.2"
+        ],
+        "safe-buffer": [
+          "5.2.1"
+        ],
+        "scheduler": [
+          "0.28.0"
+        ],
+        "shebang-command": [
+          "2.0.0"
+        ],
+        "shebang-regex": [
+          "3.0.0"
+        ],
+        "string_decoder": [
+          "1.3.0"
+        ],
+        "tslib": [
+          "2.8.1"
+        ],
+        "which": [
+          "2.0.2"
+        ],
+        "zod": [
+          "4.6.7"
+        ]
+      },
+      "querySha256": "9e2e06d8b49fc70dcb0a66ed6466fcc00e81348e7795587658d94628b0bbd3aa",
+      "responseSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "advisories": {},
+      "recordSha256": "9d57458b649583551b39e591500880a2681e4040e3d3f717198d02161cd9438b",
+      "scope": "Exact local Linux ARM64 application package manifests and Node binary. Hosted AMD64 has the same application file manifest; its native Node binary has different architecture. Does not clear the unresolved Node HIGH prealert or unpublished issues. Builder npm and Python cartography are separate inventories."
+    },
+    "workspaceNpm": {
+      "auditReportVersion": 2,
+      "vulnerabilities": {},
+      "metadata": {
+        "vulnerabilities": {
+          "info": 0,
+          "low": 0,
+          "moderate": 0,
+          "high": 0,
+          "critical": 0,
+          "total": 0
+        },
+        "dependencies": {
+          "prod": 44,
+          "dev": 50,
+          "optional": 46,
+          "peer": 0,
+          "peerOptional": 0,
+          "total": 93
+        }
+      }
+    },
+    "browserNpm": {
+      "auditReportVersion": 2,
+      "vulnerabilities": {},
+      "metadata": {
+        "vulnerabilities": {
+          "info": 0,
+          "low": 0,
+          "moderate": 0,
+          "high": 0,
+          "critical": 0,
+          "total": 0
+        },
+        "dependencies": {
+          "prod": 1,
+          "dev": 3,
+          "optional": 0,
+          "peer": 0,
+          "peerOptional": 0,
+          "total": 3
+        }
+      }
+    },
+    "node": {
+      "measuredAt": "2026-11-06T00:12:15.024133+00:00",
+      "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+      "observedNodeVersion": "24.22.1",
+      "sources": [
+        {
+          "kind": "release24",
+          "url": "https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/release/v24.22.1.md",
+          "retrievedAt": "2026-11-06T00:12:13.974221+00:00",
+          "sha256": "29a584a98df42b5a805433303129ea332ba5a841ae2a9df304194ff7c545f1bc",
+          "bytes": 10097,
+          "metadata": {
+            "date": "'2026-10-21T10:39:14.786Z'",
+            "category": "release",
+            "title": "Node.js 24.22.1 (LTS)",
+            "layout": "blog-post",
+            "author": "Antoine du Hamel"
+          }
+        },
+        {
+          "kind": "october",
+          "url": "https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/october-2026-security-releases.md",
+          "retrievedAt": "2026-11-06T00:12:14.533367+00:00",
+          "sha256": "801dd77695438304481deeb12814bf0ab6e44d2ac56e4ab42835f036b68690ee",
+          "bytes": 11292,
+          "metadata": {
+            "date": "2026-10-21T22:00:00.000Z",
+            "category": "vulnerability",
+            "title": "Wednesday, October 21, 2026 Security Releases",
+            "slug": "october-2026-security-releases",
+            "layout": "blog-post",
+            "author": "The Node.js Project"
+          }
+        },
+        {
+          "kind": "novemberPrealert",
+          "url": "https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md",
+          "retrievedAt": "2026-11-06T00:12:15.023872+00:00",
+          "sha256": "ef0f65afb240746c9d96812cabce3aa23195d56070b3370eeed06b19b14ff03b",
+          "bytes": 1542,
+          "metadata": {
+            "date": "2026-11-03T23:00:00.000Z",
+            "category": "vulnerability",
+            "title": "Wednesday, November 11, 2026 Security Releases",
+            "slug": "november-2026-security-releases",
+            "layout": "blog-post",
+            "author": "The Node.js Project"
+          }
+        }
+      ],
+      "releasedSecurityUpdate": {
+        "release": "24.22.1",
+        "blogDate": "2026-10-21",
+        "officialReleaseIndexDate": "2026-10-20",
+        "status": "The installed Node version matches the October security release. Official notes list DNS/TLS/Brotli/HTTP/crypto/permission fixes and dependency updates. This comparison does not independently reproduce every upstream fix."
+      },
+      "newer24Patch": {
+        "version": "24.22.2",
+        "date": "2026-10-27",
+        "security": false,
+        "evidenceFile": "node-release-index-2026-11-06.json",
+        "interpretation": "A newer nonsecurity patch exists; this review does not claim the pinned base is the newest 24.x patch."
+      },
+      "openPrealert": {
+        "publishedAt": "2026-11-03T23:00:00.000Z",
+        "expectedReleaseDate": "2026-11-11",
+        "affectedReleaseLines": [
+          "22.x",
+          "24.x",
+          "26.x"
+        ],
+        "highestAnnouncedSeverity": "HIGH",
+        "cveDetailsPublished": false,
+        "fixedVersionsPublished": false,
+        "applicationApplicability": "unassessed-details-unreleased",
+        "status": "open-upstream-prealert",
+        "interpretation": "The official notice names the installed major line. Available information cannot establish affected features, application exploitability, a complete mitigation or non-applicability. No zero-vulnerability or cleared-high-severity claim is made.",
+        "nextAction": "Review the final official advisory and fixed versions when released, choose and record a replacement immutable runtime image, then repeat dependency inventory, package checks and Linux recovery/browser verification before updating production."
+      },
+      "scopeBoundaries": [
+        "Official release/advisory evidence and measured binary version, not penetration testing.",
+        "The Alpine package scan covers distribution packages; npm registry findings cover separately installed package metadata; neither covers all Node native or opaque bundled components.",
+        "Runtime removal of npm/Corepack/Yarn does not remove Node native dependencies or resolve the announced Node security update.",
+        "No company secrets or private package inventory were transmitted."
+      ]
+    },
+    "alpine": {
+      "measuredAt": "2026-11-05T23:19:11.921Z",
+      "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+      "source": "Alpine distribution secfixes, using apk version ordering",
+      "scope": "Installed APK-origin packages only; Node binary and npm dependencies require separate review",
+      "packages": [
+        {
+          "name": "alpine-baselayout",
+          "version": "3.7.2-r1",
+          "origin": "alpine-baselayout"
+        },
+        {
+          "name": "alpine-baselayout-data",
+          "version": "3.7.2-r1",
+          "origin": "alpine-baselayout"
+        },
+        {
+          "name": "alpine-keys",
+          "version": "2.6-r0",
+          "origin": "alpine-keys"
+        },
+        {
+          "name": "alpine-release",
+          "version": "3.24.3-r0",
+          "origin": "alpine-base"
+        },
+        {
+          "name": "apk-tools",
+          "version": "3.0.8-r0",
+          "origin": "apk-tools"
+        },
+        {
+          "name": "busybox",
+          "version": "1.37.0-r31",
+          "origin": "busybox"
+        },
+        {
+          "name": "busybox-binsh",
+          "version": "1.37.0-r31",
+          "origin": "busybox"
+        },
+        {
+          "name": "ca-certificates-bundle",
+          "version": "20261020-r0",
+          "origin": "ca-certificates"
+        },
+        {
+          "name": "libapk",
+          "version": "3.0.8-r0",
+          "origin": "apk-tools"
+        },
+        {
+          "name": "libatomic",
+          "version": "15.2.0-r5",
+          "origin": "gcc"
+        },
+        {
+          "name": "libcrypto3",
+          "version": "3.5.9-r0",
+          "origin": "openssl"
+        },
+        {
+          "name": "libgcc",
+          "version": "15.2.0-r5",
+          "origin": "gcc"
+        },
+        {
+          "name": "libssl3",
+          "version": "3.5.9-r0",
+          "origin": "openssl"
+        },
+        {
+          "name": "libstdc++",
+          "version": "15.2.0-r5",
+          "origin": "gcc"
+        },
+        {
+          "name": "musl",
+          "version": "1.2.6-r3",
+          "origin": "musl"
+        },
+        {
+          "name": "musl-utils",
+          "version": "1.2.6-r3",
+          "origin": "musl"
+        },
+        {
+          "name": "scanelf",
+          "version": "1.3.9-r1",
+          "origin": "pax-utils"
+        },
+        {
+          "name": "ssl_client",
+          "version": "1.37.0-r31",
+          "origin": "busybox"
+        },
+        {
+          "name": "zlib",
+          "version": "1.3.2-r1",
+          "origin": "zlib"
+        }
+      ],
+      "feeds": [
+        {
+          "url": "https://secdb.alpinelinux.org/v3.24/main.json",
+          "sha256": "0506f7a073502ea01e50e61b4cd0b3359eb02d43c3a0ca5fcb5dc60d17c13276"
+        },
+        {
+          "url": "https://secdb.alpinelinux.org/v3.24/community.json",
+          "sha256": "86efd778fe8d2c45878340acfebb857e7e02308c016d7c6ac973b59b823cac4b"
+        }
+      ],
+      "comparisons": 153,
+      "findings": []
+    },
+    "embeddedUndici": {
+      "measuredAt": "2026-11-06T00:13:57.367989+00:00",
+      "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+      "node": "v24.22.1",
+      "measuredEmbeddedUndici": "7.30.1",
+      "endpoint": "https://registry.npmjs.org/-/npm/v1/security/advisories/bulk",
+      "query": {
+        "undici": [
+          "7.30.1"
+        ]
+      },
+      "responseSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "advisories": {},
+      "scope": "Upstream npm Undici advisory range matches against process.versions.undici. Node may apply backports or expose a different API surface; these matches alone do not establish Node binary exploitability or a safe replacement Node release. Must correlate with official Node/Undici source and security notes."
+    },
+    "builder": {
+      "npm": "12.2.2",
+      "packageSha256": "07fecbf753e2c3bc10ebeb3e9ed8738f6a0cc1292998b79e2e9f1dd2a5525e0c",
+      "high": 0,
+      "critical": 0,
+      "moderate": 2,
+      "advisories": [
+        "GHSA-3g3m-2fjr-6pw4",
+        "GHSA-g3hv-75wg-m249"
+      ],
+      "recordSha256": "27189d412cbcd8682aef719522f4afb3d11b5893c294f5be7f3123adc76e9224",
+      "scope": "Build tooling only, locked input and disabled dependency scripts; not dismissed as false positives or included in runtime."
+    },
+    "python": {
+      "status": "local-audits-passed-hosted-pending",
+      "uv": "0.13.6",
+      "python": "3.13",
+      "lockSha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2",
+      "fixedDependency": {
+        "name": "oauthlib",
+        "before": "4.0.0",
+        "after": "4.0.1",
+        "advisory": "GHSA-3jp2-3mrg-2vxc",
+        "source": "https://github.com/oauthlib/oauthlib/security/advisories/GHSA-3jp2-3mrg-2vxc"
+      },
+      "freshAudits": {
+        "linux-amd64": {
+          "report": {
+            "schema": {
+              "version": "preview"
+            },
+            "summary": {
+              "audited_packages": 194,
+              "vulnerabilities": 0,
+              "adverse_statuses": 1
+            },
+            "vulnerabilities": [],
+            "adverse_statuses": [
+              {
+                "name": "adal",
+                "status": "archived",
+                "reason": null
+              }
+            ]
+          },
+          "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d"
+        },
+        "linux-arm64": {
+          "report": {
+            "schema": {
+              "version": "preview"
+            },
+            "summary": {
+              "audited_packages": 194,
+              "vulnerabilities": 0,
+              "adverse_statuses": 1
+            },
+            "vulnerabilities": [],
+            "adverse_statuses": [
+              {
+                "name": "adal",
+                "status": "archived",
+                "reason": null
+              }
+            ]
+          },
+          "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d"
+        },
+        "macos-arm64": {
+          "report": {
+            "schema": {
+              "version": "preview"
+            },
+            "summary": {
+              "audited_packages": 194,
+              "vulnerabilities": 0,
+              "adverse_statuses": 1
+            },
+            "vulnerabilities": [],
+            "adverse_statuses": [
+              {
+                "name": "adal",
+                "status": "archived",
+                "reason": null
+              }
+            ]
+          },
+          "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d"
+        },
+        "windows-amd64": {
+          "report": {
+            "schema": {
+              "version": "preview"
+            },
+            "summary": {
+              "audited_packages": 194,
+              "vulnerabilities": 0,
+              "adverse_statuses": 1
+            },
+            "vulnerabilities": [],
+            "adverse_statuses": [
+              {
+                "name": "adal",
+                "status": "archived",
+                "reason": null
+              }
+            ]
+          },
+          "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d"
+        }
+      },
+      "oldVulnerableLockGate": {
+        "exitCode": 1,
+        "report": {
+          "schema": {
+            "version": "preview"
+          },
+          "vulnerabilities": [
+            {
+              "dependency": {
+                "name": "oauthlib",
+                "version": "4.0.0"
+              },
+              "id": "GHSA-3jp2-3mrg-2vxc",
+              "display_id": "GHSA-3jp2-3mrg-2vxc",
+              "aliases": [
+                "CVE-2026-49272"
+              ],
+              "link": "https://github.com/oauthlib/oauthlib/security/advisories/GHSA-3jp2-3mrg-2vxc",
+              "fix_versions": [
+                "4.0.1"
+              ],
+              "published": "2026-10-27T13:30:17Z",
+              "modified": "2026-11-05T21:15:09.240948711Z"
+            }
+          ],
+          "adverse_statuses": [
+            {
+              "name": "adal",
+              "status": "archived",
+              "reason": null
+            }
+          ]
+        },
+        "originalReportSha256": "2ee79069d097c98ec456cbd7903bdc6d5ed2bba12857dbb3e3ffb329c5fcb8cb",
+        "embeddedReportScope": "Compact original result with advisory prose omitted; originalReportSha256 hashes the unmodified retained tool report."
+      },
+      "unitTests": 916,
+      "lintAndFormat": "passed",
+      "archivedDependencyNotice": "adal1.2.7 via msrestazure/cartography remains an archived-package maintenance notice; no vulnerability was reported. It was not ignored.",
+      "dependencyUpdateValidation": {
+        "schemaVersion": 1,
+        "kind": "cartography-python-advisory-review",
+        "recordedAt": "2026-11-06T00:58:40.367032+00:00",
+        "baseSourceCommit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+        "finding": {
+          "id": "GHSA-3jp2-3mrg-2vxc",
+          "cve": "CVE-2026-49272",
+          "severity": "high",
+          "package": "oauthlib",
+          "previousVersion": "4.0.0",
+          "installedVersion": "4.0.1",
+          "disposition": "updated-to-published-fixed-version; not dismissed",
+          "source": "https://github.com/oauthlib/oauthlib/security/advisories/GHSA-3jp2-3mrg-2vxc"
+        },
+        "lock": {
+          "file": "integrations/cartography/uv.lock",
+          "sha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2",
+          "previousSha256": "cd4145e034d7b462e1f8556c868b484e4eca69e546d57f6f9902c8abfea89c5a",
+          "updatedPackages": [
+            "oauthlib"
+          ]
+        },
+        "audit": {
+          "tool": "uv",
+          "version": "0.13.6",
+          "python": "3.13",
+          "flags": [
+            "--locked",
+            "--no-cache",
+            "--python-version",
+            "3.13",
+            "--python-platform",
+            "TARGET",
+            "--output-format",
+            "json"
+          ],
+          "ignoredAdvisories": [],
+          "reports": [
+            {
+              "target": "linux-amd64",
+              "file": "cartography-python-linux-amd64-fresh-audit-2026-11-06.json",
+              "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+              "summary": {
+                "audited_packages": 194,
+                "vulnerabilities": 0,
+                "adverse_statuses": 1
+              },
+              "adverseStatuses": [
+                {
+                  "name": "adal",
+                  "status": "archived",
+                  "reason": null
+                }
+              ]
+            },
+            {
+              "target": "linux-arm64",
+              "file": "cartography-python-linux-arm64-fresh-audit-2026-11-06.json",
+              "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+              "summary": {
+                "audited_packages": 194,
+                "vulnerabilities": 0,
+                "adverse_statuses": 1
+              },
+              "adverseStatuses": [
+                {
+                  "name": "adal",
+                  "status": "archived",
+                  "reason": null
+                }
+              ]
+            },
+            {
+              "target": "macos-arm64",
+              "file": "cartography-python-macos-arm64-fresh-audit-2026-11-06.json",
+              "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+              "summary": {
+                "audited_packages": 194,
+                "vulnerabilities": 0,
+                "adverse_statuses": 1
+              },
+              "adverseStatuses": [
+                {
+                  "name": "adal",
+                  "status": "archived",
+                  "reason": null
+                }
+              ]
+            },
+            {
+              "target": "windows-amd64",
+              "file": "cartography-python-windows-amd64-fresh-audit-2026-11-06.json",
+              "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+              "summary": {
+                "audited_packages": 194,
+                "vulnerabilities": 0,
+                "adverse_statuses": 1
+              },
+              "adverseStatuses": [
+                {
+                  "name": "adal",
+                  "status": "archived",
+                  "reason": null
+                }
+              ]
+            }
+          ],
+          "scope": "Exact public locked dependency selections, including default extras/development groups; known advisory database matches only."
+        },
+        "negativeGate": {
+          "previousLockExitCode": 1,
+          "expectedFinding": "GHSA-3jp2-3mrg-2vxc",
+          "file": "cartography-python-vulnerable-lock-gate-2026-11-06.json",
+          "sha256": "2ee79069d097c98ec456cbd7903bdc6d5ed2bba12857dbb3e3ffb329c5fcb8cb"
+        },
+        "verification": {
+          "lockedSync": "passed",
+          "observedPython": "3.13.10",
+          "ruffCheck": "passed",
+          "ruffFormatCheck": "passed; 68 files",
+          "unitTests": {
+            "passed": 916,
+            "failed": 0
+          },
+          "authenticatedDisposableNeo4jIntegration": {
+            "passed": 143,
+            "failed": 0,
+            "seconds": 323.44
+          },
+          "workflowYaml": "parsed; hosted execution pending new commit"
+        },
+        "residuals": [
+          "adal1.2.7 is reported archived through msrestazure0.6.4.post1 and cartography0.144.0; the notice remains recorded and is not a known-vulnerability finding.",
+          "No native Python/Node, container OS, isolated build-system dependency, or application exploitability clearance is inferred from this lock audit.",
+          "The separate Node HIGH prealert remains open and unaffected by this Python fix."
+        ],
+        "sourceFiles": {
+          ".github/workflows/python-dependencies.yml": "12a64d38f03a404d38ab036d9e3fb5ab90607cac244c990c35d141435963d629",
+          ".github/dependabot.yml": "5829039d2252b88d23a9f516ce92c854ab38af41f4d71272907130723bdcc95a",
+          "integrations/cartography/README.md": "b2cee1ad4e0c95647828568d7b4cbc7d5294e777c0c87c01905919bd88e929e0",
+          "integrations/cartography/uv.lock": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2"
+        }
+      },
+      "currentUnitTests": 928,
+      "integrationTestsForDependencyUpdate": 143,
+      "currentDiagnosticRegressionTests": "Included in the 928 unit tests; existing 143 integration tests passed after oauthlib patch, before diagnostic helper changes. New hosted integration is pending."
+    }
+  },
+  "limitations": [
+    "Synthetic fixtures and automated browser scans; no customer data, live paid model-provider trial or representative human usability study.",
+    "Single-owner Linux local POSIX deployment, not HA or distributed quotas.",
+    "Exact-current recovery requires surviving current witnesses/mirrors and keys. Process/primary-file-loss evidence does not certify physical power loss or simultaneous independent-domain loss.",
+    "Sustainable history is limited to the documented ticket profile. Other SDK archives and offline catalogs retain safe-stop ceilings; history verification cost grows.",
+    "Active-key retirement retains offline historical escrow and cannot discover unenrolled off-host copies.",
+    "The official November Node HIGH prealert is unassessed until individual issues/fixed releases are published.",
+    "Ticket history closure is capped at 10,000 segments for backup, mirror enrollment and exact-current repair; a reviewed replacement adapter is required before that ceiling."
+  ],
+  "remainingAcceptance": {
+    "id": "R5",
+    "status": "pending",
+    "source": "https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md",
+    "nextSteps": [
+      "Assess every published Node issue.",
+      "Adopt applicable fixed immutable Node image or document evidence-backed non-applicability.",
+      "Refresh exact-image inventory/advisories, installed consumers, supported platform and Linux recovery evidence.",
+      "Require passing hosted gates for final source/image."
+    ]
+  },
+  "remainingVerification": [
+    {
+      "gate": "Full hosted Firefox/WebKit browser suites",
+      "status": "prior-install-timeout-new-host-check-pending",
+      "run": 42138768310
+    },
+    {
+      "gate": "Hosted Python advisory workflow and integration after dependency update",
+      "status": "pending-new-commit"
+    },
+    {
+      "gate": "Cartography pilot stress profile",
+      "status": "failed-prior-candidate-pending-new-check",
+      "run": 42138768296
+    },
+    {
+      "gate": "Final follow-up source hosted CI/CodeQL",
+      "status": "pending-new-commit"
+    },
+    {
+      "gate": "History capacity must preserve the 10,000-segment recovery closure",
+      "status": "implemented-focused-tests-passed-final-check-pending",
+      "finding": "Compaction previously could create a segment beyond the collection ceiling; backup and exact-current repair would then refuse. Add pre-mutation capacity checks, pending-resume accounting and operator warnings."
+    }
+  ],
+  "followupLocalCheckBeforeHistoryGuard": {
+    "status": "passed",
+    "command": "npm run check",
+    "tests": 1087,
+    "passed": 1087,
+    "failed": 0,
+    "skipped": 0,
+    "sourceSha256": "e0f76abe5b11583f731e3911b158123be45407e00012d7a7b60da2b166acfc01",
+    "logSha256": "aca684f53034e5344f283a00237515b0270a6867e19ce1c87c77aca3db47396a",
+    "scope": "Python advisory/benchmark diagnostic follow-up, before the newly identified history capacity guard and browser runner pin."
+  },
+  "historyCapacityGuard": {
+    "status": "focused-checks-passed-full-final-check-pending",
+    "limit": 10000,
+    "scope": "Deployment-wide committed segments plus one durable pending reservation",
+    "newCompactionFailure": "HISTORY_SEGMENT_CAPACITY",
+    "existingOverCapFailure": "HISTORY_MIGRATION_REQUIRED",
+    "focusedTests": {
+      "historyAndRetention": 32,
+      "operatorStatusAndServer": 17,
+      "failed": 0,
+      "skipped": 0
+    },
+    "boundaryEvidence": "Real 5,000 + 4,999 encrypted tenant chains; last-slot intent and SDK-commit interruption/resume; complete 10,000-file mirror closure; exact archived receipt preserved; 10,001 refusal and pre-existing-over-cap startup preserve databases/witnesses/keyring/history listings.",
+    "independentReview": "Read-only source/assertion review found no ordering or pending-reservation blocker; execution results recorded separately.",
+    "operatorExperience": "Committed/reserved/total/limit in Setup and Maintenance, status/stdout/Prometheus; 80% warning and 95% critical; fixed recovery ceiling has no configure-limits override."
+  }
+}

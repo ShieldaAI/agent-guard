@@ -24,12 +24,39 @@ export function admissionGate(phases, { enforcePerformance = true } = {}) {
     phase.finalCalls === phase.successfulEffects && [...phase.samples, ...phase.warmupSamples].every(sample => sample.ok === true &&
       [sample.admissionMs, sample.prepareMs, sample.executeMs, sample.totalMs].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0)) &&
     (phase.mode === 'baseline' ? phase.polling === null : phase.polling?.failed === 0 && phase.polling?.skippedBusy === 0 && phase.polling?.completedDuringMeasurement >= 3));
+  // Retain diagnostic timing even when the declared stress cadence was missed.
+  // A valid latency sample set does not turn a failed profile into a passing one.
+  const latencySamplesValid = phases.length === 4 && phases.every((phase, index) => phase.mode === PHASE_ORDER[index] &&
+    phase.samples.length === phases[0].samples.length && phase.samples.length > 0 && phase.samples.every(sample => sample.ok === true &&
+      typeof sample.admissionMs === 'number' && Number.isFinite(sample.admissionMs) && sample.admissionMs >= 0));
+  const failureReasons = [];
+  if (phases.length !== 4 || phases.some((phase, index) => phase.mode !== PHASE_ORDER[index])) failureReasons.push({ code: 'PHASE_ORDER_INVALID' });
+  for (const [index, phase] of phases.entries()) {
+    const reason = code => failureReasons.push({ phase: index + 1, code });
+    if (!Number.isInteger(phase.executorThreadId) || !Number.isInteger(phase.clientThreadId) || phase.clientThreadId === phase.executorThreadId) reason('THREAD_ISOLATION_INVALID');
+    if (phase.successfulEffects !== phase.samples.length + phase.warmupSamples.length) reason('EFFECT_COUNT_MISMATCH');
+    if (phase.finalCalls !== phase.successfulEffects) reason('CALL_COUNT_MISMATCH');
+    if (phase.error) reason('PHASE_FAILED');
+    if (Object.values(phase.cleanup ?? {}).length !== 6 || !Object.values(phase.cleanup).every(value => value === true)) reason('CLEANUP_FAILED');
+    if (phase.samples.length !== phases[0].samples.length || phase.warmupSamples.length !== phases[0].warmupSamples.length || !phase.samples.length ||
+        ![...phase.samples, ...phase.warmupSamples].every(sample => sample.ok === true &&
+          [sample.admissionMs, sample.prepareMs, sample.executeMs, sample.totalMs].every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0))) reason('MEASUREMENT_INVALID');
+    if (phase.mode === 'baseline' && phase.polling !== null) reason('BASELINE_POLLING_INVALID');
+    if (phase.mode === 'polling') {
+      if (phase.polling?.failed !== 0) reason('POLL_REQUEST_FAILED');
+      if (phase.polling?.skippedBusy !== 0) reason('POLL_CADENCE_SKIPPED');
+      if (!(phase.polling?.completedDuringMeasurement >= 3)) reason('POLL_COVERAGE_INSUFFICIENT');
+    }
+  }
   const times = mode => phases.filter(phase => phase.mode === mode).flatMap(phase => phase.samples.map(sample => sample.admissionMs));
-  const baselineP95Ms = valid ? percentile95(times('baseline')) : null;
-  const pollingP95Ms = valid ? percentile95(times('polling')) : null;
+  const baselineP95Ms = latencySamplesValid ? percentile95(times('baseline')) : null;
+  const pollingP95Ms = latencySamplesValid ? percentile95(times('polling')) : null;
   const ratio = baselineP95Ms > 0 ? pollingP95Ms / baselineP95Ms : null;
-  const performancePassed = ratio !== null && ratio <= 1.10;
+  const performancePassed = valid && ratio !== null && ratio <= 1.10;
+  if (valid && enforcePerformance && !performancePassed) failureReasons.push({ code: 'ADMISSION_REGRESSION_EXCEEDED' });
   return { passed: valid && (!enforcePerformance || performancePassed), correctnessPassed: valid,
+    effectAccountingPassed: phases.length === 4 && phases.every(phase => phase.successfulEffects === phase.samples.length + phase.warmupSamples.length && phase.finalCalls === phase.successfulEffects),
+    stressProfileValid: valid, latencySamplesValid, failureReasons,
     performanceEnforced: enforcePerformance, performancePassed, maximumRatio: 1.10, baselineP95Ms, pollingP95Ms,
     ratio, regressionPercent: ratio === null ? null : (ratio - 1) * 100 };
 }

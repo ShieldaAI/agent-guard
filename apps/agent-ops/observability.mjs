@@ -63,14 +63,18 @@ function operatorScope(operator) {
 
 function capacity(maintenance, keyring) {
   const usage = maintenance.usage ?? {}, limits = maintenance.limits ?? {}, statistics = maintenance.statistics ?? {};
+  const history = maintenance.historyCapacity ?? {};
   return [
     ['tickets', usage.tickets, limits.maxTickets], ['requests', usage.requests, limits.maxRequests],
     ['receipts', usage.receipts, limits.maxRequests], ['backend_bytes', usage.backendBytes, limits.maxBackendBytes],
     ['ledger_bytes', usage.ledgerBytes ?? statistics.ledgerBytes, limits.maxLedgerBytes ?? statistics.ledgerByteLimit],
     ['retained_keys', keyring?.keyCount, keyring?.maxKeys ?? limits.maxRetainedKeys],
+    ['history_segments', history.total, history.limit],
   ].map(([id, used, limit]) => {
     const measured = count(used) && count(limit) && limit > 0, ratio = measured ? used / limit : null;
     return { id, used: count(used) ? used : null, limit: count(limit) ? limit : null, ratio,
+      ...(id === 'history_segments' ? { committed: count(history.committed) ? history.committed : null,
+        reserved: count(history.reserved) ? history.reserved : null, limitKind: 'fixed-recovery-profile' } : {}),
       state: !measured ? 'unknown' : ratio >= .95 ? 'critical' : ratio >= .8 ? 'warning' : 'ok' };
   });
 }
@@ -107,7 +111,11 @@ export function operationalStatus({ workflow, operator, telemetry, keyring, tlsE
   if (unconfirmed.length) alerts.push({ id: 'unconfirmed_outcome', severity: oldest >= 300_000 ? 'critical' : 'warning',
     message: 'An original submission needs receipt reconciliation. Do not resubmit it.', count: unconfirmed.length });
   for (const item of capacities) if (item.state !== 'ok') alerts.push({ id: `capacity_${item.id}`, severity: item.state === 'critical' ? 'critical' : 'warning',
-    message: item.state === 'unknown' ? 'Capacity usage is unavailable. Verify host instrumentation.' : 'Review retained usage and the offline maintenance plan before accepting more work.' });
+    message: item.state === 'unknown' ? 'Capacity usage is unavailable. Verify host instrumentation.' : item.id === 'history_segments'
+      ? item.state === 'critical'
+        ? `History recovery capacity is ${item.ratio >= 1 ? 'exhausted' : 'nearly exhausted'}. Pause new compaction and plan a separately reviewed compatible recovery adapter or migration with the deployment owner. Preserve all records, history, witnesses and keys.`
+        : 'History has reached 80% of the fixed recovery-supported segment limit. Include pending reservations in capacity planning; arrange a deployment-owner review before it fills.'
+      : 'Review retained usage and the offline maintenance plan before accepting more work.' });
   if (http.recent.serverErrors >= 5 && http.recent.serverErrors / http.recent.requests >= .05) alerts.push({ id: 'http_errors', severity: 'critical', message: 'Service failures exceeded the five-minute warning threshold. Check readiness and preserve state.' });
   if (http.recent.rateLimited >= 10) alerts.push({ id: 'rate_limited', severity: 'warning', message: 'Repeated requests are being rate limited. Inspect workload volume and client retry behavior.' });
   if (http.recent.requests >= 20 && (http.recent.p95AboveMaxBucket || http.recent.p95UpperBoundMs > 2000)) alerts.push({ id: 'http_latency', severity: 'warning', message: 'Request latency exceeded the two-second operating target. Inspect host load and storage.' });
@@ -131,6 +139,10 @@ export function prometheusStatus(status) {
   for (const item of status.capacity) {
     if (item.used !== null) lines.push(`agent_ops_capacity_used{resource="${item.id}"} ${item.used}`);
     if (item.limit !== null) lines.push(`agent_ops_capacity_limit{resource="${item.id}"} ${item.limit}`);
+    if (item.id === 'history_segments') {
+      if (count(item.committed)) lines.push(`agent_ops_history_segments_committed ${item.committed}`);
+      if (count(item.reserved)) lines.push(`agent_ops_history_segments_reserved ${item.reserved}`);
+    }
   }
   lines.push(`agent_ops_tenant_unconfirmed ${status.workflow.unconfirmed}`, `agent_ops_tenant_oldest_unconfirmed_seconds ${status.workflow.oldestUnconfirmedMs / 1000}`);
   lines.push(`agent_ops_security_log_failures_total ${status.http.securityLog.failures}`, `agent_ops_security_log_configured ${status.http.securityLog.configured ? 1 : 0}`);
