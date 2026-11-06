@@ -192,7 +192,12 @@ database readiness. Later `b82dc4b` used identical constrained staged runtime
 bytes but failed both declared runs at 12.980% and 13.017% overhead; ordinary full
 admission failed at 27.422%. All 3,600 effects and 427 polls completed without
 failed/skipped polls, and full graph/live recovery passed. The earlier passes do
-not establish repeatable margin: this profile remains unqualified. The earlier
+not establish repeatable margin. The decoder-only `f28b8e2` checkpoint subsequently
+passed both declared native runs at **6.863% and 8.003%**, plus ordinary full
+admission at **0.204%**: 3,600 effects, 431 polls, zero failed/skipped polls, and
+verified controls, full graph, recovery and cleanup. This is measured qualification
+of that exact profile; the Node security hold and fixed-runtime requalification
+remain open. The earlier
 default-worker profile **passed on exact source `e4e42f`** at 7.2766% admission
 overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
 cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
@@ -273,11 +278,16 @@ it does not prove the historical readiness failure's cause. Local validation pas
 lint/formatting, 1,022 unit tests, 150 authenticated integration tests, verified
 cleanup and package/installed-wheel checks. Exact `b82dc4b` passed all six ordinary
 hosted workflows and 11 CI jobs, and CodeQL alert 23 is fixed without dismissal.
-The full graph passed, while admission remains failed as recorded above. A new
+The full graph passed, while its admission failed as recorded above. A new
 private core-worker decoder follow-up preserves fresh authenticated decryption,
 bounds and mirror checks; authority and host/MCP decoding remain unchanged.
 Its 311 focused checks and full local check passed: **1,316/1,316 tests, zero skips,
-plus all installed consumers**. Decoder-only hosted qualification remains pending.
+plus all installed consumers**. Exact `f28b8e2` then passed the declared hosted
+qualifications above and all six ordinary workflows/11 CI jobs. The
+[source-bound checkpoint](../../docs/validation/one-cpu-observer-2026-11-06.json)
+retains raw evidence, prior failures and the unchanged deployment limits. A
+documentation-only follow-up must preserve runtime, staged inputs and package
+payloads and retain its automatic checks; it does not replace the required Node update.
 The separate identifier-cache prototype was rejected and is not adopted; the
 worker nice-level policy remains unchanged. Prototype
 measurements and the separate owner-profile diagnostic cannot qualify it.

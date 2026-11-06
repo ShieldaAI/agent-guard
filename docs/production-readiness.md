@@ -31,7 +31,12 @@ or skipped polls, verified controls and cleanup. However, `b82dc4b` used the sam
 overhead. Its ordinary full admission also failed at **27.422%**. Each completed
 all 1,200 effects; the three runs completed 166/157/104 polls with zero failures
 or skips. Full graph and live recovery passed. The earlier passes do not establish
-repeatable margin: overall performance remains unqualified.
+repeatable margin: that checkpoint remained unqualified. The decoder-only
+`f28b8e2` follow-up subsequently passed its two declared native qualifications
+at **6.863% and 8.003%**, and ordinary full admission at **0.204%**. All 3,600
+effects and 431 polls completed with zero failures/skips; full graph, live recovery,
+controls and cleanup passed. This qualifies the measured profile on that exact
+candidate; the Node security hold and fixed-runtime requalification remain open.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second
@@ -71,11 +76,19 @@ failed only the overhead gate in all three declared runs, as recorded above;
 the smoke pilot cannot substitute for full qualification. A new private core-worker
 decoder follow-up passed 311 focused checks and the full local check:
 **1,316/1,316 tests, zero skips, plus all installed consumers**. Decoder-only hosted
-qualification remains pending. The separate identifier-cache prototype was rejected
+qualification on exact `f28b8e2` passed as recorded above. All six ordinary workflows
+and 11 CI jobs also passed, including 195 browser scans, 45 no-skip Linux isolation
+checks, Python 1,022 unit/150 integration tests, packaging and installed consumers.
+The separate identifier-cache prototype was rejected
 for its small repeated-string gain and high-cardinality cost; it is not adopted.
 The worker nice-level policy remains unchanged. The decoder preserves fresh authenticated reads and mirror
 checks; authority and host/MCP decoding remain unchanged. Prototype measurements
-and the separate owner-profile diagnostic cannot qualify the change.
+and the separate owner-profile diagnostic do not count as acceptance.
+This is a source-bound `f28b8e2` checkpoint: its tested merge has the same tree,
+94 staged inputs contain only the four expected compiled decoder changes, and
+all five hosted npm payloads match the prepared artifacts. A later documentation-only
+commit changes the protected fingerprint through the runbook, while preserving
+runtime/staged/package bytes; its automatic results must be retained separately.
 The controlled exact-`9709f70` Windows serial experiment
 passed the previously failing cases and installed consumers; the maintained
 Windows-only test launcher subsequently passed on `1ef859c`. Prior failures

@@ -2,8 +2,9 @@
 
 **Current preparation: `0.1.0`, unpublished and blocked.** The
 [candidate notes](releases/0.1.0.md) and root [release state](../release-state.json)
-retain the open Node HIGH review, admission-performance acceptance and final
-candidate checks. The security hold follows the existing
+record passed `f28b8e2` current-runtime qualification. The Node HIGH review,
+matching qualification on future reviewed fixed Node images, and exact final
+merged-candidate checks remain open. The security hold follows the existing
 [production acceptance policy](production-readiness.md#remaining-acceptance-and-operational-limits).
 Do not publish or create a stable GitHub release while these gates remain open.
 Normal `npm run check` and `npm run pack` remain available for candidate work.
@@ -101,12 +102,17 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    admission failed at 27.422% overhead and both constrained runs failed at
    12.980%/13.017%, despite zero failed/skipped polls. The constrained staged
    runtime bytes match `ba7deb6`; its earlier passes do not establish repeatable
-   margin. Overall performance is unqualified. The private core-worker decoder
+   margin. That checkpoint remained unqualified. The private core-worker decoder
    follow-up passed 311 focused checks and the full local check: **1,316/1,316,
-   zero skips, plus all installed consumers**. Decoder-only hosted qualification
-   remains pending. The identifier-cache prototype was rejected and is not adopted;
+   zero skips, plus all installed consumers**. Exact `f28b8e2` then passed both
+   declared native qualifications at 6.863%/8.003% and ordinary full admission at
+   0.204%, with 3,600 effects and 431 polls in total, zero failed/skipped polls,
+   verified controls, graph/recovery and cleanup. Its six ordinary workflows and
+   all 11 CI jobs passed. The identifier-cache prototype was rejected and is not adopted;
    the worker nice-level policy is unchanged. Prototype measurements and owner profiling are
-   ineligible diagnostics. Prior quota-only,
+   ineligible diagnostics. These are source-bound checkpoint results, not a
+   publication authorization: retain the documentation-only follow-up's automatic
+   results and repeat qualification on reviewed fixed Node images. Prior quota-only,
    Colima-affined, diagnostic and 10 ms-period failures remain recorded. Do not add
    diagnostics, change limits, or retry away failures.
    The runner's generic default remains bandwidth-only; the configured acceptance
@@ -184,15 +190,44 @@ The npm account must have publishing rights in the `shieldaai` organization. Kee
    with passing checks and resolved conversations, then obtain successful CI and
    CodeQL on the exact merged release commit. Confirm the release checkout is
    clean. The sole-maintainer policy does not require a second person's approval.
-   Only after these gates pass, publish core first, then the other packages:
+   Only after these gates pass, publish core first, then the other packages.
 
-```sh
-npm publish --workspace packages/core --access public --tag latest
-npm publish --workspace packages/mcp --access public --tag latest
-npm publish --workspace packages/scenarios --access public --tag latest
-npm publish --workspace packages/executor --access public --tag latest
-npm publish --workspace packages/agent-map --access public --tag latest
-```
+Run the following as **separate operator steps, one package at a time**. Stop on
+any failed command or uncertain upload result; do not paste them as one batch.
+Before starting the next package, wait for the current exact version to become
+available and verify its `gitHead`, registry integrity and reviewed package bytes
+using the read-only commands below for that package; reserve the all-package
+loop for final reconciliation. Complete any npm MFA challenge without bypassing hooks.
+
+1. Publish core:
+
+   ```sh
+   npm publish --workspace packages/core --access public --tag latest
+   ```
+
+2. After core is verified, publish MCP:
+
+   ```sh
+   npm publish --workspace packages/mcp --access public --tag latest
+   ```
+
+3. After MCP is verified, publish scenarios:
+
+   ```sh
+   npm publish --workspace packages/scenarios --access public --tag latest
+   ```
+
+4. After scenarios is verified, publish executor:
+
+   ```sh
+   npm publish --workspace packages/executor --access public --tag latest
+   ```
+
+5. After executor is verified, publish Agent Map:
+
+   ```sh
+   npm publish --workspace packages/agent-map --access public --tag latest
+   ```
 
 For a future alpha, use `--tag alpha` and matching prerelease metadata instead;
 do not move `latest` back from an accepted stable release. Each workspace's
@@ -215,6 +250,22 @@ requires provisioned disposable Docker/VM runners. Retain unskipped evidence for
 every claimed platform rather than extending Linux results to other hosts.
 
 An accepted publish can report that the package is still being processed. npm scans uploads before they become installable, so a temporary registry 404 is possible. Wait for each exact version to appear with `npm view <package>@<version> version dist-tags --json`; do not repeat an accepted publish or change the version to work around processing. See [npm's publish-time scanning announcement](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/).
+
+If publication stops partway through, preserve the approved release commit,
+reviewed artifacts and each package's upload result. Before resuming, reconcile
+all five exact versions with the registry commands below. For versions already
+available, verify `gitHead` against that same commit, validate the downloaded
+tarball against `dist.integrity`, and compare its member bytes with the reviewed
+package. An accepted but still-processing upload must be awaited, never repeated.
+A temporary 404 or a lost client connection does not prove that npm rejected an
+upload; resolve uncertain acceptance with npm before sending it again.
+
+After recovering authentication/MFA and reconfirming the clean approved checkout,
+resume only packages confirmed not to have been accepted, in the original order.
+Skip already accepted packages. Do not change source or reuse a published version
+to repair an integrity or commit mismatch; stop and resolve that release blocker.
+Keep the release incomplete, with no version tag or GitHub release, until all five
+packages and the registry-installed consumers have passed verification.
 
 After all versions become available, install their exact versions from the public registry into a clean project, verify the MCP adapter and run the conformance suite. Verify their tarball integrity and recorded `gitHead` against the committed source used for publication. Create release notes and a version tag for that exact commit using an administrator account. Tags matching `v*` are protected against updates and deletion, so verify the commit before creating the tag. Preserve any existing stable `latest` version when publishing a prerelease, and do not imply a production security guarantee.
 
