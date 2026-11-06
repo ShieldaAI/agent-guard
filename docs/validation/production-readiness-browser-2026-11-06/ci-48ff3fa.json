@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 1,
+  "status": "partial-infrastructure-interruption",
+  "runId": 42138768310,
+  "runUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768310",
+  "provenance": {
+    "headSha": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+    "checkoutSha": "a9f91398498337a7f0bead0672cda0e6cc724510",
+    "headToCheckoutChangedFiles": 0,
+    "comparisonUrl": "https://github.com/ShieldaAI/agent-guard/compare/48ff3fa87fef587b7d78dade41ef27f4f0d89b86...a9f91398498337a7f0bead0672cda0e6cc724510"
+  },
+  "runner": "Ubuntu 26.04.1, ubuntu26/20261101.186",
+  "allBrowserGatesPassed": false,
+  "counts": {
+    "plannedSuiteGates": 9,
+    "passedSuiteGates": 3,
+    "skippedSuiteGates": 6,
+    "plannedScenarioSnapshots": 147,
+    "completedScenarioSnapshots": 49,
+    "observedAxeViolationsInCompletedSuites": 0,
+    "observedPageErrorsInCompletedSuites": 0
+  },
+  "jobs": [
+    {
+      "id": 127634068953,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps chromium",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        }
+      ]
+    },
+    {
+      "id": 127634068962,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps firefox",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 11
+        }
+      ]
+    },
+    {
+      "id": 127634069085,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "cancelled",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps webkit",
+          "status": "completed",
+          "conclusion": "cancelled",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 11
+        }
+      ]
+    }
+  ],
+  "completedReports": [
+    {
+      "kind": "synthetic-operator-ui-contract",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "exact-review",
+        "interrupted-response",
+        "confirmed-receipt",
+        "denied-request",
+        "unconfirmed-outcome",
+        "archive-blocked",
+        "maintenance",
+        "activity-snapshot",
+        "self-hosted-setup",
+        "legacy-recovery-setup",
+        "unverified-recovery-setup",
+        "empty-company-setup",
+        "later-ticket-page",
+        "later-request-page",
+        "configured-capacity-reached",
+        "mobile-setup",
+        "mobile-maintenance",
+        "expired-review",
+        "restart-requires-review",
+        "service-unavailable",
+        "permission-ended"
+      ],
+      "mobileViews": 4,
+      "pagedTickets": 505,
+      "pagedRequests": 506,
+      "preparations": 1,
+      "approvals": 1,
+      "denials": 1,
+      "reconciliations": 2,
+      "backendWrites": 1,
+      "archives": 1,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "disposable-real-operator-service",
+      "node": "v24.22.2",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "service-empty",
+        "service-setup",
+        "service-review",
+        "service-completed",
+        "service-unconfirmed",
+        "service-archive-review",
+        "service-activity-snapshot",
+        "service-mobile-setup",
+        "service-mobile-maintenance",
+        "service-empty-tickets",
+        "service-empty-onboarding",
+        "service-later-ticket-page",
+        "service-sign-in-failure",
+        "service-mobile-sign-in-failure"
+      ],
+      "mobileViews": 5,
+      "oidcExchange": "local fixture",
+      "storage": "real encrypted and witnessed SQLite",
+      "recoveryMirrors": "schema3 exact-current, verified after writes",
+      "approvals": 2,
+      "backendWrites": 2,
+      "denials": 1,
+      "receiptOnlyReconciliations": 1,
+      "archives": 1,
+      "pagedTenantTickets": 505,
+      "emptySeed": true,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "synthetic-inventory-real-map-gateways",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health",
+        "inventory unavailable",
+        "company signed in",
+        "company session revoked",
+        "company signed out"
+      ],
+      "mobileViews": 4,
+      "graphGeometry": {
+        "viewportWidth": 660,
+        "minimumRenderedNodeFont": 10.02726131038074,
+        "overlappingNodeLabels": 0
+      },
+      "failedFilterHidesStaleResults": true,
+      "inventoryRetrySucceeded": true,
+      "bearerDenialClearedEvidence": true,
+      "oidcExchange": "local signed fixture",
+      "companyRevocationClearedEvidence": true,
+      "companySignoutClearedEvidence": true
+    }
+  ],
+  "artifact": {
+    "id": 13466698449,
+    "name": "browser-chromium",
+    "archiveSha256": "82dffbadbcb101a3ab537b43dcd6417e4f2039e343fbb72a4e05b93c448edd3c"
+  },
+  "diagnosis": "Firefox and WebKit were cancelled at the configured 20-minute boundary during slow Ubuntu archive dependency downloads; all their browser suites were skipped and no browser artifacts existed. Chromium completed all suites.",
+  "platformSource": "https://playwright.dev/docs/intro#system-requirements",
+  "remediation": "Pin browser job to supported Ubuntu 24.04, preserving all engines, suite commands, artifact requirements and the 20-minute timeout.",
+  "scope": "Synthetic operator contract plus real disposable HTTPS/OIDC/encrypted SQLite service and signed Map gateways; 49 named scenario snapshots per engine, repeated across three engines. This run completed Chromium only.",
+  "humanUsability": "Unmeasured; these are automated regression/accessibility checks, not participant observations or full WCAG conformance.",
+  "visualReview": "Retained Chromium desktop review, mobile Setup and graph screenshots inspected; fixture graph default fit has a 10.03px minimum node font and zero node-label box overlap.",
+  "screenshots": [
+    {
+      "file": "48ff3fa-chromium-review.png",
+      "sha256": "7620ea2795246f6ec12d955a19b66c8f87549efed371fece01dd05bb4f0272b6",
+      "bytes": 100693
+    },
+    {
+      "file": "48ff3fa-chromium-mobile-setup.png",
+      "sha256": "d4d6c4cca5559c5ce3a617eb7fd6b017937d4350d28e63b92269b359898bb9c9",
+      "bytes": 328468
+    },
+    {
+      "file": "48ff3fa-chromium-map.png",
+      "sha256": "76f483931f64634c6f626de98fab4ab65b6ef4c81351128371577ec3984acb6e",
+      "bytes": 248438
+    }
+  ]
+}

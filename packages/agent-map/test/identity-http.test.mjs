@@ -3,6 +3,11 @@ import assert from 'node:assert/strict';
 import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
+import { X509Certificate } from 'node:crypto';
+import { constants } from 'node:fs';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { MapService } from '../dist/service.js';
 import { startMapIdentityServer } from '../dist/identity-http.js';
 import { createTestIdentityProvider } from './helpers/oidc-provider.mjs';
@@ -117,6 +122,58 @@ test('identity listener configuration rejects ambiguous origins and scopes befor
     }, error => /^MAP_(?:CONFIG|SCOPE)_INVALID$/.test(error.code));
   }
   assert.equal(provider.requests.length, 0);
+});
+
+test('company TLS binds the hostname, matching key and certificate validity before provider discovery', async t => {
+  const provider = await createTestIdentityProvider(t), other = await createTestIdentityProvider(t);
+  const base = { service: new MapService({ read: async () => ({ sources: [] }) }),
+    publicOrigin: 'https://127.0.0.1:0', port: 0, tls: { cert: provider.cert, key: provider.key },
+    oidc: { issuer: provider.issuer, clientId: provider.clientId, clientSecret: provider.clientSecret, ca: provider.ca },
+    companyId: 'company', bindings: [{ subject: 'user-one', scope: scope() }] };
+  await assert.rejects(startMapIdentityServer({ ...base, publicOrigin: 'https://wrong-host.invalid:8443', port: 8443 }), { code: 'MAP_CONFIG_INVALID' });
+  await assert.rejects(startMapIdentityServer({ ...base, tls: { cert: provider.cert, key: other.key } }), { code: 'MAP_CONFIG_INVALID' });
+  const certificate = new X509Certificate(provider.cert), actualNow = Date.now;
+  try {
+    Date.now = () => Date.parse(certificate.validTo);
+    await assert.rejects(startMapIdentityServer(base), { code: 'MAP_CONFIG_INVALID' });
+    Date.now = () => Date.parse(certificate.validFrom) - 1;
+    await assert.rejects(startMapIdentityServer(base), { code: 'MAP_CONFIG_INVALID' });
+  } finally { Date.now = actualNow; }
+  assert.equal(provider.requests.length, 0);
+});
+
+test('a company gateway stops accepting HTTP operations when its served certificate expires', async t => {
+  const s = await setup(t), actualNow = Date.now;
+  try {
+    Date.now = () => Date.parse(new X509Certificate(s.provider.cert).validTo);
+    const response = await s.client.send('/auth/session');
+    assert.equal(response.status, 503);
+    assert.equal(response.data.error, 'MAP_UNAVAILABLE');
+  } finally { Date.now = actualNow; }
+});
+
+test('IdP top-level redirects can load only the public shell; protected routes keep same-origin checks', async t => {
+  const directory = await mkdtemp(join(tmpdir(), 'map-public-shell-'));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  for (const [file, content] of [['index.html', '<!doctype html><title>Public shell</title>'], ['app.js', '/* public script */'], ['app.css', '/* public style */']]) await writeFile(join(directory, file), content, { mode: 0o600 });
+  const assetOpensSupported = typeof constants.O_NONBLOCK === 'number' && typeof constants.O_NOFOLLOW === 'number';
+  // Windows supports the API gateway, but cannot serve the POSIX asset profile.
+  // Exercise its explicit startup refusal and still check every protected route.
+  if (!assetOpensSupported) await assert.rejects(setup(t, { viewerDirectory: directory }), { code: 'MAP_CONFIG_INVALID' });
+  const s = await setup(t, assetOpensSupported ? { viewerDirectory: directory } : {});
+  const navigation = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
+  for (const path of ['/', '/?auth_error=1']) {
+    const page = await s.client.send(path, { headers: navigation });
+    assert.equal(page.status, assetOpensSupported ? 200 : 403);
+    if (assetOpensSupported) assert.equal(page.text, '<!doctype html><title>Public shell</title>');
+    else assert.equal(page.data.error, 'MAP_REQUEST_DENIED');
+    assert.equal(page.setCookies.length, 0);
+  }
+  assert.equal((await s.client.send('/?code=do-not-reflect', { headers: navigation })).status, 400);
+  assert.equal((await s.client.send('/auth/session', { headers: navigation })).status, 403);
+  assert.equal((await s.client.send('/v1/query', { method: 'POST', body: queryBody, headers: navigation })).status, 403);
+  assert.equal((await s.client.send('/auth/login', { method: 'POST', body: {}, headers: navigation })).status, 403);
+  assert.equal((await s.client.send('/', { headers: { ...navigation, 'Sec-Fetch-Mode': 'cors', 'Sec-Fetch-Dest': 'empty' } })).status, 403);
 });
 
 test('HTTPS OIDC login rotates private browser session and queries the immutable host scope', async t => {

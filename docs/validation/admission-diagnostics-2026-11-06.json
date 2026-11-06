@@ -1,0 +1,359 @@
+{
+  "schemaVersion": 1,
+  "parentCommit": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+  "purpose": "Diagnose isolated polling stalls without changing the workload or acceptance gates.",
+  "admissionGateUnchanged": true,
+  "gateSha256": "f7e3c1721886436fdaebbf15227addf98b94f697ffeebcfc0756bcb39c7f2edb",
+  "diagnosticOnly": true,
+  "acceptanceEvidenceEligible": false,
+  "inputSha256": {
+    "scripts/benchmark-admission.mjs": "aa76bd2098f8f5bcba8ad1778fa92a908afc829356e0995d7de8dac3bb234d9c",
+    "scripts/benchmark-admission-diagnostics.mjs": "9c7fb2d1820240f393c63ec8049acbacc8fed33ddd418b136341dc3bf889a667",
+    "scripts/benchmark-admission-diagnostics.test.mjs": "f6cfd3e4971959025520cb15a1590a754bf07d443f63cb7630ca03dfcc2b943d",
+    ".github/workflows/cartography-pilot.yml": "301bfc26500d3eff41821548c4c4bba4e07eb7bad6b6d83fbfbf5f99e22c0bc0"
+  },
+  "focusedVerification": {
+    "command": "node --test scripts/benchmark-admission.test.mjs scripts/benchmark-admission-diagnostics.test.mjs",
+    "tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "Functional unit checks including a tiny 17-effect phase, behavior preservation, privacy, bounds, clock spans and teardown; not latency evidence."
+  },
+  "independentSourceReview": "Approved after fixing inherited stream-name rejection and enforcing a boolean processMetrics option.",
+  "hostedDiagnosticRun": {
+    "run": 42194605365,
+    "job": 127814605231,
+    "source": "f6dec314d8f18f9d7858e3da8bb129b1e6b8013c",
+    "status": "complete-diagnostic-performance-gate-failed",
+    "fullBenchmark": true,
+    "admissionDiagnostics": true,
+    "artifactId": 13492255207,
+    "artifactZipSha256": "ed70ebf803d192ac6d264cbf51923c7610d075399b9f67f4ce431e176d0077ec",
+    "artifactDigestVerified": true,
+    "diagnosticsComplete": true,
+    "acceptanceEvidenceEligible": false,
+    "gate": {
+      "passed": false,
+      "correctnessPassed": true,
+      "effectAccountingPassed": true,
+      "stressProfileValid": true,
+      "latencySamplesValid": true,
+      "failureReasons": [
+        {
+          "code": "ADMISSION_REGRESSION_EXCEEDED"
+        }
+      ],
+      "performanceEnforced": true,
+      "performancePassed": false,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 62.299452,
+      "pollingP95Ms": 69.370846,
+      "ratio": 1.1135065200894543,
+      "regressionPercent": 11.350652008945428
+    },
+    "retainedReport": {
+      "path": "admission-diagnostic-trace-2026-11-06-f6dec31.json.gz",
+      "sha256": "e8f526b314b48e26215e796b2639fe6bd8b21be5a669de2806956f55214b6f34",
+      "uncompressedSha256": "64ad8066cb7fa8f51ce46ba3df2c0b9a206fc9c38ee788442811d2db7ab3b532"
+    },
+    "phaseAnalysis": [
+      {
+        "phase": 2,
+        "polls": 120,
+        "exportP95Ms": 12.575317,
+        "maximumExportMs": 23.022807,
+        "preHandlerP95Ms": 94.181969,
+        "maximumClientParseMs": 4.031055,
+        "mainEventLoopUtilization": 0.9846502884489625,
+        "worstPoll": {
+          "durationMs": 123.810123,
+          "beforeHandlerMs": 108.034205,
+          "exportMs": 12.521176
+        }
+      },
+      {
+        "phase": 3,
+        "polls": 118,
+        "exportP95Ms": 13.916323,
+        "maximumExportMs": 19.656962,
+        "preHandlerP95Ms": 94.283002,
+        "maximumClientParseMs": 3.917312,
+        "mainEventLoopUtilization": 0.9844799421551196,
+        "worstPoll": {
+          "durationMs": 129.119542,
+          "beforeHandlerMs": 114.265811,
+          "exportMs": 12.046749
+        }
+      }
+    ],
+    "interpretation": "Ordinary shared-main-loop waiting dominates poll time in this observation; synchronous export adds roughly 10\u201314 ms. The earlier 371\u2013397 ms stalls did not recur, and their cause remains unproven. Instrumented overhead is not performance acceptance evidence.",
+    "nextAction": "One predeclared main-thread CPU profile with aligned prepare/execute and ledger read/transaction spans, retaining the workload and gates."
+  },
+  "productionRuntimeChanged": false,
+  "cliFixtureCorrection": {
+    "failedRun": 42194585456,
+    "representativeFailedJob": 127814536737,
+    "failure": "The directory-alias fixture copied the entry point but omitted its newly imported diagnostics helper, producing ERR_MODULE_NOT_FOUND before the expected ADMISSION_START_FAILED.",
+    "correction": "Copy the helper into the disposable aliased checkout; preserve the original status and error assertions.",
+    "scriptTests": {
+      "command": "node --test scripts/*.test.mjs",
+      "tests": 142,
+      "passed": 141,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Optional real MCP container test; the separate required hosted Linux isolation gate passed.",
+      "logSha256": "b65b734f24aded20814b8d542bce13a2f034cd955ee98e1885ff045aee5be7ac"
+    },
+    "hostedCorrection": {
+      "head": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+      "ciRun": 42195606471,
+      "status": "all-platform-jobs-passed"
+    }
+  },
+  "secondDiagnosticProtocol": {
+    "status": "complete-diagnostic-performance-gate-failed",
+    "purpose": "Attribute busy-main-thread work using sampled stacks and aligned method spans; do not infer the cause of unreproduced rare stalls.",
+    "diagnosticOnly": true,
+    "acceptanceEvidenceEligible": false,
+    "plannedRuns": 1,
+    "inputs": {
+      "full_benchmark": true,
+      "admission_diagnostics": true,
+      "admission_cpu_profile": true
+    },
+    "unchangedWorkload": {
+      "phaseOrder": [
+        "baseline",
+        "polling",
+        "polling",
+        "baseline"
+      ],
+      "tasks": 100,
+      "grantsPerTask": 10,
+      "measuredPerPhase": 250,
+      "warmupPerPhase": 50,
+      "pollIntervalMs": 250
+    },
+    "unchangedGates": "All 1200 effects/calls and cleanup; no failed polls or busy skipped intervals; coverage in each polling phase; full p95 ratio at most 1.10. Instrumented reports remain ineligible regardless of gate result.",
+    "hooks": [
+      "executor.prepare",
+      "executor.execute",
+      "LedgerStore.prototype.read",
+      "LedgerStore.prototype.transaction"
+    ],
+    "profileBounds": {
+      "samplingIntervalUs": 1000,
+      "softDeadlineMsPerPhase": 120000,
+      "maximumNodesPerPhase": 20000,
+      "maximumSamplesPerPhase": 120000,
+      "maximumSanitizedBytesPerPhase": 16777216
+    },
+    "privacy": "Local inspector Session without a listening port; sanitized repository-relative or Node-internal frame labels, timestamps and counters only; no raw profiles, arguments, results, source text, credentials or error text.",
+    "interpretation": "Preserve native Promise identity but acknowledge added reactions and profiling overhead. Overlapping/nested spans are not additive; sampled stack presence is not exact CPU time or proof of a native wait. Align only through recorded hrtime activation brackets. Overrun, truncation, errors and drops are explicit incomplete evidence. The captured run did not reproduce the earlier 371\u2013397 ms stalls; its maximum poll was 143.36 ms. Decode/reviver dominates sampled stacks across all four phases, supporting investigation of private fresh-graph normalization, not removal or caching of authority reads.",
+    "productionRuntimeChanged": false,
+    "admissionGateByteIdenticalTo": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+    "inputSha256": {
+      "scripts/benchmark-admission.mjs": "98dda4975cf03096d952a5becaf5df39bce1159cdbf090bddef79c66eee97909",
+      "scripts/benchmark-admission-diagnostics.mjs": "be108a796df6aff8c6e611736f6db01dd01ce27970c1ec285e7be3101f8318c2",
+      "scripts/benchmark-admission-profile.mjs": "5adbf44076e6cb17a956ae8f7cd9edbafa989871fb6b3dd1a4a9411285be037e",
+      "scripts/benchmark-admission-profile.test.mjs": "402b71974aaca5fbb63e4c77d398a11c0ff6ecac48c2c322d1d8f0d491af0b8b",
+      "scripts/validation-cli.test.mjs": "aab9ad183d46660430c4ec75236d6f7d975461c24cd521fdcdb8b386da62cdc0",
+      ".github/workflows/cartography-pilot.yml": "9d2f7aaeab7f5e8d94bf3affaa1c0641423234da365e96f06bc97a6870f4472d"
+    },
+    "verification": {
+      "command": "node --test scripts/*.test.mjs",
+      "tests": 147,
+      "passed": 146,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Optional real MCP container case; the required hosted Linux isolation gate is recorded separately.",
+      "profileTests": 5,
+      "scope": "Functional/privacy/bounds/cleanup checks including a six-effect instrumented fixture; not performance evidence.",
+      "logSha256": "c27eafe4494961f9067253fe5b22187e1fcb48fd3469d888bd2ebbd0c7b0c401"
+    },
+    "independentSourceReview": "Approved after checking method behavior, Promise identity, bounded sanitized capture, exact gate preservation and all five new tests. No remaining source blocker; execution verification is the separately recorded complete script suite.",
+    "hostedRun": {
+      "run": 42199037007,
+      "job": 127829454037,
+      "head": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+      "artifactId": 13493078073,
+      "artifactZipSha256": "46439a9b499f8e1578a59c19e1396b19d23e23ac385a3e0275ad845cb2d3083f",
+      "artifactDigestVerified": true,
+      "diagnosticsComplete": true,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 65.241982,
+        "pollingP95Ms": 74.617212,
+        "ratio": 1.1436993437753011,
+        "regressionPercent": 14.369934377530114
+      },
+      "retainedReports": [
+        {
+          "path": "admission-cpu-diagnostic-admission-2026-11-06-ee0d589.json.gz",
+          "bytes": 16941713,
+          "sha256": "22882c93a49d069a0a5a3283727f6078d463c397dff0529331d20349f1bf581b",
+          "uncompressedSha256": "24f0a7af6281fdb03e30d7543630d5b4221ce712e274bc9791d76670d3b266c7"
+        },
+        {
+          "path": "admission-cpu-diagnostic-benchmark-2026-11-06-ee0d589.json.gz",
+          "bytes": 23435,
+          "sha256": "091b85ab2c0a5cdf59a901c58042bbf6560e044a1dd0a56f0460a99eb72518de",
+          "uncompressedSha256": "4ee5066206cdc382a4360517fe914d4c39b20312bfa9f810142111698e26a320"
+        },
+        {
+          "path": "admission-cpu-diagnostic-verification-2026-11-06-ee0d589.json.gz",
+          "bytes": 1773,
+          "sha256": "fbebf23ceef139292cb68009aa1d97f45ec83718055746c362cd65f852a7700f",
+          "uncompressedSha256": "df5a92466832cdc170491eba2e9d39d502bf1bf14f0f5193e26fb0406964ab70"
+        }
+      ],
+      "successfulEffects": 1200,
+      "successfulPolls": 249,
+      "busySkippedIntervals": 0,
+      "allResourcesClosed": true
+    },
+    "profileFindings": {
+      "analysisReport": {
+        "path": "admission-cpu-diagnostic-analysis-2026-11-06-ee0d589.json.gz",
+        "sha256": "e7ff205024c0907b70e7ffce591efdd8e9581d5f2d2532e8be0a2c3e50f6771b",
+        "uncompressedSha256": "2d6cce2d73aa92d691419a0cc4ec0b3ae876651b9175d2e42c107b34dd74b37e"
+      },
+      "allFourCapturesVerifiedComplete": true,
+      "phases": [
+        {
+          "phase": 1,
+          "measuredStackSamplesDefinite": 24373,
+          "boundaryUncertainSamples": 55,
+          "decodeAndReviverSamplesDefinite": 16187,
+          "activationBracketWidthNs": "30165329",
+          "methodCounts": {
+            "prepare": 300,
+            "execute": 300,
+            "ledgerRead": 3001,
+            "ledgerTransaction": 1200,
+            "exports": 0
+          }
+        },
+        {
+          "phase": 2,
+          "measuredStackSamplesDefinite": 25446,
+          "boundaryUncertainSamples": 68,
+          "decodeAndReviverSamplesDefinite": 16726,
+          "activationBracketWidthNs": "36353297",
+          "methodCounts": {
+            "prepare": 300,
+            "execute": 300,
+            "ledgerRead": 3125,
+            "ledgerTransaction": 1200,
+            "exports": 124
+          },
+          "worstPollMs": 143.356144,
+          "beforeHandlerMs": 125.098565,
+          "exportMs": 15.168751,
+          "nestedRead": {
+            "containedReadWallDurations": {
+              "count": 124,
+              "medianMs": 8.062265,
+              "p95Ms": 10.258305,
+              "maximumMs": 12.384095,
+              "minimumMs": 4.141834,
+              "sumMs": 987.539081
+            },
+            "remainingWallDurations": {
+              "count": 124,
+              "medianMs": 2.677677000000001,
+              "p95Ms": 3.994129000000001,
+              "maximumMs": 9.091311999999999,
+              "minimumMs": 2.405019000000001,
+              "sumMs": 353.954133
+            },
+            "minimumReads": 1,
+            "maximumReads": 1,
+            "interpretation": "Nested synchronous read spans are subtracted only here; residual includes wrapper/other work and is not exact projection CPU or fsync time."
+          }
+        },
+        {
+          "phase": 3,
+          "measuredStackSamplesDefinite": 25600,
+          "boundaryUncertainSamples": 92,
+          "decodeAndReviverSamplesDefinite": 16845,
+          "activationBracketWidthNs": "49543179",
+          "methodCounts": {
+            "prepare": 300,
+            "execute": 300,
+            "ledgerRead": 3126,
+            "ledgerTransaction": 1200,
+            "exports": 125
+          },
+          "worstPollMs": 134.719173,
+          "beforeHandlerMs": 118.490236,
+          "exportMs": 12.646161,
+          "nestedRead": {
+            "containedReadWallDurations": {
+              "count": 125,
+              "medianMs": 8.309695,
+              "p95Ms": 10.494085,
+              "maximumMs": 14.000113,
+              "minimumMs": 4.351775,
+              "sumMs": 1013.439795
+            },
+            "remainingWallDurations": {
+              "count": 125,
+              "medianMs": 2.6199899999999996,
+              "p95Ms": 4.0399639999999994,
+              "maximumMs": 5.1285620000000005,
+              "minimumMs": 2.2755479999999997,
+              "sumMs": 344.469134
+            },
+            "minimumReads": 1,
+            "maximumReads": 1,
+            "interpretation": "Nested synchronous read spans are subtracted only here; residual includes wrapper/other work and is not exact projection CPU or fsync time."
+          }
+        },
+        {
+          "phase": 4,
+          "measuredStackSamplesDefinite": 24366,
+          "boundaryUncertainSamples": 87,
+          "decodeAndReviverSamplesDefinite": 16112,
+          "activationBracketWidthNs": "47204464",
+          "methodCounts": {
+            "prepare": 300,
+            "execute": 300,
+            "ledgerRead": 3001,
+            "ledgerTransaction": 1200,
+            "exports": 0
+          }
+        }
+      ],
+      "conclusion": "Decode and its reviver account for 65,870 of 99,785 definite measurement stack observations (66.0%). This identifies a repeated code path, not exact CPU time. Broad activation brackets limit attribution to individual short spans. The earlier rare stalls were not reproduced.",
+      "fixtureLimit": "The encrypted file-backed benchmark has no rollback witness or recovery mirror; it does not measure their additional production checks.",
+      "engineeringDecision": "Review a private JSON.parse plus fresh-record normalization implementation. Preserve every authenticated read, transaction boundary, null-prototype record, mutable ownership and independent witness check. No authority cache or removed revalidation."
+    }
+  },
+  "ordinaryHostedFollowup": {
+    "head": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+    "allSixWorkflowsPassed": true,
+    "runs": {
+      "CI": 42199027588,
+      "Cartography smoke pilot": 42199027636,
+      "Cartography integration": 42199027596,
+      "CodeQL": 42199027571,
+      "Dependency Review": 42199027518,
+      "Python dependency audit": 42199027550
+    }
+  }
+}

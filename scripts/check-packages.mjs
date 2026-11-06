@@ -3,10 +3,10 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { trustedNpmCli } from './trusted-npm.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const npmCli = process.env.npm_execpath;
-if (!npmCli) throw new Error('Run this script through npm run test:pack.');
+const npmCli = trustedNpmCli();
 const temp = mkdtempSync(join(tmpdir(), 'agent-guard-pack-'));
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8' });
@@ -47,6 +47,14 @@ try {
   const consumer = join(temp, 'consumer'); mkdirSync(consumer);
   writeFileSync(join(consumer, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
   run(process.execPath, [npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...tarballs], consumer);
+  // A real previously published reader must reject new retirement semantics;
+  // a mock schema checker cannot establish downgrade safety.
+  run(process.execPath, [npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund',
+    'legacy-executor@npm:@shieldaai/agent-guard-executor@0.1.0-alpha.3'], consumer);
+  cpSync(join(root, 'scripts/legacy-ledger-package-consumer.mjs'), join(consumer, 'legacy-ledger-consumer.mjs'));
+  console.log(run(process.execPath, ['legacy-ledger-consumer.mjs'], consumer).trim());
+  cpSync(join(root, 'scripts/recovery-package-consumer.mjs'), join(consumer, 'recovery-consumer.mjs'));
+  console.log(run(process.execPath, ['recovery-consumer.mjs'], consumer).trim());
   writeFileSync(join(consumer, 'consumer.mts'), readFileSync(new URL('package-consumer.mts', import.meta.url)));
   cpSync(join(root, 'packages/executor/test/fixtures/packed-build-attestation.json'), join(consumer, 'packed-build-attestation.json'));
   cpSync(join(root, 'packages/executor/test/fixtures/pilot-review.mjs'), join(consumer, 'pilot-review-fixture.mjs'));
@@ -101,11 +109,12 @@ try {
   console.log(run(process.execPath, ['--test', 'identity-consumer.mjs'], consumer).trim());
   writeFileSync(join(consumer, 'mcp-credentials-consumer.mjs'), readFileSync(new URL('mcp-credential-package-consumer.mjs', import.meta.url)));
   console.log(run(process.execPath, ['--test', 'mcp-credentials-consumer.mjs'], consumer).trim());
-  for (const name of ['agent-guard-map', 'agent-guard-map-identity']) {
+  for (const name of ['agent-guard-map', 'agent-guard-map-identity', 'agent-guard-ledger']) {
     const help = process.platform === 'win32'
       ? run('cmd.exe', ['/d', '/c', `node_modules\\.bin\\${name}.cmd`, '--help'], consumer)
       : run(join(consumer, 'node_modules', '.bin', name), ['--help'], consumer);
-    if (!help.startsWith(`${name} --config `)) throw new Error(`Installed ${name} launcher did not print its usage.`);
+    const prefix = name === 'agent-guard-ledger' ? `${name} keygen --keyring ` : `${name} --config `;
+    if (!help.startsWith(prefix)) throw new Error(`Installed ${name} launcher did not print its usage.`);
   }
 } finally {
   rmSync(temp, { recursive: true, force: true });

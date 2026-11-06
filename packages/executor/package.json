@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "agent-guard-pilot-review": "./dist/pilot-review-cli.js"
+    "agent-guard-pilot-review": "./dist/pilot-review-cli.js",
+    "agent-guard-ledger": "./dist/ledger-maintenance-cli.js"
   },
   "files": [
     "dist",

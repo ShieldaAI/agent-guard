@@ -1,0 +1,44 @@
+name: Python dependency audit
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '47 6 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: python-dependencies-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: integrations/cartography
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13'
+      - run: python -m pip install uv==0.13.6
+      - name: Audit locked runtime and development dependencies
+        run: |
+          sha256sum uv.lock > "$RUNNER_TEMP/cartography-uv-lock.sha256"
+          for platform in x86_64-unknown-linux-gnu aarch64-unknown-linux-gnu aarch64-apple-darwin x86_64-pc-windows-msvc; do
+            uv audit --locked --no-cache --python-version 3.13 --python-platform "$platform" --output-format json > "$RUNNER_TEMP/cartography-python-audit-$platform.json"
+          done
+      - name: Retain advisory findings and exact lock digest
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: cartography-python-advisories
+          path: |
+            ${{ runner.temp }}/cartography-python-audit-*.json
+            ${{ runner.temp }}/cartography-uv-lock.sha256
+          if-no-files-found: error
+          retention-days: 30

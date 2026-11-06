@@ -186,6 +186,115 @@ configured record limit also bounds the number of entries. Exhaustion yields
 [executor guide](../packages/executor/README.md) for source-task handoffs and
 reconciliation.
 
+### Task-family retirement and archival
+
+The following `DurableExecutor` methods are host-only. They add no task/admin HTTP
+routes. An application must authenticate its maintenance operator and choose the
+authorized tenant before calling them:
+
+```ts
+previewTaskFamilyRetirement(scope: { tenantId: string; taskId: string }): TaskFamilyRetirementPreview;
+retireTaskFamily(scope: { tenantId: string; taskId: string; expectedDigest: string }): TaskFamilyRetirementResult;
+archiveTaskFamily(scope: { tenantId: string; taskId: string; expectedDigest: string }): TaskFamilyArchiveReceipt;
+verifyTaskFamilyArchive(scope: { tenantId: string; archiveId: string }): TaskFamilyArchiveReceipt;
+findTaskFamilyArchive(scope: { tenantId: string; taskId: string }): TaskFamilyArchiveReceipt | null;
+listExecutions(scope: {
+  tenantId: string; statuses?: readonly ExecutionStatus[]; limit?: number; cursor?: string;
+}): ExecutionList;
+maintenanceStatistics(scope: { tenantId: string }): MaintenanceStatistics;
+```
+
+The preview selects the **whole family**, including delegated tasks and linked
+root handoffs, from any member's task ID. It returns `tenantId`, `taskId`,
+`familyId`, ledger `revision`, `reviewDigest`, `retired`, bounded `counts`,
+`retirementBlockers` and `archiveBlockers`. Counts cover tasks, retained actions,
+prepared/unresolved actions, memory entries and memory versions. Arguments, bearer
+hashes, memory values and encryption keys are absent. The digest is bound to this
+executor instance, exact scope and ledger revision. Any intervening ledger write
+or process restart invalidates it with `LIFECYCLE_PREVIEW_STALE`. The host should
+also impose its own review expiry and user binding.
+
+Retirement refuses `ADMITTED`, `RUNNING` or `UNKNOWN` effects, active handlers and
+outstanding reservations (`FAMILY_UNRESOLVED_WORK` / `FAMILY_ACTIVE_WORK`). It does
+not reconcile or refund work. On success, one transaction revokes every family
+member, cancels prepared actions as zero-cost failures, quarantines the family's
+known memory and descendants, and records retirement. Waiting policy evaluations
+are canceled; ignored cancellation cannot produce a later dispatch. Request a
+fresh preview after retirement before archiving.
+
+Archival requires explicit retirement (`FAMILY_NOT_RETIRED`) and repeats every
+check in the commit transaction. Cross-family task references, other families'
+recorded reads/derived memory, and mixed ownership of one memory history yield
+`FAMILY_EXTERNAL_REFERENCE`. Shared references are never silently detached. An
+independent reader family can be retired/archived before its source family;
+cycles or mixed histories remain blocked. Use linked handoffs for work whose
+provenance and lifetime should remain one family.
+
+The archive retains the available task budgets, counters, revocation and ancestry,
+family labels, actions/arguments, approval records, memory and relevant retained
+audit events. Previously pruned history is not reconstructed. A fresh random key
+encrypts each archive with AES-256-GCM; that key and the exact ciphertext digest
+remain inside the main encrypted, authenticated ledger. The archive blob,
+catalog, non-reuse markers and removal of live records commit in the same SQLite
+transaction, including the rollback witness when enabled. Failure leaves live
+authority intact. Outer ledger-key rotation preserves existing archives; future
+archives receive independently generated keys.
+
+Receipts contain identity, timestamps, counts, ciphertext SHA-256/byte length and
+decimal-string root usage totals (`rootUsage.calls` / `spent`), without private
+contents or keys. `verifyTaskFamilyArchive()` authenticates and decrypts the blob
+internally before returning its receipt. Missing/substituted evidence fails closed
+(`STORE_ARCHIVE_UNAVAILABLE` / `ARCHIVE_INVALID`). `findTaskFamilyArchive()` finds
+and verifies a receipt from **any original member ID**, or returns `null` for an
+unknown/foreign tenant scope. Use it to recover after the SDK archive committed
+but the application did not yet save its business receipt. The application must
+keep its own backend operation/receipt mapping and make that final update idempotent.
+
+Archived task IDs can never be reused in this ledger, even under another tenant
+(`DUPLICATE_TASK`). Archived memory names cannot be recreated in their original
+tenant (`MEMORY_UNAVAILABLE`); new names or a separate tenant remain possible.
+Old task credentials and artifact provenance cannot regain authority. Ordinary
+task snapshots, execution lookup and inventory no longer expose archived records.
+The archive APIs expose only bounded receipt metadata.
+
+Limits are **4,096 archives**, **65,536 combined task/memory non-reuse markers**,
+**256 MiB of archive ciphertext**, and **16 MiB of decoded state per archive**.
+The main ledger's configured bound still applies and may be reached sooner.
+`ExecutorOptions.maxLedgerBytes` defaults to 16 MiB and accepts safe integers
+from 1 MiB through 64 MiB. It bounds decoded snapshot bytes rather than SQLite
+file size; opening a larger retained snapshot under a smaller limit fails before
+recovery mutation. Increasing it does not change archive or record-count bounds.
+Neither archives nor markers are automatically evicted. Exhaustion rejects with
+`ARCHIVE_CAPACITY_EXCEEDED`, `STORE_ARCHIVE_CAPACITY` or
+`STORE_CAPACITY_EXCEEDED`, without deleting live state. Logical live-record
+capacity is reclaimed; this is not secure erasure, unlimited retention or an
+automatic authority reset. Keep the main ledger, archives and independent witness
+within the documented backup/custody procedure.
+
+The Agent Ops [reviewed company-history profile](guides/company-history.md) can
+export authenticated single-root ticket families to immutable encrypted segments
+before removing their local archive rows. Permanent namespace fences preserve
+task-ID non-reuse; legacy IDs and unresolved sequence gaps retain individual
+markers. This internal offline protocol is not a general SDK compaction API:
+delegated or memory-bearing families remain subject to the limits above.
+`findTaskFamilyArchive()` reports `ARCHIVE_EXPORTED` for an exported identity;
+the host's history lookup verifies its external evidence. Lifecycle authority
+changes use ledger schema 2, which older schema-1-only binaries must reject.
+Schema-3 stores with native recovery mirroring keep that stronger format through
+all lifecycle mutations; history mirroring never downgrades them to schema 2.
+
+Execution listing defaults to `UNKNOWN`, with 25 items and a maximum of 100.
+Valid status filters use `ExecutionStatus`; results contain action/task IDs, tool,
+status, charged cost when present and `reservedMaximum`, never arguments/results.
+`nextCursor` is authenticated and bound to tenant, filter, process and revision.
+Mutation yields `LIFECYCLE_CURSOR_STALE`; refresh from the first page instead of
+silently skipping work. Invalid/mismatched cursors yield `LIFECYCLE_CURSOR_INVALID`.
+Statistics expose the selected tenant's live/retired/archive counts plus
+the fixed global retention limits and deployment-wide `ledgerBytes` and
+`ledgerByteLimit`. These byte fields describe the decoded live snapshot, not
+SQLite or external-history disk usage. Maintenance reference scans stop at 100,000
+records with `LIFECYCLE_LIMIT_EXCEEDED`; they never return a partial safe preview.
+
 ### Executor inventory (unreleased)
 
 The optional executor package exposes `inventorySnapshot({ tenantId })` only on
@@ -197,7 +306,7 @@ route or an `ExecutorClient` operation. The host must select the authorized tena
 
 The readonly `InventorySnapshot` implements the
 [version-1 core schema](../schemas/agent-guard-inventory-v1.schema.json). It contains
-all retained tasks in the tenant, normalized grants and referenced tool records,
+all live-ledger tasks in the tenant, normalized grants and referenced tool records,
 including revoked/expired tasks and unavailable handlers. Delegation and provenance
 are separate edges. Tool fingerprint strings are bare SHA-256 hex; unavailable
 definition flags are `null`. Other enrichment coverage is `not_collected`.

@@ -1,0 +1,14 @@
+.git
+**/node_modules
+**/dist
+artifacts
+coverage
+.env
+.env.*
+**/*.pem
+**/*.key
+**/*.p12
+**/*.pfx
+**/*.sqlite*
+**/keyring*.json
+.DS_Store

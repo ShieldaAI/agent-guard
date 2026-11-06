@@ -1,0 +1,28 @@
+{
+  "version": 1,
+  "publicOrigin": "https://ops.example.invalid:8443",
+  "listenHost": "0.0.0.0",
+  "port": 8443,
+  "ledgerDatabase": "/var/lib/agent-ops/authority.sqlite",
+  "backendDatabase": "/var/lib/agent-ops/tickets.sqlite",
+  "ledgerWitness": "/var/lib/agent-ops-witness/authority.sqlite",
+  "backendWitness": "/var/lib/agent-ops-witness/tickets.sqlite",
+  "keyringFile": "/run/agent-ops/keyring.json",
+  "historyDirectory": "/var/lib/agent-ops-history",
+  "historyMirrorDirectory": "/var/lib/agent-ops-witness/history-mirror",
+  "tls": { "keyFile": "/run/agent-ops/tls.key", "certFile": "/run/agent-ops/tls.pem" },
+  "oidc": {
+    "issuer": "https://identity.example.invalid",
+    "clientId": "REPLACE_WITH_ENROLLED_CONFIDENTIAL_CLIENT_ID",
+    "clientSecretFile": "/run/agent-ops/oidc-client-secret"
+  },
+  "bindings": [
+    {
+      "subject": "REPLACE_WITH_EXACT_ISSUER_SUBJECT",
+      "id": "deployment-owner",
+      "tenantId": "REPLACE_WITH_TENANT_ID",
+      "roles": ["requester", "reviewer", "operator"]
+    }
+  ],
+  "agents": []
+}

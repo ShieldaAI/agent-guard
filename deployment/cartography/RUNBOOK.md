@@ -80,6 +80,10 @@ container/tunnel cleanup. Whole-cycle duration is reported separately. A failed
 gate produces a nonzero exit code and an explicit failed report. This measures
 synthetic bounded reads, not company-wide exhaustive graph queries or AWS API
 latency. Hardware and configured limits accompany the measurements.
+Reports identify the last benchmark stage. A startup failure records bounded
+readiness attempts/elapsed time and an allowlisted failure class; owned-container
+running, OOM and exit status are captured before cleanup when available. Container
+logs, environment, database addresses and driver error text are not exported.
 
 The separate admission benchmark measures the observer's effect on the executor.
 Run these commands from the repository root:
@@ -115,6 +119,11 @@ from common-clock completion timestamps within the workload worker's exact measu
 interval; message delivery to the executor does not define that boundary.
 All poll timings, counts, workload,
 hardware and cleanup outcomes are recorded in the private JSON artifact.
+`failureReasons` identifies each failed phase requirement. `effectAccountingPassed`
+separates exact effect/call counts from `stressProfileValid`; the legacy
+`correctnessPassed` field still denotes the complete profile requirements. Valid
+latency samples remain visible after a busy-cadence failure, but diagnostic timings
+do not make that profile or its performance gate pass.
 
 The smoke profile retains 100 measured samples per phase and checks correctness;
 it reports but does not enforce or certify the 10% regression target. A failed

@@ -10,6 +10,9 @@ import { projectInventory, validateInventorySource, type InventoryOptions, type 
 import { DecisionTraces, decisionTraceCode, type DecisionTraceOptions, type DecisionTraceScope,
   type DecisionTraceSnapshot, type DecisionTraceSink, type DecisionTraceExportResult,
   type TraceContext, type DecisionTraceEventName, type DecisionTraceOutcome } from './traces.js';
+import { archivedTaskIdUsed, archivedMemoryIdUsed, TaskFamilyLifecycle, type TaskFamilyScope, type TaskFamilyDecision, type TaskFamilyArchiveScope,
+  type TaskFamilyRetirementPreview, type TaskFamilyRetirementResult, type TaskFamilyArchiveReceipt,
+  type ExecutionListScope, type ExecutionList, type MaintenanceStatistics } from './lifecycle.js';
 
 function id(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 4096 || value.includes('\0')) throw new GuardError('INVALID_INPUT');
@@ -34,6 +37,8 @@ export interface ExecutorOptions {
   policy?: Policy;
   secretValues?: readonly string[];
   maxRecords?: number;
+  /** Maximum decoded ledger snapshot bytes: 1 MiB through 64 MiB; defaults to 16 MiB. */
+  maxLedgerBytes?: number;
   /** Aggregate unresolved actions across a task family, including delegated children. */
   maxPendingActionsPerFamily?: number;
   maxPendingBytesPerFamily?: number;
@@ -60,6 +65,7 @@ export class DurableExecutor {
   readonly #inventorySource: InventorySourceOptions | undefined;
   readonly #inventoryReferenceKey: Buffer | undefined;
   readonly #traces: DecisionTraces | undefined;
+  readonly #lifecycle: TaskFamilyLifecycle;
   readonly #tools = new Map<string, Registered>();
   readonly #active = new Map<string, { taskIds: string[]; controller: AbortController }>();
   readonly #policyAdmission = new PolicyAdmission();
@@ -71,6 +77,8 @@ export class DurableExecutor {
     this.#policy = options.policy;
     this.#maxRecords = options.maxRecords ?? 10_000;
     if (!Number.isSafeInteger(this.#maxRecords) || this.#maxRecords < 1) throw new GuardError('INVALID_INPUT');
+    const maxLedgerBytes = options.maxLedgerBytes === undefined ? 16 * 1024 * 1024 : options.maxLedgerBytes;
+    if (!Number.isSafeInteger(maxLedgerBytes) || maxLedgerBytes < 1024 * 1024 || maxLedgerBytes > 64 * 1024 * 1024) throw new GuardError('INVALID_INPUT');
     const familyShare = Math.max(1, Math.floor(this.#maxRecords / 4));
     const bounded = (value: number | undefined, fallback: number, maximum: number): number => {
       const selected = value ?? fallback;
@@ -98,7 +106,7 @@ export class DurableExecutor {
         }
       } catch { throw new ExecutorError('INVENTORY_CONFIG_INVALID'); }
     }
-    try { this.#store = new LedgerStore(options.database, options.encryptionKey, undefined, options.rollbackWitness); }
+    try { this.#store = new LedgerStore(options.database, options.encryptionKey, maxLedgerBytes, options.rollbackWitness); }
     catch (error) { this.#inventoryReferenceKey?.fill(0); throw error; }
     try {
       if (options.decisionTraces !== undefined) this.#traces = new DecisionTraces(options.decisionTraces, options.encryptionKey, this.#store.read().inventoryInstanceId);
@@ -120,7 +128,22 @@ export class DurableExecutor {
       });
       for (const context of recovered) this.#record(context, 'unknown', 'UNKNOWN', 'RECOVERY_UNKNOWN');
     } catch (error) { this.#store.close(); this.#inventoryReferenceKey?.fill(0); this.#traces?.close(); throw error; }
+    this.#lifecycle = new TaskFamilyLifecycle(this.#store, {
+      now: state => this.#now(state),
+      activeTaskIds: () => new Set([...this.#active.values()].flatMap(active => active.taskIds)),
+      quarantine: (state, tenantId, ids) => this.#quarantine(state, tenantId, ids),
+      retired: ids => { for (const taskId of ids) this.#policyAdmission.revokeTask(taskId); },
+    });
   }
+
+  /** Host-only maintenance: authenticate the operator before selecting tenant/task scope. */
+  previewTaskFamilyRetirement(scope: TaskFamilyScope): TaskFamilyRetirementPreview { return this.#lifecycle.preview(scope); }
+  retireTaskFamily(scope: TaskFamilyDecision): TaskFamilyRetirementResult { return this.#lifecycle.retire(scope); }
+  archiveTaskFamily(scope: TaskFamilyDecision): TaskFamilyArchiveReceipt { return this.#lifecycle.archive(scope); }
+  verifyTaskFamilyArchive(scope: TaskFamilyArchiveScope): TaskFamilyArchiveReceipt { return this.#lifecycle.verifyArchive(scope); }
+  findTaskFamilyArchive(scope: TaskFamilyScope): TaskFamilyArchiveReceipt | null { return this.#lifecycle.findArchive(scope); }
+  listExecutions(scope: ExecutionListScope): ExecutionList { return this.#lifecycle.listExecutions(scope); }
+  maintenanceStatistics(scope: { tenantId: string }): MaintenanceStatistics { return this.#lifecycle.statistics(scope); }
 
   #traceStart(taskId: string | undefined, actionId: string, observedState?: Ledger): TraceContext | undefined {
     if (!this.#traces) return undefined;
@@ -314,7 +337,7 @@ export class DurableExecutor {
     this.#store.transaction(state => {
       const now = this.#now(state);
       this.#prune(state, now);
-      if (own(state.tasks, options.id)) throw new GuardError('DUPLICATE_TASK');
+      if (own(state.tasks, options.id) || archivedTaskIdUsed(state, options.id)) throw new GuardError('DUPLICATE_TASK');
       if (Object.keys(state.tasks).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
       const validator = new AgentGuard({ clock: () => now });
       if (parentId !== null) {
@@ -625,6 +648,7 @@ export class DurableExecutor {
     return entry;
   }
   #writeMemory(state: Ledger, entry: Omit<MemoryRecord, 'version' | 'quarantined'>): MemoryRecord {
+    if (archivedMemoryIdUsed(state, entry.tenantId, entry.id)) throw new ExecutorError('MEMORY_UNAVAILABLE');
     if (Buffer.byteLength(canonicalJson(clone(entry.value) as Json)) > 65_536) throw new ExecutorError('MEMORY_LIMIT');
     const key = JSON.stringify([id(entry.tenantId), id(entry.id)]);
     const history = own(state.memory, key) ?? [];
@@ -680,6 +704,7 @@ export class DurableExecutor {
       resolve: (args, task) => {
         const input = args as { id: string; ifVersion: number };
         const state = this.#store.read();
+        if (archivedMemoryIdUsed(state, task.tenantId, input.id)) throw new ExecutorError('MEMORY_UNAVAILABLE');
         const previous = own(state.memory, JSON.stringify([task.tenantId, input.id]))?.at(-1);
         if (previous?.quarantined || (previous?.version ?? 0) !== input.ifVersion) throw new ExecutorError('MEMORY_VERSION_CHANGED');
         return { resourceId: input.id, tenantId: task.tenantId, resourceVersion: String(input.ifVersion) };
@@ -736,5 +761,6 @@ export class DurableExecutor {
     this.#policyAdmission.invalidate('TASK_REVOKED');
     this.#inventoryReferenceKey?.fill(0);
     this.#traces?.close();
+    this.#lifecycle.close();
   }
 }

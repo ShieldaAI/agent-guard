@@ -1,0 +1,141 @@
+name: agent-ops
+x-service: &service
+  image: ${AGENT_OPS_IMAGE:?Set a reviewed, locally built image ID or repository digest}
+  pull_policy: never
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: [no-new-privileges:true]
+  pids_limit: 128
+  mem_limit: 512m
+  cpus: 1.0
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,nodev,size=32m,mode=0700,uid=10001,gid=10001
+  ulimits:
+    nofile: {soft: 1024, hard: 1024}
+  stop_grace_period: 30s
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+services:
+  agent-ops:
+    <<: *service
+    restart: unless-stopped
+    command: [--config, "${AGENT_OPS_CONFIG_FILE:-/run/agent-ops/config.json}"]
+    ports: ["127.0.0.1:${AGENT_OPS_PORT:-8443}:8443"]
+    volumes:
+      - type: bind
+        source: ${AGENT_OPS_HISTORY:?Set the private encrypted history directory}
+        target: /var/lib/agent-ops-history
+        read_only: true
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_DATA:?Set the private data directory}
+        target: /var/lib/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_WITNESS:?Set the independently retained witness directory}
+        target: /var/lib/agent-ops-witness
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CONFIG:?Set the private config and secret directory}
+        target: /run/agent-ops
+        read_only: true
+        bind: {create_host_path: false}
+    healthcheck:
+      test: [CMD, node, deployment/production/healthcheck.mjs, "${AGENT_OPS_CONFIG_FILE:-/run/agent-ops/config.json}"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+  maintenance:
+    <<: *service
+    profiles: [maintenance]
+    network_mode: none
+    entrypoint: [node, packages/executor/dist/ledger-maintenance-cli.js]
+    command: [--help]
+    volumes:
+      - type: bind
+        source: ${AGENT_OPS_HISTORY:?Set the private encrypted history directory}
+        target: /var/lib/agent-ops-history
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_DATA:?Set the private data directory}
+        target: /var/lib/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_WITNESS:?Set the independently retained witness directory}
+        target: /var/lib/agent-ops-witness
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CONFIG:?Set the private config and secret directory}
+        target: /run/agent-ops
+        bind: {create_host_path: false}
+
+  onboarding:
+    <<: *service
+    profiles: [onboarding]
+    entrypoint: [node, apps/agent-ops/cli.mjs]
+    command: [onboard, --manifest, /run/company/onboarding.json, --output-dir, /run/agent-ops/company]
+    volumes:
+      - type: bind
+        source: ${AGENT_OPS_HISTORY:?Set the private encrypted history directory}
+        target: /var/lib/agent-ops-history
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_DATA:?Set the private data directory}
+        target: /var/lib/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_WITNESS:?Set the independently retained witness directory}
+        target: /var/lib/agent-ops-witness
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CONFIG:?Set the private config and secret directory}
+        target: /run/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_ONBOARDING:-/nonexistent-agent-ops-onboarding}
+        target: /run/company
+        read_only: true
+        bind: {create_host_path: false}
+
+  custody:
+    <<: *service
+    profiles: [custody]
+    network_mode: none
+    entrypoint: [node, apps/agent-ops/cli.mjs]
+    command: [--help]
+    volumes:
+      - type: bind
+        source: ${AGENT_OPS_HISTORY:?Set the private encrypted history directory}
+        target: /var/lib/agent-ops-history
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_DATA:?Set the private data directory}
+        target: /var/lib/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_WITNESS:?Set the independently retained witness directory}
+        target: /var/lib/agent-ops-witness
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CONFIG:?Set the private config and secret directory}
+        target: /run/agent-ops
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CUSTODY_DATA:-/nonexistent-agent-ops-custody}
+        target: /var/lib/agent-ops-custody
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CUSTODY_WITNESS:-/nonexistent-agent-ops-custody-witness}
+        target: /var/lib/agent-ops-custody-witness
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_CUSTODY_KEYS:-/nonexistent-agent-ops-custody-keys}
+        target: /run/agent-ops-custody-keys
+        bind: {create_host_path: false}
+      - type: bind
+        source: ${AGENT_OPS_BACKUPS:-/nonexistent-agent-ops-backups}
+        target: /var/lib/agent-ops-backups
+        bind: {create_host_path: false}

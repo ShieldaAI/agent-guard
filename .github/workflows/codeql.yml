@@ -35,3 +35,39 @@ jobs:
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
           category: /language:${{ matrix.language }}
+          wait-for-processing: true
+  security-alerts:
+    name: Unresolved security alerts
+    needs: analyze
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      security-events: read
+    steps:
+      - name: Require reviewed or fixed code-scanning alerts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          REVIEW_REF: ${{ github.ref }}
+        run: |
+          gh api --paginate --slurp --method GET "repos/$GH_REPO/code-scanning/alerts" \
+            -f state=open -f ref="$REVIEW_REF" > code-scanning-alerts.json
+          node <<'NODE'
+          const fs = require('node:fs');
+          const pages = JSON.parse(fs.readFileSync('code-scanning-alerts.json', 'utf8'));
+          if (!Array.isArray(pages) || pages.some(page => !Array.isArray(page))) throw Error('Invalid security-alert response');
+          const alerts = pages.flat().map(alert => ({ number: alert.number, rule: alert.rule?.id,
+            severity: alert.rule?.security_severity_level, state: alert.state }));
+          fs.writeFileSync('security-alert-summary.json', JSON.stringify({ ref: process.env.REVIEW_REF, open: alerts.length, alerts }, null, 2));
+          console.log(JSON.stringify({ open: alerts.length, alerts }));
+          if (alerts.length) process.exitCode = 1;
+          NODE
+      - name: Retain security-alert evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: security-alert-summary
+          path: security-alert-summary.json
+          if-no-files-found: error
+          retention-days: 7

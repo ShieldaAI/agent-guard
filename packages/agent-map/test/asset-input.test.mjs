@@ -34,7 +34,7 @@ async function probe(t, transport, mode) {
   t.after(() => rm(dir, { recursive: true, force: true }));
   const assets = join(dir, 'assets'); await mkdir(assets);
   let tlsFile;
-  if (transport === 'https' && ['exact', 'after-open'].includes(mode)) {
+  if (transport === 'https') {
     const provider = await createTestIdentityProvider(t);
     tlsFile = join(dir, 'tls.json');
     await writeFile(tlsFile, JSON.stringify({ key: provider.key, cert: provider.cert, ca: provider.ca,

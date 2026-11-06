@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+- Make self-hosted ticket/request capacity, live-store byte limits and retained
+  key limits safely configurable through reviewed offline policy changes.
+- Add company onboarding, TLS/OIDC preflight, add-only reviewed ticket imports,
+  an operator Setup view and paging for larger company datasets.
+
+- Add the single-owner Linux Agent Ops service with durable ticket updates,
+  authenticated OIDC approvals, scoped agent proposals and receipt-only recovery.
+- Add whole-family retirement and encrypted archival, scoped execution listing,
+  exact ID tombstones and crash-safe archival receipt discovery.
+- Add offline, retryable ledger key rotation with independent rollback witnesses
+  and a protected multi-key ring.
+- Add hardened Docker Compose deployment, recovery runbooks, real-service browser
+  checks and a Linux production-profile CI job.
+- Add reviewed company-history compaction with permanent retirement fences,
+  independent encrypted history mirrors and exact receipt lookup.
+- Stop history growth before it exceeds the backup/recovery closure limit,
+  reserve capacity for interrupted compaction and expose operator capacity alerts.
+- Add managed offline key escrow, authenticated complete backups, active-key
+  retirement and schema-3 current-state repair without witness rollback.
+- Add authenticated operational status, bounded metrics, minimized activity
+  exports and explicit distinction between readable storage and enrolled recovery.
+- Enforce startup TLS/custody checks, remove unused runtime package managers,
+  and add dependency inventory, production-image comparison and three-browser CI.
+- Patch the Python Cartography OAuthLib dependency and add locked cross-platform
+  advisory checks; retain explicit, secret-free benchmark failure diagnostics.
+- Plan the agent/permissions inventory as an extension of Agent Map and Cartography.
+
 ## 0.1.0-alpha.3 — 2026-11-05
 
 - Harden policy admission, approval expiry, cancellation, task authentication,

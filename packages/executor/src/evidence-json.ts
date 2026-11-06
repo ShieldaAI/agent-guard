@@ -13,10 +13,13 @@ function checkNumber(token: string): void {
 }
 
 /** JSON.parse checks grammar, but rounds numbers and discards duplicate object members. Inspect original tokens too. */
-export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number): Json {
+export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number, maxNodes = 8192): Json {
+  // Host-selected bounded expansion supports bulk enrollment without relaxing
+  // the default provider/evidence parser budget or duplicate/numeric checks.
+  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > 100_000) throw new Error('Invalid JSON node limit');
   if (bytes.byteLength > maxBytes) throw new Error('Evidence exceeds the byte limit');
   const source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
-  const statement = immutableJson(JSON.parse(source), 24, 8192, maxBytes);
+  const statement = immutableJson(JSON.parse(source), 24, maxNodes, maxBytes);
   const objects: Set<string>[] = [];
   // Walk the already validated JSON once. Avoid a searching/backtracking regular
   // expression on long escaped strings supplied by providers or evidence files.

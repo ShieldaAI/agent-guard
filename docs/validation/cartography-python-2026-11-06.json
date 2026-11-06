@@ -1,0 +1,155 @@
+{
+  "schemaVersion": 1,
+  "kind": "cartography-python-hosted-verification",
+  "recordedAt": "2026-11-06T01:23:51.567524+00:00",
+  "status": "passed",
+  "source": {
+    "headCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "testedMergeCommit": "462054167d6b7f0f84a21e83c92b6096310b83c1",
+    "tree": "8da76ce2945171e0a752e23c54eedd39b1227e9f",
+    "mergeTreeMatchesHead": true,
+    "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
+    "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8"
+  },
+  "lock": {
+    "path": "integrations/cartography/uv.lock",
+    "sha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2",
+    "hostedDigestMatchesExactSource": true,
+    "oauthlib": "4.0.1",
+    "fixedAdvisory": "GHSA-3jp2-3mrg-2vxc"
+  },
+  "audit": {
+    "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732739",
+    "job": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732739/job/127646754883",
+    "attempt": 1,
+    "status": "passed",
+    "completedAt": "2026-11-06T01:16:57Z",
+    "uv": "0.13.6",
+    "pythonSelection": "3.13",
+    "command": "uv audit --locked --no-cache --python-version 3.13 --python-platform PLATFORM --output-format json",
+    "ignoredAdvisories": [],
+    "artifact": {
+      "id": 13468800949,
+      "name": "cartography-python-advisories",
+      "bytes": 1651,
+      "githubSha256": "74c9493219b43c515c49759ca155ae78fb70ff6da32068259c94407878ff490c",
+      "downloadedSha256": "74c9493219b43c515c49759ca155ae78fb70ff6da32068259c94407878ff490c",
+      "digestVerified": true,
+      "members": 5
+    },
+    "reports": [
+      {
+        "platform": "x86_64-unknown-linux-gnu",
+        "member": "cartography-python-audit-x86_64-unknown-linux-gnu.json",
+        "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+        "summary": {
+          "audited_packages": 194,
+          "vulnerabilities": 0,
+          "adverse_statuses": 1
+        },
+        "adverseStatuses": [
+          {
+            "name": "adal",
+            "status": "archived",
+            "reason": null
+          }
+        ]
+      },
+      {
+        "platform": "aarch64-unknown-linux-gnu",
+        "member": "cartography-python-audit-aarch64-unknown-linux-gnu.json",
+        "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+        "summary": {
+          "audited_packages": 194,
+          "vulnerabilities": 0,
+          "adverse_statuses": 1
+        },
+        "adverseStatuses": [
+          {
+            "name": "adal",
+            "status": "archived",
+            "reason": null
+          }
+        ]
+      },
+      {
+        "platform": "aarch64-apple-darwin",
+        "member": "cartography-python-audit-aarch64-apple-darwin.json",
+        "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+        "summary": {
+          "audited_packages": 194,
+          "vulnerabilities": 0,
+          "adverse_statuses": 1
+        },
+        "adverseStatuses": [
+          {
+            "name": "adal",
+            "status": "archived",
+            "reason": null
+          }
+        ]
+      },
+      {
+        "platform": "x86_64-pc-windows-msvc",
+        "member": "cartography-python-audit-x86_64-pc-windows-msvc.json",
+        "sha256": "18bdcb39f4a5cd6562e4eacfb0bfda588cbe558d12e021d79884e12718f6b17d",
+        "summary": {
+          "audited_packages": 194,
+          "vulnerabilities": 0,
+          "adverse_statuses": 1
+        },
+        "adverseStatuses": [
+          {
+            "name": "adal",
+            "status": "archived",
+            "reason": null
+          }
+        ]
+      }
+    ],
+    "logSha256": "78f0c56c0aa879bc94e74fd607803fd357679c2d9f3d1e001be9b343e2b19619",
+    "logFormat": "UTF-8 output from gh run view 42142732739 --log"
+  },
+  "integration": {
+    "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732675",
+    "job": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732675/job/127646754325",
+    "attempt": 1,
+    "status": "passed",
+    "headCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "lockedSync": "passed",
+    "lint": "passed",
+    "format": "passed",
+    "unitTests": {
+      "status": "passed",
+      "passed": 928,
+      "seconds": 26.22,
+      "logSummary": "928 passed in 26.22s"
+    },
+    "neo4jIntegration": {
+      "status": "passed",
+      "passed": 143,
+      "seconds": 216.32,
+      "logSummary": "143 passed in 216.32s (0:03:36)"
+    },
+    "sourceAndWheelBuild": "passed",
+    "installedConsumer": {
+      "status": "passed",
+      "command": "uv run --isolated --no-project --with ./dist/from-sdist/agent_guard_cartography-0.1.0a1-py3-none-any.whl python scripts/check-installed.py",
+      "scope": "Isolated fresh wheel-consumer dependency resolution; distinct from the exact locked-project advisory audit."
+    },
+    "logSha256": "16d1360169fddd210ccc1c9c59d0cb874c4842875a523d9c01f382819cb555bc",
+    "completedAt": "2026-11-06T01:21:38Z",
+    "testedMergeCommit": "462054167d6b7f0f84a21e83c92b6096310b83c1",
+    "python": "3.13.18",
+    "totalTestsPassed": 1071,
+    "wheelRebuildFromSdist": "passed",
+    "logFormat": "UTF-8 output from gh run view 42142732675 --log"
+  },
+  "scope": [
+    "The audit covers exact locked dependency selections including extras/development groups, not a claim that all Python/native/build/container components are vulnerability-free.",
+    "Cross-platform audit selection is not cross-platform Python execution evidence. The integration job runs on hosted Ubuntu.",
+    "Each selection retains the archived adal maintenance notice; it is not ignored or treated as a vulnerability.",
+    "Fixtures use synthetic local records and a disposable authenticated Neo4j instance; no customer data or cloud-provider calls.",
+    "This record does not clear the separate upstream Node HIGH prealert or the Cartography pilot performance gate."
+  ]
+}

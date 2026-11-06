@@ -28,6 +28,21 @@ test('admission gate uses retained samples, fixed order and strict 10% threshold
     const value = phases(); change(value); assert.equal(admissionGate(value).passed, false);
   }
 });
+test('busy cadence keeps the profile failed while exposing exact effect accounting and diagnostic timings', () => {
+  const value = phases(1.2); value[1].polling.skippedBusy = 1;
+  for (const enforcePerformance of [false, true]) {
+    const result = admissionGate(value, { enforcePerformance });
+    assert.equal(result.passed, false); assert.equal(result.correctnessPassed, false);
+    assert.equal(result.effectAccountingPassed, true); assert.equal(result.stressProfileValid, false);
+    assert.equal(result.latencySamplesValid, true); assert.equal(result.performancePassed, false);
+    assert.equal(result.baselineP95Ms, 10); assert.equal(result.pollingP95Ms, 12);
+    assert.deepEqual(result.failureReasons, [{ phase: 2, code: 'POLL_CADENCE_SKIPPED' }]);
+  }
+  value[2].samples[0].admissionMs = NaN;
+  const invalid = admissionGate(value, { enforcePerformance: false });
+  assert.equal(invalid.latencySamplesValid, false); assert.equal(invalid.ratio, null);
+  assert.ok(invalid.failureReasons.some(reason => reason.code === 'MEASUREMENT_INVALID'));
+});
 test('real admission fixture executes exact effects while nonempty HTTP inventory is polled', async () => {
   const phase = await runAdmissionPhase({ mode: 'polling', samples: 15, warmup: 2, tasks: 2, grants: 2, pollIntervalMs: 10 });
   assert.equal(phase.samples.length, 15); assert.equal(phase.warmupSamples.length, 2);

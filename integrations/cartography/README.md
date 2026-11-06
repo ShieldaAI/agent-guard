@@ -38,11 +38,21 @@ Then, from this directory:
 
 ```sh
 uv sync --locked
+uv audit --locked
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest tests/unit
 uv run python scripts/test-disposable-neo4j.py -- -q
 ```
+
+The separate **Python dependency audit** workflow checks the exact lock on
+pull requests, main-branch pushes and a weekly schedule. It audits Python 3.13
+Linux x64/ARM64, macOS ARM64 and Windows x64 dependency selections, including
+development groups, without suppressing advisory IDs. Vulnerabilities and lookup
+failures fail the job; JSON findings and the lock digest are retained. Archived
+package notices are also reported by uv and require review, even when no known
+vulnerability is returned. This covers Python dependencies separately from npm
+and container package scans; it does not certify those platforms' runtime behavior.
 
 The unit suite executes the built TypeScript exporter against a temporary encrypted
 ledger and validates its output with the independent Python contract. It covers

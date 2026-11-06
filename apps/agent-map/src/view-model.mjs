@@ -24,6 +24,10 @@ export function nodeName(node) {
     p.connection_id ?? p.resource_id ?? p.arn ?? p.binding_id ?? p.tool ?? kindName(node.label);
   return typeof value === 'string' ? value : kindName(node.label);
 }
+export function graphLabel(value) {
+  const characters = Array.from(value);
+  return characters.length <= 24 ? value : `${characters.slice(0, 16).join('')}…${characters.slice(-7).join('')}`;
+}
 export function graphElements(graph, policyEvidence = []) {
   if (!graph || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges) || graph.nodes.length > 2000 || graph.edges.length > 5000) throw new Error('VIEWER_GRAPH_INVALID');
   const ids = new Set();
@@ -34,7 +38,7 @@ export function graphElements(graph, policyEvidence = []) {
     const kind = node.label === 'GuardAgent' ? 'agent' : node.label === 'GuardTask' ? 'task' :
       node.label.includes('Mcp') ? 'mcp' : node.label.includes('Resource') ? 'resource' :
       node.label.includes('Identity') || node.label === 'GuardPrincipal' ? 'identity' : 'evidence';
-    return { data: { id: node.id, label: nodeName(node).slice(0, 88), kind: kindName(node.label), source: node },
+    return { data: { id: node.id, label: graphLabel(nodeName(node)), fullLabel: nodeName(node), kind: kindName(node.label), source: node },
       classes: `${kind} ${state.kind}` };
   });
   const states = new Map(graph.nodes.map(node => [node.id, evidenceState(node)]));
