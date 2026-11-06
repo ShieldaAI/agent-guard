@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { policyPlan, policyEvidence, policyParameters, safePolicyRow, POLICY_QUERY } from '../dist/policy-reader.js';
 import { Neo4jMapStore } from '../dist/store.js';
+import { MapService } from '../dist/service.js';
 
 const now = 10000, captureTime = 9800;
 const account = '111122223333', principalArn = `arn:aws:iam::${account}:role/Reader`, bucketArn = 'arn:aws:s3:::reports';
@@ -55,6 +56,30 @@ function prepare(value = fixture(), company = 'company') {
       resource_scope: 'bucket_summary', assessment: 'unknown', evidence_kind: 'iam_identity_policy_candidate' } };
   return { ...value, plan, row };
 }
+
+test('Object prototype action names remain unsupported host observations through planning and Map reads', async () => {
+  const scope = { subject: 'reader', companyId: 'company', tenantIds: ['tenant'], teamIds: ['team'], allTeams: false };
+  for (const action of ['constructor', 'toString', '__proto__', 'hasOwnProperty', 'valueOf']) {
+    for (const selection of ['static', 'dynamic', 'unknown']) {
+      const value = fixture();
+      value.nodes.find(node => node.id === 'binding').properties.actions = [action];
+      value.nodes.find(node => node.id === 'execution').properties.identity_selection = selection;
+      value.nodes.find(node => node.id === 'resource').properties = { provider: 'host', host_resource_id: `opaque:${'a'.repeat(64)}`, name: 'Records', kind: 'database' };
+      const plan = policyPlan('company', 'tenant', value.nodes, value.edges, 512);
+      assert.equal(plan.records.length, 1); assert.deepEqual(plan.probes, []);
+      assert.equal(plan.records[0].action, action); assert.equal(plan.records[0].status, 'not_collected');
+      assert.equal(plan.records[0].reason, 'unsupported_action'); assert.deepEqual(plan.records[0].candidates, []);
+      const current = { id: 'projection', snapshotId: 'snapshot', generatedAt: new Date(now * 1000).toISOString(), status: 'published',
+        nodes: value.nodes, edges: value.edges, coverage: {}, policyEvidence: plan.records };
+      const service = new MapService({ async read() { return { sources: [{ id: 'source', sourceId: 'source', tenantId: 'tenant', profile: 'host', current }] }; } }, { clock: () => now * 1000 });
+      for (const operation of ['get_agent_access', 'get_agent_inventory']) {
+        const response = await service.query(scope, operation, { sourceId: 'source', agentId: 'agent', ...(operation === 'get_agent_inventory' ? { section: 'policies' } : {}) });
+        assert.equal(response.data.policyEvidence[0].reason, 'unsupported_action');
+        assert.equal(response.data.policyCoverage.status, 'not_collected'); assert.equal(response.data.assessment, 'unknown');
+      }
+    }
+  }
+});
 const evaluate = value => policyEvidence(value.plan, value.row ? [value.row] : [], now, 7200);
 
 test('policy projection preserves binding/task/resource identity and emits only minimized unknown candidates', () => {

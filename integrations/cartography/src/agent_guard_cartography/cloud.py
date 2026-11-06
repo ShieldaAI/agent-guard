@@ -91,6 +91,8 @@ def check_cloud_scope(scope: CloudScope, source: dict) -> None:
 
 def provider_target(reference: dict, scope: CloudScope) -> dict | None:
     """Select a fixed pinned-provider matcher. Object/prefix links mean containment."""
+    if reference.get("provider", "aws") != "aws":
+        return None
     if (reference["partition"], reference["account_id"]) not in scope.accounts:
         return None
     arn = reference["arn"]
@@ -199,16 +201,27 @@ def _unavailable(reference: dict, reason: str) -> dict:
     }
 
 
+def _host_observation(reference: dict) -> dict:
+    return {**_unavailable(reference, "unsupported_provider"), "status": "not_collected"}
+
+
 def collect_cloud(session, rows: dict[str, list[dict]], scope: CloudScope) -> dict:
     """Read bounded provider evidence in a separate timed transaction before staging."""
     now = int(time.time())
-    references = [{**row, "label": label} for label in REFERENCE_LABELS for row in rows[label]]
+    all_references = [{**row, "label": label} for label in REFERENCE_LABELS for row in rows[label]]
+    references = [ref for ref in all_references if ref.get("provider", "aws") == "aws"]
+    host_observations = [
+        _host_observation(ref) for ref in all_references if ref.get("provider") == "host"
+    ]
     if len(references) > MAX_CLOUD_REFERENCES:
         return {
             "observed_at": now,
             "scope": scope,
-            "observations": [_unavailable(ref, "limit_exceeded") for ref in references],
+            "observations": host_observations
+            + [_unavailable(ref, "limit_exceeded") for ref in references],
         }
+    if not references:
+        return {"observed_at": now, "scope": scope, "observations": host_observations}
     observations = []
     try:
         with session.begin_transaction(timeout=CLOUD_QUERY_SECONDS) as tx:
@@ -230,7 +243,7 @@ def collect_cloud(session, rows: dict[str, list[dict]], scope: CloudScope) -> di
             tx.commit()
     except Exception:
         observations = [_unavailable(reference, "capture_failed") for reference in references]
-    return {"observed_at": now, "scope": scope, "observations": observations}
+    return {"observed_at": now, "scope": scope, "observations": host_observations + observations}
 
 
 def publish_cloud(tx, source_id: str, projection_id: str, capture: dict | None) -> None:
@@ -338,15 +351,18 @@ def publish_cloud(tx, source_id: str, projection_id: str, capture: dict | None) 
     ).single()["count"]
     if updated != len(updates):
         raise CloudJoinError("CLOUD_REFERENCE_CONFLICT")
-    resolved = sum(observation["status"] == "resolved" for observation in observations)
+    provider_observations = [item for item in observations if item["status"] != "not_collected"]
+    resolved = sum(observation["status"] == "resolved" for observation in provider_observations)
     coverage = {
-        "status": "complete"
-        if resolved == len(observations)
+        "status": "not_collected"
+        if not provider_observations
+        else "complete"
+        if resolved == len(provider_observations)
         else "partial"
         if resolved
         else "unavailable",
         "observedAt": capture["observed_at"],
-        "references": len(observations),
+        "references": len(provider_observations),
         "resolved": resolved,
         "assessment": "unknown",
         "provider": "aws",
@@ -365,7 +381,9 @@ def unavailable_cloud(capture: dict) -> dict:
     return {
         **capture,
         "observations": [
-            _unavailable(observation["reference"], "capture_failed")
+            _host_observation(observation["reference"])
+            if observation["reference"].get("provider") == "host"
+            else _unavailable(observation["reference"], "capture_failed")
             for observation in capture["observations"]
         ],
     }

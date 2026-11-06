@@ -14,7 +14,10 @@ export { startInventoryServer, createInventoryObserverToken,
 export { validateInventoryManifest, composeInventorySnapshot,
   type InventoryManifest, type HostInventorySnapshot, type InventoryAwsReference, type InventoryAwsResourceReference,
   type InventoryManifestAgent, type InventoryManifestDeployment, type InventoryManifestTaskBinding,
-  type InventoryManifestResourceBinding, type InventoryManifestExecutionBinding } from './inventory-manifest.js';
+  type InventoryManifestResourceBinding, type InventoryManifestExecutionBinding,
+  type InventoryManifestV1, type InventoryManifestV2, type InventoryOwnershipStatus,
+  type InventoryOwner, type InventoryCredentialReference, type InventoryHostResourceReference,
+  type InventoryManifestAgentV2, type InventoryManifestDeploymentV2, type InventoryManifestResourceBindingV2 } from './inventory-manifest.js';
 export { validateMcpConnectionInventory, validateMcpInventorySources, composeMcpInventorySnapshot,
   type InventoryMcpConnection, type InventoryMcpSourceBinding, type InventoryMcpConnectionRecord,
   type McpInventorySnapshot } from './inventory-mcp.js';

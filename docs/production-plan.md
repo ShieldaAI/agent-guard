@@ -55,8 +55,8 @@ The implementation now includes the static operator interface and a reference
 HTTPS service using OIDC, encrypted witnessed SQLite stores, role-bound decisions
 and backend receipts. See the [operator application](../apps/agent-ops/README.md)
 and [Linux deployment runbook](../deployment/production/README.md) for the supported
-single-owner profile and capacity limits. This implementation does not complete
-the P1 inventory expansion below.
+single-owner profile and capacity limits. The P1 inventory expansion and its
+remaining evidence boundaries are described below.
 
 Two repeatable browser checks distinguish their evidence sources:
 
@@ -83,9 +83,14 @@ operator cohort, a customer IdP deployment or paid live-provider trials.
 Extend the existing exporter, observer collector, Cartography projections,
 scoped `MapService` queries and Agent Map viewer. Reuse the established tenant,
 source-generation and immutable snapshot boundaries described in the
-[Cartography integration plan](cartography-integration-plan.md). The following
-coverage is planned work; each row needs a versioned schema, an authoritative
-source and scoped query behavior before it is presented as collected evidence.
+[Cartography integration plan](cartography-integration-plan.md). The
+[version-2 contract](agent-cartography-contract.md) and
+[company setup guide](guides/agent-cartography.md) implement the catalog and
+read-only browsing path below. Host assertions, declared grants and mapped policy
+candidates retain separate provenance. Approval events, request-time decision
+logs and backend receipt history remain explicitly not collected by this catalog;
+the execution/Agent Ops workflow supplies those records. Graph relationships
+cannot substitute for them.
 
 | Inventory area | Information and relationships to add or complete |
 | --- | --- |
@@ -93,7 +98,7 @@ source and scoped query behavior before it is presented as collected evidence.
 | Identities and deployments | Host assertions linking agents to runtime deployments, service identities, tenant/account, environment, approved build and workload generation. Record the binding authority and observation time. |
 | Tasks and tools | Task ancestry, purpose, deadlines, enabled tool descriptors, implementation versions, resource resolvers and execution bindings. Retain the effective revision used for each observation. |
 | MCP connections | Enrolled peer identity, transport reference, approved metadata generation, lifecycle state, tool/resource/prompt availability and drift/quarantine status. |
-| Grants and approvals | Declared task grants, resource/action limits, reviewer roles, prepared-action references, approval status/expiry and consumption. Publish minimized observation records with explicit provenance. |
+| Grants and approvals | Declared task grants, resource/action limits and current approval-required tool flags are visible. Approval-event history, reviewer decisions and backend receipts are explicitly not collected; use the execution/Agent Ops evidence workflow. |
 | Permission evidence | Distinguish declared grants, mapped policy candidates, observed request-time decisions and backend-confirmed effects. Preserve conditions, explicit denials, unsupported evaluation, missing evidence and independent capture times. |
 | Resources | Exact resource identities, ownership, tenant/account, scope and object/prefix boundaries, sensitivity labels, source dependencies and approved destinations. |
 | Credential references | Opaque host-owned credential references, intended issuer/audience, permitted recipients, lifecycle/expiry and rotation status. Secret bytes, bearer tokens, private keys and credential-bearing URLs stay outside snapshots, graph properties, browser state and reports. |
@@ -114,7 +119,7 @@ references and retirement provenance through scoped maintenance observations.
 They must not reintroduce archived tasks as active authority or copy archived
 arguments, secret keys or private payloads into the graph.
 
-Implement the inventory expansion in this order.
+The implementation follows these boundaries.
 
 1. Define the versioned export fields, source ownership and redaction rules for
    each relationship. Keep stable identities and generation retirement compatible

@@ -8,28 +8,7 @@ import { MAP_LABELS, MAP_RELATIONSHIPS, MapQueryError, mapIdentifier, validateRe
 import { POLICY_COLUMNS, POLICY_QUERY, policyEvidence, policyParameters, policyPlan, safePolicyRow,
   type PolicyPlan } from './policy-reader.js';
 
-const CLOUD_FIELDS = ['cloud_status', 'cloud_reason', 'cloud_observed_at', 'cloud_assessment',
-  'cloud_provider_label', 'cloud_provider_id', 'cloud_match_kind', 'cloud_node_updated',
-  'cloud_ownership_updated', 'cloud_account_updated'];
-const HOST_FIELDS = ['evidence_kind', 'assessment', 'manifest_observed_at'];
-const FIELDS: Readonly<Record<GuardLabel, readonly string[]>> = Object.freeze({
-  GuardAgent: ['agent_id', 'name', 'owner_id', 'team_id', ...HOST_FIELDS],
-  GuardDeployment: ['deployment_id', 'environment', ...HOST_FIELDS],
-  GuardTask: ['task_id', 'principal_id', 'revoked', 'sensitive', 'allowed_recipients', 'allow_control_plane',
-    'max_calls', 'max_concurrent', 'max_cost', 'deadline', 'calls', 'concurrent', 'spent', 'reserved'],
-  GuardPrincipal: ['principal_id'],
-  GuardGrant: ['task_id', 'tool', 'resources', 'evidence_kind', 'assessment'],
-  GuardTool: ['name', 'fingerprint', 'revision', 'registered', 'approved', 'known_metadata',
-    'requires_approval', 'control_plane', 'max_cost'],
-  GuardResource: ['resource_id', 'tool', 'selector_kind'],
-  GuardResourceBinding: ['binding_id', 'tool', 'resource_ref', 'actions', 'scope', ...HOST_FIELDS],
-  GuardExecutionBinding: ['binding_id', 'tool', 'connection_id', 'identity_selection', ...HOST_FIELDS],
-  GuardExternalResource: ['provider', 'partition', 'account_id', 'region', 'arn', 'kind', ...HOST_FIELDS, ...CLOUD_FIELDS],
-  GuardExternalIdentity: ['provider', 'partition', 'account_id', 'region', 'arn', ...HOST_FIELDS, ...CLOUD_FIELDS],
-  GuardMcpConnection: ['connection_id', 'capture_status', 'unavailable_reason', 'capture_observed_at',
-    'server_id', 'transport_ref', 'state', 'metadata_state', 'observed_at', 'evidence_kind', 'assessment'],
-  GuardMcpOperation: ['connection_id', 'name', 'kind', 'fingerprint', 'evidence_kind', 'assessment'],
-});
+import { MAP_PROPERTIES as FIELDS } from './projection-fields.js';
 
 const SOURCES = `MATCH (s:GuardSource)
 WHERE s.company_id=$companyId AND s.tenant_id IN $tenantIds AND ($sourceId IS NULL OR s.id=$sourceId)
@@ -52,7 +31,7 @@ const scoped = (variable: string): string => `${variable}.source_id=$sourceId AN
 // Derive each next set only from previously authorized nodes, with bounds after every set.
 const READ_ORDER: readonly GuardLabel[] = ['GuardAgent', 'GuardDeployment', 'GuardTask', 'GuardPrincipal',
   'GuardGrant', 'GuardExecutionBinding', 'GuardTool', 'GuardResource', 'GuardResourceBinding',
-  'GuardExternalResource', 'GuardExternalIdentity', 'GuardMcpConnection', 'GuardMcpOperation'];
+  'GuardExternalResource', 'GuardExternalIdentity', 'GuardMcpConnection', 'GuardMcpOperation', 'GuardOwner', 'GuardCredentialReference'];
 const historicalVisibility = (label: 'GuardAgent' | 'GuardTask', parameter: string): string =>
   `($projectionId=$currentId OR $allTeams OR n.entity_id IN $${parameter} OR NOT EXISTS {
     MATCH (current:${label})-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$currentId})
@@ -78,6 +57,8 @@ const predicates: Readonly<Record<GuardLabel, string>> = {
   GuardExternalResource: through('(n)<-[:G_MAPS_TO]-(visible:GuardResourceBinding)', 'GuardResourceBinding'),
   GuardExternalIdentity: through('(n)<-[:G_USES_IDENTITY]-(visible:GuardExecutionBinding)', 'GuardExecutionBinding'),
   GuardMcpConnection: through('(n)<-[:G_VIA_CONNECTION]-(visible:GuardExecutionBinding)', 'GuardExecutionBinding'),
+  GuardOwner: `(${through('(n)<-[:G_OWNED_BY]-(visible:GuardAgent)', 'GuardAgent')} OR ${through('(n)<-[:G_RESOURCE_OWNED_BY]-(visible:GuardResourceBinding)', 'GuardResourceBinding')})`,
+  GuardCredentialReference: through('(n)<-[:G_USES_CREDENTIAL]-(visible:GuardDeployment)', 'GuardDeployment'),
   GuardMcpOperation: `EXISTS {
     MATCH (n)<-[:G_EXPOSES_OPERATION]-(c:GuardMcpConnection)<-[:G_VIA_CONNECTION]-(b:GuardExecutionBinding)
     MATCH (b)-[:G_EXECUTES_TOOL]->(tool:GuardTool)<-[:G_OPERATION_TOOL]-(n)
@@ -136,6 +117,21 @@ function safeNode(raw: unknown, label: unknown, sourceId: string, projectionId: 
   if (data.source_id !== sourceId || data.projection_id !== projectionId) throw new MapQueryError('MAP_UNAVAILABLE');
   const properties: Record<string, unknown> = {};
   for (const field of FIELDS[label as GuardLabel]) if (Object.hasOwn(data, field)) properties[field] = converted(data[field]);
+  const opaque = (value: unknown): boolean => typeof value === 'string' && value.length === 71 && /^opaque:[a-f0-9]{64}$/.test(value);
+  const optionalOpaque = (value: unknown): boolean => value == null || opaque(value);
+  const opaqueArray = (value: unknown, maximum: number): boolean => Array.isArray(value) && value.length <= maximum &&
+    new Set(value).size === value.length && value.every(opaque);
+  if (label === 'GuardCredentialReference' && (!opaque(properties.credential_id) || !optionalOpaque(properties.issuer_ref) ||
+      !opaqueArray(properties.audience_refs, 128) || !opaqueArray(properties.recipient_refs, 128) ||
+      !['active', 'rotating', 'revoked', 'expired', 'unknown'].includes(properties.lifecycle_state as string) ||
+      !['current', 'due', 'overdue', 'unknown'].includes(properties.rotation_status as string))) throw new MapQueryError('MAP_UNAVAILABLE');
+  if (label === 'GuardDeployment' && (!optionalOpaque(properties.runtime_ref) || !optionalOpaque(properties.build_ref))) throw new MapQueryError('MAP_UNAVAILABLE');
+  if (label === 'GuardResourceBinding' && properties.approved_destinations != null && !opaqueArray(properties.approved_destinations, 128)) throw new MapQueryError('MAP_UNAVAILABLE');
+  if (label === 'GuardExternalResource' && properties.provider === 'host') {
+    if (!opaque(properties.host_resource_id) || !['service', 'repository', 'database', 'queue', 'storage', 'other'].includes(properties.kind as string)) throw new MapQueryError('MAP_UNAVAILABLE');
+    // A host resource cannot acquire AWS identity through extra graph properties.
+    for (const key of ['arn', 'partition', 'account_id', 'region', 'cloud_provider_label', 'cloud_provider_id', 'cloud_match_kind']) delete properties[key];
+  }
   return { id: text(data.id), entityId: text(data.entity_id), sourceId, projectionId, label: label as GuardLabel,
     properties: immutableJson(properties, 4, 50_000, 512 * 1024) as JsonObject };
 }
@@ -168,7 +164,7 @@ function coverage(nodes: readonly MapNode[], captures: Partial<Record<'tasks' | 
   profile: string, summary: boolean, now: number): MapCoverage {
   const connections = nodes.filter(node => node.label === 'GuardMcpConnection');
   const observed = connections.filter(node => node.properties.capture_status === 'observed').length;
-  const references = nodes.filter(node => node.label === 'GuardExternalResource' || node.label === 'GuardExternalIdentity');
+  const references = nodes.filter(node => (node.label === 'GuardExternalResource' || node.label === 'GuardExternalIdentity') && node.properties.provider !== 'host');
   const captured = references.filter(node => typeof node.properties.cloud_status === 'string');
   const resolved = captured.filter(node => node.properties.cloud_status === 'resolved').length;
   const at = (values: readonly unknown[]): { observedAt?: string } => {
@@ -301,7 +297,7 @@ export class Neo4jMapStore implements MapStore {
               currentAgentEntityIds: currentNodes.filter(node => node.label === 'GuardAgent').map(node => node.entityId),
               currentTaskEntityIds: currentNodes.filter(node => node.label === 'GuardTask').map(node => node.entityId) };
             const nodes: MapNode[] = [];
-            for (const label of selection.summary ? ['GuardAgent', 'GuardDeployment'] as const : READ_ORDER) {
+            for (const label of selection.summary ? ['GuardAgent', 'GuardDeployment', 'GuardOwner'] as const : READ_ORDER) {
               const authorized = Object.fromEntries(MAP_LABELS.map(kind => [`${kind}Ids`, nodes.filter(node => node.label === kind).map(node => node.id)]));
               await run(NODES[label], { ...params, ...authorized, nodeLimit: neo4j.int(this.#nodes - nodeCount + 1) }, item => {
                 if (++nodeCount > this.#nodes) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
@@ -311,7 +307,7 @@ export class Neo4jMapStore implements MapStore {
               });
             }
             const nodeIds = nodes.map(node => node.id);
-            if (new Set(nodeIds).size !== nodes.length) throw new MapQueryError('MAP_UNAVAILABLE');
+            if (new Set(nodeIds).size !== nodes.length || new Set(nodes.map(node => node.entityId)).size !== nodes.length) throw new MapQueryError('MAP_UNAVAILABLE');
             const ids = new Set(nodeIds);
             const edges: MapEdge[] = [];
             await run(EDGES, { ...params, nodeIds, relationships: [...MAP_RELATIONSHIPS],

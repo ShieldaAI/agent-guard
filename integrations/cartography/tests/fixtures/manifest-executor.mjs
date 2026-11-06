@@ -61,6 +61,30 @@ try {
         connectionId: 'declared-mcp-reference', identitySelection: 'dynamic', identity: null },
     ],
   };
+  if (process.argv.includes('--v2')) {
+    const opaque = character => `opaque:${character.repeat(64)}`;
+    Object.assign(manifest, { schemaVersion: 2, authorityId: 'company-directory',
+      owners: [{ id: 'owner-research', name: 'Research team', kind: 'team' },
+        { id: 'owner-review', name: 'Review team', kind: 'team' }],
+      credentialReferences: ['a', 'b'].map((character, index) => ({ id: opaque(character),
+        name: index ? 'Review credential' : 'Research credential', issuerRef: opaque('c'),
+        audienceRefs: [opaque('d')], recipientRefs: [opaque('e')], lifecycleState: 'active',
+        expiresAt: '2026-12-01T00:00:00Z', rotationStatus: 'current' })) });
+    manifest.agents.forEach(agent => Object.assign(agent, {
+      purpose: 'Reviewed records workflow', lifecycleState: 'active',
+      ownershipStatus: agent.ownerId === null ? 'unassigned' : 'assigned',
+      ownershipSource: 'company-directory' }));
+    manifest.deployments.forEach((deployment, index) => Object.assign(deployment, {
+      runtimeRef: opaque(index ? 'f' : '0'), workloadGeneration: 'generation-1', buildRef: opaque('1'),
+      bindingAuthority: 'deployment-controller', credentialReferenceIds: [opaque(index ? 'b' : 'a')] }));
+    manifest.resourceBindings.forEach((binding, index) => Object.assign(binding, {
+      displayName: index ? 'Company records' : 'Reviewed report', ownerId: index ? 'owner-review' : 'owner-research',
+      ownershipStatus: 'assigned', ownershipSource: 'company-directory', sensitivity: 'internal',
+      approvedDestinations: [opaque('2')], dependsOn: index ? ['object-binding'] : [] }));
+    Object.assign(manifest.resourceBindings[1], {
+      target: { provider: 'host', id: opaque('3'), name: 'Company records', kind: 'database' },
+      actions: ['read'], scope: 'exact' });
+  }
   const validated = validateInventoryManifest(manifest);
   assert.equal(Object.isFrozen(validated.resourceBindings[0].target), true);
   const composed = composeInventorySnapshot(core, validated);

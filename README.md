@@ -51,6 +51,10 @@ digest that locks the cases and criteria for the paid run. [Model-selected trial
 The optional [Agent Map](packages/agent-map/README.md) reads published inventory
 without participating in execution. It provides team-scoped evidence, access
 explanations, snapshot changes and freshness through the same HTTP/MCP contract.
+The [company cartography guide](docs/guides/agent-cartography.md) connects
+company-owned agents, owners, deployments, permissions, resources, credential
+references and relationships. Paged indexes and structured details distinguish
+declared access, host assertions, policy candidates and missing evidence.
 See the [Cartography plan](docs/cartography-integration-plan.md) for milestone
 status and the [viewer](apps/agent-map/README.md) for local preview instructions.
 The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic

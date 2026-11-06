@@ -84,12 +84,12 @@ test('source supersession is filtered on selection and the final recheck', async
   assert.deepEqual(backend.status(), { rolledBack: 1, closed: 1 });
 });
 
-test('agent summaries read only the authorized agent and deployment index', async () => {
+test('agent summaries read only the authorized agent deployment and ownership index', async () => {
   const backend = fake();
   const result = await new Neo4jMapStore(backend.driver, { maxNodes: 1 }).read(scope, { summary: true });
   assert.equal(result.sources[0].current.nodes.length, 1);
   assert.equal(result.sources[0].current.coverage.tasks.status, 'not_collected');
-  assert.equal(backend.calls.filter(call => call.query.includes(' AS node')).length, 2);
+  assert.equal(backend.calls.filter(call => call.query.includes(' AS node')).length, 3);
   assert.equal(backend.calls.some(call => call.query.includes("RETURN 'GuardTask' AS label")), false);
 });
 
@@ -112,8 +112,8 @@ test('cumulative byte bounds stop streamed materialization before later graph qu
 test('component capture timestamps remain independent of the core publication timestamp', async () => {
   const backend = fake({ sources: [{ ...source, profile: 'host-mcp' }], nodes: [
     { label: 'GuardAgent', node: { ...agent, manifest_observed_at: '2026-10-20T01:00:00Z' } },
-    { label: 'GuardMcpConnection', node: { ...agent, id: 'connection', capture_status: 'observed', capture_observed_at: '2026-10-21T02:00:00Z', observed_at: '2026-10-21T02:00:00Z' } },
-    { label: 'GuardExternalResource', node: { ...agent, id: 'external', cloud_status: 'resolved', cloud_observed_at: Date.parse('2026-10-22T03:00:00Z') / 1000 } },
+    { label: 'GuardMcpConnection', node: { ...agent, id: 'connection', entity_id: 'connection-entity', capture_status: 'observed', capture_observed_at: '2026-10-21T02:00:00Z', observed_at: '2026-10-21T02:00:00Z' } },
+    { label: 'GuardExternalResource', node: { ...agent, id: 'external', entity_id: 'external-entity', cloud_status: 'resolved', cloud_observed_at: Date.parse('2026-10-22T03:00:00Z') / 1000 } },
   ] });
   const result = await new Neo4jMapStore(backend.driver).read(scope);
   const coverage = result.sources[0].current.coverage;
@@ -131,7 +131,7 @@ test('recomposition cannot renew original task, tool or MCP observation freshnes
   const now = Date.parse(source.currentGeneratedAt);
   const backend = fake({ sources: [{ ...source, profile: 'host-mcp', currentCoverage: captures(old, toolTime) }], nodes: [
     { label: 'GuardAgent', node: agent },
-    { label: 'GuardMcpConnection', node: { ...agent, id: 'connection', capture_status: 'observed',
+    { label: 'GuardMcpConnection', node: { ...agent, id: 'connection', entity_id: 'connection-entity', capture_status: 'observed',
       capture_observed_at: source.currentGeneratedAt, observed_at: old } },
   ] });
   const result = await new MapService(new Neo4jMapStore(backend.driver, { clock: () => now }),
@@ -170,10 +170,10 @@ test('malformed or oversized original coverage never supplies fresh component ev
 
 test('an unknown observed MCP timestamp cannot be hidden behind a fresh sibling or capture', async () => {
   const now = Date.parse(source.currentGeneratedAt);
-  const connection = { ...agent, id: 'connection', capture_status: 'observed',
+  const connection = { ...agent, id: 'connection', entity_id: 'connection-entity', capture_status: 'observed',
     capture_observed_at: source.currentGeneratedAt, observed_at: source.currentGeneratedAt };
   for (const observed_at of [undefined, null, 'malformed', '2026-02-30T00:00:00Z', '2026-11-01T00:00:00Z']) {
-    const unknown = { ...connection, id: 'unknown-connection', observed_at };
+    const unknown = { ...connection, id: 'unknown-connection', entity_id: 'unknown-entity', observed_at };
     if (observed_at === undefined) delete unknown.observed_at;
     const backend = fake({ sources: [{ ...source, profile: 'host-mcp' }], nodes: [
       { label: 'GuardMcpConnection', node: connection },
@@ -242,4 +242,49 @@ test('unknown query arguments and invalid source credentials fail before driver 
   for (const uri of ['bolt://db.example.com', 'neo4j://127.0.0.1', 'bolt+ssc://127.0.0.1', 'https://example.com', 'bolt://u:p@127.0.0.1', 'bolt://127.0.0.1/?query=secret']) {
     assert.throws(() => createNeo4jMapStore({ uri, username: 'u', password: 'private-canary' }), { code: 'MAP_REQUEST_INVALID' });
   }
+});
+
+test('v2 owners and credentials use authorized attachment paths and exclude raw relationship metadata', async () => {
+  const opaque = `opaque:${'a'.repeat(64)}`;
+  const rows = [
+    { label: 'GuardAgent', node: agent },
+    { label: 'GuardOwner', node: { ...agent, id: 'owner', entity_id: 'owner-entity', owner_id: 'owner', name: 'Owner', kind: 'team' } },
+    { label: 'GuardCredentialReference', node: { ...agent, id: 'credential', entity_id: 'credential-entity', credential_id: opaque,
+      issuer_ref: null, audience_refs: [opaque], recipient_refs: [], lifecycle_state: 'active', rotation_status: 'current', token: 'private-token-canary' } },
+    { label: 'GuardDeployment', node: { ...agent, id: 'deployment', entity_id: 'deployment-entity', runtime_ref: opaque, build_ref: null, credential_refs: ['hidden-credential-canary'] } },
+    { label: 'GuardResourceBinding', node: { ...agent, id: 'binding', entity_id: 'binding-entity', approved_destinations: [opaque], depends_on: ['hidden-binding-canary'] } },
+    { label: 'GuardExternalResource', node: { ...agent, id: 'external', entity_id: 'external-entity', provider: 'host', kind: 'database', host_resource_id: opaque,
+      arn: 'private-aws-canary', cloud_provider_id: 'private-cloud-canary', cloud_status: 'not_collected', cloud_reason: 'unsupported_provider' } },
+  ];
+  const backend = fake({ nodes: rows });
+  const result = await new Neo4jMapStore(backend.driver).read(scope);
+  assert.doesNotMatch(JSON.stringify(result), /private-token-canary|hidden-credential-canary|hidden-binding-canary|private-aws-canary|private-cloud-canary/);
+  const owner = backend.calls.find(c => c.query.includes("RETURN 'GuardOwner' AS label"));
+  assert.match(owner.query, /G_OWNED_BY/); assert.match(owner.query, /G_RESOURCE_OWNED_BY/);
+  const credential = backend.calls.find(c => c.query.includes("RETURN 'GuardCredentialReference' AS label"));
+  assert.match(credential.query, /G_USES_CREDENTIAL/); assert.match(credential.query, /visible.id IN \$GuardDeploymentIds/);
+  assert.deepEqual(credential.params.GuardDeploymentIds, ['deployment']);
+  assert.match(backend.calls.find(c => c.query.includes("RETURN 'GuardDeployment' AS label")).query, /G_INSTANCE_OF/);
+  assert.deepEqual(owner.params.teamIds, ['team']); assert.deepEqual(credential.params.teamIds, ['team']);
+  for (const call of backend.calls.filter(c => c.query.includes(' AS node'))) assert.doesNotMatch(call.query, /G_DEPENDS_ON/);
+});
+
+test('opaque references reject terminal newlines, duplicates and malformed credential metadata', async () => {
+  const opaque = `opaque:${'a'.repeat(64)}`;
+  const credential = { ...agent, id: 'credential', entity_id: 'credential-entity', credential_id: opaque, issuer_ref: null,
+    audience_refs: [], recipient_refs: [], lifecycle_state: 'active', rotation_status: 'current' };
+  for (const [label, properties] of [
+    ['GuardCredentialReference', { ...credential, credential_id: `${opaque}\n` }],
+    ['GuardCredentialReference', { ...credential, issuer_ref: `${opaque}\n` }],
+    ['GuardCredentialReference', { ...credential, audience_refs: [`${opaque}\n`] }],
+    ['GuardCredentialReference', { ...credential, recipient_refs: [opaque, opaque] }],
+    ['GuardDeployment', { ...agent, runtime_ref: `${opaque}\n` }],
+    ['GuardExternalResource', { ...agent, provider: 'host', kind: 'database', host_resource_id: `${opaque}\n` }],
+    ['GuardResourceBinding', { ...agent, approved_destinations: [`${opaque}\n`] }],
+  ]) await assert.rejects(new Neo4jMapStore(fake({ nodes: [{ label, node: properties }] }).driver).read(scope), { code: 'MAP_UNAVAILABLE' });
+});
+
+test('duplicate stable entity identities fail before scoped relationships can be conflated', async () => {
+  const backend = fake({ nodes: [{ label: 'GuardAgent', node: agent }, { label: 'GuardAgent', node: { ...agent, id: 'other-node' } }] });
+  await assert.rejects(new Neo4jMapStore(backend.driver).read(scope), { code: 'MAP_UNAVAILABLE' });
 });

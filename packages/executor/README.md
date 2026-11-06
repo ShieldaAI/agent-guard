@@ -266,7 +266,7 @@ ledger. The Python/Neo4j pilot remains optional and outside execution admission.
 ### Host-owned manifest and bindings
 
 `validateInventoryManifest(value)` checks and freezes host-authored configuration
-against the version-1 manifest contract. `composeInventorySnapshot(core, manifest)`
+against the version-1 or version-2 manifest contract. `composeInventorySnapshot(core, manifest)`
 validates both inputs and produces a separate `HostInventorySnapshot` with
 `profile: 'host'`. The original core snapshot stays unchanged. The manifest is
 configuration owned by the trusted operator; it is never read from tool metadata,
@@ -298,6 +298,8 @@ All five source fields must match exactly, including tenant, enrollment generati
 and persistent ledger identity. Every property is allowlisted. Names, owner/team
 IDs and environment labels are host-reviewed metadata; keep secrets out of them.
 No manifest field can set grants, budgets, sensitivity, revocation or approval.
+Version-2 resource sensitivity is a host inventory label; it cannot change the
+executor's task/family sensitivity or data-handling policy.
 Tasks without a binding remain in the complete inventory, without an inferred
 agent or deployment. Unknown fields, duplicate/conflicting bindings, missing
 references and mismatched source identities fail rather than being discarded.
@@ -309,6 +311,22 @@ references and mismatched source identities fail rather than being discarded.
 | `taskBindings` | One deployment per bound task; the task must exist in this snapshot. |
 | `resourceBindings` | One mapping per `(tool, resourceRef)`, with exact AWS target, actions and scope. |
 | `executionBindings` | One mapping per `(deploymentId, tool)`; optional connection ID and static, dynamic or unknown execution identity. |
+
+Version 2 adds a company authority, a bounded owner directory, agent purpose and
+lifecycle, explicit assigned/unassigned/unknown ownership, deployment/build
+references, resource sensitivity/destination/dependency metadata and an opaque
+credential-reference catalog. A generic host resource may represent a repository,
+database, queue, service or storage resource without requiring AWS. These targets
+are scoped observations and never receive inferred AWS permission edges.
+
+Use the [company cartography guide](../../docs/guides/agent-cartography.md) and
+`node examples/agent-cartography.mjs` for the complete version-2 path through the
+authenticated observer. The exact closed fields and compatibility rules are in
+[`agent-guard-inventory-manifest-v2.schema.json`](../../schemas/agent-guard-inventory-manifest-v2.schema.json).
+Credential, runtime, build and destination references use tenant-scoped opaque
+identifiers, never secret bytes or credential URLs. Keep display names and purpose
+free of secrets. Ownership is metadata; a team name or owner record cannot grant
+Map visibility or executor access.
 
 `resourceRef` is the exact **exported** selector under that tool's grant, including
 its opaque value in the default mode. Obtain it from a trusted core snapshot and

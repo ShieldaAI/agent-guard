@@ -4,6 +4,8 @@ import cytoscape from 'cytoscape';
 import { agentOptions, componentHealth, createBearerQuerySession, createCompanyQuerySession, createQuerySession, endCompanySession, readCompanySession, retryCompanyLogout, startCompanyLogin, watchCompanySession, displayTime, errorMessage, evidenceState, graphElements, initialExplanation, kindName, nodeName, shortReference } from './view-model.mjs';
 import { queryDemo } from './demo.mjs';
 import { PolicyEvidence } from './policy-evidence.jsx';
+import { AgentInventory, ChangesView, OwnersBrowse, ResourcesBrowse, Pager } from './inventory.jsx';
+import { ownershipLabel } from './inventory-model.mjs';
 import './style.css';
 
 function Icon({ name, size = 18 }) {
@@ -95,20 +97,24 @@ function Evidence({ node, graph, select }) {
   </section>;
 }
 
-function Explain({ access, graph, query, reportError }) {
+function Explain({ access, graph, query, reportError, onExplained }) {
   const [form, setForm] = useState(() => initialExplanation(access)), [result, setResult] = useState(null), [busy, setBusy] = useState(false);
-  useEffect(() => { setForm(initialExplanation(access)); setResult(null); }, [access]);
+  const request = useRef(null);
+  useEffect(() => () => request.current?.abort(), []);
+  function updateResult(value) { setResult(value); onExplained?.(Boolean(value)); }
+  useEffect(() => { setForm(initialExplanation(access)); updateResult(null); }, [access, onExplained]);
   async function submit(event) {
-    event.preventDefault(); setBusy(true); setResult(null);
-    try { setResult((await query('explain_access', { sourceId: access.agent.sourceId, ...form })).data); }
-    catch (error) { reportError(error); } finally { setBusy(false); }
+    event.preventDefault(); setBusy(true); updateResult(null);
+    const controller = new AbortController(); request.current = controller;
+    try { const response = await query('explain_access', { sourceId: access.agent.sourceId, ...form }, { signal: controller.signal }); if (!controller.signal.aborted) updateResult(response.data); }
+    catch (error) { if (!controller.signal.aborted) reportError(error); } finally { if (!controller.signal.aborted) setBusy(false); }
   }
-  return <><PolicyEvidence evidence={result?.externalEvidence?.policyEvidence ?? access.policyEvidence} graph={graph}/><section className="explanation-card">
+  return <>{(result || Array.isArray(access.policyEvidence)) && <PolicyEvidence evidence={result?.externalEvidence?.policyEvidence ?? access.policyEvidence} graph={graph}/>}<section className="explanation-card">
     <div className="section-heading"><div><h3>Explain declared access</h3><p>Inspect one task, tool and exported resource selector.</p></div><span className="pill">Read only</span></div>
     <form onSubmit={submit} className="explain-form">
-      <label>Task<select value={form.taskId} required disabled={busy} onChange={event => { setResult(null); setForm({ ...form, taskId: event.target.value }); }}><option value="">Select task</option>{(access.tasks ?? []).map(task => <option key={task.id} value={task.taskId}>{task.taskId}</option>)}</select></label>
-      <label>Tool<input value={form.tool} maxLength={4096} required disabled={busy} onChange={event => { setResult(null); setForm({ ...form, tool: event.target.value }); }} placeholder="Registered tool name"/></label>
-      <label>Resource selector<input value={form.resourceId} maxLength={4096} required disabled={busy} onChange={event => { setResult(null); setForm({ ...form, resourceId: event.target.value }); }} placeholder="Exact exported reference"/></label>
+      <label>Task<input list="explain-task-options" value={form.taskId} maxLength={4096} required disabled={busy} onChange={event => { updateResult(null); setForm({ ...form, taskId: event.target.value }); }} placeholder="Exact task ID"/><datalist id="explain-task-options">{(access.tasks ?? []).map(task => <option key={task.id} value={task.taskId}/>)}</datalist></label>
+      <label>Tool<input value={form.tool} maxLength={4096} required disabled={busy} onChange={event => { updateResult(null); setForm({ ...form, tool: event.target.value }); }} placeholder="Registered tool name"/></label>
+      <label>Resource selector<input value={form.resourceId} maxLength={4096} required disabled={busy} onChange={event => { updateResult(null); setForm({ ...form, resourceId: event.target.value }); }} placeholder="Exact exported reference"/></label>
       <button className="primary-button" disabled={busy || !form.taskId}>{busy ? 'Checking…' : 'Explain'}<Icon name="arrow" size={16}/></button>
     </form>
     {result && <div className="explanation-result" role="status"><Status tone={result.assessment === 'blocked' ? 'danger' : 'amber'}>{result.assessment === 'blocked' ? 'Observed blocker' : 'Execution remains unknown'}</Status>
@@ -121,9 +127,12 @@ function Explain({ access, graph, query, reportError }) {
 
 function ResourceLookup({ query, onAgent, reportError }) {
   const [resourceRef, setResource] = useState(''), [action, setAction] = useState('s3:GetObject'), [result, setResult] = useState(null), [busy, setBusy] = useState(false);
+  const request = useRef(null);
+  useEffect(() => () => request.current?.abort(), []);
   async function submit(event) { event.preventDefault(); setBusy(true); setResult(null);
-    try { setResult((await query('find_agents_with_access', { resourceRef, action })).data); }
-    catch (error) { reportError(error); } finally { setBusy(false); } }
+    const controller = new AbortController(); request.current = controller;
+    try { const response = await query('find_agents_with_access', { resourceRef, action }, { signal: controller.signal }); if (!controller.signal.aborted) setResult(response.data); }
+    catch (error) { if (!controller.signal.aborted) reportError(error); } finally { if (!controller.signal.aborted) setBusy(false); } }
   const candidates = result?.candidates ?? result?.agents ?? [];
   return <section className="wide-card"><div className="section-heading"><div><h2>Find potential access</h2><p>Match an exact resource reference and declared cloud action in your visible inventory.</p></div><Icon name="search" size={24}/></div>
     <form className="resource-form" onSubmit={submit}><label>Resource reference<input value={resourceRef} disabled={busy} onChange={event => { setResult(null); setResource(event.target.value); }} required maxLength={4096} placeholder="Exported resource reference or canonical ARN"/></label><label>Action<input value={action} disabled={busy} onChange={event => { setResult(null); setAction(event.target.value); }} required maxLength={256} placeholder="s3:GetObject"/></label><button className="primary-button" disabled={busy}>{busy ? 'Searching…' : 'Find candidates'}<Icon name="arrow" size={16}/></button></form>
@@ -133,18 +142,38 @@ function ResourceLookup({ query, onAgent, reportError }) {
   </section>;
 }
 
-function Changes({ sources, query, reportError }) {
-  const [sourceId, setSource] = useState(sources[0]?.id ?? sources[0]?.sourceId ?? ''), [result, setResult] = useState(null), [busy, setBusy] = useState(false);
-  async function compare(event) { event.preventDefault(); setBusy(true); setResult(null);
-    try { setResult((await query('get_changes', { sourceId, since: 'previous' })).data); }
-    catch (error) { reportError(error); } finally { setBusy(false); } }
-  return <section className="wide-card"><div className="section-heading"><div><h2>Snapshot comparison</h2><p>Compare the current published view with its retained predecessor.</p></div><Icon name="clock" size={25}/></div>
-    <form className="comparison-form" onSubmit={compare}><label>Authorized source<select value={sourceId} disabled={busy} onChange={event => { setResult(null); setSource(event.target.value); }} required><option value="">Select a source</option>{sources.map(source => <option key={source.id ?? source.sourceId} value={source.id ?? source.sourceId}>{source.tenantId} · {shortReference(source.sourceId ?? source.id)}</option>)}</select></label><button className="primary-button" disabled={busy || !sourceId}>{busy ? 'Comparing…' : 'Compare snapshots'}<Icon name="arrow" size={16}/></button></form>
-    {result ? <>{result.coverageGap && <Notice>A comparison baseline is unavailable in the retained, authorized inventory. No complete change history can be inferred.</Notice>}
-      <div className="comparison-times"><span>Previous <strong>{displayTime(result.from?.generatedAt)}</strong></span><Icon name="arrow"/><span>Current <strong>{displayTime(result.to?.generatedAt)}</strong></span></div>
-      <div className="change-columns">{['added', 'changed', 'removed'].map(kind => <section key={kind}><h3><span className={`change-dot ${kind}`}/>{kind}<span className="count">{result.changes?.[kind]?.length ?? 0}</span></h3>{result.changes?.[kind]?.length ? <ul>{result.changes[kind].map((item, i) => <li key={item.entityId ?? i}><span>{item.name ?? shortReference(item.entityId)}</span><small>{kindName(item.label)}</small></li>)}</ul> : <p className="subtle">No visible {kind} items.</p>}</section>)}</div>
-      <p className="fine-print">These are net changes between visible snapshots, not a record of every intermediate grant or invocation. IAM policy history is not collected; current policy candidates are not compared here.</p></> : <Empty title="Compare collected evidence">Only published snapshots within your authorization scope are included.</Empty>}
+function OptionalGraph({ agent, query, reportError }) {
+  const [result, setResult] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [node, setNode] = useState(null);
+  const active = useRef(true), request = useRef(null);
+  useEffect(() => { active.current = true; return () => { active.current = false; request.current?.abort(); }; }, []);
+  const select = useCallback(value => setNode(value), []);
+  async function load() {
+    setBusy(true); setError('');
+    const controller = new AbortController(); request.current = controller;
+    try { const next = await query('get_agent_access', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId }, { signal: controller.signal });
+      if (!active.current) return;
+      if (!Array.isArray(next.graph?.nodes) || !Array.isArray(next.graph?.edges)) throw Object.assign(new Error('VIEWER_RESPONSE_INVALID'), { code: 'VIEWER_RESPONSE_INVALID' });
+      setResult(next); setNode(next.graph?.nodes.find(item => item.label === 'GuardAgent') ?? null);
+    } catch (error) { if (!active.current) return; setResult(null); setError(error?.code?.includes('LIMIT') || error?.status === 413
+      ? 'This neighborhood exceeds the graph display limit. All paged inventory sections remain available.' : errorMessage(error));
+      if (![413].includes(error?.status) && !error?.code?.includes('LIMIT')) reportError(error);
+    } finally { if (active.current) setBusy(false); }
+  }
+  return <section className="inventory-card"><h3>Relationship graph</h3><p className="subtle">Optional focused visualization. The full identifiers and relationships remain available in paged tables.</p>
+    <button className="secondary-button" disabled={busy} onClick={result ? () => setResult(null) : load}>{busy ? 'Loading graph…' : result ? 'Hide graph' : 'Show graph'}</button>
+    {error && <Notice>{error}</Notice>}{result && <div className="graph-evidence"><Graph graph={result.graph ?? { nodes: [], edges: [] }} policyEvidence={result.data.policyEvidence} onSelect={select}/><Evidence node={node} graph={result.graph} select={select}/></div>}
   </section>;
+}
+function AgentExplanation({ agent, query, reportError, onExplained }) {
+  const [access, setAccess] = useState(null), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
+  useEffect(() => { let active = true; const controller = new AbortController();
+    setAccess(null); setError('');
+    Promise.all(['tasks', 'permissions'].map(section => query('get_agent_inventory', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId, section, limit: 20, offset: 0 }, { signal: controller.signal })))
+      .then(([tasks, grants]) => { if (active) setAccess({ agent, tasks: tasks.data.items ?? [], grants: grants.data.items ?? [] }); })
+      .catch(error => { if (active) { setError(errorMessage(error)); reportError(error); } });
+    return () => { active = false; controller.abort(); };
+  }, [agent, query, reportError, attempt]);
+  return error ? <><Notice error>{error}</Notice><button className="secondary-button" onClick={() => setAttempt(value => value + 1)}>Retry explanation selectors</button></> : access ? <Explain access={access} query={query} reportError={reportError} onExplained={onExplained}/> : <p role="status">Loading explanation selectors…</p>;
 }
 
 function Health({ sources }) {
@@ -162,19 +191,21 @@ function App() {
   const [tab, setTab] = useState('inventory'), [agents, setAgents] = useState([]), [sources, setSources] = useState([]), [truncated, setTruncated] = useState(false);
   const [listingRevision, setListingRevision] = useState(0), [search, setSearch] = useState(''), [owner, setOwner] = useState(''), [environment, setEnvironment] = useState(''), [options, setOptions] = useState({ owners: [], environments: [] });
   const [listingState, setListingState] = useState('ready');
+  const [listingPage, setListingPage] = useState({ offset: 0, limit: 20, total: 0 }), [offset, setOffset] = useState(0);
+  const [ownership, setOwnership] = useState(''), [lifecycle, setLifecycle] = useState(''), [sourceFilter, setSourceFilter] = useState(''), [resourceOwner, setResourceOwner] = useState(null), [resourceSelection, setResourceSelection] = useState(null);
   const [selection, setSelection] = useState(null), [access, setAccess] = useState(null), [node, setNode] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [authentication, setAuthentication] = useState({ mode: 'pending' });
-  const generation = useRef(0), authenticationGeneration = useRef(0);
-  const pendingConnection = useRef(null), activeSession = useRef(null), authenticationRequest = useRef(null);
+  const generation = useRef(0), authenticationGeneration = useRef(0), listingFilters = useRef('');
+  const pendingConnection = useRef(null), activeSession = useRef(null), authenticationRequest = useRef(null), agentRequest = useRef(null);
   const auth = useRef(authentication), logoutToken = useRef(null);
   auth.current = authentication;
-  const query = useCallback((operation, args) => session.query(operation, args), [session]);
+  const query = useCallback((operation, args, options) => session.query(operation, args, options), [session]);
   const selectNode = useCallback(value => setNode(value), []);
   const clearWorkspace = useCallback(() => {
     activeSession.current?.close(); activeSession.current = null;
     pendingConnection.current?.close(); pendingConnection.current = null; generation.current++;
     setSession(null); setCredential(''); setAgents([]); setSources([]); setAccess(null); setSelection(null); setNode(null);
-    setSearch(''); setOwner(''); setEnvironment(''); setOptions({ owners: [], environments: [] }); setTruncated(false);
+    setSearch(''); setOwner(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setSourceFilter(''); setResourceOwner(null); setResourceSelection(null); setOffset(0); setListingPage({ offset: 0, limit: 20, total: 0 }); setOptions({ owners: [], environments: [] }); setTruncated(false);
     setListingState('ready');
     setBusy(false); setConnecting(false); setTab('inventory');
   }, []);
@@ -184,16 +215,16 @@ function App() {
     setError('Your company session ended or its access changed. Check sign-in to continue.');
   }, [clearWorkspace]);
   const reportError = useCallback(error => {
-    if (error?.code === 'VIEWER_SESSION_ENDED') return;
+    if (['VIEWER_SESSION_ENDED', 'VIEWER_REQUEST_CANCELLED'].includes(error?.code)) return;
     if (auth.current.mode === 'oidc' && [401, 403].includes(error?.status)) { invalidateAuthentication(); return; }
     setError(errorMessage(error));
   }, [invalidateAuthentication]);
   const openWorkspace = useCallback(async next => {
     pendingConnection.current?.close(); pendingConnection.current = next; setConnecting(true);
     try {
-      const [listing, health] = await Promise.all([next.query('list_agents', { limit: 100 }), next.query('get_inventory_health', {})]);
+      const [listing, health] = await Promise.all([next.query('list_agents', { limit: 20, offset: 0 }), next.query('get_inventory_health', {})]);
       if (pendingConnection.current !== next) return;
-      setAgents(listing.data.agents ?? []); setOptions(agentOptions(listing.data.agents ?? [])); setTruncated(Boolean(listing.data.truncated));
+      setListingPage(listing.data); setAgents(listing.data.agents ?? []); setOptions(agentOptions(listing.data.agents ?? [])); setTruncated(Boolean(listing.data.truncated));
       setSources(health.data.sources ?? []); setCredential(''); activeSession.current = next; setSession(next);
     } catch (error) { next.close(); if (pendingConnection.current === next) reportError(error); }
     finally { if (pendingConnection.current === next) { pendingConnection.current = null; setConnecting(false); } }
@@ -283,23 +314,26 @@ function App() {
   }
   useEffect(() => {
     if (!session) return;
-    let active = true;
+    let active = true; const controller = new AbortController();
+    const filters = JSON.stringify([search, owner, environment, ownership, lifecycle, sourceFilter, offset]);
+    if (listingFilters.current !== filters) { agentRequest.current?.abort(); listingFilters.current = filters; generation.current++; setAccess(null); setSelection(null); setNode(null); setBusy(false); }
     setListingState('loading');
     const timer = setTimeout(() => {
-      query('list_agents', { ...(search ? { search } : {}), ...(owner ? { ownerId: owner } : {}), ...(environment ? { environment } : {}), limit: 100 })
+      query('list_agents', { ...(search ? { search } : {}), ...(owner ? { ownerId: owner } : {}), ...(environment ? { environment } : {}), ...(sourceFilter ? { sourceId: sourceFilter } : {}), ...(ownership ? { ownershipStatus: ownership } : {}), ...(lifecycle ? { lifecycleState: lifecycle } : {}), offset, limit: 20 }, { signal: controller.signal })
         .then(result => { if (active) {
-          setAgents(result.data.agents ?? []); setTruncated(Boolean(result.data.truncated)); setListingState('ready');
+          setListingPage(result.data); setAgents(result.data.agents ?? []); setTruncated(Boolean(result.data.truncated)); setListingState('ready');
           if (!search && !owner && !environment) setOptions(agentOptions(result.data.agents ?? []));
         } })
-        .catch(error => { if (active) { setListingState('error'); reportError(error); } });
+        .catch(error => { if (active) { setListingState('error'); setAccess(null); setSelection(null); generation.current++; reportError(error); } });
     }, 200);
-    return () => { active = false; clearTimeout(timer); };
-  }, [session, search, owner, environment, listingRevision, query, reportError]);
+    return () => { active = false; controller.abort(); clearTimeout(timer); };
+  }, [session, search, owner, environment, ownership, lifecycle, sourceFilter, offset, listingRevision, query, reportError]);
   async function selectAgent(agent, navigate = true) {
+    agentRequest.current?.abort(); const controller = new AbortController(); agentRequest.current = controller;
     const request = ++generation.current;
     if (navigate) setTab('inventory');
     setSelection(agent); setAccess(null); setNode(null); setBusy(true); setError('');
-    try { const result = await query('get_agent_access', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId });
+    try { const result = await query('get_agent_inventory', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId, section: 'overview' }, { signal: controller.signal });
       if (request === generation.current) { setAccess(result); setNode(result.graph?.nodes.find(item => item.label === 'GuardAgent') ?? null); }
     } catch (error) { if (request === generation.current) reportError(error); } finally { if (request === generation.current) setBusy(false); }
   }
@@ -312,7 +346,10 @@ function App() {
       if (tab === 'inventory' && selection) await selectAgent(selection, false);
     } catch (error) { if (stamp === generation.current) reportError(error); }
   }
-  const tabs = [['inventory', 'Agent inventory', 'network'], ['resources', 'Potential access', 'search'], ['changes', 'Changes', 'clock'], ['health', 'Health', 'shield']];
+  const tabs = [['inventory', 'Agent inventory', 'network'], ['owners', 'Owners', 'layers'], ['resources', 'Resources', 'search'], ['changes', 'Changes', 'clock'], ['health', 'Health', 'shield']];
+  function showOwner(owner) { setOwner(owner.ownerId); setSourceFilter(owner.sourceId); setSearch(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setOffset(0); setSelection(null); setAccess(null); setTab('inventory'); }
+  function showOwnerResources(owner) { setResourceOwner(owner); setResourceSelection(null); setTab('resources'); }
+  function showResource(resource) { setResourceSelection(resource); setResourceOwner(null); setTab('resources'); }
   return <div className="app"><header className="topbar"><a className="brand" href="/" onClick={event => { event.preventDefault(); setTab('inventory'); }}><span className="brand-mark"><Icon name="network" size={22}/></span><span>Agent Guard <b> / </b><strong>Map</strong></span></a><div className="topbar-right"><span className="reference-label">REFERENCE WORKSPACE</span>{session && <><Status tone={session.demo ? 'amber' : 'green'}>{session.demo ? 'Synthetic demo' : session.company ? 'Company session' : 'Scoped connection'}</Status><button className="text-button" onClick={logout}><Icon name="logout" size={16}/>{session.company ? 'Sign out' : 'Disconnect'}</button></>}</div></header>
     {!session ? <main className="login-layout"><section className="login-intro"><span className="eyebrow">THE AGENT REFERENCE MAP</span><h1>Understand your agents.<br/><span>Follow the evidence.</span></h1><p>Explore agents, declared grants and their connected systems in one scoped view. See what is observed, what has changed and what remains unknown.</p><div className="intro-features"><div><Icon name="network"/><span>Focused relationships</span></div><div><Icon name="shield"/><span>Read-only reference</span></div><div><Icon name="clock"/><span>Independent capture times</span></div></div><div className="intro-diagram" aria-hidden="true"><span>Agent</span><i/><span>Task</span><i/><span>Declared grant</span><i/><span>Resource</span></div></section>
       <section className="login-card"><span className="login-icon"><Icon name="lock" size={24}/></span><h2>Connect to your inventory</h2>
@@ -322,12 +359,14 @@ function App() {
           <button className="primary-button full" onClick={() => authentication.mode === 'logout-unconfirmed' ? logout() : bootstrap()} disabled={connecting}>{authentication.mode === 'logout-unconfirmed' ? 'Retry sign out' : 'Check sign-in'}<Icon name="arrow"/></button>}
         {error && <Notice error>{error}</Notice>}<div className="demo-divider"><span>or explore the interface</span></div><button className="secondary-button full" onClick={event => connect(event, true)} disabled={authentication.mode === 'signing-out'}>Open synthetic demo</button><p className="demo-note">Demo data is local to this page and is not live inventory.</p></section></main> : <>
       {session.demo && <div className="demo-banner"><span className="demo-dot"/><strong>Demo workspace</strong><span>Synthetic evidence. No executor, cloud account or production service is connected.</span></div>}
-      <nav className="nav-tabs" aria-label="Reference views">{tabs.map(([id, title, icon]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => { setTab(id); setError(''); }} aria-current={tab === id ? 'page' : undefined}><Icon name={icon} size={17}/>{title}</button>)}{['inventory', 'health'].includes(tab) && <button className="refresh-button" onClick={refresh}><Icon name="refresh" size={16}/>Refresh evidence</button>}</nav>
-      <main className="workspace"><div className="page-heading"><div><span className="eyebrow">YOUR AUTHORIZED INVENTORY</span><h1>{tab === 'inventory' ? 'Agent inventory' : tab === 'resources' ? 'Trace potential access' : tab === 'changes' ? 'What changed' : 'Collection health'}</h1><p>{tab === 'inventory' ? 'Start with an agent. Explore the relationships that support its declared access.' : 'Scope and evidence stay attached to every result.'}</p></div><div className="summary-metrics"><div><strong>{listingState === 'ready' ? `${agents.length}${truncated ? '+' : ''}` : '—'}</strong><span>Matching agents</span></div><div><strong>{sources.length}</strong><span>Visible sources</span></div><div><strong className="metric-mode">Read only</strong><span>Reference mode</span></div></div></div>
+      <nav className="nav-tabs" aria-label="Reference views">{tabs.map(([id, title, icon]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => { agentRequest.current?.abort(); generation.current++; setBusy(false); setTab(id); setError(''); if (id === 'resources') { setResourceOwner(null); setResourceSelection(null); } }} aria-current={tab === id ? 'page' : undefined}><Icon name={icon} size={17}/>{title}</button>)}{['inventory', 'health'].includes(tab) && <button className="refresh-button" onClick={refresh}><Icon name="refresh" size={16}/>Refresh evidence</button>}</nav>
+      <main className="workspace"><div className="page-heading"><div><span className="eyebrow">YOUR AUTHORIZED INVENTORY</span><h1>{tab === 'inventory' ? 'Agent inventory' : tab === 'owners' ? 'Agent ownership' : tab === 'resources' ? 'Resource inventory' : tab === 'changes' ? 'What changed' : 'Collection health'}</h1><p>{tab === 'inventory' ? 'Start with an agent. Explore the relationships that support its declared access.' : 'Scope and evidence stay attached to every result.'}</p></div><div className="summary-metrics"><div><strong>{listingState === 'ready' ? String(listingPage.total ?? agents.length) : '—'}</strong><span>Matching agents</span></div><div><strong>{sources.length}</strong><span>Visible sources</span></div><div><strong className="metric-mode">Read only</strong><span>Reference mode</span></div></div></div>
         {error && <div className="page-error"><Notice error>{error}</Notice><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
-        {tab === 'inventory' ? <div className="inventory-layout"><aside className="agent-sidebar"><div className="sidebar-title"><h2>Agents</h2><span className="count">{listingState === 'ready' ? agents.length : '—'}</span></div><div className="search-field"><Icon name="search" size={17}/><input aria-label="Search visible agents" placeholder="Search agents…" value={search} onChange={event => setSearch(event.target.value)} maxLength={256}/></div><div className="filter-row"><select aria-label="Filter by owner" value={owner} onChange={event => setOwner(event.target.value)}><option value="">All owners</option>{options.owners.map(value => <option key={value}>{value}</option>)}</select><select aria-label="Filter by environment" value={environment} onChange={event => setEnvironment(event.target.value)}><option value="">All environments</option>{options.environments.map(value => <option key={value}>{value}</option>)}</select></div>
-          <div className="agent-list" aria-busy={listingState === 'loading'}>{listingState === 'loading' ? <p className="sidebar-empty" role="status">Loading agents…</p> : listingState === 'error' ? <p className="sidebar-empty" role="status">Inventory could not be loaded. Select Refresh evidence to retry.</p> : agents.length ? agents.map(agent => <button aria-pressed={selection?.id === agent.id && selection?.sourceId === agent.sourceId} className={`agent-card ${selection?.id === agent.id && selection?.sourceId === agent.sourceId ? 'selected' : ''}`} key={`${agent.sourceId}-${agent.id}`} onClick={() => selectAgent(agent)}><span className="agent-avatar"><Icon name="network" size={19}/></span><span className="agent-card-copy"><strong>{agent.name ?? agent.agentId}</strong><small>{agent.teamId ?? 'No team'}<span>·</span>{agent.environments?.[0] ?? 'Environment unknown'}</small><span className="agent-owner">{agent.ownerId ?? 'Owner not assigned'}</span></span><Icon name="arrow" size={14}/></button>) : <p className="sidebar-empty">No agents match these visible filters.</p>}</div>{listingState === 'ready' && truncated && <p className="fine-print">Narrow your search to see the remaining visible results.</p>}<div className="sidebar-footer"><Icon name="lock" size={14}/><span>Filtered by server-side access rules</span></div></aside>
-          <div className="agent-content">{busy ? <div className="loading" role="status"><span className="spinner"/>Loading scoped evidence…</div> : access ? <><div className="selected-heading"><div><span className="eyebrow">{access.data.agent.teamId ?? 'AGENT DETAIL'}</span><h2>{access.data.agent.name ?? access.data.agent.agentId}</h2><p>{access.data.agent.ownerId ?? 'Owner unknown'}<span>·</span>{access.data.agent.environments?.join(', ') || 'Environment unknown'}</p></div><Status tone="amber">Execution assessment unknown</Status></div><div className="graph-evidence"><Graph graph={access.graph ?? { nodes: [], edges: [] }} policyEvidence={access.data.policyEvidence} onSelect={selectNode}/><Evidence node={node} graph={access.graph} select={selectNode}/></div><div className="access-summary"><span><b>{access.data.tasks?.length ?? 0}</b> visible tasks</span><span><b>{access.data.grants?.length ?? 0}</b> declared grants</span><span><b>{access.data.connections?.length ?? 0}</b> MCP connections</span><span>Captured {displayTime(access.data.receipt?.generatedAt ?? access.observedAt)}</span></div><Explain access={access.data} graph={access.graph} query={query} reportError={reportError}/></> : listingState === 'error' ? <div className="welcome-card"><Empty title="Refresh inventory to continue">Select Refresh evidence to load agents for your current filters.</Empty></div> : <div className="welcome-card"><Empty title="Choose an agent to explore">Select an agent from your visible inventory to inspect its tasks, declared grants, MCP connections and cloud associations.</Empty><div className="welcome-principles"><div><span>01</span><h3>Follow relationships</h3><p>Start with one focused neighborhood.</p></div><div><span>02</span><h3>Inspect the evidence</h3><p>Keep declared and observed state distinct.</p></div><div><span>03</span><h3>Keep unknowns visible</h3><p>A map does not authorize execution.</p></div></div></div>}</div></div> : tab === 'resources' ? <ResourceLookup query={query} onAgent={selectAgent} reportError={reportError}/> : tab === 'changes' ? <Changes sources={sources} query={query} reportError={reportError}/> : <Health sources={sources}/>}
+        {tab === 'inventory' ? <div className="inventory-layout"><aside className="agent-sidebar"><div className="sidebar-title"><h2>Agents</h2><span className="count">{listingState === 'ready' ? agents.length : '—'}</span></div><div className="search-field"><Icon name="search" size={17}/><input aria-label="Search visible agents" placeholder="Search agents…" value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} maxLength={256}/></div><div className="filter-row"><label>Owner ID<input aria-label="Filter by owner ID" placeholder="Owner ID" value={owner} maxLength={4096} onChange={event => { setOwner(event.target.value); setSourceFilter(''); setOffset(0); }}/></label><label>Environment<input aria-label="Filter by environment" placeholder="Environment" list="environment-options" value={environment} maxLength={4096} onChange={event => { setEnvironment(event.target.value); setOffset(0); }}/><datalist id="environment-options">{options.environments.map(value => <option key={value} value={value}/>)}</datalist></label></div><div className="filter-row"><label>Ownership status<select aria-label="Ownership status" value={ownership} onChange={event => { setOwnership(event.target.value); setOffset(0); }}><option value="">All ownership states</option><option value="assigned">Assigned</option><option value="unassigned">Unassigned</option><option value="unknown">Unknown / legacy</option></select></label><label>Agent lifecycle<select aria-label="Agent lifecycle" value={lifecycle} onChange={event => { setLifecycle(event.target.value); setOffset(0); }}><option value="">All lifecycle states</option>{['active', 'inactive', 'retired', 'unknown'].map(v => <option key={v}>{v}</option>)}</select></label></div>{sourceFilter && <p className="fine-print">Owner source filter active. <button className="text-link" onClick={() => { setSourceFilter(''); setOwner(''); setOffset(0); }}>Clear owner filter</button></p>}
+          <div className="agent-list" aria-busy={listingState === 'loading'}>{listingState === 'loading' ? <p className="sidebar-empty" role="status">Loading agents…</p> : listingState === 'error' ? <p className="sidebar-empty" role="status">Inventory could not be loaded. Select Refresh evidence to retry.</p> : agents.length ? agents.map(agent => <button aria-pressed={selection?.id === agent.id && selection?.sourceId === agent.sourceId} className={`agent-card ${selection?.id === agent.id && selection?.sourceId === agent.sourceId ? 'selected' : ''}`} key={`${agent.sourceId}-${agent.id}`} onClick={() => selectAgent(agent)}><span className="agent-avatar"><Icon name="network" size={19}/></span><span className="agent-card-copy"><strong>{agent.name ?? agent.agentId}</strong><small>{agent.teamId ?? 'No team'}<span>·</span>{agent.environments?.[0] ?? 'Environment unknown'}</small><span className="agent-owner">{ownershipLabel(agent)}</span></span><Icon name="arrow" size={14}/></button>) : <p className="sidebar-empty">No agents match these visible filters.</p>}</div>{listingState === 'ready' && <Pager data={listingPage} count={agents.length} onPage={setOffset} label="agents"/>}<div className="sidebar-footer"><Icon name="lock" size={14}/><span>Filtered by server-side access rules</span></div></aside>
+          <div className="agent-content">{busy ? <div className="loading" role="status"><span className="spinner"/>Loading scoped evidence…</div> : access ? <AgentInventory key={`${access.data.agent.sourceId}:${access.data.agent.id}`} response={access} query={query} reportError={reportError} onAgent={selectAgent} onResource={showResource}
+            graphView={<OptionalGraph agent={access.data.agent} query={query} reportError={reportError}/>}
+            explanation={onExplained => <AgentExplanation agent={access.data.agent} query={query} reportError={reportError} onExplained={onExplained}/>}/> : listingState === 'error' ? <div className="welcome-card"><Empty title="Refresh inventory to continue">Select Refresh evidence to load agents for your current filters.</Empty></div> : <div className="welcome-card"><Empty title="Choose an agent to explore">Select an agent from your visible inventory to inspect its tasks, declared grants, MCP connections and cloud associations.</Empty><div className="welcome-principles"><div><span>01</span><h3>Follow relationships</h3><p>Start with one focused neighborhood.</p></div><div><span>02</span><h3>Inspect the evidence</h3><p>Keep declared and observed state distinct.</p></div><div><span>03</span><h3>Keep unknowns visible</h3><p>A map does not authorize execution.</p></div></div></div>}</div></div> : tab === 'owners' ? <OwnersBrowse query={query} reportError={reportError} onOwner={showOwner} onOwnerResources={showOwnerResources}/> : tab === 'resources' ? <ResourcesBrowse key={resourceSelection ? `resource:${resourceSelection.sourceId}:${resourceSelection.id}` : resourceOwner ? `owner:${resourceOwner.sourceId}:${resourceOwner.ownerId}` : 'all'} query={query} reportError={reportError} onAgent={selectAgent} ownerFilter={resourceOwner} initialResource={resourceSelection} lookup={<ResourceLookup query={query} onAgent={selectAgent} reportError={reportError}/>}/> : tab === 'changes' ? <ChangesView sources={sources} query={query} reportError={reportError} onAgent={selectAgent}/> : <Health sources={sources}/>}
       </main><footer className="app-footer"><span>Agent Guard · Evidence reference</span><span>Declared access is not an execution decision.</span></footer></>}
   </div>;
 }

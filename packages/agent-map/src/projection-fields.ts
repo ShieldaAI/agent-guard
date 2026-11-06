@@ -1,0 +1,32 @@
+import type { GuardLabel, JsonObject, MapNode } from './types.js';
+
+const CLOUD_FIELDS = ['cloud_status', 'cloud_reason', 'cloud_observed_at', 'cloud_assessment',
+  'cloud_provider_label', 'cloud_provider_id', 'cloud_match_kind', 'cloud_node_updated',
+  'cloud_ownership_updated', 'cloud_account_updated'];
+const HOST_FIELDS = ['evidence_kind', 'assessment', 'manifest_id', 'manifest_revision', 'manifest_observed_at', 'authority_id', 'manifest_schema_version'];
+export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = Object.freeze({
+  GuardAgent: ['agent_id', 'name', 'owner_id', 'team_id', 'purpose', 'lifecycle_state', 'ownership_status', 'ownership_source', ...HOST_FIELDS],
+  GuardDeployment: ['deployment_id', 'environment', 'runtime_ref', 'workload_generation', 'build_ref', 'binding_authority', ...HOST_FIELDS],
+  GuardTask: ['task_id', 'principal_id', 'revoked', 'sensitive', 'allowed_recipients', 'allow_control_plane',
+    'max_calls', 'max_concurrent', 'max_cost', 'deadline', 'calls', 'concurrent', 'spent', 'reserved'],
+  GuardPrincipal: ['principal_id'],
+  GuardGrant: ['task_id', 'tool', 'resources', 'evidence_kind', 'assessment'],
+  GuardTool: ['name', 'fingerprint', 'revision', 'registered', 'approved', 'known_metadata',
+    'requires_approval', 'control_plane', 'max_cost'],
+  GuardResource: ['resource_id', 'tool', 'selector_kind'],
+  GuardResourceBinding: ['binding_id', 'tool', 'resource_ref', 'actions', 'scope', 'display_name', 'owner_id', 'ownership_status', 'ownership_source', 'sensitivity', 'approved_destinations', ...HOST_FIELDS],
+  GuardExecutionBinding: ['binding_id', 'tool', 'connection_id', 'identity_selection', ...HOST_FIELDS],
+  GuardExternalResource: ['provider', 'partition', 'account_id', 'region', 'arn', 'kind', 'host_resource_id', 'name', ...HOST_FIELDS, ...CLOUD_FIELDS],
+  GuardExternalIdentity: ['provider', 'partition', 'account_id', 'region', 'arn', ...HOST_FIELDS, ...CLOUD_FIELDS],
+  GuardMcpConnection: ['connection_id', 'capture_status', 'unavailable_reason', 'capture_observed_at',
+    'server_id', 'transport_ref', 'state', 'metadata_state', 'observed_at', 'evidence_kind', 'assessment'],
+  GuardOwner: ['owner_id', 'name', 'kind', ...HOST_FIELDS],
+  GuardCredentialReference: ['credential_id', 'name', 'issuer_ref', 'audience_refs', 'recipient_refs', 'lifecycle_state', 'expires_at', 'rotation_status', ...HOST_FIELDS],
+  GuardMcpOperation: ['connection_id', 'name', 'kind', 'fingerprint', 'evidence_kind', 'assessment'],
+});
+
+/** Defense in depth for summaries/diffs, including host-provided MapStore adapters. */
+export function safeProperties(node: MapNode): JsonObject {
+  return Object.fromEntries((MAP_PROPERTIES[node.label] ?? []).filter(key => Object.hasOwn(node.properties, key))
+    .map(key => [key, node.properties[key]!])) as JsonObject;
+}

@@ -1,5 +1,10 @@
 # Production readiness acceptance
 
+Scope note: the candidate results below describe the recorded P0 revisions.
+The subsequent [agent cartography expansion](agent-cartography-review.md) has its
+own contract and verification. Earlier source fingerprints and scores do not
+automatically certify that expansion or remove the release hold below.
+
 Status: **Candidate verification passed; production acceptance held for Node HIGH review**.
 The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all

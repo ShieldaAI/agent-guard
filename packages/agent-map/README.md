@@ -120,12 +120,56 @@ documented by the schemas. No pagination cursor exposes a broader scope.
 
 | Operation | Arguments | Evidence |
 | --- | --- | --- |
-| `list_agents` | optional `sourceId`, `search`, `ownerId`, `environment`, `limit` | Scoped inventory for choosing an agent. |
+| `list_agents` | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. |
 | `get_agent_access` | `sourceId`, `agentId` | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations. |
 | `explain_access` | `sourceId`, `taskId`, `tool`, `resourceId` | Visible delegation, declared matches, known blockers and explicit unknown checks. |
 | `find_agents_with_access` | `resourceRef`, `action`; optional `sourceId`, `limit` | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion. |
-| `get_changes` | `sourceId`; optional `since` | Net current/previous changes to currently authorized agents; explicit gaps. |
+| `get_changes` | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit` | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps. |
 | `get_inventory_health` | optional `sourceId` | Visible capture times and independently stale or unavailable components. |
+| `list_owners` | optional `sourceId`, `search`, `kind`, `offset`, `limit` | Declared owners and visible agent/resource counts. |
+| `list_resources` | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit` | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies. |
+| `get_resource_access` | `sourceId`, `resourceId`; optional `offset`, `limit` | Agents with an observed declared binding to this resource; assessment remains unknown. |
+| `get_agent_inventory` | `sourceId`, `agentId`; optional `section`, `offset`, `limit` | Paged structured evidence without requiring a focused graph. |
+
+Paged indexes return their named array plus `total`, `offset`, `limit` and
+`truncated`; totals and filters apply only to the authorized view. Defaults are
+offset 0 and limit 50; limit is at most 100. Pair each returned identity with its
+`sourceId` when navigating: native owner/resource IDs can repeat across sources.
+`list_resources` explicitly reports `resourceCoverage: host_bound_resources`.
+Unmapped declared selectors remain visible in agent permissions rather than
+being presented as host-bound resources.
+
+`get_agent_inventory` returns `items`, the same pagination fields, `counts`,
+`agent`, a snapshot `receipt`, and `graphStatus: not_requested`. Its sections are
+`overview` (default), `owners`, `deployments`, `tasks`, `permissions`, `resources`,
+`connections`, `credentials`, `relationships`, `tools`, `bindings`, `identities`
+and `policies`. `policyEvidence` contains only the policy page in `policies` and
+is otherwise empty; `policyCoverage` describes the selected agent's complete
+validated policy evidence. Structured pages remain available when a graph
+exceeds its display cap; store, work and response-byte ceilings still apply.
+
+Host observations retain `manifestId`, `manifestRevision`, `authorityId` and
+`observedAt` (snake_case in raw property rows). Missing v1 metadata stays unknown;
+it is not an assertion that ownership is unassigned. Credential entries contain
+opaque references and lifecycle metadata only. Raw credential/dependency ID
+arrays are excluded; relationships expose only authorized endpoints, with
+readable names/labels and stable entity IDs. Generic host resources never imply
+AWS policy resolution, and unsupported host actions remain explicitly
+`not_collected` policy evidence.
+
+For `get_changes`, `changeKind` is `all`, `permissions`, `ownership` or `bindings`.
+An explicit `offset` or `limit` makes `changeSummaryScope: page`: `changes`,
+relationship deltas and affected-agent companions describe that detail page.
+Legacy calls without paging retain complete bounded `changes` summaries with
+`changeSummaryScope: retained`; `details` still defaults to 50. Each affected-agent
+list is capped at 100 with its authorized total and truncation flag; available
+navigation targets current observations. Owner navigation explicitly has scope
+`direct_current_ownership`: it excludes indirect effects through resource
+ownership and does not enumerate every affected agent. Relationship identity uses stable
+endpoints and kind, so a display-name change does not invent an edge change.
+Neither net snapshot changes nor current policy candidates establish effective
+access gained/lost. Approval events, request-time decisions, backend receipts and
+external policy history are explicitly `not_collected`.
 
 Snapshot generation time and component observation times are separate. Tasks and
 tools retain their original capture times after host/MCP recomposition. MCP age
@@ -134,7 +178,7 @@ cached observation does not refresh it. Missing observation times remain unknown
 and stale for observed connections. Unavailable connections use the time their
 failure was captured. Historical projections retain their own capture times.
 
-On the loopback service, POST `/mcp` uses the official MCP SDK's stateless HTTP transport. The six tools
+On the loopback service, POST `/mcp` uses the official MCP SDK's stateless HTTP transport. The ten tools
 have the same arguments and use the same service as HTTP. Supply the reference
 bearer in the client's HTTP headers. The host-only `createMapMcpServer(service,
 scope)` factory also supports embedding; only trusted host code chooses scope.
@@ -276,8 +320,8 @@ Streaming graph reads cap materialized nodes/edges at 4 MiB. Synchronous service
 processing shares the query deadline and has a 200,000-unit work budget; potential
 access evidence is limited to 1,000 entries and the cumulative response-byte
 budget. Configuration has hard upper bounds. Oversized authorized inventories fail
-closed instead of returning a misleading partial map. List operations return
-up to 100 rows and explicitly indicate truncation.
+closed instead of returning a misleading partial map. Paged operations return
+up to 100 rows with authorized totals and explicit remaining-page indicators.
 
 The company endpoint has separate browser/provider limits, including a default
 600 requests/minute per session and globally. Its complete defaults and hard

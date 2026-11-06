@@ -775,81 +775,14 @@
       ]
     },
     "manifest": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "schemaVersion",
-        "evidenceKind",
-        "source",
-        "manifestId",
-        "revision",
-        "observedAt",
-        "agents",
-        "deployments",
-        "taskBindings",
-        "resourceBindings",
-        "executionBindings"
-      ],
-      "properties": {
-        "schemaVersion": {
-          "const": 1
+      "oneOf": [
+        {
+          "$ref": "#/$defs/manifestV1"
         },
-        "evidenceKind": {
-          "const": "host_asserted"
-        },
-        "source": {
-          "$ref": "#/$defs/source"
-        },
-        "manifestId": {
-          "$ref": "#/$defs/identifier"
-        },
-        "revision": {
-          "$ref": "#/$defs/safeInteger"
-        },
-        "observedAt": {
-          "$ref": "#/$defs/timestamp"
-        },
-        "agents": {
-          "type": "array",
-          "maxItems": 1000,
-          "minItems": 0,
-          "items": {
-            "$ref": "#/$defs/manifestAgent"
-          }
-        },
-        "deployments": {
-          "type": "array",
-          "maxItems": 1000,
-          "minItems": 0,
-          "items": {
-            "$ref": "#/$defs/manifestDeployment"
-          }
-        },
-        "taskBindings": {
-          "type": "array",
-          "maxItems": 10000,
-          "minItems": 0,
-          "items": {
-            "$ref": "#/$defs/manifestTaskBinding"
-          }
-        },
-        "resourceBindings": {
-          "type": "array",
-          "maxItems": 10000,
-          "minItems": 0,
-          "items": {
-            "$ref": "#/$defs/manifestResourceBinding"
-          }
-        },
-        "executionBindings": {
-          "type": "array",
-          "maxItems": 10000,
-          "minItems": 0,
-          "items": {
-            "$ref": "#/$defs/manifestExecutionBinding"
-          }
+        {
+          "$ref": "#/$defs/manifestV2"
         }
-      }
+      ]
     },
     "mcpIdentity": {
       "type": "object",
@@ -1112,6 +1045,949 @@
         }
       },
       "description": "Complete when every expected connection was observed, including a complete empty selection. Partial when some were observed; unavailable when none of a nonempty selection were observed. Connection readiness is a separate lifecycle property."
+    },
+    "v2_identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^(?![\\s\\u001c-\\u001f\\u0085\\uFEFF]*$)[^\\u0000]*$"
+    },
+    "v2_safeInteger": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740991
+    },
+    "v2_timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "maxLength": 40,
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\\.[0-9]{1,6})?Z$(?![\\s\\S])",
+      "description": "UTC RFC3339 timestamp with optional fractional seconds up to microsecond precision."
+    },
+    "v2_source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "companyId",
+        "sourceId",
+        "enrollmentGeneration",
+        "inventoryInstanceId",
+        "tenantId"
+      ],
+      "properties": {
+        "companyId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "sourceId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "enrollmentGeneration": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "inventoryInstanceId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "tenantId": {
+          "$ref": "#/$defs/v2_identifier"
+        }
+      }
+    },
+    "v2_awsReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "partition",
+        "accountId",
+        "region",
+        "arn"
+      ],
+      "properties": {
+        "provider": {
+          "const": "aws"
+        },
+        "partition": {
+          "enum": [
+            "aws",
+            "aws-cn",
+            "aws-us-gov"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$(?![\\s\\S])"
+        },
+        "region": {
+          "const": ""
+        },
+        "arn": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^(?!.*[\\s\\u001c-\\u001f\\u0085\\uFEFF*?\\u0000])arn:(aws|aws-cn|aws-us-gov):[a-z0-9][a-z0-9-]*:[^:]*:[^:]*:.+$"
+        }
+      },
+      "description": "Version-1 execution identity subset: global IAM user/role or STS assumed-role ARN. This is a host assertion, not evidence of identity existence or permission.",
+      "anyOf": [
+        {
+          "properties": {
+            "arn": {
+              "pattern": "^arn:(aws|aws-cn|aws-us-gov):iam::[0-9]{12}:(role|user)/(?:[^/]+/)*[^/]+$"
+            }
+          }
+        },
+        {
+          "properties": {
+            "arn": {
+              "pattern": "^arn:(aws|aws-cn|aws-us-gov):sts::[0-9]{12}:assumed-role/[^/]+/[^/]+$"
+            }
+          }
+        }
+      ]
+    },
+    "v2_awsResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "partition",
+        "accountId",
+        "region",
+        "arn",
+        "kind"
+      ],
+      "properties": {
+        "provider": {
+          "const": "aws"
+        },
+        "partition": {
+          "enum": [
+            "aws",
+            "aws-cn",
+            "aws-us-gov"
+          ]
+        },
+        "accountId": {
+          "type": "string",
+          "pattern": "^[0-9]{12}$(?![\\s\\S])"
+        },
+        "region": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^[a-z0-9-]*$(?![\\s\\S])"
+        },
+        "arn": {
+          "type": "string",
+          "maxLength": 4096,
+          "pattern": "^(?!.*[\\s\\u001c-\\u001f\\u0085\\uFEFF*?\\u0000])arn:(aws|aws-cn|aws-us-gov):[a-z0-9][a-z0-9-]*:[^:]*:[^:]*:.+$"
+        },
+        "kind": {
+          "enum": [
+            "bucket",
+            "object",
+            "prefix",
+            "resource"
+          ]
+        }
+      }
+    },
+    "v2_manifestAgent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "ownerId",
+        "teamId",
+        "purpose",
+        "lifecycleState",
+        "ownershipStatus",
+        "ownershipSource"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/v2_displayName"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "teamId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "purpose": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_purpose"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lifecycleState": {
+          "enum": [
+            "active",
+            "inactive",
+            "retired",
+            "unknown"
+          ]
+        },
+        "ownershipStatus": {
+          "$ref": "#/$defs/v2_ownershipStatus"
+        },
+        "ownershipSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "ownershipStatus": {
+                "const": "assigned"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "ownerId": {
+                "$ref": "#/$defs/v2_identifier"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "ownerId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "v2_manifestDeployment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "agentId",
+        "environment",
+        "runtimeRef",
+        "workloadGeneration",
+        "buildRef",
+        "bindingAuthority",
+        "credentialReferenceIds"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "agentId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "environment": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "runtimeRef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_opaque"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "workloadGeneration": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "buildRef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_opaque"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bindingAuthority": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "credentialReferenceIds": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_opaque"
+          }
+        }
+      }
+    },
+    "v2_manifestTaskBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "taskId",
+        "deploymentId"
+      ],
+      "properties": {
+        "taskId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "deploymentId": {
+          "$ref": "#/$defs/v2_identifier"
+        }
+      }
+    },
+    "v2_awsAction": {
+      "type": "string",
+      "maxLength": 4096,
+      "pattern": "^[a-z0-9][a-z0-9-]*:[A-Za-z][A-Za-z0-9]*$(?![\\s\\S])"
+    },
+    "v2_manifestResourceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tool",
+        "resourceRef",
+        "target",
+        "actions",
+        "scope",
+        "displayName",
+        "ownerId",
+        "ownershipStatus",
+        "ownershipSource",
+        "sensitivity",
+        "approvedDestinations",
+        "dependsOn"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "tool": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "resourceRef": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "not": {
+                "const": "*"
+              }
+            }
+          ]
+        },
+        "target": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/v2_awsResourceReference"
+            },
+            {
+              "$ref": "#/$defs/v2_hostResourceReference"
+            }
+          ]
+        },
+        "actions": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_identifier"
+          },
+          "minItems": 1
+        },
+        "scope": {
+          "enum": [
+            "exact",
+            "prefix"
+          ]
+        },
+        "displayName": {
+          "$ref": "#/$defs/v2_displayName"
+        },
+        "ownerId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ownershipStatus": {
+          "$ref": "#/$defs/v2_ownershipStatus"
+        },
+        "ownershipSource": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sensitivity": {
+          "enum": [
+            "public",
+            "internal",
+            "confidential",
+            "restricted",
+            "unknown"
+          ]
+        },
+        "approvedDestinations": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_opaque"
+          }
+        },
+        "dependsOn": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_identifier"
+          }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "properties": {
+                  "provider": {
+                    "const": "aws"
+                  }
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "actions": {
+                "type": "array",
+                "maxItems": 128,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/v2_awsAction"
+                },
+                "minItems": 1
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "target": {
+                      "properties": {
+                        "kind": {
+                          "const": "prefix"
+                        }
+                      }
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "scope": {
+                      "const": "prefix"
+                    }
+                  }
+                },
+                "else": {
+                  "properties": {
+                    "scope": {
+                      "const": "exact"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "ownershipStatus": {
+                "const": "assigned"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "ownerId": {
+                "$ref": "#/$defs/v2_identifier"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "ownerId": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "v2_manifestExecutionBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tool",
+        "deploymentId",
+        "connectionId",
+        "identitySelection",
+        "identity"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "tool": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "deploymentId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "connectionId": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "identitySelection": {
+          "enum": [
+            "static",
+            "dynamic",
+            "unknown"
+          ]
+        },
+        "identity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_awsReference"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "identitySelection": {
+                "const": "static"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "$ref": "#/$defs/v2_awsReference"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "identity": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "v2_displayName": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^(?![\\s\\u001c-\\u001f\\u0085\\uFEFF]*$)[^\\u0000]*$"
+    },
+    "v2_purpose": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?![\\s\\u001c-\\u001f\\u0085\\uFEFF]*$)[^\\u0000]*$"
+    },
+    "v2_opaque": {
+      "type": "string",
+      "pattern": "^opaque:[a-f0-9]{64}$(?![\\s\\S])",
+      "maxLength": 71
+    },
+    "v2_ownershipStatus": {
+      "enum": [
+        "assigned",
+        "unassigned",
+        "unknown"
+      ]
+    },
+    "v2_owner": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "name": {
+          "$ref": "#/$defs/v2_displayName"
+        },
+        "kind": {
+          "enum": [
+            "person",
+            "team",
+            "service"
+          ]
+        }
+      }
+    },
+    "v2_credentialReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "issuerRef",
+        "audienceRefs",
+        "recipientRefs",
+        "lifecycleState",
+        "expiresAt",
+        "rotationStatus"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/v2_opaque"
+        },
+        "name": {
+          "$ref": "#/$defs/v2_displayName"
+        },
+        "issuerRef": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_opaque"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "audienceRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_opaque"
+          }
+        },
+        "recipientRefs": {
+          "type": "array",
+          "maxItems": 128,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_opaque"
+          }
+        },
+        "lifecycleState": {
+          "enum": [
+            "active",
+            "rotating",
+            "revoked",
+            "expired",
+            "unknown"
+          ]
+        },
+        "expiresAt": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/v2_timestamp"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rotationStatus": {
+          "enum": [
+            "current",
+            "due",
+            "overdue",
+            "unknown"
+          ]
+        }
+      }
+    },
+    "v2_hostResourceReference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "provider",
+        "id",
+        "name",
+        "kind"
+      ],
+      "properties": {
+        "provider": {
+          "const": "host"
+        },
+        "id": {
+          "$ref": "#/$defs/v2_opaque"
+        },
+        "name": {
+          "$ref": "#/$defs/v2_displayName"
+        },
+        "kind": {
+          "enum": [
+            "service",
+            "repository",
+            "database",
+            "queue",
+            "storage",
+            "other"
+          ]
+        }
+      }
+    },
+    "manifestV1": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "evidenceKind",
+        "source",
+        "manifestId",
+        "revision",
+        "observedAt",
+        "agents",
+        "deployments",
+        "taskBindings",
+        "resourceBindings",
+        "executionBindings"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 1
+        },
+        "evidenceKind": {
+          "const": "host_asserted"
+        },
+        "source": {
+          "$ref": "#/$defs/source"
+        },
+        "manifestId": {
+          "$ref": "#/$defs/identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/safeInteger"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestAgent"
+          }
+        },
+        "deployments": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestDeployment"
+          }
+        },
+        "taskBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestTaskBinding"
+          }
+        },
+        "resourceBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestResourceBinding"
+          }
+        },
+        "executionBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/manifestExecutionBinding"
+          }
+        }
+      }
+    },
+    "manifestV2": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "evidenceKind",
+        "source",
+        "manifestId",
+        "revision",
+        "observedAt",
+        "agents",
+        "deployments",
+        "taskBindings",
+        "resourceBindings",
+        "executionBindings",
+        "authorityId",
+        "owners",
+        "credentialReferences"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": 2
+        },
+        "evidenceKind": {
+          "const": "host_asserted"
+        },
+        "source": {
+          "$ref": "#/$defs/v2_source"
+        },
+        "manifestId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "revision": {
+          "$ref": "#/$defs/v2_safeInteger"
+        },
+        "observedAt": {
+          "$ref": "#/$defs/v2_timestamp"
+        },
+        "agents": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/v2_manifestAgent"
+          }
+        },
+        "deployments": {
+          "type": "array",
+          "maxItems": 1000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/v2_manifestDeployment"
+          }
+        },
+        "taskBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/v2_manifestTaskBinding"
+          }
+        },
+        "resourceBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/v2_manifestResourceBinding"
+          }
+        },
+        "executionBindings": {
+          "type": "array",
+          "maxItems": 10000,
+          "minItems": 0,
+          "items": {
+            "$ref": "#/$defs/v2_manifestExecutionBinding"
+          }
+        },
+        "authorityId": {
+          "$ref": "#/$defs/v2_identifier"
+        },
+        "owners": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_owner"
+          }
+        },
+        "credentialReferences": {
+          "type": "array",
+          "maxItems": 1000,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/v2_credentialReference"
+          }
+        }
+      }
     }
   },
   "allOf": [
