@@ -15,6 +15,9 @@ import { configuration, MEMORY_BYTES, validateAdmission, validateResources } fro
 const ROOT = fileURLToPath(new URL('../', import.meta.url));
 const OWNER_LABEL = 'ai.shielda.constrained-observer-owner';
 const FILE_LIMIT = 2 * 1024 * 1024, STAGE_LIMIT = 16 * 1024 * 1024, REPORT_LIMIT = 32 * 1024 * 1024;
+// Four already-bounded16MiB CPU captures plus the unchanged32MiB ordinary report.
+// This diagnostic-only allowance never changes acceptance or runtime resource caps.
+export const admissionReportLimit = cpuProfile => cpuProfile === true ? REPORT_LIMIT + 4 * 16 * 1024 * 1024 : REPORT_LIMIT;
 const modules = {
   core: 'authorization index json policy-admission types'.split(' '),
   executor: 'adapters artifacts build-provenance client custody-cli custody-files custody-snapshot evidence-json executor http index inventory-http inventory-manifest inventory-mcp-capture inventory-mcp inventory-observer inventory-worker inventory ledger-custody ledger-maintenance-cli ledger-maintenance ledger-recovery lifecycle model network pilot-review-cli pilot-review response-code sandbox signed-evidence store traces workspace-input-windows workspace-input'.split(' '),
@@ -99,8 +102,8 @@ function owned(value, name, owner) {
   return value?.Name === '/' + name && typeof value.Id === 'string' && /^[a-f0-9]{64}$/.test(value.Id) &&
     value.Config?.Labels?.[OWNER_LABEL] === owner;
 }
-export function containerArguments({ name, owner, input, output, image, user, profile, diagnostics, cpuAffinity = null }) {
-  configuration({ profile, diagnostics, image, cpuAffinity });
+export function containerArguments({ name, owner, input, output, image, user, profile, diagnostics, cpuProfile = false, cpuAffinity = null }) {
+  configuration({ profile, diagnostics, cpuProfile, image, cpuAffinity });
   assert.match(user, /^[1-9]\d*:\d+$/); const [uid, gid] = user.split(':');
   return ['create', '--pull', 'never', '--name', name, '--label', `${OWNER_LABEL}=${owner}`, '--network', 'none',
     '--memory', '512m', '--memory-swap', '512m', '--cpus', '1.0', ...(cpuAffinity === null ? [] : ['--cpuset-cpus', cpuAffinity]),
@@ -109,7 +112,7 @@ export function containerArguments({ name, owner, input, output, image, user, pr
     '--mount', `type=bind,src=${input},dst=/app,readonly,bind-propagation=rprivate`,
     '--mount', `type=bind,src=${output},dst=/output,bind-propagation=rprivate`, '--workdir', '/app',
     '--env', 'NODE_OPTIONS=', '--env', 'NODE_PATH=', '--env', 'HOME=/tmp', '--env', 'TMPDIR=/tmp', '--entrypoint', 'node', image,
-    'scripts/constrained-observer-payload.mjs', profile, String(diagnostics), ...(cpuAffinity === null ? [] : [cpuAffinity])];
+    'scripts/constrained-observer-payload.mjs', profile, String(diagnostics), ...(cpuAffinity === null ? [] : [cpuAffinity]), ...(cpuProfile ? ['--cpu-profile'] : [])];
 }
 export function verifyContainer(value, { name, owner, input, output, user, imageId, cpuAffinity = null }) {
   configuration({ cpuAffinity });
@@ -168,7 +171,7 @@ export async function runConstrainedObserver(options, { docker = dockerCommand, 
   mkdirSync(input, { mode: 0o700 });
   const name = 'guard-constrained-' + randomUUID(), owner = randomUUID(), user = `${process.getuid()}:${process.getgid()}`;
   const record = { schemaVersion: 1, kind: 'constrained-observer-verification', startedAt: new Date().toISOString(),
-    profile: config.profile, diagnosticOnly: config.diagnostics, acceptanceEvidenceEligible: false,
+    profile: config.profile, diagnosticOnly: config.diagnostics, cpuProfileEnabled: config.cpuProfile, acceptanceEvidenceEligible: false,
     resourceProfile: config.resourceProfile, cpuAffinity: config.cpuAffinity,
     image: config.image, passed: false, stage: 'staging', cleanup: { attempted: false, ownershipVerified: false, removalSucceeded: false, absenceVerified: false } };
   let staged, createAttempted = false;
@@ -198,7 +201,7 @@ export async function runConstrainedObserver(options, { docker = dockerCommand, 
     assert.equal(typeof stopped.State.Running, 'boolean'); assert.equal(typeof stopped.State.OOMKilled, 'boolean'); assert.ok(Number.isInteger(stopped.State.ExitCode));
     record.container = { running: stopped.State.Running, oomKilled: stopped.State.OOMKilled, exitCode: stopped.State.ExitCode };
     record.stage = 'reports'; assert.deepEqual(readdirSync(output).sort(), ['admission.json', 'resources.json']);
-    const admissionBytes = boundedFile(join(output, 'admission.json'), REPORT_LIMIT, output), resourceBytes = boundedFile(join(output, 'resources.json'), 4 * 1024 * 1024, output);
+    const admissionBytes = boundedFile(join(output, 'admission.json'), admissionReportLimit(config.cpuProfile), output), resourceBytes = boundedFile(join(output, 'resources.json'), 4 * 1024 * 1024, output);
     record.artifacts = { 'admission.json': { bytes: admissionBytes.length, sha256: sha(admissionBytes) },
       'resources.json': { bytes: resourceBytes.length, sha256: sha(resourceBytes) } };
     const admission = JSON.parse(admissionBytes), resources = JSON.parse(resourceBytes);
@@ -244,10 +247,10 @@ export async function runConstrainedObserver(options, { docker = dockerCommand, 
 export async function main(argv = process.argv.slice(2)) {
   try {
     const { values } = parseArgs({ args: argv, options: { output: { type: 'string' }, profile: { type: 'string', default: 'acceptance' },
-      diagnostics: { type: 'boolean', default: false }, image: { type: 'string' }, 'cpu-affinity': { type: 'string' } }, strict: true, allowPositionals: false });
-    const result = await runConstrainedObserver({ ...values, cpuAffinity: values['cpu-affinity'] ?? null });
+      diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false }, image: { type: 'string' }, 'cpu-affinity': { type: 'string' } }, strict: true, allowPositionals: false });
+    const result = await runConstrainedObserver({ ...values, cpuProfile: values['cpu-profile'], cpuAffinity: values['cpu-affinity'] ?? null });
     process.stdout.write(JSON.stringify({ passed: result.passed, profile: result.profile, diagnosticOnly: result.diagnosticOnly,
-      resourceProfile: result.resourceProfile, cpuAffinity: result.cpuAffinity,
+      resourceProfile: result.resourceProfile, cpuAffinity: result.cpuAffinity, cpuProfileEnabled: result.cpuProfileEnabled,
       acceptanceEvidenceEligible: result.acceptanceEvidenceEligible, output: resolve(values.output), stage: result.stage,
       failureReasons: result.failureReasons, cleanup: result.cleanup }) + '\n');
     return result.passed ? 0 : 1;

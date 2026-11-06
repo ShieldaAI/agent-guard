@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "native_single_logical_cpu_baseline_passed_final_candidate_pending",
+  "status": "final_candidate_failed_under_investigation",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -873,6 +873,144 @@
         "staged-inputs.json": "f29c07ec9d287eb9924206ae4b20bc672149579f2ef2cb7838061b689aaf7eb8",
         "admission.json": "f52ff1b40ea2c80adecbb3333359e49ec14e803d3ce7c4ab03b44a176756ac7b"
       }
+    },
+    {
+      "directory": "artifacts/agent-cartography/hosted-9709f70-performance/constrained/constrained-observer",
+      "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+      "testedMerge": "a851b2ef2707ca59ac646c777cb16f2bdd279704",
+      "sourceTree": "3861aab888278cce81ba2cb4d2868fd731bd1e55",
+      "mergeTreeEqualsCandidate": true,
+      "runId": 42273797223,
+      "jobId": 128084819143,
+      "profile": "acceptance",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "diagnosticOnly": false,
+      "cpuProfileEnabled": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawAdmissionAcceptanceMethodEligible": true,
+      "stage": "complete",
+      "controlsVerified": true,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "stagingRemoved": true,
+      "stagedInputsUnchanged": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 49.067186,
+        "pollingP95Ms": 55.856727,
+        "ratio": 1.1383723329884865,
+        "regressionPercent": 13.83723329884865
+      },
+      "workload": {
+        "samples": 250,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "effects": 1200,
+      "chargedCalls": 1200,
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 86,
+          "started": 86,
+          "completed": 86,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 75,
+          "firstPollMs": 140.006311,
+          "maximumPollMs": 210.359102
+        },
+        {
+          "phase": 3,
+          "scheduled": 89,
+          "started": 88,
+          "completed": 88,
+          "failed": 0,
+          "skippedBusy": 1,
+          "completedDuringMeasurement": 78,
+          "firstPollMs": 131.815635,
+          "maximumPollMs": 273.761514
+        }
+      ],
+      "allPhaseCleanup": true,
+      "resources": {
+        "controls": {
+          "memoryMaxBytes": 536870912,
+          "memorySwapMaxBytes": 0,
+          "cpuQuotaUs": 100000,
+          "cpuPeriodUs": 100000,
+          "cpuBurstUs": 0,
+          "pidsMax": 128
+        },
+        "affinity": {
+          "before": {
+            "cpusetCpusEffective": "0",
+            "processCpusAllowedList": "0"
+          },
+          "after": {
+            "cpusetCpusEffective": "0",
+            "processCpusAllowedList": "0"
+          }
+        },
+        "memoryPeakBytes": 179433472,
+        "memoryEvents": {
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpuCounterDelta": {
+          "usage_usec": 85444367,
+          "user_usec": 58830923,
+          "system_usec": 26613443,
+          "nr_periods": 858,
+          "nr_throttled": 59,
+          "throttled_usec": 15879
+        }
+      },
+      "stagedInputs": {
+        "files": 91,
+        "manifestSha256": "f29c07ec9d287eb9924206ae4b20bc672149579f2ef2cb7838061b689aaf7eb8",
+        "exactByteMatchToArchivedIdentifierCandidate": true,
+        "archivedManifest": "artifacts/agent-cartography/identifier-constrained-acceptance-1/staged-inputs.json",
+        "compiledRuntimeFilesIncludingDeclarations": 78
+      },
+      "artifact": {
+        "artifactId": 13532011594,
+        "archiveSha256": "8242933d142146aa22348ba848c32736b02363e97678f9c02af4965acf6fbfa8",
+        "bytes": 82858
+      },
+      "artifactSha256": {
+        "constrained-source.json": "e4cef4d8cd7c4ca27a14579175ae0740fe3d8d5e2c16179ab73ecbe3c4d85c84",
+        "constrained-observer/admission.json": "2c370729c7283b99bf536ca6df8cb6072b4e08049871fbf2b8aaee3a3e8c9b9d",
+        "constrained-observer/resources.json": "7b6d7ff544626c8be11923f56fe630bc50712b50fdbf40c470462e1d297598a2",
+        "constrained-observer/staged-inputs.json": "f29c07ec9d287eb9924206ae4b20bc672149579f2ef2cb7838061b689aaf7eb8",
+        "constrained-observer/verification.json": "f628e652d8cf9d81a2d10b6fb1cd48efc8a37391643e11b02c97f5e109647928"
+      },
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-9709f70-performance/performance-verification.json",
+        "sha256": "0bad1368fdf826173f612e10f58c651109434ceef7882c64644046ae3fabc38d"
+      },
+      "interpretation": "Final candidate failed: one phase-3 busy skip (maximum poll 273.761514 ms) and numerical p95 overhead 13.8372%, above the unchanged 10% limit. The original gate lists only the cadence failure because ratio denial is conditional on profile validity. All effects, charged calls, resource controls and cleanup passed. No stall cause or fix is proven."
     }
   ],
   "decisions": [
@@ -883,7 +1021,8 @@
     "Node HIGH security review and fixed-runtime qualification remain a publication hold.",
     "The local Colima single-logical-CPU experiment also failed. It substantially reduced aggregate quota throttling but does not qualify either profile or prove the remaining stall cause.",
     "Native Linux CI and disposable worker-stage CPU diagnostics were subsequently collected below. Release remains blocked for final candidate and fixed-Node verification.",
-    "Only the native Linux single-logical-CPU profile passed exact-source full acceptance. Its required CPU placement is a stricter deployment setting, not an increase to bandwidth or other limits. Final changed source and future fixed Node images still require their own qualification; no broader profile is promoted."
+    "Only the native Linux single-logical-CPU profile passed exact-source full acceptance. Its required CPU placement is a stricter deployment setting, not an increase to bandwidth or other limits. Final changed source and future fixed Node images still require their own qualification; no broader profile is promoted.",
+    "Final candidate 9709f70 did not qualify: native single-logical-CPU acceptance failed cadence and the numerical 10% target, and Windows ordinary CI failed four tests. Ordinary full performance passed on its separate unconstrained hosted profile. A manual exact-source serial Windows test-file experiment is prepared but not yet dispatched; this is a diagnostic scheduling comparison, not a timeout change or proven fix."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -929,6 +1068,18 @@
       "ordinaryWorkflowsPassed": 6,
       "ciJobsPassed": 11,
       "constrainedAcceptancePassed": false
+    },
+    "finalCandidateLocalCheck": {
+      "path": "artifacts/agent-cartography/identifier-full-check-1.log",
+      "sha256": "5d4fb4fbd4e8cf0ced750b9681186716a38cbf5ebd84ae0532cd0416100085ec",
+      "tests": 1258,
+      "passed": 1258,
+      "failed": 0,
+      "skipped": 0,
+      "installedConsumersPassed": true,
+      "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+      "command": "npm run check",
+      "scope": "Local full functional suite and installed consumers; does not replace the failed native Windows or constrained timing qualifications."
     }
   },
   "nativeAffinityQualification": {
@@ -1048,6 +1199,316 @@
       "skipped": 0,
       "installedConsumersPassed": true
     },
-    "finalNativeProfileQualification": "pending"
+    "finalNativeProfileQualification": "failed_on_9709f70_under_investigation"
+  },
+  "finalCandidateCheckpoint": {
+    "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+    "sourceTree": "3861aab888278cce81ba2cb4d2868fd731bd1e55",
+    "testedMerge": "a851b2ef2707ca59ac646c777cb16f2bdd279704",
+    "mergeTreeEqualsCandidate": true,
+    "sourceFingerprint": "409ae34575ef1f844df88ecd507fa1934dc407f4160fa250064620d932f0e41a",
+    "sourceInputs": 442,
+    "status": "final_candidate_failed_under_investigation",
+    "fixProven": false,
+    "ordinaryHostedCi": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-9709f70/ci-9709f70.json",
+        "sha256": "a94757a6a5a5a8b2c79db87e67de9781bc88a91c2ba585aa695eceeebfee3a4b"
+      },
+      "runId": 42273796813,
+      "successfulJobs": 10,
+      "failedJobs": 1,
+      "platforms": [
+        {
+          "jobId": 128084817832,
+          "name": "check (26)",
+          "node": "26.13.0",
+          "arch": "x64",
+          "mainSuite": {
+            "tests": 1258,
+            "pass": 1250,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "skipScope": "8 explicit Docker/MCP fixture skips in ordinary suite; required Linux isolation separately45/45 without skips"
+        },
+        {
+          "jobId": 128084817947,
+          "name": "check (windows-latest, 24)",
+          "node": "24.22.2",
+          "arch": "x64",
+          "mainSuite": {
+            "tests": 1259,
+            "pass": 1108,
+            "fail": 4,
+            "skipped": 147
+          },
+          "installedConsumersPassed": false,
+          "skipScope": "147 platform/fixture skips; four distinct failures retained"
+        },
+        {
+          "jobId": 128084818057,
+          "name": "check (24)",
+          "node": "24.22.2",
+          "arch": "x64",
+          "mainSuite": {
+            "tests": 1258,
+            "pass": 1250,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "skipScope": "8 explicit Docker/MCP fixture skips in ordinary suite; required Linux isolation separately45/45 without skips"
+        },
+        {
+          "jobId": 128084818162,
+          "name": "check (macos-latest, 24)",
+          "node": "24.22.2",
+          "arch": "arm64",
+          "mainSuite": {
+            "tests": 1258,
+            "pass": 1250,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "skipScope": "8 explicit Docker/MCP fixture skips in ordinary suite; required Linux isolation separately45/45 without skips"
+        },
+        {
+          "jobId": 128084818227,
+          "name": "check (22)",
+          "node": "22.23.4",
+          "arch": "x64",
+          "mainSuite": {
+            "tests": 1258,
+            "pass": 1250,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "skipScope": "8 explicit Docker/MCP fixture skips in ordinary suite; required Linux isolation separately45/45 without skips"
+        }
+      ],
+      "windowsFailure": {
+        "jobId": 128084817947,
+        "step": "Run npm run check",
+        "installedConsumers": "not reached after test failure",
+        "failures": [
+          {
+            "test": "packages/executor/test/artifacts.test.mjs:155",
+            "assertion": "Expected /provenance/, received WORKSPACE_INPUT_UNAVAILABLE timeout; compiling.",
+            "durationMs": 33563.5893
+          },
+          {
+            "test": "packages/executor/test/build-artifact-import.test.mjs:151",
+            "assertion": "RESOLUTION_FAILED; test-only diagnostic WORKSPACE_INPUT_UNAVAILABLE timeout; compiling.",
+            "durationMs": 33389.8354
+          },
+          {
+            "test": "scripts/benchmark-admission-diagnostics.test.mjs:147",
+            "assertion": "successfulEffects actual0, expected17.",
+            "durationMs": 22992.8759
+          },
+          {
+            "test": "scripts/benchmark-admission-profile.test.mjs:107",
+            "assertion": "successfulEffects actual0, expected6.",
+            "durationMs": 25449.2541
+          }
+        ],
+        "interpretation": "Two workspace reads timed out after startup and before the compiled marker. Why compilation did not complete and the separate zero-effect diagnostic failures are not established by these logs. No rerun or limit change.",
+        "log": {
+          "path": "job-128084817947.log",
+          "bytes": 185963,
+          "sha256": "eaa6e5083c42253364ba4d8bdeae28c7efa86fa0a59df5155f6dca1bff401887"
+        }
+      },
+      "otherSuccessfulJobs": [
+        {
+          "jobId": 128084817230,
+          "name": "runtime-isolation (linux, node24)"
+        },
+        {
+          "jobId": 128084817585,
+          "name": "production-profile (linux, node24)"
+        },
+        {
+          "jobId": 128084817608,
+          "name": "browser (webkit)"
+        },
+        {
+          "jobId": 128084817737,
+          "name": "browser (chromium)"
+        },
+        {
+          "jobId": 128084817891,
+          "name": "dependency-inventory"
+        },
+        {
+          "jobId": 128084817920,
+          "name": "browser (firefox)"
+        }
+      ],
+      "otherOrdinaryWorkflows": [
+        {
+          "id": 42273797102,
+          "name": "Cartography integration",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42273796882,
+          "name": "Dependency Review",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42273797021,
+          "name": "Python dependency audit",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42273797033,
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42273796715,
+          "name": "Cartography pilot",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "browserScans": 195,
+      "runtimeIsolation": {
+        "passed": 45,
+        "skipped": 0,
+        "mcpPassedChecks": 21,
+        "mcpCleanup": true
+      },
+      "python": {
+        "unitPassed": 1011,
+        "integrationPassed": 150,
+        "cleanupVerified": true
+      },
+      "prRefOpenCodeqlAlerts": 0
+    },
+    "ordinaryHostedFullPerformance": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-9709f70-performance/performance-verification.json",
+        "sha256": "0bad1368fdf826173f612e10f58c651109434ceef7882c64644046ae3fabc38d"
+      },
+      "runId": 42273851117,
+      "jobId": 128085023402,
+      "checkoutCommit": "9709f70e14062732917b1568238624c54b2771f4",
+      "passed": true,
+      "profile": "acceptance",
+      "diagnosticOnly": false,
+      "cpuProfileEnabled": false,
+      "acceptanceEvidenceEligible": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 23.532263,
+        "pollingP95Ms": 23.143734,
+        "ratio": 0.9834895181989084,
+        "regressionPercent": -1.6510481801091603
+      },
+      "workload": {
+        "samples": 250,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "effects": 1200,
+      "chargedCalls": 1200,
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 36,
+          "started": 36,
+          "completed": 36,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 31,
+          "firstPollMs": 45.093774,
+          "maximumPollMs": 58.791598
+        },
+        {
+          "phase": 3,
+          "scheduled": 36,
+          "started": 36,
+          "completed": 36,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 31,
+          "firstPollMs": 40.957061,
+          "maximumPollMs": 52.629097
+        }
+      ],
+      "allPhaseCleanup": true,
+      "graph": {
+        "rawGatesVerified": true,
+        "counts": {
+          "sources": 100,
+          "tasks": 10000,
+          "grants": 100000,
+          "databaseNodes": 128201,
+          "databaseRelationships": 481100
+        },
+        "queriesPerOperation": {
+          "get_agent_access": 50,
+          "explain_access": 50
+        },
+        "queryP95Seconds": {
+          "get_agent_access": 0.176731859,
+          "explain_access": 0.256057769
+        },
+        "publicationCount": 100,
+        "maximumPublicationSeconds": 9.335532659000009,
+        "disposableCleanup": true
+      },
+      "liveRecovery": {
+        "status": "passed",
+        "authorityStatePreserved": true,
+        "collectionPreservesAuthority": true,
+        "executorSurvivesRollback": true,
+        "restoreLogicalContentMatches": true,
+        "restoreSnapshotPointersMatch": true,
+        "scopeChecks": 3
+      },
+      "artifact": {
+        "artifactId": 13530829033,
+        "archiveSha256": "99d343b595be85b9f693ad3b3f6eb90e4056a88d6f773ba71ce2ec99fc641b05",
+        "bytes": 73913
+      },
+      "artifactSha256": {
+        "agent-guard-pilot-admission.json": "f269698104e22e348018a3280f32a70fd5f00c8f7a38a2c9c5067c22e9d07071",
+        "agent-guard-pilot-verification.json": "e44211548253f91189361b617326c2a9112e334179a08ad9fd4b16f5d4f2a96b",
+        "agent-guard-pilot-benchmark.json": "5c2e2742138bb0b540a7224c6230b38539d79d26b6f75bf18896944df08a07bf"
+      },
+      "scope": "Ordinary hosted full benchmark; no claim of the separate512MiB/oneCPU constrained profile."
+    },
+    "preparedReleaseTarballs": {
+      "path": "artifacts/agent-cartography/release-9709f70/manifest.json",
+      "sha256": "b05912bc853918aa0122cbbebe5cd9900a784916184fa162725cf2158768183d",
+      "sourceCommit": "9709f70e14062732917b1568238624c54b2771f4",
+      "version": "0.1.0",
+      "packages": 5,
+      "published": false,
+      "publicationApproved": false,
+      "scope": "Prepared local npm tarballs only, bound to 9709f70. The manifest retains each archive SHA256 and SHA512 integrity. No approval, tag, merge, or publication performed."
+    },
+    "interpretation": "Local functional and ordinary full performance checks passed, but Windows ordinary CI and exact-candidate one-CPU acceptance failed. Prior baseline successes and all earlier failures remain retained. No underlying stall cause or fix is proven; all timing, effect, cleanup and security limits remain unchanged. The Node security and release qualification holds remain."
   }
 }

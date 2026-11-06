@@ -6,13 +6,14 @@ export const PINNED_IMAGE = 'node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa
 export const MEMORY_BYTES = 512 * 1024 * 1024;
 export const CPU_FIELDS = Object.freeze(['usage_usec', 'user_usec', 'system_usec', 'nr_periods', 'nr_throttled', 'throttled_usec']);
 export const SAMPLE_LIMIT = 4096, SAMPLE_INTERVAL_MS = 100;
-export function configuration({ profile = 'acceptance', diagnostics = false, image = PINNED_IMAGE, cpuAffinity = null } = {}) {
-  assert.ok(['acceptance', 'smoke'].includes(profile) && typeof diagnostics === 'boolean', 'CONSTRAINED_CONFIG_INVALID');
+export function configuration({ profile = 'acceptance', diagnostics = false, cpuProfile = false, image = PINNED_IMAGE, cpuAffinity = null } = {}) {
+  assert.ok(['acceptance', 'smoke'].includes(profile) && typeof diagnostics === 'boolean' && typeof cpuProfile === 'boolean', 'CONSTRAINED_CONFIG_INVALID');
+  assert.ok(!cpuProfile || diagnostics, 'CPU_PROFILE_REQUIRES_DIAGNOSTICS');
   assert.ok(profile !== 'smoke' || diagnostics, 'SMOKE_REQUIRES_DIAGNOSTICS');
   assert.match(image, /^(?:[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,200}@)?sha256:[a-f0-9]{64}$/, 'IMMUTABLE_IMAGE_REQUIRED');
   assert.ok(cpuAffinity === null || (typeof cpuAffinity === 'string' && /^(?:0|[1-9]\d{0,3})$/.test(cpuAffinity) &&
     cpuAffinity === String(Number(cpuAffinity)) && Number(cpuAffinity) <= 4095), 'CPU_AFFINITY_INVALID');
-  return { profile, diagnostics, image, cpuAffinity, resourceProfile: cpuAffinity === null ? 'bandwidth-only' : 'single-logical-cpu',
+  return { profile, diagnostics, cpuProfile, image, cpuAffinity, resourceProfile: cpuAffinity === null ? 'bandwidth-only' : 'single-logical-cpu',
     eligible: profile === 'acceptance' && !diagnostics };
 }
 /** Validate bounded kernel CPU-list text without expanding ranges or retaining other proc fields. */
@@ -38,7 +39,7 @@ export function validateAdmission(report, options) {
   const config = configuration(options), samples = config.profile === 'acceptance' ? 250 : 100;
   assert.equal(report.schemaVersion, 2); assert.equal(report.kind, 'synthetic-admission-polling-benchmark');
   assert.equal(report.profile, config.profile); assert.equal(report.diagnosticOnly, config.diagnostics);
-  assert.equal(report.acceptanceEvidenceEligible, config.eligible); assert.equal(report.cpuProfileEnabled, false);
+  assert.equal(report.acceptanceEvidenceEligible, config.eligible); assert.equal(report.cpuProfileEnabled, config.cpuProfile);
   assert.equal(report.hardware.platform, 'linux'); assert.match(report.hardware.node, /^v\d+\.\d+\.\d+$/);
   assert.deepEqual(report.workload, { samples, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 });
   assert.deepEqual(report.phaseOrder, PHASE_ORDER); assert.equal(report.phases.length, 4); assert.equal(Object.hasOwn(report, 'error'), false);
@@ -81,10 +82,15 @@ export function validateAdmission(report, options) {
   }
   const gate = admissionGate(report.phases, { enforcePerformance: config.profile === 'acceptance' });
   assert.deepEqual(report.gate, gate);
-  const diagnosticsComplete = !config.diagnostics || report.phases.every(phase => phase.diagnostics?.complete === true);
+  const cpuProfilesComplete = !config.cpuProfile || report.phases.every(phase => {
+    const capture = phase.diagnostics?.cpuProfile;
+    return capture?.complete === true && capture.closed === true && capture.errors === 0 && capture.deadlineExceeded === false &&
+      capture.diagnosticOnly === true && capture.acceptanceEvidenceEligible === false && capture.profile?.complete === true;
+  });
+  const diagnosticsComplete = !config.diagnostics || (cpuProfilesComplete && report.phases.every(phase => phase.diagnostics?.complete === true));
   if (config.diagnostics) assert.equal(report.diagnosticsComplete, diagnosticsComplete);
   assert.equal(report.passed, gate.passed && diagnosticsComplete);
-  return { gate, diagnosticsComplete, acceptanceEvidenceEligible: config.eligible && report.passed,
+  return { gate, diagnosticsComplete, cpuProfilesComplete, acceptanceEvidenceEligible: config.eligible && report.passed,
     effects: report.phases.reduce((sum, phase) => sum + phase.successfulEffects, 0),
     polls: report.phases.reduce((sum, phase) => sum + (phase.polling?.completed ?? 0), 0) };
 }

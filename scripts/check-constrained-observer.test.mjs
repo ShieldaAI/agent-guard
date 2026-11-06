@@ -5,10 +5,11 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
+import { execFileSync } from 'node:child_process';
 import { admissionGate } from './benchmark-admission.mjs';
 import { configuration, cpuList, validateAdmission, validateResources, PINNED_IMAGE, CPU_FIELDS, MEMORY_BYTES } from './constrained-observer-validation.mjs';
 import { boundedKernelText, processCpuList, readResources, resourceSampler } from './constrained-observer-payload.mjs';
-import { boundedFile, stageInputs, containerArguments, verifyContainer, cleanupContainer, runConstrainedObserver, dockerCommand, createFailureCode } from './check-constrained-observer.mjs';
+import { admissionReportLimit, boundedFile, stageInputs, containerArguments, verifyContainer, cleanupContainer, runConstrainedObserver, dockerCommand, createFailureCode } from './check-constrained-observer.mjs';
 
 const ROOT = fileURLToPath(new URL('../', import.meta.url)), posix = { skip: process.platform === 'win32' || !process.getuid || process.getuid() === 0 };
 const temporary = t => { const p = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'constrained-unit-'))); t.after(() => fs.rmSync(p, { recursive: true, force: true })); return p; };
@@ -58,13 +59,71 @@ function admissionReport({ samples = 250, pollingCost = 1 } = {}) {
     workload: { samples, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 }, phaseOrder, phases, gate, passed: gate.passed };
 }
 test('constrained options default to full acceptance and require immutable images and diagnostic smoke', () => {
-  assert.deepEqual(configuration(), { profile: 'acceptance', diagnostics: false, image: PINNED_IMAGE, cpuAffinity: null, resourceProfile: 'bandwidth-only', eligible: true });
+  assert.deepEqual(configuration(), { profile: 'acceptance', diagnostics: false, cpuProfile: false, image: PINNED_IMAGE, cpuAffinity: null, resourceProfile: 'bandwidth-only', eligible: true });
   assert.equal(configuration({ profile: 'smoke', diagnostics: true }).eligible, false);
   assert.equal(configuration({ diagnostics: true }).eligible, false);
   for (const value of [{ profile: 'smoke' }, { image: 'node:24' }, { image: '--privileged' }, { diagnostics: 'false' }, { profile: 'fast' }]) assert.throws(() => configuration(value));
   for (const value of ['0', '9', '4095']) assert.equal(configuration({ cpuAffinity: value }).resourceProfile, 'single-logical-cpu');
   for (const cpuAffinity of [0, 1, true, '', '00', '01', '-1', '4096', '1.0', '0-1', '0,1', '0\n', ' 0', '0 ', '0\0', '1e0'])
     assert.throws(() => configuration({ cpuAffinity }), /CPU_AFFINITY_INVALID/);
+});
+function profiledAdmissionReport() {
+  const report = admissionReport();
+  Object.assign(report, { diagnosticOnly: true, cpuProfileEnabled: true, acceptanceEvidenceEligible: false, diagnosticsComplete: true });
+  for (const phase of report.phases) phase.diagnostics = { complete: true, cpuProfile: {
+    diagnosticOnly: true, acceptanceEvidenceEligible: false, complete: true, closed: true, errors: 0,
+    deadlineExceeded: false, profile: { complete: true },
+  } };
+  return report;
+}
+test('owner CPU profiling requires diagnostics, retains the original gate and cannot qualify acceptance', () => {
+  assert.throws(() => configuration({ cpuProfile: true }), /CPU_PROFILE_REQUIRES_DIAGNOSTICS/);
+  assert.throws(() => configuration({ diagnostics: true, cpuProfile: 'true' }), /CONSTRAINED_CONFIG_INVALID/);
+  const config = configuration({ diagnostics: true, cpuProfile: true, cpuAffinity: '0' });
+  assert.equal(config.eligible, false); assert.equal(config.profile, 'acceptance');
+  assert.equal(admissionReportLimit(false), 32 * 1024 * 1024);
+  assert.equal(admissionReportLimit(true), 96 * 1024 * 1024);
+  const report = profiledAdmissionReport(), verified = validateAdmission(report, config);
+  assert.equal(verified.cpuProfilesComplete, true); assert.equal(verified.gate.passed, true);
+  assert.equal(verified.acceptanceEvidenceEligible, false);
+  assert.throws(() => validateAdmission(report, { diagnostics: true }));
+  assert.throws(() => validateAdmission(admissionReport(), config));
+  for (const mutate of [r => { r.acceptanceEvidenceEligible = true; }, r => { delete r.phases[1].diagnostics.cpuProfile; },
+    r => { r.phases[1].diagnostics.cpuProfile.closed = false; }, r => { r.phases[1].diagnostics.cpuProfile.profile.complete = false; },
+    r => { r.phases[1].diagnostics.cpuProfile.deadlineExceeded = true; }, r => { r.phases[1].diagnostics.cpuProfile.errors = 1; }]) {
+    const changed = clone(report); mutate(changed); assert.throws(() => validateAdmission(changed, config));
+  }
+  const incomplete = clone(report); incomplete.phases[1].diagnostics.cpuProfile.closed = false;
+  incomplete.phases[1].diagnostics.complete = false; incomplete.diagnosticsComplete = false; incomplete.passed = false;
+  assert.equal(validateAdmission(incomplete, config).diagnosticsComplete, false);
+  const missed = clone(report); missed.phases[1].polling.skippedBusy++; missed.phases[1].polling.scheduled++;
+  missed.gate = admissionGate(missed.phases); missed.passed = false;
+  assert.equal(validateAdmission(missed, config).gate.failureReasons[0].code, 'POLL_CADENCE_SKIPPED');
+});
+test('payload forwards explicit profiling once without changing full workload or resource preflight', t => {
+  const output = temporary(t), resource = resourceReport(true, '0');
+  // Isolate the mocked Linux resource fixture from the actual host/test process.
+  const program = `
+    import assert from 'node:assert/strict';
+    import { runPayload } from ${JSON.stringify(new URL('./constrained-observer-payload.mjs', import.meta.url).href)};
+    Object.defineProperty(process, 'platform', { value: 'linux' });
+    const fixture = ${JSON.stringify(resource)};
+    let calls = 0;
+    const exit = await runPayload('acceptance', true, { cpuAffinity: '0', cpuProfile: true,
+      output: ${JSON.stringify(output)},
+      read: () => ({ controls: fixture.controls, affinity: fixture.affinity.before, sample: fixture.before }),
+      sampleCpu: () => fixture.before.cpu,
+      benchmark: async args => {
+        calls++;
+        assert.deepEqual(args, ['--profile', 'acceptance', '--diagnostics', '--cpu-profile', '--output', ${JSON.stringify(output + '/admission.json')}]);
+        return 0;
+      } });
+    assert.equal(calls, 1); assert.equal(exit, 0);
+  `;
+  execFileSync(process.execPath, ['--input-type=module', '-e', program], { timeout: 10000, stdio: 'pipe' });
+  const captured = JSON.parse(fs.readFileSync(join(output, 'resources.json')));
+  assert.equal(captured.checksPassed, true); assert.equal(captured.diagnosticOnly, true);
+  assert.equal(captured.acceptanceEvidenceEligible, false); assert.equal(captured.cpuAffinity, '0');
 });
 test('host recomputes exact raw timestamps, sample coverage and original gate without filtering failures', () => {
   const report = admissionReport(); assert.equal(validateAdmission(report, {}).effects, 1200);
@@ -272,6 +331,38 @@ test('mocked explicit affinity run binds requested and effective CPU sets and re
     assert.equal(started, 1); assert.equal(verified.cleanup.absenceVerified, true);
     if (mismatch === null) assert.deepEqual(verified.resources.affinity, resourceReport(false, '0').affinity);
   }
+});
+test('mocked native pinned CPU diagnostic is explicitly ineligible even when every original gate passes', posix, async t => {
+  const output = join(temporary(t), 'result'); let c, removed = false, started = 0;
+  const docker = async args => {
+    if (args[0] === 'image') return result([{ Id: imageId, Os: 'linux', Architecture: 'amd64', Config: {} }]);
+    if (args[0] === 'create') {
+      assert.deepEqual(args.slice(-5), ['scripts/constrained-observer-payload.mjs', 'acceptance', 'true', '0', '--cpu-profile']);
+      assert.equal(args[args.indexOf('--cpus') + 1], '1.0'); assert.equal(args[args.indexOf('--cpuset-cpus') + 1], '0');
+      assert.equal(args[args.indexOf('--memory') + 1], '512m'); assert.equal(args[args.indexOf('--memory-swap') + 1], '512m');
+      const input = args[args.indexOf('--mount') + 1].match(/src=([^,]+)/)[1];
+      c = container(input, output, args[args.indexOf('--user') + 1]); c.Name = '/' + args[args.indexOf('--name') + 1];
+      c.HostConfig.CpusetCpus = '0';
+      c.Config.Labels = { 'ai.shielda.constrained-observer-owner': args[args.indexOf('--label') + 1].split('=')[1] };
+      return result(id);
+    }
+    if (args[0] === 'inspect') return result([c]);
+    if (args[0] === 'start') {
+      started++;
+      for (const [file, value] of [['admission.json', profiledAdmissionReport()], ['resources.json', resourceReport(true, '0')]])
+        fs.writeFileSync(join(output, file), JSON.stringify(value), { mode: 0o600 });
+      return result();
+    }
+    if (args[0] === 'rm') { removed = true; return result(); }
+    if (args[0] === 'ps') return result(removed ? '' : id);
+    throw Error('UNEXPECTED_COMMAND');
+  };
+  const verified = await runConstrainedObserver({ output, cpuAffinity: '0', diagnostics: true, cpuProfile: true }, { docker });
+  assert.equal(started, 1); assert.equal(verified.passed, true); assert.equal(verified.admission.effects, 1200);
+  assert.equal(verified.cpuProfileEnabled, true); assert.equal(verified.diagnosticOnly, true);
+  assert.equal(verified.acceptanceEvidenceEligible, false); assert.equal(verified.admission.acceptanceEvidenceEligible, false);
+  assert.equal(verified.cleanup.absenceVerified, true); assert.equal(verified.stagedInputsUnchanged, true);
+  assert.equal(verified.stagingRemoved, true);
 });
 test('uncertain create still checks ownership and cleanup; an interrupted run cannot pass or expose command errors', posix, async t => {
   for (const interrupt of [false, true]) {

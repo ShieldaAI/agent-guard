@@ -27,6 +27,11 @@ on:
         type: choice
         options: ['0', 'none']
         default: '0'
+      owner_cpu_profile:
+        description: Add bounded owner CPU/timing diagnostics; never acceptance evidence
+        required: false
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -35,7 +40,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   acceptance:
-    name: constrained-observer (linux, affinity ${{ inputs.cpu_affinity || '0' }}, 512 MiB)
+    name: constrained-observer (${{ inputs.owner_cpu_profile && 'diagnostic' || 'acceptance' }}, linux, affinity ${{ inputs.cpu_affinity || '0' }}, 512 MiB)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     env:
@@ -43,6 +48,7 @@ jobs:
       NODE_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
       SOURCE_COMMIT: ${{ inputs.source_commit || '' }}
       CPU_AFFINITY: ${{ inputs.cpu_affinity || '0' }}
+      OWNER_CPU_PROFILE: ${{ inputs.owner_cpu_profile && 'true' || 'false' }}
       TRIGGER_EVENT: ${{ github.event_name }}
     steps:
       - name: Validate manual experiment inputs
@@ -53,11 +59,14 @@ jobs:
 
           source = os.environ['SOURCE_COMMIT']
           affinity = os.environ['CPU_AFFINITY']
+          profiling = os.environ['OWNER_CPU_PROFILE']
           if source and not re.fullmatch(r'[0-9a-fA-F]{40}', source):
               raise SystemExit('SOURCE_COMMIT_INVALID')
           if affinity not in ('none', '0'):
               raise SystemExit('CPU_AFFINITY_INVALID')
-          if os.environ['TRIGGER_EVENT'] != 'workflow_dispatch' and (source or affinity != '0'):
+          if profiling not in ('true', 'false'):
+              raise SystemExit('OWNER_CPU_PROFILE_INVALID')
+          if os.environ['TRIGGER_EVENT'] != 'workflow_dispatch' and (source or affinity != '0' or profiling != 'false'):
               raise SystemExit('MANUAL_INPUTS_ON_NONMANUAL_RUN')
           PY
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -92,6 +101,8 @@ jobs:
           record = {'schemaVersion': 1, 'sourceCommit': commit, 'sourceTree': tree,
                     'requestedSourceCommit': requested or None,
                     'cpuAffinity': os.environ['CPU_AFFINITY'],
+                    'ownerCpuProfile': os.environ['OWNER_CPU_PROFILE'] == 'true',
+                    'diagnosticOnly': os.environ['OWNER_CPU_PROFILE'] == 'true',
                     'workflowCommit': workflow, 'triggerCommit': trigger, 'runId': run_id}
           encoded = (json.dumps(record, indent=2) + '\n').encode()
           if len(encoded) > 2048:
@@ -111,13 +122,16 @@ jobs:
       - run: npm run build
       - name: Pull the reviewed immutable Node image
         run: docker pull --platform linux/amd64 "$NODE_IMAGE"
-      - name: Run one full uninstrumented constrained acceptance
+      - name: Run one full constrained workload with explicit diagnostic selection
         shell: bash
         run: |
           mkdir -p artifacts
           runner_args=(--image "$NODE_IMAGE" --output artifacts/constrained-observer)
           if [[ "$CPU_AFFINITY" == '0' ]]; then
             runner_args+=(--cpu-affinity 0)
+          fi
+          if [[ "$OWNER_CPU_PROFILE" == 'true' ]]; then
+            runner_args+=(--diagnostics --cpu-profile)
           fi
           node scripts/check-constrained-observer.mjs "${runner_args[@]}"
       - name: Retain bounded reports, including failed qualification

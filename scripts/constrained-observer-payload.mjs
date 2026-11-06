@@ -59,8 +59,8 @@ export function resourceSampler(enabled, read = readCpuCounters) {
   sample(); const timer = enabled ? setInterval(sample, SAMPLE_INTERVAL_MS) : undefined; timer?.unref();
   return { sample, stop() { if (!result.closed) { clearInterval(timer); sample(); result.closed = true; } return result; } };
 }
-export async function runPayload(profile, diagnostics, { cpuAffinity = null, benchmark = main, read = readResources, sampleCpu = readCpuCounters, output = '/output' } = {}) {
-  const config = configuration({ profile, diagnostics, cpuAffinity }), before = read(), sampler = resourceSampler(diagnostics, sampleCpu);
+export async function runPayload(profile, diagnostics, { cpuAffinity = null, cpuProfile = false, benchmark = main, read = readResources, sampleCpu = readCpuCounters, output = '/output' } = {}) {
+  const config = configuration({ profile, diagnostics, cpuProfile, cpuAffinity }), before = read(), sampler = resourceSampler(diagnostics, sampleCpu);
   const report = { schemaVersion: 1, kind: 'constrained-observer-resources', diagnosticOnly: diagnostics,
     resourceProfile: config.resourceProfile, cpuAffinity: config.cpuAffinity, affinity: { before: before.affinity, after: null },
     acceptanceEvidenceEligible: false, runtime: { node: process.version, architecture: process.arch, platform: process.platform },
@@ -72,7 +72,7 @@ export async function runPayload(profile, diagnostics, { cpuAffinity = null, ben
     validateResources({ ...report, after: before.sample, affinity: { before: before.affinity, after: before.affinity }, sampler: { enabled: false, intervalMs: SAMPLE_INTERVAL_MS,
       limit: SAMPLE_LIMIT, observed: 0, dropped: 0, errors: 0, closed: true, samples: [] }, diagnosticOnly: false,
       acceptanceEvidenceEligible: false }, { profile: 'acceptance', diagnostics: false, cpuAffinity: config.cpuAffinity });
-    exitCode = await benchmark(['--profile', profile, ...(diagnostics ? ['--diagnostics'] : []), '--output', output + '/admission.json']);
+    exitCode = await benchmark(['--profile', profile, ...(diagnostics ? ['--diagnostics'] : []), ...(cpuProfile ? ['--cpu-profile'] : []), '--output', output + '/admission.json']);
   } catch { report.failure = 'CONSTRAINED_PAYLOAD_FAILED'; }
   finally {
     report.sampler = sampler.stop();
@@ -87,7 +87,9 @@ export async function runPayload(profile, diagnostics, { cpuAffinity = null, ben
 }
 if (isEntry(import.meta)) {
   try {
-    if (![4, 5].includes(process.argv.length) || !['false', 'true'].includes(process.argv[3])) throw Error();
-    process.exitCode = await runPayload(process.argv[2], process.argv[3] === 'true', { cpuAffinity: process.argv[4] ?? null });
+    const args = process.argv.slice(2), cpuProfile = args.at(-1) === '--cpu-profile';
+    if (cpuProfile) args.pop();
+    if (![2, 3].includes(args.length) || !['false', 'true'].includes(args[1])) throw Error();
+    process.exitCode = await runPayload(args[0], args[1] === 'true', { cpuAffinity: args[2] ?? null, cpuProfile });
   } catch { process.stderr.write('CONSTRAINED_PAYLOAD_FAILED\n'); process.exitCode = 1; }
 }
