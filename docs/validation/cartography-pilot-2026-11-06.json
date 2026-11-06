@@ -1104,5 +1104,82 @@
       "scopeChecks": 3,
       "status": "passed"
     }
+  },
+  "subsequentCadenceFailure": {
+    "head": "a62de067ea5689eaaf3475aa874bfdbdcc72f215",
+    "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
+    "workflowRun": 42149089129,
+    "jobId": 127667636777,
+    "artifactId": 13471866690,
+    "artifactZipSha256": "328116ad7c755907d73fa542729680f26ee298d16fe87296bf6cbedae0045dd5",
+    "artifactDigestVerified": true,
+    "report": {
+      "path": "cartography-smoke-admission-failed-2026-11-06-a62de06.json.gz",
+      "sha256": "5950dc6c1467a41b821eb91e58e33b606dfc767f3ca23f9d85d4e6b7391981ee",
+      "uncompressedSha256": "e64830773051b67226ce5e89e240d103eb2ddae1cf62607455f4636342ad38ed"
+    },
+    "gate": {
+      "passed": false,
+      "correctnessPassed": false,
+      "effectAccountingPassed": true,
+      "stressProfileValid": false,
+      "latencySamplesValid": true,
+      "failureReasons": [
+        {
+          "phase": 2,
+          "code": "POLL_CADENCE_SKIPPED"
+        },
+        {
+          "phase": 3,
+          "code": "POLL_CADENCE_SKIPPED"
+        }
+      ],
+      "performanceEnforced": false,
+      "performancePassed": false,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 67.006286,
+      "pollingP95Ms": 103.982169,
+      "ratio": 1.5518270778356524,
+      "regressionPercent": 55.18270778356524
+    },
+    "workload": {
+      "samples": 100,
+      "warmup": 50,
+      "tasks": 100,
+      "grants": 10,
+      "pollIntervalMs": 250
+    },
+    "hardware": {
+      "platform": "linux",
+      "release": "7.0.0-1019-azure",
+      "architecture": "x64",
+      "logicalCpus": 4,
+      "memoryBytes": 16759443456,
+      "node": "v24.22.2"
+    },
+    "successfulEffects": 600,
+    "polls": [
+      {
+        "phase": 2,
+        "scheduled": 51,
+        "started": 49,
+        "completed": 49,
+        "failed": 0,
+        "skippedBusy": 2,
+        "completedDuringMeasurement": 33,
+        "maximumPollMs": 293.083019
+      },
+      {
+        "phase": 3,
+        "scheduled": 51,
+        "started": 49,
+        "completed": 49,
+        "failed": 0,
+        "skippedBusy": 2,
+        "completedDuringMeasurement": 36,
+        "maximumPollMs": 608.277672
+      }
+    ],
+    "scope": "Docs-only commit, same runtime inputs as ab56766. Prior full acceptance pass is retained but does not waive this failed cadence gate. No causal claim about host contention is established. Reopened the profiled redundant projection-copy cost for a bounded implementation fix; no test threshold or workload change."
   }
 }

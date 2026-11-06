@@ -1,5 +1,5 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { immutableJson, type ToolDefinition } from '@shieldaai/agent-guard';
+import type { ToolDefinition } from '@shieldaai/agent-guard';
 import { ExecutorError, type Ledger } from './store.js';
 
 /** Trusted host enrollment; changing it creates a separate collector source. */
@@ -140,6 +140,64 @@ function relations(tasks: readonly InventoryTask[]): void {
   }
 }
 
+/**
+ * Finalize only the fresh, validated graph constructed by projectInventory below.
+ * No caller object or array may enter this function. The public JSON validator is
+ * still required at input boundaries; repeating its proxy/descriptor checks here
+ * would inspect our own constructors on every observation. Preserve its output
+ * ordering, prototypes, freezing and exact limits without invoking object hooks.
+ */
+function finalizeConstructedInventory(snapshot: InventorySnapshot): InventorySnapshot {
+  const maxBytes = MAX_BYTES - 16 * snapshot.tasks.length;
+  const lengths = new Map<string, number>();
+  let nodes = 0, bytes = 0;
+  const limit = (): never => fail('INVENTORY_LIMIT_EXCEEDED');
+  const addBytes = (count: number): void => { bytes += count; if (bytes > maxBytes) limit(); };
+  const stringBytes = (value: string): void => {
+    if (value.length > maxBytes - bytes) limit();
+    let length = lengths.get(value);
+    if (length === undefined) {
+      length = Buffer.byteLength(JSON.stringify(value), 'utf8');
+      // Snapshot-local byte lengths carry no authority and never suppress charging.
+      if (lengths.size < 1024) lengths.set(value, length);
+    }
+    addBytes(length);
+  };
+  const visit = (value: unknown, depth: number): unknown => {
+    if (++nodes > MAX_VALUES || depth > 32) return limit();
+    if (typeof value === 'string') { stringBytes(value); return value; }
+    if (value === null || typeof value === 'boolean') { addBytes(value === false ? 5 : 4); return value; }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return limit();
+      addBytes(JSON.stringify(value).length);
+      return Object.is(value, -0) ? 0 : value;
+    }
+    // Fail closed if a future constructor accidentally introduces a non-JSON leaf.
+    if (typeof value !== 'object') return limit();
+    addBytes(2);
+    if (Array.isArray(value)) {
+      if (value.length > MAX_VALUES - nodes) return limit();
+      const result: unknown[] = [];
+      for (let index = 0; index < value.length; index++) {
+        if (index > 0) addBytes(1);
+        result.push(visit(value[index], depth + 1));
+      }
+      return Object.freeze(result);
+    }
+    const keys = Object.keys(value).sort();
+    if (keys.length > MAX_VALUES - nodes) return limit();
+    const result: Record<string, unknown> = Object.create(null);
+    for (let index = 0; index < keys.length; index++) {
+      if (index > 0) addBytes(1);
+      const key = keys[index]!;
+      stringBytes(key); addBytes(1);
+      result[key] = visit((value as Record<string, unknown>)[key], depth + 1);
+    }
+    return Object.freeze(result);
+  };
+  return visit(snapshot, 0) as InventorySnapshot;
+}
+
 /** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
 export function projectInventory(
   state: Ledger,
@@ -255,6 +313,6 @@ export function projectInventory(
   // Python may serialize a fractional deadline with a longer exponent than JavaScript.
   // Reserve headroom per task so a producer-accepted snapshot also fits the consumer's 8 MiB cap.
   // Constructed fields above are JSON data; the remaining failure mode is a bounded output limit.
-  try { return immutableJson(snapshot, 32, MAX_VALUES, MAX_BYTES - 16 * tasks.length) as unknown as InventorySnapshot; }
+  try { return finalizeConstructedInventory(snapshot); }
   catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
 }

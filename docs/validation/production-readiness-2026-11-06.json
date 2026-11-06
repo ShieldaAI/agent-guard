@@ -1568,7 +1568,9 @@
       "Require passing hosted gates for final source/image."
     ]
   },
-  "remainingVerification": [],
+  "remainingVerification": [
+    "Verify the projection finalizer with current Linux images, hosted platform/security/browser checks and unchanged full Cartography acceptance."
+  ],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
     "limit": 10000,
@@ -1608,13 +1610,14 @@
       "regressionPercent": 5.179998606954173,
       "performanceEnforced": true,
       "passed": true
-    }
+    },
+    "subsequentFailure": "Docs-only a62de06 run 42149089129 failed strict polling cadence in both polling phases: two busy intervals each; 600 exact effects, 98 successful polls and complete cleanup. Diagnostic admission overhead was 55.18%; no contention cause is asserted. The earlier full 5.18% pass remains recorded but does not waive this failure."
   },
   "publication": {
     "status": "draft-pr-production-acceptance-held",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
     "newNpmRelease": false,
-    "reason": "R5 Node HIGH prealert applicability remains unassessed. All current implementation workflows pass, including the corrected navigation regression. The separate full Cartography acceptance profile passes at 5.18% overhead."
+    "reason": "R5 Node HIGH applicability remains unassessed. A subsequent unchanged-source Cartography smoke cadence failure is also unresolved; performance profiling has been reopened. Browser, platform, Linux recovery and CodeQL checks continue to pass."
   },
   "followUpCandidate": {
     "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
@@ -1649,5 +1652,22 @@
     "hostedEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json",
     "independentReview": "No blocker found in visible expiry tracking, navigation node preservation or unchanged backend approval enforcement. UI expiry refresh remains bounded by the existing one-second interval."
   },
-  "previousVerificationIndexAtCommit": "ab567668522c908f18ef8ccfb264d68387e9141b"
+  "previousVerificationIndexAtCommit": "ab567668522c908f18ef8ccfb264d68387e9141b",
+  "projectionFinalizerCandidate": {
+    "parentCommit": "a62de067ea5689eaaf3475aa874bfdbdcc72f215",
+    "sourceSha256": "83d6053af3951a48262607ed86dfe616f3d194a44e225f243d92fa471746e63d",
+    "sourceFiles": 405,
+    "status": "full-local-check-passed-hosted-acceptance-pending",
+    "scope": "Private finalization of freshly constructed inventory only; preserves input validation, fresh authenticated reads, exact output/limits and no cross-poll cache.",
+    "focusedTests": 223,
+    "fullTests": 1099,
+    "fullTestsPassed": 1099,
+    "failed": 0,
+    "skipped": 0,
+    "installedPackageConsumers": "passed",
+    "fullCheckLogSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
+    "independentReview": "Exact JSON counting, byte charging, output prototypes/descriptors/order and current constructor ownership reviewed; no blocker found.",
+    "diagnosticEvidence": "docs/validation/inventory-cpu-profile-finalizer-2026-11-06.json",
+    "acceptanceLimitsUnchanged": true
+  }
 }

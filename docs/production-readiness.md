@@ -10,6 +10,9 @@ matrix and Linux image verification. The evidence record retains pending and
 failed checks explicitly. No final
 production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
+The subsequent inventory finalizer correction has passed 223 focused tests and
+the complete 1,099-test local suite with zero skips, plus installed-package checks.
+Its current Linux and hosted performance verification remains pending.
 
 The target is at least **9.5/10 independently in every R1–R10 category**, with no
 open critical or high security defect, broken supported workflow, misleading
@@ -236,6 +239,13 @@ The supported operational boundary remains material:
   and all resources closed. Its 10,000-task/100,000-grant graph profile also passed
   publication and query limits. All observations and earlier failed attempts
   remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
+  A subsequent docs-only rerun missed two polling intervals in each polling
+  phase despite correct effects and cleanup. That cadence failure is unresolved;
+  the earlier full-profile pass does not waive it. The profiled projection cost
+  is corrected by a private finalizer for newly constructed output; input
+  validation, authenticated reads, output equivalence and exact caps remain
+  enforced. Differential and boundary tests pass. Hosted acceptance still needs
+  to establish the result under the same workload and gates.
   This deliberate 250 ms observer stress profile is bounded evidence on the
   recorded runner, not a deployment-wide latency guarantee; the collector
   defaults to five minutes.
