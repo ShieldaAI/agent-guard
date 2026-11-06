@@ -1359,5 +1359,184 @@
     "successfulEffects": 600,
     "allCleanup": true,
     "scope": "Same runtime as c38cf47; only checkout rule and evidence changed. The cadence failure is retained; no retry or acceptance waiver."
-  }
+  },
+  "ledgerDecoderAcceptance": {
+    "status": "passed",
+    "head": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+    "sourceFiles": 411,
+    "workflowRun": 42202792736,
+    "jobId": 127841955931,
+    "artifactId": 13494479292,
+    "artifactZipSha256": "e294bca534c1f9541178e7bcbd4d6cf5c72301e3e4d9ab5db9ffd8d5f1fc61a7",
+    "artifactDigestVerified": true,
+    "workflowInputs": {
+      "full_benchmark": true,
+      "admission_diagnostics": false,
+      "admission_cpu_profile": false
+    },
+    "acceptanceEvidenceEligible": true,
+    "runsPerformedForCandidate": 1,
+    "gate": {
+      "passed": true,
+      "correctnessPassed": true,
+      "effectAccountingPassed": true,
+      "stressProfileValid": true,
+      "latencySamplesValid": true,
+      "failureReasons": [],
+      "performanceEnforced": true,
+      "performancePassed": true,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 31.628532,
+      "pollingP95Ms": 33.66638,
+      "ratio": 1.0644306855594814,
+      "regressionPercent": 6.443068555948139
+    },
+    "workload": {
+      "samples": 250,
+      "warmup": 50,
+      "tasks": 100,
+      "grants": 10,
+      "pollIntervalMs": 250
+    },
+    "hardware": {
+      "platform": "linux",
+      "release": "7.0.0-1019-azure",
+      "architecture": "x64",
+      "logicalCpus": 4,
+      "memoryBytes": 16759439360,
+      "node": "v24.22.2"
+    },
+    "successfulEffects": 1200,
+    "chargedCalls": 1200,
+    "allResourcesClosed": true,
+    "polling": [
+      {
+        "phase": 2,
+        "scheduled": 55,
+        "started": 55,
+        "completed": 55,
+        "failed": 0,
+        "skippedBusy": 0,
+        "completedDuringMeasurement": 48
+      },
+      {
+        "phase": 3,
+        "scheduled": 54,
+        "started": 54,
+        "completed": 54,
+        "failed": 0,
+        "skippedBusy": 0,
+        "completedDuringMeasurement": 47
+      }
+    ],
+    "graphGates": {
+      "passed": true,
+      "checks": {
+        "published_source_count": true,
+        "task_count": true,
+        "grant_count": true,
+        "publication_deadline": true,
+        "query_success": true,
+        "query_p95": true
+      },
+      "query_p95_seconds": {
+        "get_agent_access": 0.2470457549999992,
+        "explain_access": 0.3188260869999995
+      },
+      "publication_max_seconds": 11.613337556000005,
+      "targets": {
+        "publication_per_source_seconds": 120.0,
+        "query_p95_seconds": 2.0
+      },
+      "expected": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000
+      }
+    },
+    "livePilot": {
+      "authorityStatePreserved": true,
+      "collectionDurationsMs": [
+        10451,
+        2541,
+        1192,
+        522
+      ],
+      "collectionPreservesAuthority": true,
+      "differenceReport": "report-1793960903078-d139cccafd5048a4b689c12589d02cd0.json",
+      "durationSeconds": 70.536,
+      "executorSurvivesRollback": true,
+      "profile": "synthetic-live-pilot",
+      "replay": {
+        "pendingExcluded": 0,
+        "published": 4,
+        "results": [
+          {
+            "originalProjectionId": "c749d042e9cbd0c4ef8fb810b277f11ba8ed8eb58def1edf64f71c6ebefdcbfb",
+            "projectionId": "2d9ca5ee153c56ce813451b99a4fe15e8788164349dc3fe215f3fbf7a2f4ad9c",
+            "snapshotId": "a2ec692d-fdce-425d-8f38-faee94596e36",
+            "sourceId": "57d60aca6aeacf7ced9919780adff97f4a746d9f440a6c9921e45cc12d08773d"
+          },
+          {
+            "originalProjectionId": "53827674bef645c0c599278b516a95c3b3c76139a60ed56382de89de1e76a09f",
+            "projectionId": "1884d2a2f936dc5019175e324d77686062590b7615fd39b55e40b23c291db705",
+            "snapshotId": "9311f07f-3445-45db-a346-76a763604ecb",
+            "sourceId": "57d60aca6aeacf7ced9919780adff97f4a746d9f440a6c9921e45cc12d08773d"
+          },
+          {
+            "originalProjectionId": "142fa894cee4cd65e808318bf1680f288b80db5683e8eb67d386f915839ba108",
+            "projectionId": "e66b77bbf2a099960af346d5a3f8d333fb485049dd934a06e5bc88d3fa6bb6ba",
+            "snapshotId": "326e794d-2f2e-4e81-ab2e-bbfd9f4e8caa",
+            "sourceId": "f8d56b35e05a8466749b9057fb3287c3c75bec814abb64f9b1e5fd45e8d7497f"
+          },
+          {
+            "originalProjectionId": "6e37c27b9796245075effaf400cd29ffa8ef66ef488f85fc73ce9e0fb5c03f7b",
+            "projectionId": "b62ef052718cd16f31e3c9ded2d80a16948850b2bef38655d1b48fe7b0a3e07e",
+            "snapshotId": "2efd0738-46bd-44e8-9359-e370125bb451",
+            "sourceId": "f8d56b35e05a8466749b9057fb3287c3c75bec814abb64f9b1e5fd45e8d7497f"
+          }
+        ],
+        "status": "complete",
+        "uncertainExcluded": 0
+      },
+      "restoreLogicalContentMatches": true,
+      "restoreSnapshotPointersMatch": true,
+      "scopeChecks": 3,
+      "status": "passed"
+    },
+    "retainedReports": [
+      {
+        "path": "ledger-decoder-full-admission-2026-11-06-fef2e37.json.gz",
+        "sha256": "55ddb68c862d99046aa13887393e0112db89fc207e96adb98bcbdc26720ac808",
+        "uncompressedSha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260"
+      },
+      {
+        "path": "ledger-decoder-full-benchmark-2026-11-06-fef2e37.json.gz",
+        "sha256": "434c7a86f30675f3d43db6e8f5f75d79401c3b03e44d9fdb545cc31d4824c9eb",
+        "uncompressedSha256": "92b511352ec18c4206d2a89d9d52cf04da44ccc5d5a456c598743ef758febc38"
+      },
+      {
+        "path": "ledger-decoder-full-verification-2026-11-06-fef2e37.json.gz",
+        "sha256": "c56692b1946f965637c00b34b47064c0b87729587520fa9e2021bdf8a8c4b2ea",
+        "uncompressedSha256": "a08f8c8aaa680f363a0a7f3b8e1299d94db532004aff556e2ba02cd3c26fb5e9"
+      }
+    ],
+    "interpretation": "The candidate passed the unchanged full gate on one isolated hosted job. Previous failed cadence and diagnostic runs remain retained; this does not establish a universal latency guarantee or prove the precise cause of earlier unobserved rare stalls.",
+    "independentRecomputation": {
+      "path": "ledger-decoder-full-gate-verification-2026-11-06.json",
+      "sha256": "a20c3e62f0cae1ea2db323a190c38c1bc9f5a035ccf6a552c1ede2871757e7e3",
+      "status": "all-original-gates-match-raw-samples",
+      "measuredSamplesRetained": 1000,
+      "effectsAndCalls": 1200,
+      "successfulPolls": 109,
+      "failedOrSkippedPolls": 0,
+      "maximumPollMs": [
+        44.795457,
+        38.187003
+      ],
+      "graphGateIndependentRecomputation": "Counts, all100publication samples, all100query samples includingcold observations, andnearest-rank p95 values match passinggraphreport."
+    }
+  },
+  "currentAcceptancePointer": "ledgerDecoderAcceptance"
 }

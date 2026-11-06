@@ -1,0 +1,561 @@
+{
+  "schemaVersion": 1,
+  "status": "internal-engineering-review-complete-R5-withheld",
+  "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+  "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+  "sourceFiles": 411,
+  "allCategoriesMeetTarget": false,
+  "overallProductionScore": null,
+  "interpretation": "Scores are subjective engineering judgments against the documented supported boundary, not statistical confidence, external certification or a guarantee of safety. The production target is unmet while R5 remains withheld. No averaging compensates for that hold.",
+  "independentDraftSha256": "dbd210248576604432f2c2ce1526aed17044f8f6879defe0248e02f1af5f6709",
+  "independentReview": {
+    "schemaVersion": 1,
+    "kind": "independent-production-category-judgment",
+    "reviewedAt": "2026-11-06T10:38:06.226850+00:00",
+    "reviewer": "core agent, independent source/evidence review; not a certification or external human assessment",
+    "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "status": "provisional-for-root-review; R5 withheld; final hosted artifact/tree binding being completed separately",
+    "scope": {
+      "included": [
+        "Five public SDK packages within documented trusted-host and isolated profiles",
+        "Read-only Agent Map and Cartography integration",
+        "Single-owner Linux POSIX Agent Ops with company OIDC, local conditional ticket backend, configured bounds, independent witnesses and keys"
+      ],
+      "notClaimed": [
+        "HA/distributed quotas or arbitrary backend coverage",
+        "Unlimited or generic delegated/memory history compaction",
+        "Full native Windows Docker deployment certification",
+        "Representative human usability, live paid provider effectiveness or company deployment acceptance",
+        "Penetration-test, ASVS, zero-vulnerability or physical power-loss certification"
+      ],
+      "evidenceType": "Synthetic identities/data and disposable real backend/HTTPS/container processes plus source review; company/provider evidence remains separately enrolled."
+    },
+    "rubric": {
+      "dimensionMaximum": 2,
+      "order": [
+        "requirements",
+        "designDefaults",
+        "implementation",
+        "verification",
+        "operationalClarity"
+      ],
+      "interpretation": {
+        "2": "Complete and coherent behavior/evidence in the documented profile",
+        "1.9": "Minor operational complexity or explicit residual limitation",
+        "1.8": "Nonblocking bounded verification limitation",
+        "atMost1.5": "Material gap; cannot be compensated by other dimensions"
+      },
+      "scoresNotDerivedFromTestTotals": true,
+      "targetNotUsedToAdjustScores": true
+    },
+    "categories": [
+      {
+        "id": "R1",
+        "name": "Goal and tool misuse",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "The requirement names the protected effect, authenticated task, exact resource and useful positive control; model text is explicitly non-authoritative."
+          },
+          "designDefaults": {
+            "score": 1.9,
+            "rationale": "Default-deny capability and resource checks are coherent. Minor integration limitation: generic handlers must separately implement mutable resource/CAS checks; the library cannot derive backend ownership or mediate ambient host clients."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Reviewed core and durable admission recheck after policy waits, detach arguments and gate parsing; the ticket backend independently checks tenant/version and atomically records its effect."
+          },
+          "verification": {
+            "score": 1.9,
+            "rationale": "Actual core/executor and ticket-backend tests exercise substitutions plus allowed effects. The demonstrated tool/backend surface is deliberately finite; this is enforcement coverage, not a universal model-resistance rate."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "API guidance states the resolver/handler and ambient-route responsibilities. Minor burden remains in assembling a new trusted adapter from the separate API/backend guidance."
+          }
+        },
+        "total": 9.7,
+        "evidence": [
+          "docs/protection-design.md",
+          "docs/api-contract.md",
+          "packages/core/test/security.test.mjs",
+          "packages/executor/src/executor.ts",
+          "packages/executor/test/executor.test.mjs",
+          "apps/agent-ops/workflow.mjs",
+          "apps/agent-ops/test/workflow.test.mjs"
+        ]
+      },
+      {
+        "id": "R2",
+        "name": "Identity and delegation",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Identity origin, tenant/role binding, delegation narrowing, expiry and revocation are explicit and separate from model/peer assertions."
+          },
+          "designDefaults": {
+            "score": 2,
+            "rationale": "Opaque task credentials, host-selected bindings, signed OIDC, one-use browser-bound login state and attenuated descendants establish coherent supported defaults."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Reviewed identity paths enforce signature/issuer/audience/nonce/PKCE, per-request scope and late revocation checks; reconnect/restart invalidates stale authority."
+          },
+          "verification": {
+            "score": 1.9,
+            "rationale": "Real local HTTPS and signed-token tests include successful login, foreign/unmapped identities, replay, expiry, concurrent logout/revocation and delegate narrowing. Interoperability evidence remains the supported protocol fixtures, not every provider configuration."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Enrollment and reload/restart behavior are documented; minor operator burden is exact issuer/origin/subject/role and credential-lifecycle assembly across host and MCP setup."
+          }
+        },
+        "total": 9.8,
+        "evidence": [
+          "packages/agent-map/test/oidc.test.mjs",
+          "packages/agent-map/test/identity-http.test.mjs",
+          "packages/mcp/test/credentials.test.mjs",
+          "packages/core/test/security.test.mjs",
+          "apps/agent-ops/test/server.test.mjs",
+          "deployment/production/README.md"
+        ]
+      },
+      {
+        "id": "R3",
+        "name": "Exact approval",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "The contract fixes shown target, before/after, version, deadline, digest and authenticated reviewer; denial or unknown outcome cannot mean approval."
+          },
+          "designDefaults": {
+            "score": 2,
+            "rationale": "One-use prepared actions and versioned backend commit separate metadata approval from action approval and prevent silent approval refresh."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Durable dispatch reserves and consumes once, checks expiry after commit, and backend receipt/CAS prevents repeated effects. Browser expiry rerenders preserve navigation without changing authorization."
+          },
+          "verification": {
+            "score": 1.9,
+            "rationale": "Core replay/TOCTOU tests, real HTTPS/browser approval/denial/reconciliation and deterministic timer/pointer regressions cover ordinary and rejection paths. Visual checks sample selected states rather than every timing/display combination."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "UI names stale, expired, review-required and unconfirmed states clearly. Minor recovery burden remains: interrupted work needs explicit receipt reconciliation and fresh review, not a one-button retry."
+          }
+        },
+        "total": 9.8,
+        "evidence": [
+          "packages/core/test/security.test.mjs",
+          "packages/executor/test/executor.test.mjs",
+          "apps/agent-ops/workflow.mjs",
+          "apps/agent-ops/test/workflow.test.mjs",
+          "apps/agent-ops/public/app.js",
+          "apps/agent-ops/check-browser-service.mjs"
+        ]
+      },
+      {
+        "id": "R4",
+        "name": "Secrets, data and egress",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "The profile specifies custody, strict parsing, encrypted state, destination/TLS identity, minimized output and startup checks independently of preflight."
+          },
+          "designDefaults": {
+            "score": 1.9,
+            "rationale": "Fail-closed origins/DNS/redirect handling, broker custody and monotonic labels are coherent. The coarse family-wide sensitive flag conservatively blocks legitimate egress and does not provide fine-grained information-flow classification."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Actual startup checks private/canonical and bounded paths, certificate identity and history enrollment; descriptor-based file capture, encrypted stores and fixed-code response paths preserve the documented boundary."
+          },
+          "verification": {
+            "score": 1.9,
+            "rationale": "Tests exercise actual sockets/TLS/DNS, redirect sinks, credential reflection, path substitution, invalid onboarding and safe outputs. Secret-canary and scoped-output coverage is not proof against every transformation of unknown data."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Separate data, witness, key and offline custody domains are documented with errors and runbooks. Minor operational complexity remains in provisioning and renewing those independent domains."
+          }
+        },
+        "total": 9.7,
+        "evidence": [
+          "apps/agent-ops/runtime.mjs",
+          "apps/agent-ops/onboarding.mjs",
+          "apps/agent-ops/test/onboarding-boundaries.test.mjs",
+          "apps/agent-ops/test/tls-policy.test.mjs",
+          "packages/executor/test/network.test.mjs",
+          "packages/executor/test/workspace-input.test.mjs",
+          "packages/mcp/test/credentials.test.mjs",
+          "deployment/production/custody.md"
+        ]
+      },
+      {
+        "id": "R5",
+        "name": "Tool and artifact supply chain",
+        "status": "withheld-upstream-advisory",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Requirements cover reviewed metadata generations, exact artifacts/builders, immutable images, locked dependencies, advisories and source-bound release checks."
+          },
+          "designDefaults": {
+            "score": 1.9,
+            "rationale": "Artifact/peer quarantine and locked reviewed inputs are coherent. Two recorded builder-only moderate findings and archived adal remain maintenance residuals; they are not silently cleared or runtime findings."
+          },
+          "implementation": {
+            "score": null,
+            "rationale": "Withheld: the Node HIGH prealert includes the supported runtime lines, but unpublished issue details prevent a justified applicability or mitigation conclusion."
+          },
+          "verification": {
+            "score": null,
+            "rationale": "Withheld: npm/Alpine/Python and CodeQL checks cannot clear undisclosed native Node issues; no numerical production acceptance is inferred from their passing results."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "The advisory note gives a concrete fixed-image/non-applicability and revalidation procedure. Minor burden remains in cross-runtime inventory and manual advisory correlation."
+          }
+        },
+        "total": null,
+        "evidence": [
+          "docs/production-readiness.md",
+          "deployment/production/advisories-2026-11-06.md",
+          "packages/executor/test/build-artifact-import.test.mjs",
+          "packages/executor/test/artifacts.test.mjs",
+          "packages/mcp/test/managed.test.mjs",
+          "scripts/check-packages.mjs",
+          ".github/workflows/python-dependencies.yml",
+          ".github/workflows/codeql.yml"
+        ]
+      },
+      {
+        "id": "R6",
+        "name": "Isolated code execution",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Untrusted code is explicitly restricted to the reviewed Linux container/VM profile, with exact captured inputs, bounded outputs, no ambient credentials and cleanup."
+          },
+          "designDefaults": {
+            "score": 2,
+            "rationale": "Nonroot/no-network/read-only restrictions, digest-pinned image admission and approved-buffer binding are coherent; in-process handlers are not mislabeled as an isolation boundary."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Installed capture/launch/export paths reject changed or unsafe input, constrain selected outputs and preserve termination/cleanup failures rather than returning success."
+          },
+          "verification": {
+            "score": 1.8,
+            "rationale": "Actual installed-package Linux guest tests verify controls, benign execution, malicious exports, limits and cleanup; native Windows capture is separate evidence. Deduct for the bounded sampled runtime/resource/failure matrix, not for unsupported Windows Docker certification or a missing pentest."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Supported host boundaries and Windows helper prerequisites are explicit. Minor complexity remains in Docker/VM provisioning and choosing the appropriate isolated versus trusted-host API."
+          }
+        },
+        "total": 9.7,
+        "evidence": [
+          "packages/executor/README.md",
+          "packages/executor/test/sandbox.test.mjs",
+          "packages/executor/test/sandbox-staged-input-version.test.mjs",
+          "packages/executor/test/workspace-input.test.mjs",
+          "packages/executor/test/artifacts.test.mjs",
+          "scripts/verify-platform.mjs",
+          "scripts/verify-mcp-isolation.mjs",
+          "docs/guides/mcp-isolation-acceptance.md"
+        ]
+      },
+      {
+        "id": "R7",
+        "name": "Governed memory and context",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Tenant scoping, provenance, versioned mutation, quarantine, source revocation and immutable retired identities are specified without treating content trust as a grant."
+          },
+          "designDefaults": {
+            "score": 2,
+            "rationale": "Sensitive/untrusted imports, inherited labels, transitive quarantine and archival reference checks form coherent conservative defaults."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Memory and lifecycle paths preserve tenant-local identity, CAS versions and permanent denial through reopen, quarantine, archive and external-history commitments."
+          },
+          "verification": {
+            "score": 1.9,
+            "rationale": "Meaningful normal roundtrip/delegated reads and stale/foreign/quarantined cases are exercised, including restart and archive-reference failures. Coverage is the governed APIs; within-scope false content is still possible and is not a claimed semantic detector."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "The governed-memory API and history guide name actual error/recovery behavior. Minor burden remains in explicitly managing provenance and host-directed quarantine/import across multiple APIs."
+          }
+        },
+        "total": 9.8,
+        "evidence": [
+          "docs/api-contract.md",
+          "packages/executor/test/memory.test.mjs",
+          "packages/executor/test/lifecycle.test.mjs",
+          "apps/agent-ops/test/retention.test.mjs",
+          "apps/agent-ops/test/history-recovery.test.mjs",
+          "docs/guides/company-history.md"
+        ]
+      },
+      {
+        "id": "R8",
+        "name": "Budgets, history and recovery",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Atomic admission, retained unknown reservations, exact receipts, reviewed capacity changes, long-term evidence and current-witness recovery have explicit success/refusal requirements."
+          },
+          "designDefaults": {
+            "score": 1.9,
+            "rationale": "Native mirrors and history-before-head publication preserve authority; finite global caps fail closed before mutation. Deduct for shared synchronous single-owner capacity and the absence of autonomous resolution for uncertain work, both explicit supported tradeoffs."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Reviewed code preserves budgets/IDs through archive and compaction, rejects stale rollback, authenticates full recovery closure and refuses over-cap history before startup changes."
+          },
+          "verification": {
+            "score": 1.8,
+            "rationale": "Exact fef2e37 full acceptance passes unchanged timing/cadence/effect gates; crash, loss, capacity and Linux restore entry points are covered. A single finite performance run and selected storage failure phases do not characterize every allowed size/load or explain earlier rare stalls."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Runbooks provide exact preview/apply, primary-loss repair and safe capacity-stop steps. Minor operator burden remains in offline multi-store custody, escrow and history-capacity planning."
+          }
+        },
+        "total": 9.6,
+        "evidence": [
+          "packages/executor/test/capacity.test.mjs",
+          "packages/executor/test/recovery.test.mjs",
+          "packages/executor/test/ledger-custody.test.mjs",
+          "packages/executor/test/ledger-recovery.test.mjs",
+          "apps/agent-ops/test/history-capacity.test.mjs",
+          "apps/agent-ops/test/history-recovery.test.mjs",
+          "deployment/production/check-linux.mjs",
+          "docs/guides/company-history.md"
+        ]
+      },
+      {
+        "id": "R9",
+        "name": "UX and operations",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "Self-hosted onboarding, company imports, scoped paging, explicit uncertain outcomes, session loss, accessible controls and bounded operational signals are required."
+          },
+          "designDefaults": {
+            "score": 1.9,
+            "rationale": "Host-owned setup and exact offline maintenance keep secrets and authority out of the browser. Minor usability tradeoff: advanced setup/recovery intentionally remains a multi-command offline workflow."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Implemented setup/limits/import/status/activity paths report authoritative enrollment and bounded coverage, separate global capacity from tenant lists, and display stale/unknown states without automatic resubmission."
+          },
+          "verification": {
+            "score": 1.8,
+            "rationale": "Three browser engines, real HTTPS/OIDC lifecycle, timer-click regression and actual Linux onboarding/load/recovery evidence cover normal and error paths. Deduct for selected visual review and finite automated state combinations; no human-cohort or unknown-company study is inferred or required here."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Runbooks and UI provide actionable fixed codes, capacity/TLS warnings and recovery steps. Minor clarity burden remains in moving between browser, CLI and independent custody procedures."
+          }
+        },
+        "total": 9.6,
+        "evidence": [
+          "apps/agent-ops/test/onboarding.test.mjs",
+          "apps/agent-ops/test/onboarding-boundaries.test.mjs",
+          "apps/agent-ops/test/limits.test.mjs",
+          "apps/agent-ops/test/observability.test.mjs",
+          "apps/agent-ops/test/recovery-status.test.mjs",
+          "apps/agent-ops/check-browser.mjs",
+          "apps/agent-ops/check-browser-service.mjs",
+          "apps/agent-map/check-browser.mjs",
+          "deployment/production/monitoring.md"
+        ]
+      },
+      {
+        "id": "R10",
+        "name": "Evaluation and release controls",
+        "status": "candidate-judgment-subject-to-final-evidence-binding",
+        "dimensions": {
+          "requirements": {
+            "score": 2,
+            "rationale": "The current rubric maps requirements to entry-point evidence, exact source/images and artifacts, preserves failed attempts and separates construction from company/provider effectiveness."
+          },
+          "designDefaults": {
+            "score": 2,
+            "rationale": "Independent required CI/security/runtime gates and ineligible diagnostic modes prevent smoke, rehearsals or partial evidence from satisfying full acceptance."
+          },
+          "implementation": {
+            "score": 2,
+            "rationale": "Evaluator checks, installed consumers, downgrade fences, dependency rejection and exact-source artifact binding are implemented; recorded Node uncertainty is an explicit acceptance hold."
+          },
+          "verification": {
+            "score": 1.8,
+            "rationale": "The candidate full functional/Linux checks and actual uninstrumented full performance report pass; ordinary hosted passes are reported for this exact head. Deduct for finite runner/workload evidence and unresolved historical rare-stall causality, not for absent company or paid provider trials."
+          },
+          "operationalClarity": {
+            "score": 1.9,
+            "rationale": "Upgrade/recovery guidance and preserved evidence explain limits. Minor maintenance burden remains in reconciling several dated baseline/candidate records; final consolidated binding is still required before publication."
+          }
+        },
+        "total": 9.7,
+        "evidence": [
+          "docs/production-readiness.md",
+          "docs/validation/ledger-decoder-2026-11-06.json",
+          "docs/validation/production-readiness-2026-11-06.json",
+          "scripts/check-packages.mjs",
+          "scripts/benchmark-admission.mjs",
+          "deployment/production/upgrades.md",
+          ".github/workflows/ci.yml",
+          ".github/workflows/cartography-pilot.yml"
+        ]
+      }
+    ],
+    "performanceEvidence": {
+      "path": "artifacts/production-readiness/hosted/fef2e37-full/agent-guard-pilot-admission.json",
+      "sha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260",
+      "run": 42202792736,
+      "job": 127841955931,
+      "archiveSha256ReportedVerifiedByRoot": "e294bca534c1f9541178e7bcbd4d6cf5c72301e3e4d9ab5db9ffd8d5f1fc61a7",
+      "independentlyReadRawArtifact": true,
+      "diagnosticOnly": false,
+      "acceptanceEvidenceEligible": true,
+      "cpuProfileEnabled": false,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 31.628532,
+        "pollingP95Ms": 33.66638,
+        "ratio": 1.0644306855594814,
+        "regressionPercent": 6.443068555948139
+      },
+      "effects": 1200,
+      "chargedCalls": 1200,
+      "polls": 109,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "measuredPollCoverage": [
+        48,
+        47
+      ],
+      "allCleanup": true,
+      "limitation": "This passes the declared finite protocol, not a general latency guarantee or proof that the earlier 371\u2013397ms stalls are impossible. Prior failed and diagnostic runs remain required historical evidence. The benchmark uses an encrypted file-backed ledger without production witness/mirror I/O; separate Linux recovery/load evidence covers that profile."
+    },
+    "verificationAttribution": {
+      "localFullCheck": "Read committed decoder record: 1116/1116, zero skips, installed consumers and Linux image/recovery passed; test totals are context only.",
+      "ordinaryHosted": "Parent reports all six fef2e37 workflows passed; mapux is independently verifying eight artifacts and merge-tree identity. This reviewer has not re-downloaded those ZIPs.",
+      "reviewActions": "Read-only source/doc/test/artifact inspection. No builds, tests, benchmarks, provider requests or product edits. Only this ignored review artifact was created."
+    },
+    "openBlockers": [
+      {
+        "id": "R5_NODE_HIGH",
+        "kind": "upstream-applicability-unresolved",
+        "requiredClosure": "Review published issue details, use applicable fixed immutable Node images or evidence-backed non-applicability, then refresh exact-image advisories/consumers/platform/Linux checks."
+      }
+    ],
+    "finalizationConditions": [
+      "Complete independent ordinary hosted artifact/merge-tree binding for fef2e37.",
+      "Root reviews these provisional judgments and reconciles the current consolidated record without discarding historical failures.",
+      "Keep R5 unscored and do not claim all categories meet target until the Node acceptance hold closes."
+    ],
+    "nonblockingResidualWork": [
+      "Review the two recorded builder-only moderate advisories before the next release and adopt compatible fixes when available.",
+      "Review archived adal with the next upstream Cartography/Azure dependency update.",
+      "P1 inventory expansion and larger/streaming history adapters remain planned, not implemented claims.",
+      "Company installations must validate their actual credentials, independent storage/custody, monitoring delivery and workload sizing."
+    ],
+    "newImplementationOrRequiredTestGapsFound": [],
+    "evidenceFileSha256": {
+      ".github/workflows/cartography-pilot.yml": "9d2f7aaeab7f5e8d94bf3affaa1c0641423234da365e96f06bc97a6870f4472d",
+      ".github/workflows/ci.yml": "cc90dcaa202f2e362ad86def313148088ac41dcfda95b9041d830341fe9b7e43",
+      ".github/workflows/codeql.yml": "6994f34b71182c8d6854682c0e336c1d100f58e7da21396167daddb679a90a01",
+      ".github/workflows/python-dependencies.yml": "12a64d38f03a404d38ab036d9e3fb5ab90607cac244c990c35d141435963d629",
+      "apps/agent-map/check-browser.mjs": "050af3e9dd9b9740d1c066141617752fb74594a184a1d091af9dbf20d183a927",
+      "apps/agent-ops/check-browser-service.mjs": "2db01a79c95ecb599ca9f342a8de6e1118b8673a4d4a2db05266c93159b2477b",
+      "apps/agent-ops/check-browser.mjs": "9d76a52fd0916f135e3390adedcf6fe18276a8a8ffdab729470658b0debeff59",
+      "apps/agent-ops/onboarding.mjs": "8d2b8c656feae1493aadb76aa7989b850cdcc8f9669978efc4752399c1565048",
+      "apps/agent-ops/public/app.js": "709ef5f2cd2e09a972d4b35175c0ebda86e0a9c382a3317d1c74482ea776a79d",
+      "apps/agent-ops/runtime.mjs": "aac6dd9884ff53ec34055d12004b888f410eca9699a011d57a0c0053f346c867",
+      "apps/agent-ops/test/history-capacity.test.mjs": "fd9fd49fe4cb198a8f8e35d7287c3af6364146c60b51af1be9e6f828d02aad01",
+      "apps/agent-ops/test/history-recovery.test.mjs": "318263b827d55396d49e14f305db4dcbc8f166f47d6e190ee22aab33892c9efb",
+      "apps/agent-ops/test/limits.test.mjs": "076dd5870e0e32875d431e99ec79e978b6f08ade777d51608531f5413d6758d2",
+      "apps/agent-ops/test/observability.test.mjs": "33647c39c39d6a08ae44385471059ab414eae8ac821092909a375851a545f3d6",
+      "apps/agent-ops/test/onboarding-boundaries.test.mjs": "b456c4264bec46f63b6975721c764746ed82f63ac9d60dca52cbb6fbec003adf",
+      "apps/agent-ops/test/onboarding.test.mjs": "ce5035a7dbb49eca08e4cbf5adf21e6504559a9928207286b4fb07f47422885f",
+      "apps/agent-ops/test/recovery-status.test.mjs": "a55c3b7a98799ea3d48bbc666330fd967dedf4d52934116ccb0c7da56a5165aa",
+      "apps/agent-ops/test/retention.test.mjs": "93f822ee472706afb13de0d117da05c1fa2b8b3a7014e044dec828e6b388ef75",
+      "apps/agent-ops/test/server.test.mjs": "da69be00503752e220fe8bbb2fea3fa14f500bb43596ae4bb8a9105eb5c613a7",
+      "apps/agent-ops/test/tls-policy.test.mjs": "b8ada2ab6157d5656d4f2ebf2d4710bb0e7d1a93a5f86880ab179dcc8f87ccd9",
+      "apps/agent-ops/test/workflow.test.mjs": "e484b700a1671b8cdc9a53e4bbd0d2f99f088f1b4d6cd1e99385170162e7389d",
+      "apps/agent-ops/workflow.mjs": "c05fc16710e3f889020e189559cf27cac7ccbb7cf9fe1cf0a8ddd4a67f595584",
+      "deployment/production/README.md": "6e3e4115ea89e7c30822a37242e0e2673f872a27932766da0e179412a4cb50c1",
+      "deployment/production/advisories-2026-11-06.md": "88422f2550c89c2c3874821d477e624e27929c5e68d62feba39006d7390fcf99",
+      "deployment/production/check-linux.mjs": "33a6216006cd1c45e7187cefdf13b1e5327e028bd7f28ed3829ecb1d7d30ecb0",
+      "deployment/production/custody.md": "bd7b53d9dcf583da12be8fb2705b15a362dfd0f75633b00398f05e37b05027ca",
+      "deployment/production/monitoring.md": "e7ccab18301db7799a305615d1ccf3cff35c52957c1e730420fd702453565efb",
+      "deployment/production/upgrades.md": "daea6b1fbe178c8512b88b4cd672356ce0f8cd217d0a922d38e9d7babe62b485",
+      "docs/api-contract.md": "5f2e9875eb64f3b52c21a8f7fc79b572d588ea333d332caa0809f1a2adad58ff",
+      "docs/guides/company-history.md": "5685333add1554279f873be0a2a3c33c1adf18fcc3a61ac8a917f58df43461b8",
+      "docs/guides/mcp-isolation-acceptance.md": "a5b0ffbe5a591db22bb475b4cf5d4ddfa97c4b22f1f013718d4cc23b14c98b76",
+      "docs/production-readiness.md": "635746c3e465762ac3b8e773e59192f94c8052e1b8788770bfb9d97b67dd0778",
+      "docs/protection-design.md": "787a6ebee69688cb559fedbb4857504ee10d926813bffb979e99be109306d258",
+      "docs/validation/ledger-decoder-2026-11-06.json": "57635b2825c67cad92db0d6efeac73068d358a8a8cb27111c435a4ff25059bd4",
+      "docs/validation/production-readiness-2026-11-06.json": "f1b0350bcc2418b454ebc3545b3c5fac4409fe4772c222bd0af7ffb918f962d9",
+      "packages/agent-map/test/identity-http.test.mjs": "ce01043edcfae602d65b8eb1c322ca9b46e7610219cf439fb9212ec735829509",
+      "packages/agent-map/test/oidc.test.mjs": "40c5da11aa2e2b46da9a189332576777c305cb411e1476d941ba3e6c0fa032a2",
+      "packages/core/test/security.test.mjs": "b102eceacd1010dbc0e1d489c18030a48671327bf6c46683588dfd496cd7144e",
+      "packages/executor/README.md": "fdc206f872cc6192c6bce5bcd40375f6600c70d6201112e11eec94ed20bb3305",
+      "packages/executor/src/executor.ts": "1ebca8bbf23e7131e6541b09247682925e465117515bd6b826507f0f07723224",
+      "packages/executor/test/artifacts.test.mjs": "d59df78813bd23dc72daece4b9414ce66e14d6557c26399c62564e5c4d96ddda",
+      "packages/executor/test/build-artifact-import.test.mjs": "3b5f0447569ba83e05410780eb135a83978f4e370b0fc13319bd68c12ee4353c",
+      "packages/executor/test/capacity.test.mjs": "ae1d77e6b0ccf9aae0e64cecadf5844c2008ea7da1f0aa6320a71430f8a76771",
+      "packages/executor/test/executor.test.mjs": "0cb4b38b82e803da4b9459af09551445e2ce26fb57f0ccead4b554b6b9ba0c09",
+      "packages/executor/test/ledger-custody.test.mjs": "608e1b4050d348d7666e99096a46df15b4d75b2b892963a8535c64761417eecd",
+      "packages/executor/test/ledger-recovery.test.mjs": "83888c82a9b244bfad10fefbd7f16d82d06f138f51710bddd6f1ce75e11b02d7",
+      "packages/executor/test/lifecycle.test.mjs": "16865390bc377ec837c07b8f9b79e420897e54c90196b8eee0a805bf322eed42",
+      "packages/executor/test/memory.test.mjs": "3bba5c86102c7d9c49cfee5f855206c9c8a0eb63e8dffb8110a8599307a85555",
+      "packages/executor/test/network.test.mjs": "9092d222e2575aa41c93dd027525583f3f71abf8968531444059505a01f5c67f",
+      "packages/executor/test/recovery.test.mjs": "660e382beefe29f31ab3243f549824abcd60935d27a6d50857bed92915e9d178",
+      "packages/executor/test/sandbox-staged-input-version.test.mjs": "c1450dc8c4a77ecd034b4a19efd1ef2311ebb4ac65420774b727344c56e78290",
+      "packages/executor/test/sandbox.test.mjs": "56ea6cdb667715805df700675c3804f400822c19bf27e330045e9ffe09534b22",
+      "packages/executor/test/workspace-input.test.mjs": "939f1d7ba879e87db99e68b497df6133196d96bd8be5b3b5a4082faa02dd9dd9",
+      "packages/mcp/test/credentials.test.mjs": "984d99d5cfcd10b490066bbf133b4e04643ba6648fa54bb71677c5c8e2c33afe",
+      "packages/mcp/test/managed.test.mjs": "a24d9ba07b662ba1d103e0091ca31e775261f8863299ac12a9abc2c6b10d4458",
+      "scripts/benchmark-admission.mjs": "98dda4975cf03096d952a5becaf5df39bce1159cdbf090bddef79c66eee97909",
+      "scripts/check-packages.mjs": "9f753722a99c7bf56f9a6353d6e96a46ea5c6efc4bbbc3b96ce6768c40389518",
+      "scripts/verify-mcp-isolation.mjs": "87ef99ffef9af8546989b92dfb4d7cd13ee5173c4b97debffffeed21f636b5cf",
+      "scripts/verify-platform.mjs": "a8c351c8944d3e7d02437e502ba1cb3bb03d7d76e4ad646b14b48f225705d5ce"
+    }
+  },
+  "rootReview": {
+    "status": "accepted-with-explicit-scope-and-upstream-hold",
+    "reviewedEveryCategoryAndRationale": true,
+    "scoreTotalsChecked": true,
+    "ordinaryEvidence": "production-readiness-ci-2026-11-06-fef2e37.json",
+    "performanceEvidence": "ledger-decoder-2026-11-06.json",
+    "performanceGateIndependentlyRecomputed": true,
+    "runtimeScopeClarification": "R6 refers to the documented Linux container isolation profile, including a VM host where Docker requires it; this does not add a separate generic VM product profile.",
+    "evidenceReconciliation": "The independently verified ordinary CI artifacts and matching head/merge trees close the draft review's hosted binding condition. Dated hashes in the independent draft identify the documents as read; subsequent evidence-only reconciliation does not change reviewed runtime inputs.",
+    "remainingBlocker": "Published Node HIGH issue details and an applicable fixed runtime or evidence-backed non-applicability are required before R5 can be scored or production released."
+  }
+}

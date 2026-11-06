@@ -4,76 +4,90 @@
   "status": "production-acceptance-pending",
   "productionScore": null,
   "candidate": {
-    "verifiedImplementationCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-    "sourceSha256": "9b910f65eccea9b060a7276d6a5062f2ceeca9e0942f9fe428d3ae016fc41e0c",
-    "sourceFiles": 408,
-    "sourceIdentifier": "Git-object equivalent of docs/validation/protection-source-id.py at the exact commit; excludes uncommitted profiling work",
+    "verifiedImplementationCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+    "sourceFiles": 411,
+    "sourceIdentifier": "Exact committed Git blobs; ordered path + NUL + SHA256(bytes), matching protection-source-id.py scopes.",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
-    "hostedMergeCommit": "0c3a1ffc20576201c1643a04b8c1001645e3a80a",
+    "hostedMergeCommit": "488f54d11196311cd9bb5223c3563e4f85f487b3",
     "mergeTreeMatchesHead": true,
     "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
-    "followupScope": "This prior baseline includes the c38cf47 inventory finalizer, portable oracle checkout, opt-in admission diagnostics and the 4b2cdc9 aliased-CLI fixture correction. All six required hosted workflows passed; the pilot workflow was smoke and full performance acceptance remains pending.",
+    "followupScope": "Private fresh-graph ledger decoding only; authenticated reads, witness/mirror checks and transaction behavior preserved. Exact candidate local, Linux, all six ordinary hosted workflows and one unchanged uninstrumented full acceptance run passed.",
     "runtimeImplementationIntroducedAt": "53acbde035614f21e74a342ebf0c5010f95686fe",
     "uiCorrectionIntroducedAt": "ab567668522c908f18ef8ccfb264d68387e9141b",
-    "gitTree": "7c9c5b09a3428562572f67b6fd0104d54efdd229",
+    "gitTree": "c335a9948361aade11996fbfa71cc4d098beb5b7",
     "inventoryFinalizerIntroducedAt": "c38cf472107b89e574d466d8ae26cf68704a4c44",
-    "evidenceRole": "Prior validated exact-artifact baseline at 4b2cdc9; new decoder candidate is pending and separately identified below."
+    "evidenceRole": "Current verified implementation; overall production acceptance remains held for Node HIGH applicability.",
+    "decoderIntroducedAt": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
   },
   "acceptance": {
     "targetPerCategory": 9.5,
     "categories": [
       {
         "id": "R1",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Goal and tool misuse",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.7
       },
       {
         "id": "R2",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Identity and delegation",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.8
       },
       {
         "id": "R3",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Exact approval",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.8
       },
       {
         "id": "R4",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Secrets, data and egress",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.7
       },
       {
         "id": "R5",
-        "status": "pending-upstream-advisory",
+        "name": "Tool and artifact supply chain",
+        "status": "withheld-upstream-advisory",
         "score": null
       },
       {
         "id": "R6",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Isolated code execution",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.7
       },
       {
         "id": "R7",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Governed memory and context",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.8
       },
       {
         "id": "R8",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Budgets, history and recovery",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.6
       },
       {
         "id": "R9",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "UX and operations",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.6
       },
       {
         "id": "R10",
-        "status": "implemented-with-recorded-verification",
-        "score": null
+        "name": "Evaluation and release controls",
+        "status": "internal-engineering-judgment-reviewed",
+        "score": 9.7
       }
     ],
-    "scoreMeaning": "No final numerical score assigned while the R5 production acceptance gate is unresolved; test totals do not imply a score."
+    "scoreMeaning": "Scores are subjective engineering judgments against the documented supported boundary, not statistical confidence, external certification or a guarantee of safety. The production target is unmet while R5 remains withheld. No averaging compensates for that hold.",
+    "allCategoriesMeetTarget": false,
+    "reviewEvidence": "docs/validation/production-category-review-2026-11-06.json",
+    "reviewStatus": "internal-engineering-review-complete-R5-withheld"
   },
   "fullLocalCheck": {
     "command": "npm run check",
@@ -91,15 +105,16 @@
     "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
     "sourceFiles": 411,
     "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
-    "scope": "Pending private-decoder candidate; local full suite and installed consumers passed. Hardened Linux recovery passed separately. Candidate hosted workflows and uninstrumented full performance acceptance remain pending."
+    "scope": "Exact decoder enforcement inputs (411-file fingerprint), full local check with no skips and installed-package consumers; independently bound to the pushed candidate.",
+    "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
   },
   "linux": {
     "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
     "localArm64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T02:33:38.343Z",
+      "measuredAt": "2026-11-06T10:23:01.050Z",
       "status": "passed",
-      "verificationImage": "sha256:1e58e454bd94ab01118f61b921468fc6db47f47af42f04453b0da9ba50f46df0",
+      "verificationImage": "sha256:73f94e12ad89bb0e29c8a65e046b40336332c063df1bbdf315e8cae925be4163",
       "imagePlatform": "linux/arm64",
       "docker": {
         "version": "29.5.2",
@@ -173,7 +188,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 163,
+          "p95ReadMs": 83,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -186,13 +201,13 @@
         "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
         "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
       ],
-      "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44"
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
     },
     "hostedAmd64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T09:31:17.303Z",
+      "measuredAt": "2026-11-06T10:27:48.324Z",
       "status": "passed",
-      "verificationImage": "sha256:b413dd3b598ad97274a56ab666246adb4773cdd95496c3bf12259d9b8f244d28",
+      "verificationImage": "sha256:60b673b55a088389c4ae2d4985fa40f102b8f6e62ae4dff8e0ed93d27e862f4a",
       "imagePlatform": "linux/amd64",
       "docker": {
         "version": "29.4.2",
@@ -266,7 +281,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 201,
+          "p95ReadMs": 114,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -279,56 +294,55 @@
         "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
         "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
       ],
-      "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-      "workflowRun": 42195606471
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "workflowRun": 42202786641
     },
     "localImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T02:33:38.140Z",
-      "productionImage": "sha256:62b04b6d1da34fca4905897325e8b9f1f11a4d8a1e081339c1f66e2a0a256488",
-      "verificationImage": "sha256:1e58e454bd94ab01118f61b921468fc6db47f47af42f04453b0da9ba50f46df0",
+      "measuredAt": "2026-11-06T10:23:00.907Z",
+      "productionImage": "sha256:9c01877457eb390d275195078e774a6f69444d50934f999b150806437b9a3f76",
+      "verificationImage": "sha256:73f94e12ad89bb0e29c8a65e046b40336332c063df1bbdf315e8cae925be4163",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
-      "applicationManifestSha256": "965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51",
+      "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
       "excludedVerificationFixtures": [
         "/app/deployment/production/verify-cli.mjs",
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
       ],
-      "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44"
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
     },
     "hostedImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T09:31:17.237Z",
-      "productionImage": "sha256:f65c10b03ea812c14993411f22449d84b3f8c7efbec043c14847e8775df9c0a6",
-      "verificationImage": "sha256:b413dd3b598ad97274a56ab666246adb4773cdd95496c3bf12259d9b8f244d28",
+      "measuredAt": "2026-11-06T10:27:48.247Z",
+      "productionImage": "sha256:9fc52ca560bf0c76731107c56278805db75c7ffc5ffff652e0dd0b41928f4097",
+      "verificationImage": "sha256:60b673b55a088389c4ae2d4985fa40f102b8f6e62ae4dff8e0ed93d27e862f4a",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
-      "applicationManifestSha256": "965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51",
+      "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
       "excludedVerificationFixtures": [
         "/app/deployment/production/verify-cli.mjs",
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
       ],
-      "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-      "workflowRun": 42195606471
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "workflowRun": 42202786641
     },
     "finalHostedArtifact": {
-      "id": 13492131194,
+      "id": 13495640720,
       "name": "production-profile-linux-node24",
-      "digest": "sha256:385cefc50f3df521ed6cf7c08e8e0fcfd3c5c0fe6f9689b6b40801935e7005d8",
-      "size": 191780,
-      "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-      "expired": false,
-      "digestVerified": true
+      "sha256": "6545fa64c079e3ff8660f2c9753481ed87ea11da6b22c0ee3ab34fcb8f26e3e3",
+      "digestVerified": true,
+      "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "bytes": 191774
     },
-    "previousSharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
-    "crossArchitectureScope": "ARM64 evidence is from c38cf47; baseline AMD64 evidence is from 4b2cdc9. Both production/verification comparisons report the same 4,327-entry application manifest SHA256 965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51. This binds application entries, not architecture-specific base images or customer storage durability.",
-    "evidenceRole": "Prior validated baseline; decoder image/recovery validation is recorded separately in pendingDecoderCandidate."
+    "previousSharedApplicationManifest": "965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51",
+    "crossArchitectureScope": "Current decoder ARM64 and AMD64 production/verification images share 4,327 application entries and manifest SHA256 f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa. Only executor/dist/store.js changed from the prior reviewed application tree. This binds application bytes, not architecture-specific base images or customer storage durability.",
+    "evidenceRole": "Current fef2e37 local and hosted Linux verification."
   },
   "runtimeIsolation": {
-    "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-    "workflowRun": 42195606471,
+    "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "workflowRun": 42202786641,
     "host": {
       "platform": "linux",
       "release": "7.0.0-1019-azure",
@@ -358,11 +372,11 @@
         "a directory swap during capture cannot send an outside file to the guest"
       ]
     },
-    "platformEvidenceSha256": "e0da3714317f1199a66661ee677265c2c8a46bfdab14973f5e92fe95cd0aa1af",
+    "platformEvidenceSha256": "572ede5842d2616ed3f9ba689955e199d2810680d467067ee95463c0bd23b43e",
     "mcp": {
       "version": 1,
       "expectedHost": "Linux",
-      "time": "2026-11-06T09:31:12.004Z",
+      "time": "2026-11-06T10:27:44.732Z",
       "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
       "isolation": "linux-container-network-none",
       "host": {
@@ -478,143 +492,134 @@
       ]
     },
     "artifact": {
-      "id": 13492160796,
+      "id": 13495476429,
       "name": "runtime-isolation-linux-node24",
-      "digest": "sha256:595c4ab0cb16de8cc7abc06699c2253ff0d244915cd1d0c5c1f40b3b8e216b41",
-      "size": 4751,
-      "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-      "expired": false,
-      "digestVerified": true
+      "sha256": "6c8fba86f13c67b765302e2ec0e4f2ddddc414a31c948b16c6158767e3c27ad9",
+      "digestVerified": true,
+      "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "bytes": 4747
     },
-    "evidenceRole": "Prior validated 4b2cdc9 hosted isolation; decoder-candidate hosted validation remains pending."
+    "evidenceRole": "Current fef2e37 required Linux gate; 44/44 and zero skips."
   },
   "hosted": {
-    "ciRun": 42195606471,
-    "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+    "ciRun": 42202786641,
+    "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
     "status": "all-six-workflows-passed",
     "passedJobs": [
-      "runtime-isolation (linux, node24)",
       "browser (firefox)",
-      "dependency-inventory",
-      "production-profile (linux, node24)",
-      "browser (chromium)",
       "check (macos-latest, 24)",
-      "check (24)",
       "check (22)",
       "check (windows-latest, 24)",
-      "browser (webkit)",
-      "check (26)"
+      "dependency-inventory",
+      "browser (chromium)",
+      "production-profile (linux, node24)",
+      "runtime-isolation (linux, node24)",
+      "check (24)",
+      "check (26)",
+      "browser (webkit)"
     ],
     "artifacts": [
       {
-        "id": 13492265573,
-        "name": "provider-outcome-evaluation",
-        "digest": "sha256:2354a62e5165f6d7ae90a839b7efd33b54eb0f25cb3d9e07706218aff1627595",
-        "size": 3971,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
-      },
-      {
-        "id": 13492235609,
-        "name": "browser-firefox",
-        "digest": "sha256:3b29ddb429316dfad0612494c5993143e5db5c41db916c1837e232c2f07ea271",
-        "size": 9508235,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
-      },
-      {
-        "id": 13492160796,
-        "name": "runtime-isolation-linux-node24",
-        "digest": "sha256:595c4ab0cb16de8cc7abc06699c2253ff0d244915cd1d0c5c1f40b3b8e216b41",
-        "size": 4751,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
-      },
-      {
-        "id": 13492131194,
+        "id": 13495640720,
         "name": "production-profile-linux-node24",
-        "digest": "sha256:385cefc50f3df521ed6cf7c08e8e0fcfd3c5c0fe6f9689b6b40801935e7005d8",
-        "size": 191780,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
+        "sha256": "6545fa64c079e3ff8660f2c9753481ed87ea11da6b22c0ee3ab34fcb8f26e3e3",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 191774
       },
       {
-        "id": 13491628553,
-        "name": "browser-webkit",
-        "digest": "sha256:1cf2573a1d586587245ac72a49f6c4aad49fcac9e8afcac949d2ea21bcd01c5b",
-        "size": 10118538,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
+        "id": 13495476429,
+        "name": "runtime-isolation-linux-node24",
+        "sha256": "6c8fba86f13c67b765302e2ec0e4f2ddddc414a31c948b16c6158767e3c27ad9",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 4747
       },
       {
-        "id": 13491623205,
-        "name": "dependency-inventory",
-        "digest": "sha256:d0a277e203418578800daeed0b056ffa8245641481a9666f6aed7848195b7fac",
-        "size": 5089,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
-      },
-      {
-        "id": 13491299134,
+        "id": 13495401396,
         "name": "npm-alpha-packages",
-        "digest": "sha256:d0d440f7274cee6ec63ef2b1b8ab0ccfcfc2ded4cc914c082620d99cbc576bb5",
-        "size": 251437,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
+        "sha256": "1549ec8b3376ca4a604e0e64019ed7d85a5e9a7a7361d2301f6d7b190fc41dc8",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 251684
       },
       {
-        "id": 13490639367,
+        "id": 13495256618,
+        "name": "provider-outcome-evaluation",
+        "sha256": "fe6f74bf6c53e542436571a0d470bd04da93349e20f1373b672171eb50c0a691",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 3971
+      },
+      {
+        "id": 13494943369,
+        "name": "browser-webkit",
+        "sha256": "31879db16173aa49b6ea11389dc700812f630588cc3320804856eb94916d83d1",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 10117705
+      },
+      {
+        "id": 13494853368,
         "name": "browser-chromium",
-        "digest": "sha256:d94a7a5946f225a2b93c972b70f11f85b58336d7cd3d859ab0b0756b92cbc2e9",
-        "size": 8494712,
-        "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-        "expired": false,
-        "digestVerified": true
+        "sha256": "9f78cdf72293f3a4bb856dcf64c4694df81cd285ec3f10b0ccae8b3635561749",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 8495133
+      },
+      {
+        "id": 13494244551,
+        "name": "browser-firefox",
+        "sha256": "c1e4e62ab0f7f27415950ed885bc363519719be54679e53f47dab9caf16037ca",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 9491742
+      },
+      {
+        "id": 13494173921,
+        "name": "dependency-inventory",
+        "sha256": "60f0d9987ee7d4ddd7829e4b77a26f8565d0152b4d1a5b3f0396d3be4cd6814a",
+        "digestVerified": true,
+        "headSha": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "bytes": 5090
       }
     ],
     "pythonEvidence": "docs/validation/cartography-python-2026-11-06.json",
     "cartographyPilotEvidence": "docs/validation/cartography-pilot-2026-11-06.json",
-    "cartographyPilotStatus": "current-smoke-passed; full-performance-acceptance-pending",
+    "cartographyPilotStatus": "ordinary-smoke-passed; separate unchanged uninstrumented full acceptance also passed",
     "finalRuns": [
       {
-        "id": 42195606387,
+        "id": 42202786688,
         "name": "Dependency Review",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 42195606393,
-        "name": "Python dependency audit",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 42195606644,
+        "id": 42202786742,
         "name": "CodeQL",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 42195606471,
+        "id": 42202786587,
+        "name": "Python dependency audit",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42202786641,
         "name": "CI",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 42195606557,
+        "id": 42202786574,
         "name": "Cartography pilot",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 42195606434,
+        "id": 42202786578,
         "name": "Cartography integration",
         "status": "completed",
         "conclusion": "success"
@@ -622,83 +627,84 @@
     ],
     "finalCiJobs": [
       {
-        "id": 127817992101,
-        "name": "runtime-isolation (linux, node24)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127817992419,
+        "id": 127841929918,
         "name": "browser (firefox)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127817992451,
-        "name": "dependency-inventory",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127817992500,
-        "name": "production-profile (linux, node24)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127817992515,
-        "name": "browser (chromium)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127817992539,
+        "id": 127841930266,
         "name": "check (macos-latest, 24)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127817992544,
-        "name": "check (24)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127817992593,
+        "id": 127841930276,
         "name": "check (22)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127817992595,
+        "id": 127841930294,
         "name": "check (windows-latest, 24)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127817992600,
-        "name": "browser (webkit)",
+        "id": 127841930340,
+        "name": "dependency-inventory",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127817992796,
+        "id": 127841930367,
+        "name": "browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127841930386,
+        "name": "production-profile (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127841930395,
+        "name": "runtime-isolation (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127841930458,
+        "name": "check (24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127841930480,
         "name": "check (26)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127841930483,
+        "name": "browser (webkit)",
         "status": "completed",
         "conclusion": "success"
       }
     ],
-    "artifactsScope": "All eight baseline CI artifact ZIP SHA256 digests were independently verified against GitHub metadata and bound to 4b2cdc9. Historical artifacts remain under historicalVerification and prior dated records.",
-    "finalEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json",
+    "artifactsScope": "All eight current CI ZIP SHA256 digests independently matched GitHub metadata and exact fef2e37 head. Actual tested merge and head share the same Git tree.",
+    "finalEvidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json",
     "node24Check": {
-      "jobId": 127817992544,
-      "tests": 1105,
-      "passed": 1097,
+      "jobId": 127841930458,
+      "tests": 1116,
+      "passed": 1108,
       "failed": 0,
       "skipped": 8,
-      "scope": "Ordinary Linux Node24 unit suite; optional container cases are separately required by the passing 44/44 Linux isolation gate. Installed-package consumers and npm pack steps also passed."
+      "scope": "Ordinary non-container matrix; mandatory Linux isolation is separate.",
+      "logEvidence": "node24-summary.log"
     },
-    "evidenceRole": "Prior validated 4b2cdc9 exact-artifact baseline; not decoder-candidate verification.",
+    "evidenceRole": "Current fef2e37 exact-artifact verification.",
     "ordinaryParentFollowup": {
       "head": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
       "allSixWorkflowsPassed": true,
@@ -710,7 +716,10 @@
         "Dependency Review": 42199027518,
         "Python dependency audit": 42199027550
       }
-    }
+    },
+    "finalEvidenceSha256": "55344f451a8ec9582079b7104ead1d75e965b85c39d48a7f0b9d6581a5254348",
+    "rawArtifactsDirectory": "artifacts/production-readiness/ci-42202786641 (ignored full ZIPs, GitHub metadata, exact source manifest and Node24 log excerpt)",
+    "node24SummaryLogSha256": "e19c80731abe9f567ca3ea30594e1064ece945c143e33808dd4bb863ff203d81"
   },
   "browsers": {
     "graphFit": {
@@ -776,7 +785,7 @@
       "productionAndConsumedBrowserInputsStable": true,
       "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
     },
-    "hostedStatus": "All nine suites passed on 4b2cdc9: 156 axe snapshots, no violations/page errors; both deterministic navigation regressions passed in all engines.",
+    "hostedStatus": "All nine suites passed on fef2e37: 156 axe scans, zero violations/page errors; both deterministic navigation regressions passed in all engines.",
     "priorHostedInstallFailure": {
       "run": 42138768310,
       "chromium": "All three suites passed: 49 scans",
@@ -788,7 +797,7 @@
     },
     "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json",
     "localFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/local-53acbde.json",
-    "hostedFinalEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json",
+    "hostedFinalEvidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json",
     "finalLocalSummary": {
       "engines": [
         "chromium",
@@ -898,15 +907,33 @@
     },
     "historicalHostedEvidence": [
       "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json",
-      "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json"
+      "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json",
+      "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json"
     ],
-    "evidenceRole": "Prior validated baseline browser reports; no decoder-candidate hosted result is inferred."
+    "evidenceRole": "Current fef2e37 hosted verification; separately labeled local and prior-hosted entries remain historical.",
+    "currentSignedArchiveSteps": {
+      "chromium": "success",
+      "firefox": "success",
+      "webkit": "success"
+    },
+    "currentHostedSummary": {
+      "suites": 9,
+      "axeScans": 156,
+      "violations": 0,
+      "pageErrors": 0,
+      "reportedMobileViews": 39,
+      "assertionBasis": "Each scan asserts an empty axe violations array; each completed harness asserts no page errors. Mobile views are included scenarios, not extra scans.",
+      "limits": [
+        "Synthetic fixtures and automated keyboard/mobile/accessibility checks; no representative human or assistive-technology study.",
+        "Real Ops uses disposable signed OIDC and encrypted witnessed SQLite; no customer deployment."
+      ]
+    }
   },
   "security": {
     "codeql": {
-      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42195606644",
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42202786742",
       "passed": true,
-      "headCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+      "headCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
       "ref": "refs/pull/8/merge",
       "openAlerts": 0,
       "gate": "Unresolved security alerts",
@@ -923,7 +950,7 @@
         21
       ],
       "triage": "docs/validation/codeql-triage-2026-11-06.md",
-      "scope": "Recorded 4b2cdc9 PR merge ref query had zero open alerts; main separately had five. Parent ee0d589 CodeQL workflow also passed, but decoder-candidate hosted checks remain pending.",
+      "scope": "Fresh query of refs/pull/8/merge on the current fef2e37 PR head found zero open alerts; main is separately scoped and still has five. No default-branch closure is inferred before merge.",
       "uiCorrectionVerification": {
         "run": 42148204949,
         "head": "ab567668522c908f18ef8ccfb264d68387e9141b",
@@ -946,49 +973,70 @@
         ],
         "openPrRefAlerts": 0
       },
-      "checkedAt": "2026-11-06T09:54:07.400507+00:00",
+      "checkedAt": "2026-11-06T10:38:54.475261+00:00",
       "defaultBranch": {
         "ref": "refs/heads/main",
         "openCount": 5,
         "alerts": [
           {
             "number": 15,
-            "state": "open",
             "ruleId": "js/indirect-command-line-injection",
             "securitySeverity": "medium",
+            "state": "open",
             "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/15"
           },
           {
             "number": 7,
-            "state": "open",
             "ruleId": "js/remote-property-injection",
             "securitySeverity": "high",
+            "state": "open",
             "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/7"
           },
           {
             "number": 6,
-            "state": "open",
             "ruleId": "js/remote-property-injection",
             "securitySeverity": "high",
+            "state": "open",
             "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/6"
           },
           {
             "number": 5,
-            "state": "open",
             "ruleId": "js/file-access-to-http",
             "securitySeverity": "medium",
+            "state": "open",
             "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/5"
           },
           {
             "number": 4,
-            "state": "open",
             "ruleId": "js/file-access-to-http",
             "securitySeverity": "medium",
+            "state": "open",
             "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/4"
           }
         ]
       },
-      "baselineEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json"
+      "baselineEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json",
+      "currentJobs": [
+        {
+          "id": 127841929758,
+          "name": "Analyze (actions)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 127841930014,
+          "name": "Analyze (javascript-typescript)",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 127842473188,
+          "name": "Unresolved security alerts",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "currentEvidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json"
     },
     "runtimeNpm": {
       "image": "sha256:c1bb25623a460658f509abfa211290192954d4f744911dad35d9cb3f9ea39bc7",
@@ -1117,7 +1165,7 @@
       "querySha256": "9e2e06d8b49fc70dcb0a66ed6466fcc00e81348e7795587658d94628b0bbd3aa",
       "responseSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
       "advisories": {},
-      "scope": "Exact final ARM64 production image; every application node_modules and package entry matches the prior fully enumerated inventory. Fresh npm advisory query; native Node binary matches reviewed base. Does not clear the unreleased Node HIGH prealert or attest unpublished vulnerabilities.",
+      "scope": "Historical exact ARM64 production-image advisory snapshot, retained with its original image and time. Current decoder image comparison confirms unchanged dependency entries and only compiled store.js changed; no fresh native Node applicability clearance is inferred.",
       "recordSha256": "ee980f4a0e6e83c50896b0bd8d57cb43085e037320c498267f836f03477d8454"
     },
     "workspaceNpm": {
@@ -1140,7 +1188,9 @@
           "peerOptional": 0,
           "total": 93
         }
-      }
+      },
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "evidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json"
     },
     "browserNpm": {
       "auditReportVersion": 2,
@@ -1162,7 +1212,9 @@
           "peerOptional": 0,
           "total": 3
         }
-      }
+      },
+      "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "evidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json"
     },
     "node": {
       "measuredAt": "2026-11-06T00:12:15.024133+00:00",
@@ -1686,6 +1738,13 @@
         "status": "passed",
         "source": "b677a744b4303f4d40098369cd41f584e78a8605",
         "lockSha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2"
+      },
+      "currentWorkflowVerification": {
+        "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "audit": 42202786587,
+        "integration": 42202786578,
+        "status": "passed",
+        "scope": "Current ordinary hosted runs; historical detailed audit reports retain their original observation times."
       }
     }
   },
@@ -1710,9 +1769,7 @@
     ]
   },
   "remainingVerification": [
-    "Complete ordinary hosted checks for the exact decoder commit. Local full-suite and hardened Linux recovery checks passed; prior 4b2cdc9 artifacts and parent ee0d589 workflow passes do not cover candidate hosted checks.",
-    "Run the predeclared uninstrumented full acceptance profile on the decoder candidate with every workload and gate unchanged. Preserve the c38cf47 full and 8cabb88 smoke cadence failures and all earlier observations.",
-    "Diagnostic 42199037007 completed 249 polls with no skips but 14.37% overhead; like the earlier 11.35% diagnostic, it is ineligible. Decode/reviver stack concentration does not establish the cause of unreproduced rare stalls."
+    "R5 Node HIGH applicability remains the only open production acceptance blocker; any required runtime/image change must receive the documented revalidation."
   ],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
@@ -1740,45 +1797,135 @@
     "scope": "Superseded by the history capacity guard. Exact original record is retained in the Git history of this file at 53acbde. Browser install timeouts and pilot failures are retained in separate referenced records."
   },
   "cartographyPerformance": {
-    "hostedSmoke": "Prior baseline 4b2cdc9 Cartography pilot workflow 42195606557 passed in smoke mode. The separate full 10% performance acceptance is not established by this run.",
+    "hostedSmoke": "Current fef2e37 ordinary pilot 42202786574 passed smoke; the separate full acceptance is recorded independently.",
     "localFullObservation": "Observed 1.64% overhead with numeric gate enforced/passed, but unrelated CPU-heavy checks were active; not qualified as quiescent acceptance evidence.",
     "evidence": "docs/validation/cartography-pilot-2026-11-06.json",
     "scope": "Deliberate 250 ms synthetic observer stress; deployed collector defaults to five minutes. No production latency/10% guarantee inferred.",
-    "separateStressProfileAcceptance": "Passed unchanged full acceptance on bb37466 in separate GitHub job 42147084901: 5.18% admission overhead with an enforced 10% target, 1,200 effects, 129 successful polls, no cadence misses and all cleanup completed. The 10,000-task/100,000-grant graph profile passed. Prior observations are preserved; no deployment-wide guarantee is asserted.",
+    "separateStressProfileAcceptance": "Current fef2e37 passed one predeclared unchanged uninstrumented full hosted run: 6.443% overhead against enforced 10%, 1,200 exact effects/calls, 109 successful polls with no failures or skips, full cleanup, and 10,000-task/100,000-grant graph gates. This is runner/profile evidence, not a universal latency guarantee.",
     "hostedFullAcceptance": {
-      "run": 42147084901,
-      "head": "bb37466f3b6b109146203cec3fe28cf4861378eb",
-      "artifact": 13471125412,
+      "status": "passed",
+      "head": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+      "sourceFiles": 411,
+      "workflowRun": 42202792736,
+      "jobId": 127841955931,
+      "artifactId": 13494479292,
+      "artifactZipSha256": "e294bca534c1f9541178e7bcbd4d6cf5c72301e3e4d9ab5db9ffd8d5f1fc61a7",
       "artifactDigestVerified": true,
-      "regressionPercent": 5.179998606954173,
-      "performanceEnforced": true,
-      "passed": true
+      "workflowInputs": {
+        "full_benchmark": true,
+        "admission_diagnostics": false,
+        "admission_cpu_profile": false
+      },
+      "acceptanceEvidenceEligible": true,
+      "runsPerformedForCandidate": 1,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 31.628532,
+        "pollingP95Ms": 33.66638,
+        "ratio": 1.0644306855594814,
+        "regressionPercent": 6.443068555948139
+      },
+      "workload": {
+        "samples": 250,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "hardware": {
+        "platform": "linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x64",
+        "logicalCpus": 4,
+        "memoryBytes": 16759439360,
+        "node": "v24.22.2"
+      },
+      "successfulEffects": 1200,
+      "chargedCalls": 1200,
+      "allResourcesClosed": true,
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 55,
+          "started": 55,
+          "completed": 55,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 48
+        },
+        {
+          "phase": 3,
+          "scheduled": 54,
+          "started": 54,
+          "completed": 54,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 47
+        }
+      ],
+      "graphGates": {
+        "passed": true,
+        "checks": {
+          "published_source_count": true,
+          "task_count": true,
+          "grant_count": true,
+          "publication_deadline": true,
+          "query_success": true,
+          "query_p95": true
+        },
+        "query_p95_seconds": {
+          "get_agent_access": 0.2470457549999992,
+          "explain_access": 0.3188260869999995
+        },
+        "publication_max_seconds": 11.613337556000005,
+        "targets": {
+          "publication_per_source_seconds": 120.0,
+          "query_p95_seconds": 2.0
+        },
+        "expected": {
+          "sources": 100,
+          "tasks": 10000,
+          "grants": 100000
+        }
+      },
+      "retainedReports": [
+        {
+          "path": "ledger-decoder-full-admission-2026-11-06-fef2e37.json.gz",
+          "sha256": "55ddb68c862d99046aa13887393e0112db89fc207e96adb98bcbdc26720ac808",
+          "uncompressedSha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260"
+        },
+        {
+          "path": "ledger-decoder-full-benchmark-2026-11-06-fef2e37.json.gz",
+          "sha256": "434c7a86f30675f3d43db6e8f5f75d79401c3b03e44d9fdb545cc31d4824c9eb",
+          "uncompressedSha256": "92b511352ec18c4206d2a89d9d52cf04da44ccc5d5a456c598743ef758febc38"
+        },
+        {
+          "path": "ledger-decoder-full-verification-2026-11-06-fef2e37.json.gz",
+          "sha256": "c56692b1946f965637c00b34b47064c0b87729587520fa9e2021bdf8a8c4b2ea",
+          "uncompressedSha256": "a08f8c8aaa680f363a0a7f3b8e1299d94db532004aff556e2ba02cd3c26fb5e9"
+        }
+      ],
+      "interpretation": "The candidate passed the unchanged full gate on one isolated hosted job. Previous failed cadence and diagnostic runs remain retained; this does not establish a universal latency guarantee or prove the precise cause of earlier unobserved rare stalls.",
+      "evidence": "docs/validation/ledger-decoder-2026-11-06.json"
     },
     "subsequentFailure": "Docs-only a62de06 run 42149089129 failed strict polling cadence in both polling phases: two busy intervals each; 600 exact effects, 98 successful polls and complete cleanup. Diagnostic admission overhead was 55.18%; no contention cause is asserted. The earlier full 5.18% pass remains recorded but does not waive this failure.",
     "historicalHostedSmoke": "Final b677a74 smoke correctness/stress gates passed; measured admission overhead 24.405%, numeric performance target not enforced or passed. Prior 53acbde smoke measured 15.19%; both reports are retained.",
     "currentBranchSmoke": {
-      "head": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
-      "workflowRun": 42195606557,
+      "head": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "workflowRun": 42202786574,
       "status": "passed",
       "fullPerformanceAcceptance": false,
-      "evidenceRole": "Prior baseline smoke result; parent ee0d589 ordinary smoke also passed, not decoder/full acceptance."
+      "evidenceRole": "Current ordinary smoke, separate from the eligible full run."
     },
-    "unresolvedFinalizerAttempts": [
-      {
-        "head": "c38cf472107b89e574d466d8ae26cf68704a4c44",
-        "workflowRun": 42151041418,
-        "profile": "full",
-        "status": "failed",
-        "reason": "One missed polling interval; exact effects and cleanup do not waive cadence."
-      },
-      {
-        "head": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
-        "workflowRun": 42151601618,
-        "profile": "smoke",
-        "status": "failed",
-        "reason": "Two missed polling intervals; exact effects and cleanup do not waive cadence."
-      }
-    ],
     "latestDiagnosticRun": {
       "run": 42199037007,
       "job": 127829454037,
@@ -1819,19 +1966,63 @@
         "evidence": "docs/validation/admission-diagnostics-2026-11-06.json"
       }
     ],
-    "pendingDecoderAcceptance": {
+    "historicalHostedFullAcceptance": [
+      {
+        "run": 42147084901,
+        "head": "bb37466f3b6b109146203cec3fe28cf4861378eb",
+        "artifact": 13471125412,
+        "artifactDigestVerified": true,
+        "regressionPercent": 5.179998606954173,
+        "performanceEnforced": true,
+        "passed": true
+      }
+    ],
+    "historicalBranchSmoke": {
+      "head": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+      "workflowRun": 42195606557,
+      "status": "passed",
+      "fullPerformanceAcceptance": false,
+      "evidenceRole": "Prior baseline smoke result; parent ee0d589 ordinary smoke also passed, not decoder/full acceptance."
+    },
+    "historicalFailedFinalizerAttempts": [
+      {
+        "head": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+        "workflowRun": 42151041418,
+        "profile": "full",
+        "status": "failed",
+        "reason": "One missed polling interval; exact effects and cleanup do not waive cadence."
+      },
+      {
+        "head": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+        "workflowRun": 42151601618,
+        "profile": "smoke",
+        "status": "failed",
+        "reason": "Two missed polling intervals; exact effects and cleanup do not waive cadence."
+      }
+    ],
+    "currentDecoderAcceptance": {
       "evidence": "docs/validation/ledger-decoder-2026-11-06.json",
-      "status": "pending",
+      "status": "passed",
+      "workflowRun": 42202792736,
       "uninstrumented": true,
       "plannedFullRuns": 1,
+      "actualFullRuns": 1,
       "unchangedWorkloadAndGates": true
+    },
+    "interpretation": "Earlier cadence failures and ineligible diagnostic results remain retained without retroactive waiver. The new candidate passed its one predeclared eligible run; this does not prove the cause of earlier rare stalls or deployment-wide performance.",
+    "independentFullGateVerification": {
+      "evidence": "docs/validation/ledger-decoder-full-gate-verification-2026-11-06.json",
+      "sha256": "a20c3e62f0cae1ea2db323a190c38c1bc9f5a035ccf6a552c1ede2871757e7e3",
+      "verified": true,
+      "sourceReportSha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260",
+      "scope": "One uninstrumented full acceptance run of the declared100-task/1000-grant,250ms serial polling fixture; no production guarantee or claim that previous stalls were disproved. Prior failures remain retained."
     }
   },
   "publication": {
     "status": "draft-pr-production-acceptance-held",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
     "newNpmRelease": false,
-    "reason": "R5 Node HIGH applicability remains unassessed. A subsequent unchanged-source Cartography smoke cadence failure is also unresolved; performance profiling has been reopened. Browser, platform, Linux recovery and CodeQL checks continue to pass."
+    "reason": "Current functional, Linux, ordinary CI and one eligible full-performance run passed, and internal category review is complete. R5 remains withheld for undisclosed Node HIGH applicability; the every-category target is unmet and no new npm release is asserted."
   },
   "followUpCandidate": {
     "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
@@ -1867,7 +2058,7 @@
     "independentReview": "No blocker found in visible expiry tracking, navigation node preservation or unchanged backend approval enforcement. UI expiry refresh remains bounded by the existing one-second interval.",
     "evidenceRole": "Historical ab56766 UI correction; current branch verification is candidate/hosted and the dated 4b2cdc9 CI record."
   },
-  "previousVerificationIndexAtCommit": "ab567668522c908f18ef8ccfb264d68387e9141b",
+  "previousVerificationIndexAtCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
   "projectionFinalizerCandidate": {
     "parentCommit": "a62de067ea5689eaaf3475aa874bfdbdcc72f215",
     "sourceSha256": "83d6053af3951a48262607ed86dfe616f3d194a44e225f243d92fa471746e63d",
@@ -2040,7 +2231,7 @@
       "fullAcceptanceRun": 42151041418,
       "fullAcceptanceStatus": "running"
     },
-    "evidenceRole": "Historical inventory-finalizer candidate and prior validated baseline checks; pendingDecoderCandidate owns current decoder status."
+    "evidenceRole": "Historical inventory-finalizer candidate and prior validated baseline checks; decoderCandidate identifies current verification."
   },
   "historicalVerification": {
     "ab56766": {
@@ -2178,11 +2369,38 @@
           "openPrRefAlerts": 0
         }
       }
+    },
+    "4b2cdc9": {
+      "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+      "sourceSha256": "9b910f65eccea9b060a7276d6a5062f2ceeca9e0942f9fe428d3ae016fc41e0c",
+      "sourceFiles": 408,
+      "hostedMergeCommit": "0c3a1ffc20576201c1643a04b8c1001645e3a80a",
+      "gitTree": "7c9c5b09a3428562572f67b6fd0104d54efdd229",
+      "ciRun": 42195606471,
+      "status": "all-six-workflows-passed",
+      "evidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json",
+      "completePriorIndexAtCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+      "completePriorIndexUrl": "https://github.com/ShieldaAI/agent-guard/blob/fef2e37a4273f246536c1ddc1ffdcac10be5f96c/docs/validation/production-readiness-2026-11-06.json",
+      "scope": "Historical exact-artifact baseline. The immutable prior index retains the complete Linux/browser/security snapshots and pending-decoder state; it is not current candidate acceptance."
     }
   },
-  "reconciledAt": "2026-11-06T10:24:55.110672+00:00",
-  "pendingDecoderCandidate": {
-    "status": "local-functional-and-linux-checks-passed-hosted-acceptance-pending",
+  "reconciledAt": "2026-11-06T10:41:22.829163+00:00",
+  "historicalLocalChecks": [
+    {
+      "command": "npm run check",
+      "status": "passed",
+      "tests": 1099,
+      "passed": 1099,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
+      "installedPackageChecks": "passed",
+      "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+      "scope": "Historical local full check of the inventory-finalizer revision. Later 4b2cdc9 hosted verification is retained in its exact CI record and immutable prior index; current decoder local/hosted checks are separately identified above."
+    }
+  ],
+  "decoderCandidate": {
+    "status": "local-linux-hosted-and-one-full-performance-acceptance-passed",
     "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
     "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
     "sourceFiles": 411,
@@ -2248,8 +2466,160 @@
         "rawLinuxEvidenceSha256": "704ee4b33ca691eab52892b684f4a50b9f0a676a278dccf67ebd8f9810fd2d1f",
         "scope": "Hardened service recovery and load verification; not the admission-overhead acceptance gate."
       },
-      "hostedOrdinaryWorkflows": "pending",
-      "uninstrumentedFullAcceptance": "pending"
+      "hostedOrdinaryWorkflows": {
+        "status": "all-six-passed",
+        "evidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json"
+      },
+      "uninstrumentedFullAcceptance": {
+        "status": "passed",
+        "head": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+        "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+        "sourceFiles": 411,
+        "workflowRun": 42202792736,
+        "jobId": 127841955931,
+        "artifactId": 13494479292,
+        "artifactZipSha256": "e294bca534c1f9541178e7bcbd4d6cf5c72301e3e4d9ab5db9ffd8d5f1fc61a7",
+        "artifactDigestVerified": true,
+        "workflowInputs": {
+          "full_benchmark": true,
+          "admission_diagnostics": false,
+          "admission_cpu_profile": false
+        },
+        "acceptanceEvidenceEligible": true,
+        "runsPerformedForCandidate": 1,
+        "gate": {
+          "passed": true,
+          "correctnessPassed": true,
+          "effectAccountingPassed": true,
+          "stressProfileValid": true,
+          "latencySamplesValid": true,
+          "failureReasons": [],
+          "performanceEnforced": true,
+          "performancePassed": true,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": 31.628532,
+          "pollingP95Ms": 33.66638,
+          "ratio": 1.0644306855594814,
+          "regressionPercent": 6.443068555948139
+        },
+        "workload": {
+          "samples": 250,
+          "warmup": 50,
+          "tasks": 100,
+          "grants": 10,
+          "pollIntervalMs": 250
+        },
+        "hardware": {
+          "platform": "linux",
+          "release": "7.0.0-1019-azure",
+          "architecture": "x64",
+          "logicalCpus": 4,
+          "memoryBytes": 16759439360,
+          "node": "v24.22.2"
+        },
+        "successfulEffects": 1200,
+        "chargedCalls": 1200,
+        "allResourcesClosed": true,
+        "polling": [
+          {
+            "phase": 2,
+            "scheduled": 55,
+            "started": 55,
+            "completed": 55,
+            "failed": 0,
+            "skippedBusy": 0,
+            "completedDuringMeasurement": 48
+          },
+          {
+            "phase": 3,
+            "scheduled": 54,
+            "started": 54,
+            "completed": 54,
+            "failed": 0,
+            "skippedBusy": 0,
+            "completedDuringMeasurement": 47
+          }
+        ],
+        "graphGates": {
+          "passed": true,
+          "checks": {
+            "published_source_count": true,
+            "task_count": true,
+            "grant_count": true,
+            "publication_deadline": true,
+            "query_success": true,
+            "query_p95": true
+          },
+          "query_p95_seconds": {
+            "get_agent_access": 0.2470457549999992,
+            "explain_access": 0.3188260869999995
+          },
+          "publication_max_seconds": 11.613337556000005,
+          "targets": {
+            "publication_per_source_seconds": 120.0,
+            "query_p95_seconds": 2.0
+          },
+          "expected": {
+            "sources": 100,
+            "tasks": 10000,
+            "grants": 100000
+          }
+        },
+        "retainedReports": [
+          {
+            "path": "ledger-decoder-full-admission-2026-11-06-fef2e37.json.gz",
+            "sha256": "55ddb68c862d99046aa13887393e0112db89fc207e96adb98bcbdc26720ac808",
+            "uncompressedSha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260"
+          },
+          {
+            "path": "ledger-decoder-full-benchmark-2026-11-06-fef2e37.json.gz",
+            "sha256": "434c7a86f30675f3d43db6e8f5f75d79401c3b03e44d9fdb545cc31d4824c9eb",
+            "uncompressedSha256": "92b511352ec18c4206d2a89d9d52cf04da44ccc5d5a456c598743ef758febc38"
+          },
+          {
+            "path": "ledger-decoder-full-verification-2026-11-06-fef2e37.json.gz",
+            "sha256": "c56692b1946f965637c00b34b47064c0b87729587520fa9e2021bdf8a8c4b2ea",
+            "uncompressedSha256": "a08f8c8aaa680f363a0a7f3b8e1299d94db532004aff556e2ba02cd3c26fb5e9"
+          }
+        ],
+        "interpretation": "The candidate passed the unchanged full gate on one isolated hosted job. Previous failed cadence and diagnostic runs remain retained; this does not establish a universal latency guarantee or prove the precise cause of earlier unobserved rare stalls.",
+        "evidence": "docs/validation/ledger-decoder-2026-11-06.json"
+      },
+      "hostedLinux": {
+        "status": "passed",
+        "evidence": "docs/validation/production-readiness-ci-2026-11-06-fef2e37.json",
+        "load": {
+          "tickets": 2001,
+          "concurrentClients": 8,
+          "measuredReads": 40,
+          "pageSize": 500,
+          "p95ReadMs": 114,
+          "targetP95Ms": 2000,
+          "overloadRefusals": 27,
+          "effectsUnchanged": true
+        },
+        "imageComparison": {
+          "status": "passed",
+          "measuredAt": "2026-11-06T10:27:48.247Z",
+          "productionImage": "sha256:9fc52ca560bf0c76731107c56278805db75c7ffc5ffff652e0dd0b41928f4097",
+          "verificationImage": "sha256:60b673b55a088389c4ae2d4985fa40f102b8f6e62ae4dff8e0ed93d27e862f4a",
+          "node": "24.22.1",
+          "identicalApplicationEntries": 4327,
+          "globalPackageManagersAbsent": true,
+          "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
+          "excludedVerificationFixtures": [
+            "/app/deployment/production/verify-cli.mjs",
+            "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+          ]
+        }
+      },
+      "independentFullGateVerification": {
+        "evidence": "docs/validation/ledger-decoder-full-gate-verification-2026-11-06.json",
+        "sha256": "a20c3e62f0cae1ea2db323a190c38c1bc9f5a035ccf6a552c1ede2871757e7e3",
+        "verified": true,
+        "sourceReportSha256": "07579b0f15d3141eb1cdaaaed31a075d6f2d0c685c28034323991001b85b1260",
+        "scope": "One uninstrumented full acceptance run of the declared100-task/1000-grant,250ms serial polling fixture; no production guarantee or claim that previous stalls were disproved. Prior failures remain retained."
+      }
     },
     "imageComparison": {
       "status": "passed",
@@ -2275,20 +2645,7 @@
       "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
       "previousFailuresPreserved": true
     },
-    "productionAcceptance": "pending; performance evidence and undisclosed Node HIGH prealert remain open; no score or new release asserted."
-  },
-  "historicalLocalChecks": [
-    {
-      "command": "npm run check",
-      "status": "passed",
-      "tests": 1099,
-      "passed": 1099,
-      "failed": 0,
-      "skipped": 0,
-      "logSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
-      "installedPackageChecks": "passed",
-      "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44",
-      "scope": "Historical local full check of the inventory-finalizer revision. Current 4b2cdc9 is verified by the separately recorded completed hosted platform and installed-package checks; no new local full check was run during reconciliation."
-    }
-  ]
+    "productionAcceptance": "Internal category review complete; overall production acceptance remains pending Node HIGH applicability. R5 is withheld, every-category target unmet, no aggregate score or new release asserted.",
+    "implementationCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c"
+  }
 }

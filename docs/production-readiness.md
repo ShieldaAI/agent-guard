@@ -1,21 +1,24 @@
 # Production readiness acceptance
 
-Status: **P0 implementation complete; final production acceptance pending**.
+Status: **Candidate verification passed; final production acceptance pending**.
 The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert
-review described below.
-The pending [ledger-decoder candidate](validation/ledger-decoder-2026-11-06.json)
+review described below. Internal category review is complete; R5 remains withheld.
+The verified [ledger-decoder candidate](validation/ledger-decoder-2026-11-06.json),
+`fef2e37`,
 uses private normalization of a freshly parsed graph; authenticated reads,
 witness checks and transactions remain unchanged. Its full local check passed
 **1,116/1,116 tests, zero skips**, plus installed consumers. Image comparison
 found only the compiled decoder module changed, and hardened Linux recovery
-passed. Candidate hosted workflows and uninstrumented full performance acceptance
-remain pending.
-All six ordinary workflows passed on its parent `ee0d589`. The exact-artifact
-record for `4b2cdc9` remains the prior validated baseline, not verification of the
-new decoder. Earlier `ab56766` records remain historical evidence.
-The evidence record retains pending and failed checks explicitly. No final
+passed. All six ordinary hosted workflows and the candidate's one predeclared,
+uninstrumented full performance run passed. Admission p95 overhead was **6.44%**
+against the unchanged 10% gate, with 1,200 exact effects, 109 successful polls,
+no failed or skipped intervals, and complete cleanup.
+The [exact CI record](validation/production-readiness-ci-2026-11-06-fef2e37.json)
+binds all eight artifact digests and the tested merge tree to this source.
+`4b2cdc9` and `ab56766` records remain historical evidence.
+The evidence record retains earlier failed checks and current holds explicitly. No aggregate
 production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
 Prior full and smoke performance runs missed isolated polling intervals despite
@@ -81,6 +84,31 @@ The review uses the authentication, session, configuration, cryptography and
 logging concerns in [OWASP ASVS 5.0.0](https://github.com/OWASP/ASVS/tree/v5.0.0)
 as additional review prompts. It is not an ASVS certification or a substitute
 for a deployment-specific assessment.
+
+## Internal category judgment
+
+The [reviewed five-dimension rubric](validation/production-category-review-2026-11-06.json)
+records subjective internal engineering judgments for the documented profile.
+These are not statistical confidence, external certification or a guarantee of
+safety. **The every-category target remains unmet because R5 is withheld**;
+there is no aggregate production score.
+
+| Category | Judgment / 10 |
+| --- | --- |
+| R1 · Goal and tool misuse | 9.7 |
+| R2 · Identity and delegation | 9.8 |
+| R3 · Exact approval | 9.8 |
+| R4 · Secrets, data and egress | 9.7 |
+| R5 · Tool and artifact supply chain | **Withheld — Node HIGH applicability** |
+| R6 · Isolated code execution | 9.7 |
+| R7 · Governed memory and context | 9.8 |
+| R8 · Budgets, history and recovery | 9.6 |
+| R9 · UX and operations | 9.6 |
+| R10 · Evaluation and release controls | 9.7 |
+
+The linked review gives each dimension's evidence and deductions. Company rollout,
+representative human usability and paid provider trials remain separate deployment
+validation; they are not fabricated or counted as completed product evidence.
 
 ## Implemented P0 behavior
 
@@ -151,70 +179,70 @@ the runtime candidate from subsequent documentation or Python integration change
 It is the authoritative index for exact hosted run status; a workflow definition
 alone is not passing evidence.
 
-- The pending decoder candidate's local result and exact source fingerprint are
-  in the [decoder record](validation/ledger-decoder-2026-11-06.json). Its parent
-  `ee0d589` passed all six ordinary workflows; those passes predate the decoder.
-  The candidate's hardened Linux checks also passed current-state repair,
-  rotation, retirement, cold restore, history and receipt recovery with witness
-  preservation. Its 40 reads at eight clients over 2,001 tickets measured 83 ms
-  p95 against the 2,000 ms target, with 27 overload refusals. This is a separate
-  service-load check, not the admission-overhead acceptance gate. The remaining
-  Linux and hosted results below identify the prior validated baseline.
-- The local inventory-finalizer check at `c38cf47` passed **1,099/1,099 tests,
-  zero skips**, plus installed-package checks. The earlier `53acbde` local
-  1,093-test result remains in the history. Actual published alpha.3 state
-  upgrades preserve spent authority; the old reader refuses new semantics.
-- Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  prior baseline `4b2cdc9` in CI run `42195606471`. The ordinary hosted
-  Node 24 suite passed 1,097 of 1,105 tests and skipped eight optional container
-  cases; the separate required
-  Linux isolation gate passed **44/44**, zero skips, including those cases and
-  every MCP lifecycle/cleanup observation. All eight baseline CI artifact ZIP
-  hashes were verified and bind to that head. Its PR merge tree is identical;
-  [the exact CI record](validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
-  retains job status, source binding and artifact digests.
-- Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
-  AMD64. Production and verification images share **4,327 application entries**;
-  the two test-only fixtures are explicitly excluded from production. Baseline
-  `4b2cdc9` AMD64 evidence and historical `c38cf47` ARM64 evidence report the same
-  application manifest hash. This does not equate their architecture-specific
-  base images or certify customer storage. Runtime
-  package-manager files and shims are absent.
-- Both Linux runs imported 2,000 company records, verified 2,001 paginated tickets,
-  recovered current state after primary-directory loss, retained historical and
-  latest receipts, and reopened in a fresh container with read-only config/history.
-  At eight clients and 40 measured 500-row reads, p95 was **163 ms on local ARM64**
-  and **201 ms on baseline hosted AMD64**, within the 2,000 ms test target. The older
-  156/183 ms observations remain in the history. Each overload
-  run refused 27 reads through the documented rate/busy responses without effects.
-- Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
-  HTTPS/OIDC service states and 13 Map states per engine: **156 accessibility
-  scans**, zero axe violations or page errors. These are repeated automated
-  scenarios, not 156 distinct human tasks. Selected screenshots were reviewed;
-  graph label fitting was corrected and checked in all three engines. The mock
-  threshold alerts were subsequently aligned with the real server and all three
-  contract engines rerun; runtime application code was unchanged. All three
-  hosted browser jobs also passed on earlier source `b677a74`. Its reviewed signed
-  Ubuntu archive selection preserved all test gates and cut the observed package
-  downloads from 8–18 minutes to 3–16 seconds.
-  A later docs-only CI run exposed an intermittent expiry-timer navigation race.
-  A deterministic real-service regression reproduced it; the correction preserves
-  navigation nodes while expired decisions disappear on the existing expiry tick. All three
-  engines passed both timer/click regressions and 117 focused accessibility scans
-  (Ops contract and real-service states). The baseline `4b2cdc9` hosted run passed all
-  nine suites and **156 accessibility scans**, including both regressions in every engine.
-- Historical Python integration evidence records **928 unit and 143 authenticated Neo4j tests**,
-  package builds and the installed consumer. Four locked platform selections
-  each audited 194 packages with zero known vulnerabilities. The archived
-  dependency notice remains recorded in the
-  [Python evidence](validation/cartography-python-2026-11-06.json). The integration
-  and Python audit workflows also passed on `4b2cdc9` (`42195606434` and `42195606393`).
-- CodeQL analyzed `4b2cdc9` in run `42195606644`; its **Unresolved security alerts**
-  gate passed. A fresh query found zero open alerts for the PR merge ref and five
-  separately scoped open alerts on `main` (#15, #7, #6, #5 and #4). The
-  [triage record](validation/codeql-triage-2026-11-06.md) documents the fixes and
-  two reviewed loopback-healthcheck false positives. Default-branch alerts are
-  not claimed closed before merge.
+- The current `fef2e37` candidate passed **1,116/1,116 local tests, zero skips**,
+  plus all installed-package consumers. The [decoder record](validation/ledger-decoder-2026-11-06.json)
+  identifies its exact 411-file source fingerprint and private implementation
+  boundary. No authenticated read, witness/mirror check or transaction was removed.
+- All six ordinary workflows passed on `fef2e37`. CI `42202786641` passed all 11
+  jobs, including Linux Node 22/24/26, macOS Node 24 and Windows Node 24. Its
+  ordinary Node 24 suite passed 1,108 of 1,116 tests with eight optional container
+  skips; the separate required Linux isolation gate passed **44/44**, zero skips,
+  including the real MCP lifecycle and cleanup checks. All eight CI artifact ZIP
+  digests were verified against GitHub metadata and bind to the exact head.
+  The tested PR merge and head have the same Git tree; the
+  [current CI record](validation/production-readiness-ci-2026-11-06-fef2e37.json)
+  retains the source, job and artifact evidence.
+- Hardened persistent-volume Linux recovery passed locally on ARM64 and hosted
+  on AMD64. Each production/verification image pair shares **4,327 application
+  entries**, with manifest SHA-256
+  `f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa`.
+  Only `/app/packages/executor/dist/store.js` changed from the prior reviewed
+  application tree; dependency entries are unchanged. Architecture-specific base
+  images remain distinct. Package-manager files and shims are absent, and the
+  two verification-only fixtures are excluded from production.
+- Both current Linux runs imported 2,000 records, verified 2,001 paginated tickets,
+  recovered latest state after primary-directory loss without rewinding witnesses,
+  preserved historical and latest receipts, and reopened in a fresh container
+  with read-only config/history. Rotation, retirement, cold restore and uncertain
+  receipt recovery passed. At eight clients and 40 measured 500-row reads, p95
+  was **83 ms on local ARM64** and **114 ms on hosted AMD64**, within the 2,000 ms
+  test target. Both overload runs refused 27 reads without effects. These service
+  checks are separate from admission-overhead acceptance and do not certify
+  customer storage or physical power-loss behavior.
+- Chromium, Firefox and WebKit each passed 25 Ops contract states, 14 real
+  HTTPS/OIDC service states and 13 Map states: **156 accessibility scans**, zero
+  axe violations or page errors. These are repeated automated scenarios, not
+  156 distinct human tasks. Both expiry/navigation regressions passed in every
+  engine; expired approval controls disappear on the existing expiry tick and
+  navigation stays operable.
+  All three signed Ubuntu archive steps passed. Earlier visual review, graph
+  fitting corrections, installation bottlenecks and the reproduced navigation
+  race remain in the historical browser records.
+- The one predeclared full run `42202792736` used the unchanged ABBA workload,
+  250 ms serial polling and enforced 10% gate, with diagnostics and CPU profiling
+  disabled. Admission p95 changed from **31.63 ms to 33.67 ms (6.44%)**; all 1,200
+  effects and charged calls matched, all 109 polls completed without skips or
+  failures, and resources closed. The 10,000-task/100,000-grant graph profile
+  passed publication/query gates. Verified artifact hashes and compressed raw
+  reports are retained in the [decoder record](validation/ledger-decoder-2026-11-06.json).
+  An [independent raw-sample recomputation](validation/ledger-decoder-full-gate-verification-2026-11-06.json)
+  matched every original gate without discarded samples or relaxed conditions.
+  This is one passing candidate run, not a universal latency guarantee.
+- Cartography integration, the ordinary smoke pilot, Python audit, dependency
+  review and CodeQL all passed on `fef2e37`. The historical Python evidence
+  retains 928 unit and 143 authenticated Neo4j tests, locked platform audits and
+  the archived dependency notice; current workflow IDs are in the dated index.
+- CodeQL run `42202786742` passed both analyses and the **Unresolved security
+  alerts** gate. A fresh query found zero open alerts for `refs/pull/8/merge` and
+  five separately scoped open alerts on `main` (#15, #7, #6, #5 and #4).
+  The [triage record](validation/codeql-triage-2026-11-06.md) retains the fixes and
+  reviewed loopback-healthcheck false positives. Default-branch closure is not
+  claimed before merge.
+- The [prior exact CI record](validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
+  and the immutable prior-index link in the dated index preserve `4b2cdc9`,
+  `ab56766` and older observations. They are not substituted for current candidate
+  evidence. Earlier cadence failures and both ineligible diagnostic runs remain
+  recorded below and in their original reports.
 
 ## Remaining acceptance and operational limits
 
@@ -231,9 +259,9 @@ assumptions; those findings are not dismissed or included in the runtime tree.
 To close R5, review each published issue, adopt the applicable fixed immutable
 Node image or record evidence-backed non-applicability, and refresh exact-image
 inventories, advisories, installed-package checks, supported-platform checks and
-Linux recovery evidence. Final hosted gates must pass for the reviewed source.
-The target score remains an acceptance objective, not a number assigned to make
-unfinished work appear complete.
+Linux recovery evidence for any changed source/image. Current candidate gates
+passed and internal R1–R10 review is complete. R5 remains withheld, so the
+every-category target is unmet; passing gates do not override the advisory hold.
 
 The supported operational boundary remains material:
 
@@ -269,8 +297,8 @@ The supported operational boundary remains material:
   publication and query limits. All observations and earlier failed attempts
   remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
   A subsequent docs-only rerun missed two polling intervals in each polling
-  phase despite correct effects and cleanup. That cadence failure is unresolved;
-  the earlier full-profile pass does not waive it. The profiled projection cost
+  phase despite correct effects and cleanup. That failure remains in the history;
+  the earlier full-profile pass did not waive it. The profiled projection cost
   is corrected by a private finalizer for newly constructed output; input
   validation, authenticated reads, output equivalence and exact caps remain
   enforced. Differential and boundary tests pass. The optimized full run still
@@ -281,8 +309,10 @@ The supported operational boundary remains material:
   ineligible as acceptance evidence. The completed `f6dec31` and `ee0d589`
   diagnostic runs measured **11.35%** and **14.37%** overhead and failed their
   numeric targets. The second had no cadence misses but did not reproduce the
-  earlier rare stalls. The pending decoder candidate must pass a regular,
-  uninstrumented full run under the same workload and gates.
+  earlier rare stalls. The new decoder candidate `fef2e37` passed its one
+  predeclared, uninstrumented full run under the same workload and gates at
+  **6.44%** overhead. This does not erase earlier failures or establish their
+  precise cause.
   This deliberate 250 ms observer stress profile is bounded evidence on the
   recorded runner, not a deployment-wide latency guarantee; the collector
   defaults to five minutes.
