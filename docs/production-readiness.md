@@ -9,9 +9,19 @@ The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2
 one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
 burst, 512 MiB memory, no extra swap and 128 PIDs. The new configured candidate
 also explicitly selects `workerScheduling: 'linux-background'`: only the observer
-worker's native main-thread priority is lowered by up to five nice points, capped at 19,
+worker's native JavaScript-thread priority is lowered by up to ten nice points, capped at 19,
 with verified readback and unchanged owner priority. No GC/helper-thread priority
-change is claimed. Generic SDK/CLI defaults remain unchanged. The controlled exact-source
+change is claimed. Generic SDK/CLI defaults remain unchanged. This new +10
+candidate is unqualified at the 6 November checkpoint; earlier +5 results do not
+transfer to it. Lower observer CPU share may reduce burst interference, but that
+is a rationale to test, not an established historical cause or fix. Later results
+belong to their exact source on [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
+Three native runs and one ordinary full graph/admission run are declared before
+outcomes for +10, with all four required and no changed limits or retries.
+The +10 candidate passed the full local `npm run check`: **1,319/1,319 tests,
+zero skips, plus all installed-package consumers**. Hosted candidate checks and
+all four performance qualifications remain pending.
+The controlled exact-source
 `e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
 149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
 the Colima-affined failure also remains evidence. The later `9709f70` constrained
@@ -32,11 +42,14 @@ overhead. Its ordinary full admission also failed at **27.422%**. Each completed
 all 1,200 effects; the three runs completed 166/157/104 polls with zero failures
 or skips. Full graph and live recovery passed. The earlier passes do not establish
 repeatable margin: that checkpoint remained unqualified. The decoder-only
-`f28b8e2` follow-up subsequently passed its two declared native qualifications
+`f28b8e2` follow-up, still using +5, passed its two declared native qualifications
 at **6.863% and 8.003%**, and ordinary full admission at **0.204%**. All 3,600
 effects and 431 polls completed with zero failures/skips; full graph, live recovery,
-controls and cleanup passed. This qualifies the measured profile on that exact
-candidate; the Node security hold and fixed-runtime requalification remain open.
+controls and cleanup passed. The required `b18b749` native follow-up had identical
+runtime and all 94 staged inputs, but failed at **10.667%**: 1,200 effects and
+161 polls, zero failures/skips, verified controls and cleanup. The earlier passes
+did not establish repeatable margin. The new +10 candidate's qualification is
+pending; the Node security hold and fixed-runtime requalification remain open.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second
@@ -81,14 +94,16 @@ and 11 CI jobs also passed, including 195 browser scans, 45 no-skip Linux isolat
 checks, Python 1,022 unit/150 integration tests, packaging and installed consumers.
 The separate identifier-cache prototype was rejected
 for its small repeated-string gain and high-cardinality cost; it is not adopted.
-The worker nice-level policy remains unchanged. The decoder preserves fresh authenticated reads and mirror
+That decoder checkpoint retained +5. The decoder preserves fresh authenticated reads and mirror
 checks; authority and host/MCP decoding remain unchanged. Prototype measurements
 and the separate owner-profile diagnostic do not count as acceptance.
 This is a source-bound `f28b8e2` checkpoint: its tested merge has the same tree,
 94 staged inputs contain only the four expected compiled decoder changes, and
-all five hosted npm payloads match the prepared artifacts. A later documentation-only
-commit changes the protected fingerprint through the runbook, while preserving
-runtime/staged/package bytes; its automatic results must be retained separately.
+all five hosted npm payloads match the prepared artifacts. Its documentation-only
+follow-up `b18b749` changed the protected fingerprint through the runbook, while
+preserving runtime/staged/package bytes. All six ordinary workflows and 11 CI
+jobs passed, but the required native result failed as above. Smoke admission
+measured 11.533% with performance enforcement disabled and is not acceptance.
 The controlled exact-`9709f70` Windows serial experiment
 passed the previously failing cases and installed consumers; the maintained
 Windows-only test launcher subsequently passed on `1ef859c`. Prior failures

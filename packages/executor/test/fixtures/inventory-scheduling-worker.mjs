@@ -4,7 +4,15 @@ import os from 'node:os';
 import { syncBuiltinESMExports } from 'node:module';
 import { configureInventoryWorkerScheduling, currentLinuxThreadPriority } from '../../dist/inventory-scheduling.js';
 
-if (workerData.kind === 'actual') {
+if (workerData.kind === 'legacy-five') {
+  // A genuine old-policy native worker, used only to challenge the owner's
+  // startup proof. No production scheduling helper or test injection API.
+  const before = currentLinuxThreadPriority(), afterNice = Math.min(19, before.nice + 5);
+  if (afterNice !== before.nice) os.setPriority(before.tid, afterNice);
+  parentPort.on('message', () => {});
+  parentPort.postMessage({ type: 'ready', scheduling: { mode: 'linux-background', workerTid: before.tid,
+    beforeNice: before.nice, afterNice } });
+} else if (workerData.kind === 'actual') {
   const before = currentLinuxThreadPriority();
   const evidence = configureInventoryWorkerScheduling(workerData.mode);
   parentPort.on('message', () => parentPort.postMessage(currentLinuxThreadPriority()));
@@ -45,7 +53,8 @@ if (workerData.kind === 'actual') {
   os.setPriority = (id, value) => {
     setCalls.push({ id, value });
     if (name === 'set-failure') throw new Error('private-set-failure');
-    if (name !== 'readback-failure') nice = value;
+    if (name === 'old-policy-readback') nice = Math.min(19, initialNice + 5);
+    else if (name !== 'readback-failure') nice = value;
   };
   syncBuiltinESMExports();
   let evidence = null, code = null, message = null;

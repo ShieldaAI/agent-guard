@@ -181,30 +181,31 @@ volumes. Local measurements do not establish a completed hosted CI run.
 
 ## Constrained observer qualification
 
-The configured acceptance profile measures the same uninstrumented full admission
-workload on native Linux/cgroup v2 with placement on one logical CPU, a one-CPU
-bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
-period and zero burst. The configured candidate additionally requires explicit
-`workerScheduling: 'linux-background'`. Both declared `ba7deb6` native runs passed:
-5.457% and 9.280% overhead, all 1,200 effects each, 135/152 polls, zero failed/skipped
-polls and verified cleanup. Its ordinary full graph/admission run stopped at
-database readiness. Later `b82dc4b` used identical constrained staged runtime
-bytes but failed both declared runs at 12.980% and 13.017% overhead; ordinary full
-admission failed at 27.422%. All 3,600 effects and 427 polls completed without
-failed/skipped polls, and full graph/live recovery passed. The earlier passes do
-not establish repeatable margin. The decoder-only `f28b8e2` checkpoint subsequently
-passed both declared native runs at **6.863% and 8.003%**, plus ordinary full
-admission at **0.204%**: 3,600 effects, 431 polls, zero failed/skipped polls, and
-verified controls, full graph, recovery and cleanup. This is measured qualification
-of that exact profile; the Node security hold and fixed-runtime requalification
-remain open. The earlier
-default-worker profile **passed on exact source `e4e42f`** at 7.2766% admission
-overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
-cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
-with unchanged runtime bytes. Both remain evidence, without a proven cause or fix.
-The subsequent `1ef859c` default-mode failures also remain evidence. Those earlier
-default-worker results do not qualify the new mode; the two `ba7deb6` passes are
-separate historical evidence and do not replace the later failures.
+The configured acceptance profile measures the uninstrumented full admission
+workload on native Linux/cgroup v2 with one logical CPU, a one-CPU bandwidth quota,
+512 MiB memory, no extra swap, 128 PIDs, a 100 ms CPU period and zero burst.
+It explicitly selects `workerScheduling: 'linux-background'`; the new candidate
+uses a fixed relative nice increase of 10, clamped at 19, for the worker's own
+native JavaScript thread. Default scheduling and owner priority are unchanged;
+no V8 helper/GC priority or real-time guarantee is implied.
+
+**6 November checkpoint: +10 qualification pending.** Historical `f28b8e2` used
++5 and passed two native runs at 6.863%/8.003% and ordinary full admission at
+0.204%. The required `b18b749` follow-up used identical runtime and all 94 staged
+inputs but failed at 10.667%, despite all 1,200 effects and 161 polls with zero
+failed/skipped polls. Its six ordinary workflows passed; its smoke result is
+ineligible for acceptance. The [evidence record](../../docs/validation/one-cpu-observer-2026-11-06.json)
+retains every earlier passing and failed attempt. Lower relative CPU share may
+reduce read-only observer interference during bursts; this is a candidate
+rationale, not proof of the failures' cause or a demonstrated fix.
+
+For +10, three native runs (automatic plus two manual) and one ordinary full
+graph/admission run are declared before outcomes; **all four are required**.
+Keep cold first polls, 250 ms cadence, every sample, original deadlines and the
+10% p95 bound unchanged. Do not retry or substitute results. Later source-bound
+outcomes are retained on [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
+The Node security hold and qualification on reviewed fixed Node images remain
+separate publication gates.
 This profile does not replace the graph or ordinary hosted admission gate. Build
 first and execute each declared qualification once, without a competing local workload:
 
@@ -241,7 +242,7 @@ historical quota-only comparisons; no default resource cap or threshold changes.
 
 Select `--worker-scheduling linux-background` explicitly for configured admission
 qualification. The trusted host option lowers only the observer worker's native
-main-thread priority by up to five nice points, capped at 19. Startup and private
+JavaScript-thread priority by up to ten nice points, capped at 19. Startup and private
 before/after evidence verify readback and unchanged owner priority; GC/helper
 thread priorities are not claimed. Unsupported hosts or failed verification refuse
 the mode without fallback. Generic CLI/SDK calls retain `default`, and manual
@@ -286,10 +287,11 @@ plus all installed consumers**. Exact `f28b8e2` then passed the declared hosted
 qualifications above and all six ordinary workflows/11 CI jobs. The
 [source-bound checkpoint](../../docs/validation/one-cpu-observer-2026-11-06.json)
 retains raw evidence, prior failures and the unchanged deployment limits. A
-documentation-only follow-up must preserve runtime, staged inputs and package
-payloads and retain its automatic checks; it does not replace the required Node update.
+documentation-only follow-up `b18b749` preserved runtime, staged inputs and package
+payloads; its ordinary workflows passed but its required native gate failed.
+Historical +5 results do not qualify the new +10 policy or replace the Node update.
 The separate identifier-cache prototype was rejected and is not adopted; the
-worker nice-level policy remains unchanged. Prototype
+new +10 policy is awaiting qualification at this checkpoint. Prototype
 measurements and the separate owner-profile diagnostic cannot qualify it.
 This scheduling change
 does not alter the immediate first poll, cadence, resource limits or acceptance

@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "decoder_candidate_qualification_passed_node_security_hold",
+  "status": "required_native_qualification_failed_new_plus10_policy_pending_node_hold",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -2426,6 +2426,91 @@
       "artifactDigestVerified": true,
       "admissionSha256": "e87188ecccaabea536667cbb014b7d85cb5600173e1243cde35437da8a85ea5c",
       "interpretation": "The one declared ordinary full graph/admission qualification passed. Separate native profile evidence is required and retained; no universal latency or Node security applicability claim."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/final-docs-native-qualification/verification.json",
+        "sha256": "b31abc57a360e505cff782ee5b332406e7b804cde191e17a9701ae1f6deba478"
+      },
+      "sourceCommit": "b18b749dcc0f3418a4b43379c11a334801cc47ed",
+      "testedCommit": "a122150fc163988c5db13e534d71cf7002226585",
+      "sourceTree": "e17a0609454fae4fe22cf0d579e4451a6fc2a6d9",
+      "sourceFingerprint": "24768abe266281b1800ce654920a7dfbacc26f4028ad3728ab50385232a31924",
+      "runId": 42297220850,
+      "jobId": 128165502196,
+      "predeclaredRole": "required-final-documentation-native-check",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 5,
+      "niceMaximum": 19,
+      "diagnosticOnly": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 45.568964,
+        "pollingP95Ms": 50.429606,
+        "ratio": 1.1066656244368425,
+        "regressionPercent": 10.666562443684246
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 161,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "stagedInputProof": {
+        "files": 94,
+        "allEqualToF28": true,
+        "manifestSha256": "64f2eda15c4ef81e41b079f4810ebb6e84d503b4f8323960cdbe04eaf2bb31ba",
+        "changedFiles": []
+      },
+      "artifactSha256": "f0372811703f0663db454c505b6f705abd497f8403e5dec904a68eb94207667f",
+      "admissionSha256": "0a5f7c9a5ea77e6e4d6e51d6416082ee75e36a647fd2cf06934bcc9a02768a8e",
+      "interpretation": "Required additional native check failed overhead on byte-identical f28runtime. The prior+5pair passed but did not establish repeatable margin; no unchanged acceptance retry or result substitution."
     }
   ],
   "decisions": [
@@ -2454,7 +2539,10 @@
     "A separately reviewed private core-worker decoder optimization is authorized for implementation after an ignored differential prototype; implementation verification and all full qualification remain pending. The separate b82owner CPU diagnostic is ineligible. No authority decoder, limit, acceptance gate, release approval or Node security hold is changed.",
     "The core-only decoder implementation passed311focused tests with zero skips, including9newdecoder tests and48mirror-state combinations; authority decoding and host/MCP paths are unchanged. Full-suite and hosted qualification remain pending. The single exactb82owner diagnostic completed all4captures but is explicitly ineligible and cannot supersede the three failed acceptance runs.",
     "The decoder-only candidate passed the full npm run check:1316/1316tests,zero failures/skips and all installed consumers. Hosted qualification remains pending. The separate identifier-cache prototype was rejected for insufficient repeated-string gain and high-cardinality cost; no cache was adopted. The existing up-to+5/clamp19 worker policy, resource/cadence gates and Node HIGH hold remain unchanged.",
-    "Exact f28b8e2 passed its two declared constrained runs at6.8630%/8.0027% and ordinary full admission at0.2036%,with3600effects and431polls,zero failures/skips,full graph/recovery and verified caps/scheduling/cleanup. Allsixordinary workflows and11CIjobs also passed. Priorb82failures remain unchanged. This is a source-bound measured-profile checkpoint; documentation-only provenance and Nodefixed-runtime requalification remain separate, with release approval blocked."
+    "Exact f28b8e2 passed its two declared constrained runs at6.8630%/8.0027% and ordinary full admission at0.2036%,with3600effects and431polls,zero failures/skips,full graph/recovery and verified caps/scheduling/cleanup. Allsixordinary workflows and11CIjobs also passed. Priorb82failures remain unchanged. This is a source-bound measured-profile checkpoint; documentation-only provenance and Nodefixed-runtime requalification remain separate, with release approval blocked.",
+    "Requiredb18native check failed only overhead at10.666562% with1200effects and161polls,zero failed/skipped polls,identical94inputs/caps/policy to f28. Allsixordinary workflows/11CI passed,while smoke overhead11.533% was unenforced/ineligible. Current qualification is unmet despite priorf28+5passes.",
+    "A new fixed trusted-host linux-background candidate changes only relative nice adjustment+5\u2192+10,clamped19,for the native JavaScript worker thread; default/owner behavior,deadlines,coldpoll/cadence/resources/allrawsamples/10percentgate remain unchanged. Three native and one ordinary full run are declared before results,allrequired. New localfull/hosted qualification pending; no prior+5pass transfers to+10 and no historical cause is proven.",
+    "The +10 candidate full local npm run check passed 1,319/1,319 with zero skips plus all installed-package consumers. All four predeclared hosted performance qualifications and changed-source ordinary checks remain pending; the Node security hold and every prior failure remain unchanged."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -5166,5 +5254,300 @@
       "The worker scheduling policy remains up to+5nice levels/clamp19 with unchanged owner priority; no GC/helper priority claim.",
       "Node HIGH review, applicable fixed-image updates and matching fixed-runtime requalification remain prepublication gates. No package/tag/release was published."
     ]
+  },
+  "requiredFinalDocumentationCheckpoint": {
+    "source": {
+      "head": "b18b749dcc0f3418a4b43379c11a334801cc47ed",
+      "headTree": "e17a0609454fae4fe22cf0d579e4451a6fc2a6d9",
+      "testedMerge": "a122150fc163988c5db13e534d71cf7002226585",
+      "mergeTree": "e17a0609454fae4fe22cf0d579e4451a6fc2a6d9",
+      "equal": true,
+      "sha256": "24768abe266281b1800ce654920a7dfbacc26f4028ad3728ab50385232a31924",
+      "files": 455
+    },
+    "workerNiceIncrease": 5,
+    "niceMaximum": 19,
+    "ordinaryVerification": {
+      "path": "artifacts/agent-cartography/hosted-b18b749/ci-b18b749.json",
+      "sha256": "616e97d5391bd79b2022e358aa2484ca8355d915fddf0c6c0a788955c44018ed"
+    },
+    "nativeVerification": {
+      "path": "artifacts/agent-cartography/final-docs-native-qualification/verification.json",
+      "sha256": "b31abc57a360e505cff782ee5b332406e7b804cde191e17a9701ae1f6deba478"
+    },
+    "allSixOrdinaryWorkflowsPassed": true,
+    "ordinaryWorkflowRuns": [
+      {
+        "id": 42297220621,
+        "name": "Dependency Review",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42297221069,
+        "name": "Python dependency audit",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42297220741,
+        "name": "CodeQL",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42297221121,
+        "name": "Cartography pilot",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42297220787,
+        "name": "Cartography integration",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42297220918,
+        "name": "CI",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "ciJobsPassed": 11,
+    "ciJobsRequired": 11,
+    "browserScans": 195,
+    "axeViolations": 0,
+    "requiredLinuxIsolationTests": 45,
+    "requiredLinuxIsolationSkips": 0,
+    "pythonUnits": 1022,
+    "pythonIntegrationTests": 150,
+    "pythonPackagingInstalledConsumerAndCleanup": true,
+    "nodePlatformResults": [
+      {
+        "jobId": 128165503894,
+        "name": "check (22)",
+        "node": "22.23.4",
+        "tests": 1316,
+        "pass": 1308,
+        "fail": 0,
+        "skipped": 8
+      },
+      {
+        "jobId": 128165503694,
+        "name": "check (24)",
+        "node": "24.22.2",
+        "tests": 1316,
+        "pass": 1308,
+        "fail": 0,
+        "skipped": 8
+      },
+      {
+        "jobId": 128165503546,
+        "name": "check (26)",
+        "node": "26.13.0",
+        "tests": 1316,
+        "pass": 1308,
+        "fail": 0,
+        "skipped": 8
+      },
+      {
+        "jobId": 128165503469,
+        "name": "check (macos-latest, 24)",
+        "node": "24.22.2",
+        "tests": 1316,
+        "pass": 1308,
+        "fail": 0,
+        "skipped": 8
+      },
+      {
+        "jobId": 128165503446,
+        "name": "check (windows-latest, 24)",
+        "node": "24.22.2",
+        "tests": 1317,
+        "pass": 1169,
+        "fail": 0,
+        "skipped": 148
+      }
+    ],
+    "security": {
+      "runId": 42297220741,
+      "analysisJobsPassed": 2,
+      "gateJobId": 128166302621,
+      "gate": "passed",
+      "currentPullRequestOpenAlerts": 0,
+      "alert23": {
+        "state": "fixed",
+        "dismissed": false,
+        "lastDetectedInstanceCommit": "66d60c3a8fc27fc707486a94c9bc387c7fee1fd2",
+        "note": "The fixed alert instance retains its last-detected commit; current analyses below bind the new tested merge."
+      },
+      "currentAnalyses": [
+        {
+          "id": 2115529889,
+          "commit_sha": "a122150fc163988c5db13e534d71cf7002226585",
+          "category": "/language:javascript-typescript",
+          "results_count": 0,
+          "rules_count": 103,
+          "created_at": "2026-11-06T21:31:35Z",
+          "error": "",
+          "warning": ""
+        },
+        {
+          "id": 2115524574,
+          "commit_sha": "a122150fc163988c5db13e534d71cf7002226585",
+          "category": "/language:actions",
+          "results_count": 0,
+          "rules_count": 23,
+          "created_at": "2026-11-06T21:30:43Z",
+          "error": "",
+          "warning": ""
+        }
+      ],
+      "mainOpenAlerts": 5,
+      "mainStatusSeparateFromPullRequest": true
+    },
+    "runtimeAnchor": "f28b8e2a590c6b66b9db30541f1e711113ba462f",
+    "all94StagedInputsIdenticalToAnchor": true,
+    "hostedFivePackage145MemberPayloadsEqualAnchor": true,
+    "production4337EntryManifestEqualAnchor": true,
+    "productionManifestSha256": "25bb6bff26546d134970126fe22c7382d552706f369cc1bbe99f249aa00a87b6",
+    "productionReadP95Ms": 79,
+    "requiredNativePassed": false,
+    "allRequiredAcceptancePassed": false,
+    "smoke": {
+      "runId": 42297221121,
+      "jobId": 128165502918,
+      "workflowPassed": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 19.967492,
+        "pollingP95Ms": 22.270377,
+        "ratio": 1.1153317101616969,
+        "regressionPercent": 11.533171016169685
+      },
+      "effects": 600,
+      "polls": 40,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "acceptanceEvidenceEligible": false
+    },
+    "published": false,
+    "releaseApprovalChanged": false,
+    "interpretation": "Ordinary CI and smoke success do not close the required native ratio failure. Numerical smoke overhead11.533% was not enforced. Priorf28passes and finalb18failure remain separate source-bound outcomes."
+  },
+  "backgroundPriorityFollowup": {
+    "checkpointDate": "2026-11-06",
+    "status": "local_functional_passed_hosted_qualification_pending",
+    "basedOn": "b18b749dcc0f3418a4b43379c11a334801cc47ed",
+    "policy": "linux-background",
+    "previousRelativeNiceIncrease": 5,
+    "candidateRelativeNiceIncrease": 10,
+    "niceMaximum": 19,
+    "candidateTarget": "min(19, initial worker nice + 10)",
+    "defaultModeUnchanged": true,
+    "fixedTrustedHostPolicy": true,
+    "callerSpecifiedPriorityOrTidAccepted": false,
+    "affectedThread": "Only the observer worker own native JavaScript-thread TID; owner priority verified unchanged. No guarantee for V8 GC/helper threads.",
+    "rationale": "Lower relative CPU share for the read-only observer may reduce interference during bursts. This is a plausible candidate rationale, not proven attribution of prior failures or measured acceptance.",
+    "preserved": [
+      "Fresh current authority/witness/mirror capture and no authority cache",
+      "Existing request deadlines, bounded lifetime and fail-closed policy verification",
+      "One selected logical CPU,oneCPUquota,100msperiod,zero burst,512MiB,no extra swap,128PIDs",
+      "Cold first poll,250mscadence,ABBAorder,250measured+50warmup perphase,all1200effects",
+      "All raw samples,zero failed/skipped polls and unchanged10percent p95 gate"
+    ],
+    "qualificationPlan": {
+      "declaredBeforeOutcomes": true,
+      "nativeRuns": 3,
+      "nativeRunRoles": [
+        "automatic",
+        "manual-1",
+        "manual-2"
+      ],
+      "ordinaryFullGraphAdmissionRuns": 1,
+      "allFourMustPass": true,
+      "retryAllowance": 0,
+      "priorPlus5ResultsQualifyPlus10": false,
+      "declaration": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/declaration-precommit-checkpoint.json",
+        "sha256": "4e9520750deb429f76bdbf2cb6ff84dd15e389f8097ffc925a5e1df0dd490f6e",
+        "sourceBindingPending": true,
+        "scope": "Immutable precommit declaration checkpoint; the separate active declaration will bind exact commit and staged inputs before dispatch."
+      }
+    },
+    "localFullCheck": {
+      "command": "npm run check",
+      "exitCode": 0,
+      "tests": 1319,
+      "passed": 1319,
+      "failed": 0,
+      "skipped": 0,
+      "installedPackageConsumersPassed": true,
+      "log": {
+        "path": "artifacts/agent-cartography/background-ten-full-check-1.log",
+        "sha256": "42836af328d2933c8186dab26cf5c047a65634e31011d5fc41461b74ebc29b8e"
+      },
+      "sourceFingerprint": {
+        "sha256": "dec794dc81174666e7a773c63a171d391f5757f956a920434b05fd6489066181",
+        "files": 455
+      },
+      "performanceQualification": false,
+      "hostedQualification": "pending"
+    },
+    "hostedQualification": "pending",
+    "latestResults": "https://github.com/ShieldaAI/agent-guard/pull/10/checks",
+    "resultRetention": "Exact source/run/job/artifact results go to ignored verification records and PR status; this contract checkpoint does not require a documentation-only result commit.",
+    "nodeSecurityHoldUnchanged": true,
+    "fixedNodeRuntimeRequalificationRequired": true,
+    "releaseApprovalChanged": false,
+    "published": false,
+    "focusedVerification": {
+      "review": {
+        "path": "artifacts/agent-cartography/inventory-scheduling-ten/review.json",
+        "sha256": "8d52573ba201a24405c8180be43f5078900e66c1fd1eaa4337bca0907e440c19"
+      },
+      "executorLocal": {
+        "tests": 58,
+        "passed": 58,
+        "failed": 0,
+        "skipped": 0
+      },
+      "nativeLinux": {
+        "tests": 7,
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0,
+        "verification": {
+          "path": "artifacts/agent-cartography/inventory-scheduling-ten/linux/verification.json",
+          "sha256": "115ffab32b41a871694d604a26e041950f3c86c42e7ceaa895865fed45547699"
+        }
+      },
+      "benchmarkHelpers": {
+        "tests": 25,
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0,
+        "log": {
+          "path": "artifacts/agent-cartography/background-ten-helper-focused.log",
+          "sha256": "03e52dd623755153212f9871e0ec98afd5de9453e4f3ce06800785b648e7d747"
+        }
+      },
+      "countsNotAggregated": true,
+      "performanceEvidence": false,
+      "boundary": "Actual old0\u21925 worker proof is rejected beforeHTTP listen and terminated; owner remains unchanged. At clamp19 old/new numeric targets can coincide; no distinct-mode claim in that case.",
+      "independentSourceReview": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/production-review.json",
+        "sha256": "e8ec605aed8f84764db9d2bdb517159b8efe776a39f154922abf5c252863bdb7"
+      }
+    }
   }
 }

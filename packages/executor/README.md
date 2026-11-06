@@ -511,7 +511,8 @@ const observer = await startInventoryServer({
 
 The default `workerScheduling: 'default'` leaves native priorities unchanged.
 `linux-background` synchronously verifies the worker's own Linux native thread
-identity and lowers its priority by up to five nice levels, capped at nice 19.
+identity and lowers its priority by up to ten nice levels, capped at nice 19
+(`min(19, initial nice + 10)`). This is a fixed policy, not a caller-supplied value.
 It never raises priority or requires `CAP_SYS_NICE`. Startup refuses with
 `INVENTORY_SCHEDULING_UNAVAILABLE` if Linux `/proc` identity, the priority operation,
 or exact readback cannot be verified; there is no fallback to default scheduling.
@@ -520,7 +521,8 @@ retain it. The policy applies to that native worker thread; it does not promise 
 priority for every V8 helper or GC thread. Lower priority can delay observation,
 so qualify both admission overhead and polling cadence for the selected deployment
 without changing request deadlines, quotas or memory limits. The setting is not an
-observer credential or request option.
+observer credential or request option. The earlier +5 policy's measurements do
+not qualify this +10 candidate; deployment qualification must use the exact policy.
 
 Each dispatched request captures fresh encrypted state and verifies its current
 witness and recovery mirror on the owning thread. The worker authenticates and

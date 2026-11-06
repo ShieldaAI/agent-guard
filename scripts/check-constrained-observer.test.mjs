@@ -47,7 +47,7 @@ function admissionReport({ samples = 250, pollingCost = 1, workerScheduling = 'd
       cleanup: { worker: true, clientWorker: true, observer: true, taskServer: true, executor: true, directory: true }, polling: null };
     if (mode === 'polling') {
       const reading = workerScheduling === 'default' ? { mode: 'default', verified: false } : {
-        mode: 'linux-background', verified: true, workerTid: 12, beforeNice: 0, afterNice: 5, currentNice: 5,
+        mode: 'linux-background', verified: true, workerTid: 12, beforeNice: 0, afterNice: 10, currentNice: 10,
         ownerTid: 10, ownerBeforeNice: 0, ownerCurrentNice: 0,
       };
       phase.workerScheduling.before = { ...reading }; phase.workerScheduling.after = { ...reading };
@@ -155,6 +155,21 @@ test('explicit background policy requires exact before/after evidence without ch
   assert.equal(rejected.acceptanceEvidenceEligible, false);
   assert.throws(() => validateResources(resourceReport(false, null, 'linux-background'), {}));
   assert.equal(validateResources(resourceReport(false, null, 'linux-background'), selected).memoryPeakBytes, 2000);
+});
+test('a numerically passing report with old five-level worker evidence cannot qualify the ten-level policy', () => {
+  const selected = { workerScheduling: 'linux-background' }, old = admissionReport(selected);
+  for (const phase of old.phases.filter(value => value.mode === 'polling')) {
+    for (const reading of [phase.workerScheduling.before, phase.workerScheduling.after]) {
+      reading.afterNice = 5; reading.currentNice = 5;
+    }
+  }
+  assert.equal(admissionGate(old.phases).passed, true);
+  // A stale successful evidence claim is rejected, even though the latency/cadence gate passes.
+  assert.throws(() => validateAdmission(old, selected));
+  old.schedulingEvidenceValid = false; old.passed = false;
+  const checked = validateAdmission(old, selected);
+  assert.equal(checked.gate.passed, true); assert.equal(checked.schedulingEvidenceValid, false);
+  assert.equal(checked.acceptanceEvidenceEligible, false);
 });
 test('host recomputes exact raw timestamps, sample coverage and original gate without filtering failures', () => {
   const report = admissionReport(); assert.equal(validateAdmission(report, {}).effects, 1200);

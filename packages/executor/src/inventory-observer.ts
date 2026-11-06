@@ -205,7 +205,7 @@ class ObservationPool {
         const owner = this.#ownerScheduling!;
         if (typeof workerTid !== 'number' || !Number.isSafeInteger(workerTid) || workerTid < 1 || workerTid > 2_147_483_647 || workerTid === owner.tid || workerTid === process.pid ||
             typeof beforeNice !== 'number' || !Number.isInteger(beforeNice) || beforeNice < -20 || beforeNice > 19 ||
-            typeof afterNice !== 'number' || afterNice !== Math.min(19, beforeNice + 5) ||
+            typeof afterNice !== 'number' || afterNice !== Math.min(19, beforeNice + 10) ||
             readLinuxThreadPriority(workerTid) !== afterNice || readLinuxThreadPriority(owner.tid) !== owner.nice) throw schedulingUnavailable();
         this.#workerScheduling = { mode: 'linux-background', workerTid, beforeNice, afterNice };
       } else this.#workerScheduling = { mode: 'default' };
