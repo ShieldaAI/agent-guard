@@ -1,19 +1,20 @@
 {
   "schema": 1,
-  "measuredAt": "2026-11-06T02:05:34.184497+00:00",
+  "measuredAt": "2026-11-06T02:13:58.714529+00:00",
   "status": "production-acceptance-pending",
   "productionScore": null,
   "candidate": {
-    "verifiedImplementationCommit": "b677a744b4303f4d40098369cd41f584e78a8605",
-    "sourceSha256": "4be85c1a8523dc60c772d4c6d63437cea4265add1257995d83acf97a6ad494e5",
+    "verifiedImplementationCommit": "ab567668522c908f18ef8ccfb264d68387e9141b",
+    "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
     "sourceFiles": 403,
     "sourceIdentifier": "python3 docs/validation/protection-source-id.py",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
-    "hostedMergeCommit": "f271b67d2969566dff9eb1b03292626482227c7e",
+    "hostedMergeCommit": "bf18d4403954acdf266fb3beaf3d269ecdd21854",
     "mergeTreeMatchesHead": true,
     "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
-    "followupScope": "Mock threshold alerts aligned with real server and all three contract engines rerun. Official signed Ubuntu HTTPS package transport validated on all hosted browser workers. Runtime implementation unchanged from 53acbde.",
-    "runtimeImplementationIntroducedAt": "53acbde035614f21e74a342ebf0c5010f95686fe"
+    "followupScope": "Expiry-timer navigation fix verified in all three browser engines and current hosted platform, Linux recovery, integration and security checks. The remaining non-UI runtime and dependency entries are unchanged from the prior verified image.",
+    "runtimeImplementationIntroducedAt": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "uiCorrectionIntroducedAt": "ab567668522c908f18ef8ccfb264d68387e9141b"
   },
   "acceptance": {
     "targetPerCategory": 9.5,
@@ -85,7 +86,7 @@
     "logSha256": "06efcb3641f879fd7b871b05576c0281f6b852d8068205c7023a7424754a699f",
     "installedPackageChecks": "All five tarballs, public examples/types, real published alpha.3 upgrade and old-reader rejection, exact-current primary-loss recovery, MCP/identity/build admission and synthetic model loops passed.",
     "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
-    "scope": "Exact 53acbde local runtime build and installed consumers. Subsequent CI/mocked-browser-fixture changes did not alter runtime code; final hosted platform checks independently passed on b677a74."
+    "scope": "Exact 53acbde local runtime build and installed consumers. Subsequent UI-only correction passed 117 focused local browser scans and the complete hosted platform/browser/isolation/Linux gates on ab56766; full local runtime tests were not redundantly rerun for the UI-only change."
   },
   "linux": {
     "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
@@ -183,9 +184,9 @@
     },
     "hostedAmd64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T01:39:37.718Z",
+      "measuredAt": "2026-11-06T02:07:14.380Z",
       "status": "passed",
-      "verificationImage": "sha256:037761f789c059db9bcdb94bec73efdd227c375edfff3ab894031218f825270e",
+      "verificationImage": "sha256:512ab8ab01908b58844664db9d67d60a6121f64c45fe89be11ba500fa0e3306b",
       "imagePlatform": "linux/amd64",
       "docker": {
         "version": "29.4.2",
@@ -259,7 +260,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 218,
+          "p95ReadMs": 183,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -289,24 +290,27 @@
     },
     "hostedImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T01:39:37.635Z",
-      "productionImage": "sha256:b7ce5f561636682b124ccadabb379a7a951e930826874ccac33a060dc18562ba",
-      "verificationImage": "sha256:037761f789c059db9bcdb94bec73efdd227c375edfff3ab894031218f825270e",
+      "measuredAt": "2026-11-06T02:07:14.317Z",
+      "productionImage": "sha256:c8de73ba9b0355cfe8bec83efeeac62b896825abedba14b8676eeed976d21bf3",
+      "verificationImage": "sha256:512ab8ab01908b58844664db9d67d60a6121f64c45fe89be11ba500fa0e3306b",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
-      "applicationManifestSha256": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
+      "applicationManifestSha256": "0dba404baec07a12f67e39d947ed76fa0a6eb82a47ad4a6ad2e7d6f7ed34f2c5",
       "excludedVerificationFixtures": [
         "/app/deployment/production/verify-cli.mjs",
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
       ]
     },
-    "sharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
     "finalHostedArtifact": {
+      "id": 13471755046,
       "name": "production-profile-linux-node24",
-      "id": 13469597550,
-      "digest": "sha256:6ec6c69350db7050ba0f5b8deabc3852df34c7219781ad4b68f83a3e17cdbc4d"
-    }
+      "digest": "sha256:9b6f7ce7fdff55416b4d677ba0b2be2137fa25d674082fd6e43a2afa17c97c37",
+      "size": 191768,
+      "digestVerified": true
+    },
+    "previousSharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
+    "crossArchitectureScope": "ARM64 recovery evidence and its image remain from 53acbde. Current AMD64 evidence includes the UI correction. Full manifest comparison confirms only app.js changed; all 4,326 server, dependency and other application entries are unchanged. The local three-engine browser checks exercised the corrected UI on ARM64 macOS."
   },
   "runtimeIsolation": {
     "host": {
@@ -459,42 +463,50 @@
     }
   },
   "hosted": {
-    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228499",
-    "sourceCommit": "b677a744b4303f4d40098369cd41f584e78a8605",
+    "ciRun": 42148205108,
+    "sourceCommit": "ab567668522c908f18ef8ccfb264d68387e9141b",
     "status": "all-six-workflows-passed",
     "passedJobs": [
-      "check (22)",
-      "check (24)",
-      "check (26)",
-      "check (macos-latest, 24)",
-      "check (windows-latest, 24)",
-      "production-profile (linux, node24)",
       "runtime-isolation (linux, node24)",
+      "production-profile (linux, node24)",
+      "check (24)",
+      "check (22)",
+      "check (windows-latest, 24)",
+      "check (26)",
       "dependency-inventory",
+      "check (macos-latest, 24)",
       "browser (webkit)",
       "browser (chromium)",
       "browser (firefox)"
     ],
     "artifacts": [
       {
-        "name": "dependency-inventory",
-        "id": 13468751168,
-        "digest": "sha256:47bfa4ee222769f0a831a7022bd812d0d04edaa5e27b5052c328d42faa75c5d2"
-      },
-      {
+        "id": 13471755046,
         "name": "production-profile-linux-node24",
-        "id": 13468866200,
-        "digest": "sha256:32408ee222c0fdafc9caa27b8657c1df916610e6b060b979133868e8742fc2da"
+        "digest": "sha256:9b6f7ce7fdff55416b4d677ba0b2be2137fa25d674082fd6e43a2afa17c97c37",
+        "size": 191768,
+        "digestVerified": true
       },
       {
-        "name": "provider-outcome-evaluation",
-        "id": 13469450325,
-        "digest": "sha256:cbbc25c9c3c61aafdc9937c8672a23b83ff9e52984377436b9bcf12212ba1220"
+        "id": 13471730556,
+        "name": "browser-webkit",
+        "digest": "sha256:8918fd11ba3e311890f67a4b858572b6814c99f9bea2a6c19ed6a2bc6eeff7ea",
+        "size": 10118130,
+        "digestVerified": true
       },
       {
-        "name": "runtime-isolation-linux-node24",
-        "id": 13469360221,
-        "digest": "sha256:63a67f8035f0afc390d015011d395c071e6841bdf7f6097037c1a4c82577c265"
+        "id": 13471360897,
+        "name": "browser-firefox",
+        "digest": "sha256:c5cfda61fff98742795d28ea921b81dcc7ab9691750f646e71041756815a3c6c",
+        "size": 9504831,
+        "digestVerified": true
+      },
+      {
+        "id": 13470563946,
+        "name": "browser-chromium",
+        "digest": "sha256:a0a4534fef3566bedc575d7e90458c43a42c1f0aecfc704d71af3fdc83ce141b",
+        "size": 8497284,
+        "digestVerified": true
       }
     ],
     "pythonEvidence": "docs/validation/cartography-python-2026-11-06.json",
@@ -502,117 +514,112 @@
     "cartographyPilotStatus": "smoke-passed; separate-10-percent-performance-target-not-established",
     "finalRuns": [
       {
-        "id": 42145228453,
+        "id": 42148204999,
         "name": "Python dependency audit",
         "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228453"
+        "conclusion": "success"
       },
       {
-        "id": 42145228509,
+        "id": 42148204989,
         "name": "Dependency Review",
         "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228509"
+        "conclusion": "success"
       },
       {
-        "id": 42145228526,
+        "id": 42148204949,
         "name": "CodeQL",
         "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228526"
+        "conclusion": "success"
       },
       {
-        "id": 42145228458,
-        "name": "Cartography pilot",
-        "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228458"
-      },
-      {
-        "id": 42145228499,
+        "id": 42148205108,
         "name": "CI",
         "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228499"
+        "conclusion": "success"
       },
       {
-        "id": 42145228508,
+        "id": 42148205170,
+        "name": "Cartography pilot",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 42148205151,
         "name": "Cartography integration",
         "status": "completed",
-        "conclusion": "success",
-        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228508"
+        "conclusion": "success"
       }
     ],
     "finalCiJobs": [
       {
-        "id": 127654975804,
-        "name": "dependency-inventory",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654975963,
-        "name": "check (22)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654975994,
-        "name": "browser (webkit)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976002,
-        "name": "browser (firefox)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976003,
-        "name": "browser (chromium)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976020,
-        "name": "check (26)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976027,
-        "name": "check (macos-latest, 24)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976032,
-        "name": "check (24)",
-        "status": "completed",
-        "conclusion": "success"
-      },
-      {
-        "id": 127654976095,
+        "id": 127664712189,
         "name": "runtime-isolation (linux, node24)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127654976146,
+        "id": 127664712416,
         "name": "production-profile (linux, node24)",
         "status": "completed",
         "conclusion": "success"
       },
       {
-        "id": 127654976367,
+        "id": 127664712422,
+        "name": "check (24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712431,
+        "name": "check (22)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712533,
         "name": "check (windows-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712544,
+        "name": "check (26)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712548,
+        "name": "dependency-inventory",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712558,
+        "name": "check (macos-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712566,
+        "name": "browser (webkit)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712603,
+        "name": "browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127664712605,
+        "name": "browser (firefox)",
         "status": "completed",
         "conclusion": "success"
       }
     ],
-    "artifactsScope": "Earlier 53acbde artifacts retained for unchanged implementation; final browser and production artifacts are separately identified."
+    "artifactsScope": "Current UI correction: all four downloaded production/browser artifact digests verified. Previous Python/isolation artifact details remain in their dated records; the current workflows also passed.",
+    "finalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json"
   },
   "browsers": {
     "graphFit": {
@@ -678,7 +685,7 @@
       "productionAndConsumedBrowserInputsStable": true,
       "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
     },
-    "hostedStatus": "final-source-all-three-engines-passed",
+    "hostedStatus": "All nine suites passed on ab56766: 156 axe snapshots, no violations/page errors; both deterministic navigation regressions passed in all engines.",
     "priorHostedInstallFailure": {
       "run": 42138768310,
       "chromium": "All three suites passed: 49 scans",
@@ -690,7 +697,7 @@
     },
     "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json",
     "localFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/local-53acbde.json",
-    "hostedFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json",
+    "hostedFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json",
     "finalLocalSummary": {
       "engines": [
         "chromium",
@@ -818,7 +825,29 @@
         21
       ],
       "triage": "docs/validation/codeql-triage-2026-11-06.md",
-      "scope": "PR candidate only; does not claim default-branch alerts closed before merge."
+      "scope": "PR candidate only; does not claim default-branch alerts closed before merge.",
+      "uiCorrectionVerification": {
+        "run": 42148204949,
+        "head": "ab567668522c908f18ef8ccfb264d68387e9141b",
+        "jobs": [
+          {
+            "id": 127664711100,
+            "name": "Analyze (actions)",
+            "conclusion": "success"
+          },
+          {
+            "id": 127664711475,
+            "name": "Analyze (javascript-typescript)",
+            "conclusion": "success"
+          },
+          {
+            "id": 127665121218,
+            "name": "Unresolved security alerts",
+            "conclusion": "success"
+          }
+        ],
+        "openPrRefAlerts": 0
+      }
     },
     "runtimeNpm": {
       "image": "sha256:c1bb25623a460658f509abfa211290192954d4f744911dad35d9cb3f9ea39bc7",
@@ -1506,7 +1535,7 @@
       },
       "currentUnitTests": 928,
       "integrationTestsForDependencyUpdate": 143,
-      "currentDiagnosticRegressionTests": "Included in the 928 unit tests; existing 143 integration tests passed after oauthlib patch, before diagnostic helper changes. New hosted integration is pending.",
+      "currentDiagnosticRegressionTests": "All 928 unit tests, 143 integration tests and installed consumers passed on the source containing the diagnostic regressions; unchanged Python source also passed workflow 42148205151 on ab56766.",
       "finalEvidence": "docs/validation/cartography-python-2026-11-06.json",
       "finalUnitTests": 928,
       "finalIntegrationTests": 143,
@@ -1539,9 +1568,7 @@
       "Require passing hosted gates for final source/image."
     ]
   },
-  "remainingVerification": [
-    "Hosted platform, browser, Linux and security checks for the review-expiry navigation fix."
-  ],
+  "remainingVerification": [],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
     "limit": 10000,
@@ -1587,13 +1614,13 @@
     "status": "draft-pr-production-acceptance-held",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
     "newNpmRelease": false,
-    "reason": "R5 Node HIGH prealert applicability remains unassessed. An intermittent browser navigation race found on the docs-only head has been corrected and verified locally; hosted follow-up gates are pending. The separate full Cartography acceptance profile now passes."
+    "reason": "R5 Node HIGH prealert applicability remains unassessed. All current implementation workflows pass, including the corrected navigation regression. The separate full Cartography acceptance profile passes at 5.18% overhead."
   },
   "followUpCandidate": {
     "sourceSha256": "aaec5cf70397794cd3f56abb1c1840f7d698658e9e2f61f62aa065446b1d001e",
     "sourceFiles": 403,
     "scope": "Agent Ops expiry rendering and deterministic real-service browser regression; no executor, ledger, recovery, authorization, dependency or Cartography runtime change. Onboarding maintenance command clarity and dated evidence refreshed.",
-    "status": "local-browser-checks-passed-hosted-pending",
+    "status": "all-local-and-hosted-checks-passed",
     "localBrowser": {
       "engines": [
         "chromium",
@@ -1617,6 +1644,10 @@
       "failure": "Exact Setup capacity row was absent because timer DOM replacement removed the pressed navigation button before click completion.",
       "deterministicNegativeReproduced": true,
       "scope": "All other jobs in that CI run passed; the other five repository workflows passed."
-    }
-  }
+    },
+    "commit": "ab567668522c908f18ef8ccfb264d68387e9141b",
+    "hostedEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json",
+    "independentReview": "No blocker found in visible expiry tracking, navigation node preservation or unchanged backend approval enforcement. UI expiry refresh remains bounded by the existing one-second interval."
+  },
+  "previousVerificationIndexAtCommit": "ab567668522c908f18ef8ccfb264d68387e9141b"
 }

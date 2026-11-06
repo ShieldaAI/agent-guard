@@ -141,18 +141,21 @@ alone is not passing evidence.
   installed-package and public README/type consumers. Actual published alpha.3
   state upgrades preserve spent authority; the old reader refuses new semantics.
 - Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  final source commit `b677a74`. The separate Linux isolation gate passed **44/44**, zero
-  skips, and every MCP lifecycle/cleanup observation.
+  final implementation commit `ab56766`. The ordinary hosted Node 24 suite passed
+  1,085 tests and skipped eight optional container cases; the separate required
+  Linux isolation gate passed **44/44**, zero skips, including those cases and
+  every MCP lifecycle/cleanup observation.
 - Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
   AMD64. Production and verification images share **4,327 application entries**;
-  the two test-only fixtures are explicitly excluded from production. Both
-  architectures share the same application manifest. Runtime package-manager
-  files and shims are absent.
+  the two test-only fixtures are explicitly excluded from production. The current
+  AMD64 image contains the UI correction; its remaining **4,326 entries** are
+  unchanged from the earlier image also verified on ARM64. Runtime
+  package-manager files and shims are absent.
 - Both Linux runs imported 2,000 company records, verified 2,001 paginated tickets,
   recovered current state after primary-directory loss, retained historical and
   latest receipts, and reopened in a fresh container with read-only config/history.
   At eight clients and 40 measured 500-row reads, p95 was **156 ms on local ARM64**
-  and **218 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
+  and **183 ms on current hosted AMD64**, within the 2,000 ms test target. Each overload
   run refused 27 reads through the documented rate/busy responses without effects.
 - Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
   HTTPS/OIDC service states and 13 Map states per engine: **156 accessibility
@@ -166,9 +169,10 @@ alone is not passing evidence.
   downloads from 8–18 minutes to 3–16 seconds.
   A later docs-only CI run exposed an intermittent expiry-timer navigation race.
   A deterministic real-service regression reproduced it; the correction preserves
-  navigation nodes while expired decisions disappear immediately. All three
+  navigation nodes while expired decisions disappear on the existing expiry tick. All three
   engines passed both timer/click regressions and 117 focused accessibility scans
-  (Ops contract and real-service states); hosted follow-up checks are pending.
+  (Ops contract and real-service states). The current hosted run also passed all
+  nine suites and **156 accessibility scans**, including both regressions in every engine.
 - The Python integration passed **928 unit and 143 authenticated Neo4j tests**,
   package builds and the installed consumer. Four locked platform selections
   each audited 194 packages with zero known vulnerabilities. The archived

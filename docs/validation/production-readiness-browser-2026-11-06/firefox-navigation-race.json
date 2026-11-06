@@ -353,5 +353,5 @@
     "mapRerun": false,
     "mapReason": "Map source was unchanged; this correction affects only Agent Ops."
   },
-  "remainingEvidence": "Hosted verification of this UI correction remains pending until the next commit CI. Automated browser checks do not establish representative human or assistive-technology usability."
+  "remainingEvidence": "Hosted correction passed all three browser jobs on ab56766; see ci-ab56766.json. Automated checks do not establish representative human or assistive-technology usability."
 }
