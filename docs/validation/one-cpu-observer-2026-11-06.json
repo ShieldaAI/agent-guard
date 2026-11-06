@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "constrained_profile_passed_ordinary_qualification_and_security_gates_failed",
+  "status": "ordinary_functional_and_codeql_passed_performance_unqualified_node_security_hold",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -1967,6 +1967,270 @@
       "artifactSha256": "714dba7a918fd435e9d49160888fc66d61a1ed34a1fa4518644f02b3a4633bd6",
       "artifactDigestVerified": true,
       "interpretation": "Initial live recovery pilot passed; a new graph benchmark database did not become ready within the unchanged 120-second deadline. No graph or admission performance measurement followed. Missing exited-container diagnostics do not establish a cause."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/constrained-verification.json",
+        "sha256": "19c2ed0ce72b0fe319bbbedc2f3b86ba97010978503f03faa285cad4c5d62377"
+      },
+      "sourceCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "testedCommit": "8148ef3d1f2be616996303ac79bf367e704f700c",
+      "sourceTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "testedTreeEqualsSource": true,
+      "runId": 42290835308,
+      "jobId": 128143522147,
+      "predeclaredRole": "auto",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "workerScheduling": "linux-background",
+      "diagnosticOnly": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 45.510787,
+        "pollingP95Ms": 51.418127,
+        "ratio": 1.129800875559458,
+        "regressionPercent": 12.980087555945797
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 166,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 174043136,
+      "memoryEvents": {
+        "oom": 0,
+        "oomKill": 0
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "61922ff012c4102c31b7e6af0035e2332328713523cd82cd7989ca8cf0b07197",
+      "artifactDigestVerified": true,
+      "admissionSha256": "edf7cff3ce517285b5e8cf415c8864b022517440521f2785e6ec80d261779dc0",
+      "interpretation": "Declared final-candidate run failed only overhead. Identical94 staged inputs to earlier ba7 passes do not establish repeatable margin; no sample filtering, retries or substitution."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/constrained-verification.json",
+        "sha256": "19c2ed0ce72b0fe319bbbedc2f3b86ba97010978503f03faa285cad4c5d62377"
+      },
+      "sourceCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "testedCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "sourceTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "testedTreeEqualsSource": true,
+      "runId": 42290852995,
+      "jobId": 128143589695,
+      "predeclaredRole": "manual",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "workerScheduling": "linux-background",
+      "diagnosticOnly": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 43.405176,
+        "pollingP95Ms": 49.055406,
+        "ratio": 1.1301741064245425,
+        "regressionPercent": 13.017410642454252
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 157,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 172072960,
+      "memoryEvents": {
+        "oom": 0,
+        "oomKill": 0
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "75e73816c788ff108a8ef1f395a91ab79e4a11784446080ccb1833cfd356f861",
+      "artifactDigestVerified": true,
+      "admissionSha256": "0599f4dba28a823316c322ad4b2b068660f415ebf5039aa33b2e8acbaaad7a85",
+      "interpretation": "Declared final-candidate run failed only overhead. Identical94 staged inputs to earlier ba7 passes do not establish repeatable margin; no sample filtering, retries or substitution."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/pilot-verification.json",
+        "sha256": "84b5a10aaa24096ba3944cb42e7e932ed046d3da4d005eb81afd77fc9c25d02f"
+      },
+      "sourceCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "testedCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "sourceTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "runId": 42290882761,
+      "jobId": 128143688523,
+      "predeclaredRole": "ordinary-full",
+      "profile": "full",
+      "resourceProfile": "hosted-runner-not-constrained-container",
+      "workerScheduling": "linux-background",
+      "diagnosticOnly": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 34.198703,
+        "pollingP95Ms": 43.576767,
+        "ratio": 1.274222797279768,
+        "regressionPercent": 27.422279727976793
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 104,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "fullGraphPassed": true,
+      "liveRecoveryPassed": true,
+      "allPhaseCleanupPassed": true,
+      "graphCleanup": true,
+      "artifactSha256": "d343cf5ffdd43229fff23f50c74419247d0363b7200b0e543aac626e6f5acdc6",
+      "artifactDigestVerified": true,
+      "admissionSha256": "48a548979c93fb6345fb7bd2909fba555e94e0dd408665ebc34918b0e67712ca",
+      "interpretation": "Startup, full graph and recovery succeeded; admission failed only the unchanged10percent overhead gate. Startup success does not prove the password defect caused the historical readiness failures."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-owner-profile/verification.json",
+        "sha256": "2674c698977680654cd50850b6c6ac0538881ec43928dd45bd5b4006a888203c"
+      },
+      "sourceCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "sourceTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "runId": 42292367453,
+      "jobId": 128148790685,
+      "predeclaredRole": "one-owner-profile-diagnostic",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "workerScheduling": "linux-background",
+      "diagnosticOnly": true,
+      "passed": true,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 61.265078,
+        "pollingP95Ms": 59.526372,
+        "ratio": 0.9716199496228504,
+        "regressionPercent": -2.8380050377149635
+      },
+      "effects": 1200,
+      "completedPolls": 167,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "allFourProfilesComplete": true,
+      "timingStreamsComplete": true,
+      "stagedInputsIdenticalToFailedB82": true,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "interpretation": "Instrumented result is ineligible and cannot override any of the three uninstrumented ratio failures. Owner sampling does not measure worker CPU or establish the cause of broad queueing."
     }
   ],
   "decisions": [
@@ -1989,7 +2253,12 @@
     "The first combined full check failed 1 of 1,307 tests because the copied validation CLI alias fixture omitted the newly required scheduling helper; test:pack was not reached. Correcting only that copy list preserves the 10-second bound and assertions. The failure is retained and the second complete check is pending.",
     "The corrected combined second full check passed 1,307/1,307 with zero skips plus installed-package consumers; the focused CLI alias check passed 1/1. The first full-check fixture failure remains retained. New-source hosted ordinary, security and unchanged performance qualification remain pending; Node/release approval is unchanged.",
     "Exact ba7deb6 passed both predeclared native Linux single-logical-CPU linux-background runs without changing workload/cadence/limits:5.4571% and9.2804%,1200effects each,135/152polls and zero failed/skipped polls. Ordinary full stopped at database readiness before graph/admission measurements, and the PR pilot also failed before performance with no report. CI 11/11 passed; current CodeQL alert 23 remained open. All outcomes are retained; pending startup/historical-checkout corrections and Node security review prevent overall acceptance or publication.",
-    "The final formatted startup correction passed local Ruff lint/format, 1,022 unit tests and 150 authenticated Neo4j integration tests, verified owned-container/tunnel cleanup, sdist/wheel builds and isolated installed-wheel checks. No production SDK or Node test source changed from ba7deb6. New exact-source hosted, ordinary full graph/admission and CodeQL checks remain pending; prior failed attempts and Node security hold remain."
+    "The final formatted startup correction passed local Ruff lint/format, 1,022 unit tests and 150 authenticated Neo4j integration tests, verified owned-container/tunnel cleanup, sdist/wheel builds and isolated installed-wheel checks. No production SDK or Node test source changed from ba7deb6. New exact-source hosted, ordinary full graph/admission and CodeQL checks remain pending; prior failed attempts and Node security hold remain.",
+    "Exact b82dc4b passed all six ordinary workflows and11CI jobs, including195browser scans,45no-skip isolation checks,1022Python units+150integration and installed consumers. CodeQL23 is fixed without dismissal; historical main alerts stay separate.",
+    "The two declared b82constrained runs failed only overhead at12.9801%/13.0174%; ordinary full admission failed only overhead at27.4223%. All3600effects and427polls succeeded without skips/failures, full graph/live recovery and cleanup passed. Prior identical-runtime ba7passes do not establish repeatable margin; overall performance remains unqualified.",
+    "A separately reviewed private core-worker decoder optimization is authorized for implementation after an ignored differential prototype; implementation verification and all full qualification remain pending. The separate b82owner CPU diagnostic is ineligible. No authority decoder, limit, acceptance gate, release approval or Node security hold is changed.",
+    "The core-only decoder implementation passed311focused tests with zero skips, including9newdecoder tests and48mirror-state combinations; authority decoding and host/MCP paths are unchanged. Full-suite and hosted qualification remain pending. The single exactb82owner diagnostic completed all4captures but is explicitly ineligible and cannot supersede the three failed acceptance runs.",
+    "The decoder-only candidate passed the full npm run check:1316/1316tests,zero failures/skips and all installed consumers. Hosted qualification remains pending. The separate identifier-cache prototype was rejected for insufficient repeated-string gain and high-cardinality cost; no cache was adopted. The existing up-to+5/clamp19 worker policy, resource/cadence gates and Node HIGH hold remain unchanged."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -4008,5 +4277,409 @@
       "Combined changes do not isolate which optimization affected latency; no universal, real-time or unknown-company guarantee.",
       "The Node HIGH security hold remains, and new startup/workflow corrections require their own exact-source verification."
     ]
+  },
+  "startupCorrectedHostedQualification": {
+    "source": {
+      "head": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "headTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "testedMerge": "8148ef3d1f2be616996303ac79bf367e704f700c",
+      "mergeTree": "7ba3164b3a10ec6406232f03a1dfa3622f1138ce",
+      "equal": true,
+      "sha256": "c038551570535f64840294a216475ef0c0d9bbf1ee62382e65e4d2b740ecbe8f",
+      "files": 454
+    },
+    "qualificationVerification": {
+      "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/qualification-verification.json",
+      "sha256": "efa09c8818a8caede827c53a530c61b0b6aaa2bc2c47a3ef77389dff8d306cad"
+    },
+    "constrainedVerification": {
+      "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/constrained-verification.json",
+      "sha256": "19c2ed0ce72b0fe319bbbedc2f3b86ba97010978503f03faa285cad4c5d62377"
+    },
+    "ordinaryFullVerification": {
+      "path": "artifacts/agent-cartography/hosted-b82dc4b-qualification/pilot-verification.json",
+      "sha256": "84b5a10aaa24096ba3944cb42e7e932ed046d3da4d005eb81afd77fc9c25d02f"
+    },
+    "predeclaredRuns": [
+      42290835308,
+      42290852995
+    ],
+    "ordinaryFullRun": 42290882761,
+    "retries": 0,
+    "allRequiredRunsPassed": false,
+    "bothConstrainedRunsPassed": false,
+    "ordinaryAdmissionPassed": false,
+    "ordinaryFullGraphPassed": true,
+    "liveRecoveryPassed": true,
+    "stagedInputProof": {
+      "files": 94,
+      "bothManifestsEqual": true,
+      "manifestSha256": "7117188c1d169282bc425671d95d8cf1a942c1e22c9a66f589df235845697b14",
+      "priorManifest": "artifacts/agent-cartography/hosted-ba7deb6-qualification/auto/constrained-observer/staged-inputs.json",
+      "changedFilesOnly": [],
+      "compiledRuntimeFilesIncludingDeclarations": 80
+    },
+    "ci": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b/ci-b82dc4b.json",
+        "sha256": "6b9aad900036737b21b010a776f793dc3fb4b3628c6bcc642704a40096c9bc68"
+      },
+      "workflows": [
+        {
+          "id": 42290835327,
+          "name": "Dependency Review",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42290835304,
+          "name": "Python dependency audit",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42290835239,
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42290835387,
+          "name": "Cartography pilot",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42290835332,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42290835310,
+          "name": "Cartography integration",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "jobsPassed": 11,
+      "jobsRequired": 11,
+      "browserScans": 195,
+      "axeViolations": 0,
+      "requiredLinuxIsolationTests": 45,
+      "requiredLinuxIsolationSkips": 0,
+      "pythonUnits": 1022,
+      "pythonIntegrationTests": 150,
+      "pythonPackagingAndInstalledConsumer": true,
+      "pythonCleanupVerified": true,
+      "nodePlatformResults": [
+        {
+          "jobId": 128143523141,
+          "name": "check (22)",
+          "node": "22.23.4",
+          "tests": 1307,
+          "pass": 1299,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "jobId": 128143523214,
+          "name": "check (24)",
+          "node": "24.22.2",
+          "tests": 1307,
+          "pass": 1299,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "jobId": 128143522982,
+          "name": "check (26)",
+          "node": "26.13.0",
+          "tests": 1307,
+          "pass": 1299,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "jobId": 128143523333,
+          "name": "check (macos-latest, 24)",
+          "node": "24.22.2",
+          "tests": 1307,
+          "pass": 1299,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "jobId": 128143523240,
+          "name": "check (windows-latest, 24)",
+          "node": "24.22.2",
+          "tests": 1308,
+          "pass": 1160,
+          "fail": 0,
+          "skipped": 148
+        }
+      ],
+      "productionRecovery": "passed",
+      "productionReadP95Ms": 140,
+      "productionManifestSha256": "82a519e96c9f717e7a4c4479ce4e74d9e9beb19752df00d7fff64afe78695a6d",
+      "artifactArchivesVerified": 11
+    },
+    "security": {
+      "runId": 42290835239,
+      "analysisJobsPassed": 2,
+      "gateJobId": 128144096645,
+      "gate": "passed",
+      "currentPullRequestOpenAlerts": 0,
+      "alert23": {
+        "state": "fixed",
+        "dismissed": false,
+        "lastDetectedInstanceCommit": "66d60c3a8fc27fc707486a94c9bc387c7fee1fd2",
+        "note": "The fixed alert instance retains its last-detected commit; current analyses below bind the new tested merge."
+      },
+      "currentAnalyses": [
+        {
+          "id": 2115237952,
+          "commit_sha": "8148ef3d1f2be616996303ac79bf367e704f700c",
+          "category": "/language:javascript-typescript",
+          "results_count": 0,
+          "rules_count": 103,
+          "created_at": "2026-11-06T20:45:09Z",
+          "error": "",
+          "warning": ""
+        },
+        {
+          "id": 2115235101,
+          "commit_sha": "8148ef3d1f2be616996303ac79bf367e704f700c",
+          "category": "/language:actions",
+          "results_count": 0,
+          "rules_count": 23,
+          "created_at": "2026-11-06T20:44:43Z",
+          "error": "",
+          "warning": ""
+        }
+      ],
+      "mainOpenAlerts": 5,
+      "mainStatusSeparateFromPullRequest": true
+    },
+    "ordinaryPullRequestSmoke": {
+      "runId": 42290835387,
+      "jobId": 128143522675,
+      "passed": true,
+      "effects": 600,
+      "polls": 47,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": false,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 26.336086,
+        "pollingP95Ms": 28.027023,
+        "ratio": 1.0642060859005396,
+        "regressionPercent": 6.420608590053956
+      },
+      "acceptanceEvidenceEligible": false
+    },
+    "fullGraph": {
+      "passed": true,
+      "rawArithmeticVerified": true,
+      "graph": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000,
+        "databaseNodes": 128201,
+        "databaseRelationships": 481100
+      },
+      "publications": 100,
+      "publicationMaxSeconds": 10.147179079000011,
+      "batchSeconds": 104.24022255,
+      "querySamples": 100,
+      "querySamplesPerOperation": 50,
+      "queryP95Seconds": {
+        "get_agent_access": 0.19482312900000034,
+        "explain_access": 0.2763786420000001
+      },
+      "queryLimits": {
+        "sources": 64,
+        "storeNodes": 2000,
+        "storeEdges": 5000,
+        "storeBytes": 4194304,
+        "graphNodes": 500,
+        "graphEdges": 1000,
+        "responseBytes": 1048576,
+        "queryTimeoutMs": 5000,
+        "httpTimeoutMs": 10000
+      },
+      "coldSamplesIncluded": true,
+      "readiness": {
+        "attempts": 16,
+        "elapsedSeconds": 8.377
+      },
+      "configuredHardware": {
+        "os": "Linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x86_64",
+        "hostLogicalCpus": 4,
+        "hostMemoryBytes": 16759431168,
+        "containerCpus": 4,
+        "containerMemoryBytes": 4294967296,
+        "dataTmpfsBytes": 2147483648
+      },
+      "versions": {
+        "python": "3.13.18",
+        "cartography": "0.144.0",
+        "neo4jPythonDriver": "6.4.1",
+        "neo4jImage": "neo4j:5.26.32-community@sha256:414adfe41c6ff32abb752be37f265c77607c166cab298f65a917fc4f05776218",
+        "docker": "29.4.2"
+      },
+      "disposableCleanup": true
+    },
+    "livePilot": {
+      "status": "passed",
+      "durationSeconds": 77.361,
+      "scopeChecks": 3,
+      "replayPublished": 4,
+      "authorityStatePreserved": true,
+      "collectionPreservesAuthority": true,
+      "executorSurvivesRollback": true,
+      "restoreLogicalContentMatches": true,
+      "restoreSnapshotPointersMatch": true
+    },
+    "releaseArtifacts": {
+      "path": "artifacts/agent-cartography/release-b82dc4b/manifest.json",
+      "sha256": "96c59763e8fbe4bce324e2a2908b4e13e49db7596b6a70f724870168170eb0f3"
+    },
+    "localArchiveComparisonToBa7": {
+      "path": "artifacts/agent-cartography/release-b82dc4b/comparison-to-ba7.json",
+      "sha256": "7583a3355a8177d62f0a882fc8c081a01dbd938bc367fffceedb139045d94a54"
+    },
+    "hostedPackageComparison": {
+      "path": "artifacts/agent-cartography/hosted-b82dc4b/local-package-payload-comparison.json",
+      "sha256": "bae28e6c61af25a2ba9ea23bfb522ef5293afea29a2bc7b8663b8aa87e6116d8"
+    },
+    "allFivePackagePayloadsMatch": true,
+    "compressedArchiveBytesEqual": false,
+    "published": false,
+    "releaseApprovalChanged": false,
+    "interpretation": [
+      "All six ordinary workflows,11CI jobs and current CodeQL gate passed;alert23 fixed without dismissal. Main historical alerts remain separate.",
+      "Both constrained runs and ordinary admission failed only the unchanged overhead gate despite3600effects and427polls with no failed/skippedpolls. Overall performance remains unqualified.",
+      "All94constrained staged files equal the priorba7passing pair. Prior passes cannot override current failures or establish repeatable margin; no causal host claim.",
+      "Full graph and live recovery passed after startup correction; historical readiness cause remains unproven.",
+      "Authority/runtime acceptance, Node HIGH review and publication remain blocked pending final verified candidate."
+    ]
+  },
+  "coreObserverDecoderFollowup": {
+    "status": "full_local_check_passed_decoder_only_hosted_qualification_pending",
+    "basedOn": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+    "prototype": {
+      "path": "artifacts/agent-cartography/observer-decode-prototype-1/review.json",
+      "sha256": "9b267dec77985c94f3413bb2e3249b871c70702b6facfffebb3a713bfe6c0861"
+    },
+    "prototypeFinalTests": {
+      "tests": 9,
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "mirrorCombinations": 48,
+      "log": {
+        "path": "artifacts/agent-cartography/observer-decode-prototype-1/differential-core-only.log",
+        "sha256": "3ed3522a83b7c007ecc1c001dd6b52f9227e0e54ab185dda03c5342b7660ba17"
+      }
+    },
+    "prototypeAcceptanceEvidenceEligible": false,
+    "scope": "Separate private core-worker fresh authenticated JSON decoder with root null prototype; avoids recursive prototype normalization of unused ledger records. Authority LedgerStore.read and host/MCP decoder remain unchanged.",
+    "requirementsPreserved": [
+      "Exact current owner ciphertext/witness/mirror capture",
+      "Fresh GCM authentication, byte bounds, root/schema/identity checks and plaintext wiping",
+      "Own-data-only nested projection reads; fresh validated output DTOs",
+      "No authority cache, public index API change, workload/gate/limit relaxation"
+    ],
+    "implementationVerification": {
+      "tests": 311,
+      "passed": 311,
+      "failed": 0,
+      "skipped": 0,
+      "newDecoderTests": 9,
+      "mirrorCombinations": 48,
+      "log": {
+        "path": "artifacts/agent-cartography/observer-decode-production-focused.log",
+        "sha256": "39af0e5f052ce7c4ae58c7ccbbc3728356cfed3f88c33ad61047067bbb19470a"
+      },
+      "scope": "Executor-only compilation and focused inventory/HTTP/security/worker/crypto/decoder/limits checks; not the full repository suite or performance acceptance.",
+      "review": {
+        "path": "artifacts/agent-cartography/observer-decode-production/review.json",
+        "sha256": "201f4d9689d9d851cdfa19f8be27edf57218a6d71593347bbab0d96ff0bd8a94"
+      },
+      "authorityBoundaryComparison": {
+        "path": "artifacts/agent-cartography/observer-decode-production/boundary-verification.json",
+        "sha256": "32caa402a36507595531a774d42cc9bcfad0ee9c85731377b4c3d99993d30849"
+      }
+    },
+    "fullCandidateCheck": {
+      "status": "passed",
+      "command": "npm run check",
+      "exitCode": 0,
+      "tests": 1316,
+      "passed": 1316,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 120733.621542,
+      "allInstalledConsumersPassed": true,
+      "log": {
+        "path": "artifacts/agent-cartography/core-decoder-full-check-1.log",
+        "sha256": "2a06c99de899654f1734238248e94f9480e926b452560f2d5bcba176c9055d94"
+      },
+      "hostedQualification": "pending"
+    },
+    "newQualification": "decoder_only_hosted_qualification_pending",
+    "ownerProfileDiagnostic": {
+      "runId": 42292367453,
+      "jobId": 128148790685,
+      "sourceCommit": "b82dc4be64d899ca508fe3c82f45a4cbd70bb299",
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-owner-profile/verification.json",
+        "sha256": "2674c698977680654cd50850b6c6ac0538881ec43928dd45bd5b4006a888203c"
+      },
+      "analysis": {
+        "path": "artifacts/agent-cartography/hosted-b82dc4b-owner-profile/owner-profile-analysis.json",
+        "sha256": "ba9bba9936cba932cf2be60592064b8d696bb1c195e8cdb3347e177e96904a5c"
+      },
+      "acceptanceEvidenceEligible": false,
+      "result": "completed_all_four_captures_and_timing_streams",
+      "ownerSelfSamplePercent": {
+        "decode": 27.049655672345054,
+        "gc": 17.07502718376223
+      },
+      "limits": [
+        "Instrumented ratio does not qualify the candidate or replace three failed uninstrumented runs.",
+        "Owner samples do not isolate parse versus normalization or worker CPU.",
+        "Pre-handler and post-return-to-result intervals include scheduling/transport/callback delay; no causal host attribution."
+      ]
+    },
+    "releaseApprovalChanged": false,
+    "identifierCachePrototype": {
+      "review": {
+        "path": "artifacts/agent-cartography/inventory-identifier-cache-prototype-1/review.json",
+        "sha256": "825f46233957a51552b5c9ad5c805c3aff4d72b5c9ed2a51b5966689d0470842"
+      },
+      "adopted": false,
+      "decision": "Rejected: small repeated-string component gain with a high-cardinality cost tradeoff; insufficiently robust improvement to justify extra production complexity or claim admission-gate margin.",
+      "focusedTests": {
+        "passed": 7,
+        "failed": 0,
+        "skipped": 0
+      },
+      "acceptanceEvidenceEligible": false,
+      "trackedRuntimeUnchangedByPrototype": true,
+      "priorFixtureFailureRetained": true
+    },
+    "workerSchedulingPolicyChanged": false
   }
 }

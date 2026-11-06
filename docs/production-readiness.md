@@ -26,8 +26,12 @@ Those prior runs used default worker scheduling and cannot qualify the new mode;
 the later `1ef859c` default-mode failures remain retained as well.
 Exact `ba7deb6` then passed both predeclared runs of the configured profile:
 **5.457% and 9.280% overhead**, all 1,200 effects in each, 135/152 polls, zero failed
-or skipped polls, verified controls and cleanup. These results do not replace
-the ordinary full graph/admission qualification, which remains incomplete.
+or skipped polls, verified controls and cleanup. However, `b82dc4b` used the same
+94 staged input files and failed both declared runs at **12.980% and 13.017%**
+overhead. Its ordinary full admission also failed at **27.422%**. Each completed
+all 1,200 effects; the three runs completed 166/157/104 polls with zero failures
+or skips. Full graph and live recovery passed. The earlier passes do not establish
+repeatable margin: overall performance remains unqualified.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second
@@ -49,7 +53,9 @@ scans and the required 45 Linux isolation checks without skips. The ordinary ful
 workflow failed at graph database readiness before graph measurements or admission;
 the PR pilot failed earlier with only `PILOT_FAILED` and no report. Current CodeQL
 alert 23 remained open despite successful analysis. The manual experiment now
-selects only the fixed reviewed historical commit; its new scan is pending.
+selects only the fixed reviewed historical commit. Its `b82dc4b` scan passed:
+alert 23 is fixed, not dismissed, and the current PR has zero open alerts.
+Historical main-branch alerts remain separate.
 
 The startup follow-up fixes a separately reproduced Neo4j option-parser edge by
 prefixing the complete generated random password, preserving all 256 random bits.
@@ -57,7 +63,19 @@ It also retains bounded, secret-free failure evidence before owned-resource
 cleanup. Historical failure causes remain unproven. Its full local Python sequence
 passed lint/formatting, **1,022 unit tests and 150 authenticated Neo4j integration
 tests**, verified cleanup, package builds and isolated installed-wheel checks.
-New hosted/full graph/admission verification and CodeQL remain pending.
+Exact `b82dc4b` passed all six ordinary workflows and 11 CI jobs, including 195
+browser scans, 45 required Linux isolation checks without skips, hosted Python
+1,022 unit/150 integration tests and installed consumers. The 100-source,
+10,000-task, 100,000-grant full graph workload and live recovery passed. Admission
+failed only the overhead gate in all three declared runs, as recorded above;
+the smoke pilot cannot substitute for full qualification. A new private core-worker
+decoder follow-up passed 311 focused checks and the full local check:
+**1,316/1,316 tests, zero skips, plus all installed consumers**. Decoder-only hosted
+qualification remains pending. The separate identifier-cache prototype was rejected
+for its small repeated-string gain and high-cardinality cost; it is not adopted.
+The worker nice-level policy remains unchanged. The decoder preserves fresh authenticated reads and mirror
+checks; authority and host/MCP decoding remain unchanged. Prototype measurements
+and the separate owner-profile diagnostic cannot qualify the change.
 The controlled exact-`9709f70` Windows serial experiment
 passed the previously failing cases and installed consumers; the maintained
 Windows-only test launcher subsequently passed on `1ef859c`. Prior failures

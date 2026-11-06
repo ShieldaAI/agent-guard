@@ -95,8 +95,18 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    polls. Its local 1,307-test check and all 11 hosted CI jobs passed. The ordinary
    full workflow stopped at graph database readiness and never measured admission;
    the startup correction passed local lint/formatting, 1,022 unit tests, 150
-   authenticated integration tests and package/installed-wheel checks. New
-   exact-source hosted verification remains pending. Prior quota-only,
+   authenticated integration tests and package/installed-wheel checks. All six
+   exact-source `b82dc4b` ordinary workflows and all 11 CI jobs passed; CodeQL
+   alert 23 is fixed, not dismissed. Full graph and recovery passed, but ordinary
+   admission failed at 27.422% overhead and both constrained runs failed at
+   12.980%/13.017%, despite zero failed/skipped polls. The constrained staged
+   runtime bytes match `ba7deb6`; its earlier passes do not establish repeatable
+   margin. Overall performance is unqualified. The private core-worker decoder
+   follow-up passed 311 focused checks and the full local check: **1,316/1,316,
+   zero skips, plus all installed consumers**. Decoder-only hosted qualification
+   remains pending. The identifier-cache prototype was rejected and is not adopted;
+   the worker nice-level policy is unchanged. Prototype measurements and owner profiling are
+   ineligible diagnostics. Prior quota-only,
    Colima-affined, diagnostic and 10 ms-period failures remain recorded. Do not add
    diagnostics, change limits, or retry away failures.
    The runner's generic default remains bandwidth-only; the configured acceptance

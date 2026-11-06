@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { ToolDefinition } from '@shieldaai/agent-guard';
-import { ExecutorError, type Ledger } from './store.js';
+import { ExecutorError, type InventoryLedgerState } from './store.js';
 
 /** Trusted host enrollment; changing it creates a separate collector source. */
 export interface InventorySourceOptions {
@@ -277,7 +277,7 @@ function serializeConstructedInventory(snapshot: InventorySnapshot): { json: str
 
 /** Fresh snapshot-local constructors shared by synchronous and worker output. */
 function constructInventory(
-  state: Ledger,
+  state: InventoryLedgerState,
   live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
   scope: InventoryScope,
@@ -392,7 +392,7 @@ function constructInventory(
 
 /** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
 export function projectInventory(
-  state: Ledger,
+  state: InventoryLedgerState,
   live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
   scope: InventoryScope,
@@ -416,7 +416,7 @@ export interface InventoryJson {
 
 /** Internal direct core wire projection. No parsing, authority cache or host/MCP composition. */
 export function projectInventoryJson(
-  state: Ledger,
+  state: InventoryLedgerState,
   live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
   scope: InventoryScope,

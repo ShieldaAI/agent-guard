@@ -75,11 +75,33 @@ function decode(text: string): Ledger {
   return value as Ledger;
 }
 
-/** Shared private decoder for synchronous reads and the trusted observer worker. */
+/** Shared private decoder for authority reads and host/MCP observations. */
 export function decodeLedgerObservation(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): Ledger {
   const plaintext = decryptLedgerPayload(payload, key, maxBytes, witnessed);
   try {
     const state = decode(plaintext.toString('utf8'));
+    if (![1, 2, 3].includes(state.schema) || !Number.isSafeInteger(state.revision) || !state.tasks || !state.actions) throw new Error();
+    if (Object.hasOwn(state, 'inventoryInstanceId') && (typeof state.inventoryInstanceId !== 'string' ||
+        !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(state.inventoryInstanceId))) throw new Error();
+    return state;
+  } finally { plaintext.fill(0); }
+}
+
+/** Private projection input; deliberately insufficient for an authority Ledger. */
+export type InventoryLedgerState = Readonly<Pick<Ledger,
+  'schema' | 'revision' | 'epoch' | 'inventoryInstanceId' | 'tasks' | 'families' | 'tools'>>;
+
+/**
+ * Core observation only. Fresh authenticated JSON data can retain ordinary nested
+ * prototypes because inventory reads only own data descriptors and constructs a
+ * detached DTO. Never use this path for authority reads or host/MCP composition.
+ */
+export function decodeCoreInventoryObservation(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): InventoryLedgerState {
+  const plaintext = decryptLedgerPayload(payload, key, maxBytes, witnessed);
+  try {
+    const state: Ledger = JSON.parse(plaintext.toString('utf8'));
+    // Base validation and the worker's mirror checks use direct root properties.
+    if (state !== null && typeof state === 'object' && !Array.isArray(state)) Object.setPrototypeOf(state, null);
     if (![1, 2, 3].includes(state.schema) || !Number.isSafeInteger(state.revision) || !state.tasks || !state.actions) throw new Error();
     if (Object.hasOwn(state, 'inventoryInstanceId') && (typeof state.inventoryInstanceId !== 'string' ||
         !/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(state.inventoryInstanceId))) throw new Error();

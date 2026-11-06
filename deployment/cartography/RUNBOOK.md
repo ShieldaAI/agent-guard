@@ -187,16 +187,19 @@ bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
 period and zero burst. The configured candidate additionally requires explicit
 `workerScheduling: 'linux-background'`. Both declared `ba7deb6` native runs passed:
 5.457% and 9.280% overhead, all 1,200 effects each, 135/152 polls, zero failed/skipped
-polls and verified cleanup. Ordinary full graph/admission qualification remains
-incomplete: its graph database did not become ready, so neither graph measurements
-nor admission ran. The earlier
+polls and verified cleanup. Its ordinary full graph/admission run stopped at
+database readiness. Later `b82dc4b` used identical constrained staged runtime
+bytes but failed both declared runs at 12.980% and 13.017% overhead; ordinary full
+admission failed at 27.422%. All 3,600 effects and 427 polls completed without
+failed/skipped polls, and full graph/live recovery passed. The earlier passes do
+not establish repeatable margin: this profile remains unqualified. The earlier
 default-worker profile **passed on exact source `e4e42f`** at 7.2766% admission
 overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
 cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
 with unchanged runtime bytes. Both remain evidence, without a proven cause or fix.
 The subsequent `1ef859c` default-mode failures also remain evidence. Those earlier
 default-worker results do not qualify the new mode; the two `ba7deb6` passes are
-separate evidence.
+separate historical evidence and do not replace the later failures.
 This profile does not replace the graph or ordinary hosted admission gate. Build
 first and execute each declared qualification once, without a competing local workload:
 
@@ -268,8 +271,17 @@ on `ba7deb6`. The separate startup correction prefixes generated Neo4j passwords
 without losing random bits and retains safe failure diagnostics before cleanup;
 it does not prove the historical readiness failure's cause. Local validation passed
 lint/formatting, 1,022 unit tests, 150 authenticated integration tests, verified
-cleanup and package/installed-wheel checks. New hosted/full graph/admission
-verification remains pending. This scheduling change
+cleanup and package/installed-wheel checks. Exact `b82dc4b` passed all six ordinary
+hosted workflows and 11 CI jobs, and CodeQL alert 23 is fixed without dismissal.
+The full graph passed, while admission remains failed as recorded above. A new
+private core-worker decoder follow-up preserves fresh authenticated decryption,
+bounds and mirror checks; authority and host/MCP decoding remain unchanged.
+Its 311 focused checks and full local check passed: **1,316/1,316 tests, zero skips,
+plus all installed consumers**. Decoder-only hosted qualification remains pending.
+The separate identifier-cache prototype was rejected and is not adopted; the
+worker nice-level policy remains unchanged. Prototype
+measurements and the separate owner-profile diagnostic cannot qualify it.
+This scheduling change
 does not alter the immediate first poll, cadence, resource limits or acceptance
 gates, and is not a real-time guarantee or a change to every SDK embedding.
 
