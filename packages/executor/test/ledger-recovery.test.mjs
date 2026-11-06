@@ -108,3 +108,39 @@ test('repair refuses a primary entry appearing after preservation without overwr
  assert.ok(retained.some(path=>fs.readFileSync(path).equals(original)));assert.deepEqual(fs.readFileSync(source.witnessPath),witness);
  f.apply('repair');const recovered=f.open();assert.equal(recovered.read().audit[0].event,'previous acknowledged authority');recovered.close();
 });
+
+
+test('snapshot keeps its creation descriptor and rejects pathname replacement before fsync',t=>{
+ const f=fixture(t),source=f.options.stores[0],original=fs.readFileSync(source.database),witness=fs.readFileSync(source.witnessPath);
+ const open=fs.openSync,sync=fs.fsyncSync,exec=DatabaseSync.prototype.exec,close=DatabaseSync.prototype.close;
+ const snapshots=new WeakSet();let created,createdFd,createdIdentity,replacementIdentity,injected=false,descriptorRetained=false,replacementSynced=false;
+ fs.openSync=function(path,flags,...args){
+   const fd=open.call(this,path,flags,...args);
+   if(typeof path==='string'&&path.includes('/.guard-repair-')&&(flags&fs.constants.O_EXCL)){
+     created=path;createdFd=fd;createdIdentity=fs.fstatSync(fd);
+   }
+   return fd;
+ };
+ DatabaseSync.prototype.exec=function(sql){if(sql.includes('CREATE TABLE ledger('))snapshots.add(this);return exec.call(this,sql);};
+ DatabaseSync.prototype.close=function(){
+   const result=close.call(this);
+   if(snapshots.has(this)&&!injected){
+     injected=true;
+     try{const stat=fs.fstatSync(createdFd);descriptorRetained=stat.dev===createdIdentity.dev&&stat.ino===createdIdentity.ino;}catch{}
+     fs.renameSync(created,created+'.retained');fs.writeFileSync(created,'unexpected replacement',{mode:0o600});replacementIdentity=fs.lstatSync(created);
+   }
+   return result;
+ };
+ fs.fsyncSync=function(fd){
+   const stat=fs.fstatSync(fd);
+   if(replacementIdentity&&stat.dev===replacementIdentity.dev&&stat.ino===replacementIdentity.ino)replacementSynced=true;
+   return sync.call(this,fd);
+ };
+ syncBuiltinESMExports();
+ try{assert.throws(()=>f.apply('repair'),{code:'CUSTODY_FILE_UNSAFE'});}finally{
+   fs.openSync=open;fs.fsyncSync=sync;DatabaseSync.prototype.exec=exec;DatabaseSync.prototype.close=close;syncBuiltinESMExports();
+ }
+ assert.equal(injected,true);assert.equal(descriptorRetained,true);assert.equal(replacementSynced,false);
+ assert.throws(()=>fs.fstatSync(createdFd),{code:'EBADF'});
+ assert.equal(fs.readFileSync(created,'utf8'),'unexpected replacement');assert.deepEqual(fs.readFileSync(source.database),original);assert.deepEqual(fs.readFileSync(source.witnessPath),witness);
+});

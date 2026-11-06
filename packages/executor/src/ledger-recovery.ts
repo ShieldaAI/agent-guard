@@ -87,19 +87,24 @@ class Mirror {
     for(const row of statement.iterate(cap)){if(typeof row.id!=='string'||typeof row.payload!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(row.id))fail('RECOVERY_MIRROR_CORRUPT');yield{id:row.id,payload:row.payload};}
   }
   snapshot(path:string):void{
-    const fd=openSync(path,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR|constants.O_NOFOLLOW,0o600);closeSync(fd);
-    const output=new DatabaseSync(path);
+    const fd=openSync(path,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR|constants.O_NOFOLLOW,0o600);
     try{
-      output.exec('PRAGMA trusted_schema=OFF; PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; BEGIN IMMEDIATE; CREATE TABLE ledger(id INTEGER PRIMARY KEY CHECK(id=1),payload TEXT NOT NULL); CREATE TABLE authority_archives(id TEXT PRIMARY KEY,payload TEXT NOT NULL); CREATE TABLE custody_catalog(id TEXT PRIMARY KEY,payload TEXT NOT NULL)');
+      const output=new DatabaseSync(path);
+      try{
+        checkPrivate(fd,path);
+        output.exec('PRAGMA trusted_schema=OFF; PRAGMA journal_mode=DELETE; PRAGMA synchronous=EXTRA; PRAGMA fullfsync=ON; BEGIN IMMEDIATE; CREATE TABLE ledger(id INTEGER PRIMARY KEY CHECK(id=1),payload TEXT NOT NULL); CREATE TABLE authority_archives(id TEXT PRIMARY KEY,payload TEXT NOT NULL); CREATE TABLE custody_catalog(id TEXT PRIMARY KEY,payload TEXT NOT NULL)');
       const payload=this.db.prepare("SELECT payload FROM ledger WHERE id=1 AND typeof(payload)='text' AND length(CAST(payload AS BLOB))<=?").get(maximum*2+512)?.payload;
       if(typeof payload!=='string'||sha(payload)!==this.commitment)fail('RECOVERY_MIRROR_CORRUPT');output.prepare('INSERT INTO ledger(id,payload) VALUES(1,?)').run(payload);
       for(const table of ['authority_archives','custody_catalog'] as const){const insert=output.prepare(`INSERT INTO ${table}(id,payload) VALUES(?,?)`);let count=0,bytes=0;
         for(const row of this.rows(table,table==='authority_archives'?32*1024*1024:131072)){count++;bytes+=Buffer.byteLength(row.payload);
           if((table==='authority_archives'&&(count>4096||bytes>256*1024*1024))||(table==='custody_catalog'&&(count>100000||bytes>256*1024*1024)))fail('RECOVERY_CAPACITY');insert.run(row.id,row.payload);}}
-      output.exec('COMMIT');
-    }finally{output.close();}
-    const synced=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{fsyncSync(synced);}finally{closeSync(synced);}syncDirectory(dirname(path));
-    this.verifySnapshot(path);
+        output.exec('COMMIT');
+      }finally{output.close();}
+      // Fsync the exclusively created inode, never reopen a pathname that could
+      // have been replaced while SQLite owned its separate connection.
+      checkPrivate(fd,path);fsyncSync(fd);syncDirectory(dirname(path));
+      this.verifySnapshot(path);checkPrivate(fd,path);
+    }finally{closeSync(fd);}
   }
   verifySnapshot(path:string):void{
     const expected=new Map((['authority_archives','custody_catalog'] as const).map(table=>[table,this.reader.auxiliaryDigest(table)]));

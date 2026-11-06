@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import fs, { closeSync, mkdtempSync, mkdirSync, openSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import test from 'node:test';
@@ -49,6 +50,45 @@ test('trusted npm rejects missing files, directory entry points, and oversized m
   assert.throws(() => resolveInstallationNpmCli(fixture.node, 'win32'), /TRUSTED_NPM_NOT_FOUND/);
   mkdirSync(fixture.cli);
   assert.throws(() => resolveInstallationNpmCli(fixture.node, 'win32'), /TRUSTED_NPM_NOT_FOUND/);
+});
+
+test('trusted npm accepts a complete manifest at the byte limit', t => {
+  const fixture = installation(t);
+  const json = JSON.stringify({ name: 'npm', bin: { npm: 'bin/npm-cli.js' } });
+  writeFileSync(join(fixture.npm, 'package.json'), json.padEnd(64 * 1024));
+  assert.equal(resolveInstallationNpmCli(fixture.node, 'win32'), realpathSync(fixture.cli));
+});
+
+test('trusted npm bounds descriptor reads when a manifest grows after validation', t => {
+  const fixture = installation(t);
+  const writer = openSync(join(fixture.npm, 'package.json'), 'a');
+  const originalStat = fs.fstatSync;
+  const originalRead = fs.readSync;
+  let changed = false;
+  let bytesRead = 0;
+  try {
+    t.mock.method(fs, 'fstatSync', fd => {
+      const snapshot = originalStat(fd);
+      if (!changed) {
+        changed = true;
+        writeFileSync(writer, ' '.repeat(1024 * 1024));
+      }
+      return snapshot;
+    });
+    t.mock.method(fs, 'readSync', (fd, buffer, offset, length, position) => {
+      const count = originalRead(fd, buffer, offset, length, position);
+      bytesRead += count;
+      return count;
+    });
+    syncBuiltinESMExports();
+    assert.throws(() => resolveInstallationNpmCli(fixture.node, 'win32'), /TRUSTED_NPM_NOT_FOUND/);
+    assert.equal(changed, true);
+    assert.equal(bytesRead, 64 * 1024 + 1);
+  } finally {
+    t.mock.restoreAll();
+    syncBuiltinESMExports();
+    closeSync(writer);
+  }
 });
 
 test('trusted npm runs the current installation when npm_execpath points to unrelated JavaScript', t => {
