@@ -47,6 +47,8 @@ test('real admission fixture executes exact effects while nonempty HTTP inventor
   const phase = await runAdmissionPhase({ mode: 'polling', samples: 15, warmup: 2, tasks: 2, grants: 2, pollIntervalMs: 10 });
   assert.equal(phase.samples.length, 15); assert.equal(phase.warmupSamples.length, 2);
   assert.equal(phase.successfulEffects, 17); assert.equal(phase.finalCalls, 17);
+  assert.deepEqual(phase.workerScheduling, { requested: 'default', before: { mode: 'default', verified: false },
+    after: { mode: 'default', verified: false } });
   assert.notEqual(phase.clientThreadId, phase.executorThreadId);
   assert.deepEqual(phase.cleanup, { worker: true, clientWorker: true, observer: true, taskServer: true, executor: true, directory: true });
   assert.ok(phase.samples.every(sample => sample.ok && sample.admissionMs <= sample.executeMs));

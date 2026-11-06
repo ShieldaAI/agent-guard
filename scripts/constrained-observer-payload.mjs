@@ -1,6 +1,7 @@
 // Fixed disposable container entrypoint. Never accepts company paths or credentials.
 import { openSync, readSync, writeFileSync, fsyncSync, closeSync } from 'node:fs';
 import { main } from './benchmark-admission.mjs';
+import { parseArgs } from 'node:util';
 import { isEntry } from '../examples/providers/replay.mjs';
 import { configuration, cpuList, CPU_FIELDS, SAMPLE_LIMIT, SAMPLE_INTERVAL_MS, validateResources } from './constrained-observer-validation.mjs';
 
@@ -59,10 +60,10 @@ export function resourceSampler(enabled, read = readCpuCounters) {
   sample(); const timer = enabled ? setInterval(sample, SAMPLE_INTERVAL_MS) : undefined; timer?.unref();
   return { sample, stop() { if (!result.closed) { clearInterval(timer); sample(); result.closed = true; } return result; } };
 }
-export async function runPayload(profile, diagnostics, { cpuAffinity = null, cpuProfile = false, benchmark = main, read = readResources, sampleCpu = readCpuCounters, output = '/output' } = {}) {
-  const config = configuration({ profile, diagnostics, cpuProfile, cpuAffinity }), before = read(), sampler = resourceSampler(diagnostics, sampleCpu);
+export async function runPayload(profile, diagnostics, { cpuAffinity = null, cpuProfile = false, workerScheduling = 'default', benchmark = main, read = readResources, sampleCpu = readCpuCounters, output = '/output' } = {}) {
+  const config = configuration({ profile, diagnostics, cpuProfile, cpuAffinity, workerScheduling }), before = read(), sampler = resourceSampler(diagnostics, sampleCpu);
   const report = { schemaVersion: 1, kind: 'constrained-observer-resources', diagnosticOnly: diagnostics,
-    resourceProfile: config.resourceProfile, cpuAffinity: config.cpuAffinity, affinity: { before: before.affinity, after: null },
+    resourceProfile: config.resourceProfile, cpuAffinity: config.cpuAffinity, workerScheduling: config.workerScheduling, affinity: { before: before.affinity, after: null },
     acceptanceEvidenceEligible: false, runtime: { node: process.version, architecture: process.arch, platform: process.platform },
     controls: before.controls, before: before.sample, after: null, sampler: null, checksPassed: false };
   let exitCode = 1;
@@ -71,8 +72,9 @@ export async function runPayload(profile, diagnostics, { cpuAffinity = null, cpu
     // with a closed synthetic sampler, without running or discarding a poll.
     validateResources({ ...report, after: before.sample, affinity: { before: before.affinity, after: before.affinity }, sampler: { enabled: false, intervalMs: SAMPLE_INTERVAL_MS,
       limit: SAMPLE_LIMIT, observed: 0, dropped: 0, errors: 0, closed: true, samples: [] }, diagnosticOnly: false,
-      acceptanceEvidenceEligible: false }, { profile: 'acceptance', diagnostics: false, cpuAffinity: config.cpuAffinity });
-    exitCode = await benchmark(['--profile', profile, ...(diagnostics ? ['--diagnostics'] : []), ...(cpuProfile ? ['--cpu-profile'] : []), '--output', output + '/admission.json']);
+      acceptanceEvidenceEligible: false }, { profile: 'acceptance', diagnostics: false, cpuAffinity: config.cpuAffinity, workerScheduling });
+    exitCode = await benchmark(['--profile', profile, ...(diagnostics ? ['--diagnostics'] : []), ...(cpuProfile ? ['--cpu-profile'] : []),
+      ...(workerScheduling === 'default' ? [] : ['--worker-scheduling', workerScheduling]), '--output', output + '/admission.json']);
   } catch { report.failure = 'CONSTRAINED_PAYLOAD_FAILED'; }
   finally {
     report.sampler = sampler.stop();
@@ -87,9 +89,10 @@ export async function runPayload(profile, diagnostics, { cpuAffinity = null, cpu
 }
 if (isEntry(import.meta)) {
   try {
-    const args = process.argv.slice(2), cpuProfile = args.at(-1) === '--cpu-profile';
-    if (cpuProfile) args.pop();
-    if (![2, 3].includes(args.length) || !['false', 'true'].includes(args[1])) throw Error();
-    process.exitCode = await runPayload(args[0], args[1] === 'true', { cpuAffinity: args[2] ?? null, cpuProfile });
+    const { values, positionals } = parseArgs({ args: process.argv.slice(2), allowPositionals: true, strict: true,
+      options: { 'cpu-profile': { type: 'boolean', default: false }, 'worker-scheduling': { type: 'string', default: 'default' } } });
+    if (![2, 3].includes(positionals.length) || !['false', 'true'].includes(positionals[1])) throw Error();
+    process.exitCode = await runPayload(positionals[0], positionals[1] === 'true', { cpuAffinity: positionals[2] ?? null,
+      cpuProfile: values['cpu-profile'], workerScheduling: values['worker-scheduling'] });
   } catch { process.stderr.write('CONSTRAINED_PAYLOAD_FAILED\n'); process.exitCode = 1; }
 }

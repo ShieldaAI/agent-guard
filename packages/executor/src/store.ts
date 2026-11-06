@@ -92,9 +92,22 @@ function decryptLedgerPayload(payload: string, key: Uint8Array, maxBytes: number
   const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
   cipher.setAAD(Buffer.from(witnessed ? 'agent-guard-witnessed-ledger-v1' : 'agent-guard-ledger-v1'));
   cipher.setAuthTag(Buffer.from(tag, 'base64'));
-  const plaintext = Buffer.concat([cipher.update(Buffer.from(value, 'base64')), cipher.final()]);
-  if (plaintext.byteLength > maxBytes) { plaintext.fill(0); throw new Error(); }
-  return plaintext;
+  let plaintext: Buffer | undefined, final: Buffer | undefined;
+  try {
+    plaintext = cipher.update(Buffer.from(value, 'base64'));
+    // GCM authentication must finish before exposing any plaintext. Its normal
+    // empty final buffer does not require copying the entire update result.
+    final = cipher.final();
+    if (final.byteLength) {
+      const combined = Buffer.concat([plaintext, final]);
+      plaintext.fill(0); plaintext = combined;
+    }
+    if (plaintext.byteLength > maxBytes) throw new Error();
+    return plaintext;
+  } catch (error) {
+    plaintext?.fill(0);
+    throw error;
+  } finally { final?.fill(0); }
 }
 
 function privateDatabasePath(path: string, flags: number): string {
@@ -254,7 +267,9 @@ export class LedgerStore {
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(this.#aad());
-    const encrypted = Buffer.concat([typeof value === 'string' ? cipher.update(value, 'utf8') : cipher.update(value), cipher.final()]);
+    const updated = typeof value === 'string' ? cipher.update(value, 'utf8') : cipher.update(value);
+    const final = cipher.final();
+    const encrypted = final.byteLength ? Buffer.concat([updated, final]) : updated;
     return JSON.stringify([iv.toString('base64'), cipher.getAuthTag().toString('base64'), encrypted.toString('base64')]);
   }
   #aad(): Buffer { return Buffer.from(this.#witnessed ? 'agent-guard-witnessed-ledger-v1' : 'agent-guard-ledger-v1'); }

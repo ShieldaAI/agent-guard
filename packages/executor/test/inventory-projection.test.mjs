@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHmac } from 'node:crypto';
-import { projectInventory, validateInventorySource } from '../dist/inventory.js';
+import { projectInventory, projectInventoryJson, validateInventorySource } from '../dist/inventory.js';
 
 const source = { companyId: 'company', sourceId: 'executor', enrollmentGeneration: 'enrollment' };
 const scope = { tenantId: 'tenant' };
@@ -20,8 +20,21 @@ const ledger = () => ({
   tools: { read: { fingerprint, revision: 3, approved: true } },
   actions: {}, approvals: {}, memory: {}, audit: [],
 });
-const project = (state, registrations = new Map(), selected = scope, key) =>
-  projectInventory(state, registrations, source, selected, time, key);
+const project = (state, registrations = new Map(), selected = scope, key) => {
+  const args = [state, registrations, source, selected, time, key];
+  let snapshot;
+  try { snapshot = projectInventory(...args); }
+  catch (error) {
+    assert.throws(() => projectInventoryJson(...args), { code: error.code, message: error.message });
+    throw error;
+  }
+  const encoded = projectInventoryJson(...args), wire = JSON.parse(encoded.json);
+  assert.equal(encoded.json, JSON.stringify(snapshot)
+    .replace(`"snapshotId":"${snapshot.snapshotId}"`, `"snapshotId":"${wire.snapshotId}"`));
+  assert.equal(encoded.bytes, Buffer.byteLength(encoded.json));
+  assert.deepEqual({ ...encoded.source }, { ...snapshot.source });
+  return snapshot;
+};
 const plain = value => JSON.parse(JSON.stringify(value));
 
 test('projection copies only allowed fields and normalizes grants without evaluating implementations', () => {
@@ -171,6 +184,7 @@ test('observation time has a bounded UTC representation and is independent of th
   assert.equal(project(state).generatedAt, new Date(time).toISOString());
   for (const invalid of [NaN, Infinity, -1, 0.5, 253_402_300_800_000]) {
     assert.throws(() => projectInventory(state, new Map(), source, scope, invalid), { code: 'INVENTORY_CLOCK_INVALID' });
+    assert.throws(() => projectInventoryJson(state, new Map(), source, scope, invalid), { code: 'INVENTORY_CLOCK_INVALID' });
   }
 });
 

@@ -1,9 +1,5 @@
 name: Windows serial test experiment
 on:
-  # Register the new branch workflow without running another Windows suite.
-  pull_request:
-    paths:
-      - .github/workflows/windows-serial-experiment.yml
   workflow_dispatch:
     inputs:
       source_commit:

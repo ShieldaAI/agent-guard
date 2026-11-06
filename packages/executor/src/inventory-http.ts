@@ -8,6 +8,7 @@ import { ExecutorError } from './store.js';
 import { validateInventoryManifest, type InventoryManifest } from './inventory-manifest.js';
 import { validateMcpInventorySources, type InventoryMcpSourceBinding } from './inventory-mcp.js';
 import { createInventoryObservationSession } from './inventory-observer.js';
+import type { InventoryWorkerScheduling } from './inventory-scheduling.js';
 
 export interface InventoryObserverCredential {
   readonly token: string;
@@ -22,6 +23,8 @@ export interface InventoryServerOptions {
   manifests?: readonly InventoryManifest[];
   /** Live host-owned readers, selected by tenant and manifest connection ID before capture. */
   mcpSources?: readonly InventoryMcpSourceBinding[];
+  /** Trusted host policy. Linux background mode lowers only the observer worker native thread by up to five nice levels. */
+  workerScheduling?: InventoryWorkerScheduling;
   port?: number;
   maxRequestBytes?: number;
   maxResponseBytes?: number;
@@ -147,9 +150,11 @@ function socketError(socket: Socket, code: string, status: number, retry?: numbe
 /** Read-only loopback observer transport. A separately authenticated TLS bridge is required remotely. */
 export async function startInventoryServer(options: InventoryServerOptions): Promise<{ server: Server; url: string; close(): Promise<void> }> {
   const config = object(options, ['executor', 'observers', 'manifests', 'mcpSources', 'port', 'maxRequestBytes', 'maxResponseBytes',
-    'requestTimeoutMs', 'maxConcurrentRequests', 'maxConnections', 'rateLimit'], ['executor', 'observers']);
+    'requestTimeoutMs', 'maxConcurrentRequests', 'maxConnections', 'rateLimit', 'workerScheduling'], ['executor', 'observers']);
   if (!(config.executor instanceof DurableExecutor)) return fail(CONFIG);
   const executor = config.executor;
+  if (config.workerScheduling !== undefined && config.workerScheduling !== 'default' && config.workerScheduling !== 'linux-background') return fail(CONFIG);
+  const workerScheduling = config.workerScheduling === 'linux-background' ? 'linux-background' : 'default';
   const port = integer(config.port, 0, 0, 65535);
   const requestLimit = integer(config.maxRequestBytes, 16 * 1024, 1, 64 * 1024);
   const responseLimit = integer(config.maxResponseBytes, 8 * 1024 * 1024, 128, 8 * 1024 * 1024);
@@ -193,7 +198,7 @@ export async function startInventoryServer(options: InventoryServerOptions): Pro
   });
   seen.clear();
   // Readiness belongs to server startup; no authenticated poll pays module startup.
-  const observation = await createInventoryObservationSession(executor).catch(error => {
+  const observation = await createInventoryObservationSession(executor, workerScheduling).catch(error => {
     for (const observer of observers) observer.hash.fill(0); throw error;
   });
   const globalBucket = { started: performance.now(), used: 0 };

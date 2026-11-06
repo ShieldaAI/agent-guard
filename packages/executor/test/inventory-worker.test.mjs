@@ -46,8 +46,13 @@ test('worker projections preserve opaque/raw tenant output and capture fresh sta
     const before = executor.inventorySnapshot({ tenantId: 'alpha' });
     const pending = observer.snapshot(request()); executor.revokeTask('alpha');
     const changedFingerprint = executor.registerTool({ ...definition, requiresApproval: true }); executor.approveTool('read', changedFingerprint);
-    const captured = JSON.parse((await pending).json), next = JSON.parse((await observer.snapshot(request())).json);
+    const serialized = await pending;
+    assert.equal(serialized.bytes, Buffer.byteLength(serialized.json));
+    const captured = JSON.parse(serialized.json), next = JSON.parse((await observer.snapshot(request())).json);
     assert.deepEqual(normalize(captured), normalize(before)); assert.equal(captured.tasks[0].revoked, false);
+    // The worker's direct JSON must preserve the synchronous canonical key order,
+    // not merely parse into an equivalent object. Only per-snapshot IDs/time vary.
+    assert.equal(JSON.stringify(normalize(captured)), JSON.stringify(normalize(before)));
     assert.equal(next.tasks[0].revoked, true); assert.ok(next.ledgerRevision > captured.ledgerRevision);
     assert.equal(JSON.stringify(next).includes('beta'), false);
     assert.equal(next.tools[0].registered, true); assert.equal(next.tools[0].approved, true);

@@ -51,6 +51,9 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    bandwidth quota, 512 MiB memory and no extra swap. Keep ABBA order, 100 tasks/1,000 grants,
    250 measured plus 50 warmup calls per phase, 250 ms serial polling, all 1,200
    effects, zero failed/skipped polls, cleanup and the 10% p95 bound unchanged.
+   Both admission qualifications must explicitly select `linux-background` worker
+   scheduling and verify the bounded before/after policy evidence. The separate
+   graph-load/host-MCP fixture retains its default worker policy.
    Retain every measured sample and actual cgroup/resource settings. Instrumented
    diagnostics and smoke cannot qualify either profile. The existing full hosted
    workflow can be requested using `CANDIDATE_REF`, the frozen candidate branch or
@@ -58,12 +61,13 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
 
    ```sh
    gh workflow run cartography-pilot.yml --ref "$CANDIDATE_REF" \
-     -f full_benchmark=true -f admission_diagnostics=false -f admission_cpu_profile=false
+     -f full_benchmark=true -f admission_diagnostics=false -f admission_cpu_profile=false \
+     -f worker_scheduling=linux-background
    ```
 
    This graph/admission workflow does not impose the one-CPU/512 MiB/no-extra-swap
    limits. The separate [constrained workflow](../.github/workflows/constrained-observer.yml)
-   explicitly uses affinity `0` for PR and default manual runs, with the original
+   explicitly uses affinity `0` and `linux-background` for PR and default manual runs, with the original
    100 ms CPU period and zero burst. Manual affinity `none` is retained only for
    historical quota-only comparison. To run the configured profile after
    building, cache the reviewed image, create only the output's parent, and use a
@@ -73,6 +77,7 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    docker pull "$NODE_IMAGE"
    mkdir -p artifacts/constrained-observer-runs
    node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --cpu-affinity 0 \
+     --worker-scheduling linux-background \
      --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
    ```
 
@@ -84,12 +89,20 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    cgroup limits and cleanup. Keep `admission.json`, `resources.json`, `staged-inputs.json`
    and `verification.json` with the platform/image/source binding. Local and hosted
    qualifications are separate records. The exact `e4e42f` native Linux run passed
-   at 7.2766% overhead, 1,200 effects and 149 polls without failures/skips; final
-   identifier-guard candidate verification is still pending. Prior quota-only,
+   at 7.2766% overhead, 1,200 effects and 149 polls without failures/skips under
+   default worker scheduling. It does not qualify the new serializer/background
+   candidate. That candidate's second local full check passed 1,307/1,307 tests
+   with zero skips plus installed consumers; the first copied-fixture omission
+   remains recorded. Hosted and performance qualification are pending. Prior quota-only,
    Colima-affined, diagnostic and 10 ms-period failures remain recorded. Do not add
    diagnostics, change limits, or retry away failures.
    The runner's generic default remains bandwidth-only; the configured acceptance
-   command must explicitly include `--cpu-affinity 0`. `--cpu-affinity SINGLE_INDEX`
+   command must explicitly include `--cpu-affinity 0 --worker-scheduling linux-background`.
+   Generic worker scheduling remains `default`; manual historical comparisons
+   select `default` and omit the new flag when checking older source. The new
+   policy lowers only the observer worker's native main-thread priority by up to five
+   nice points, capped at 19, with verified readback and unchanged owner priority.
+   It makes no GC/helper-thread priority or latency guarantee. `--cpu-affinity SINGLE_INDEX`
    restricts execution to one selected
    logical CPU while retaining the same one-CPU quota, 100 ms period, zero burst,
    512 MiB memory, no extra swap and 128-PID limit. It provides neither exclusivity

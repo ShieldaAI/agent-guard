@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { EventEmitter } from 'node:events';
 import { execFileSync } from 'node:child_process';
 import { admissionGate } from './benchmark-admission.mjs';
+import { schedulingEvidenceValid } from './benchmark-admission-scheduling.mjs';
 import { configuration, cpuList, validateAdmission, validateResources, PINNED_IMAGE, CPU_FIELDS, MEMORY_BYTES } from './constrained-observer-validation.mjs';
 import { boundedKernelText, processCpuList, readResources, resourceSampler } from './constrained-observer-payload.mjs';
 import { admissionReportLimit, boundedFile, stageInputs, containerArguments, verifyContainer, cleanupContainer, runConstrainedObserver, dockerCommand, createFailureCode } from './check-constrained-observer.mjs';
@@ -15,10 +16,10 @@ const ROOT = fileURLToPath(new URL('../', import.meta.url)), posix = { skip: pro
 const temporary = t => { const p = fs.realpathSync(fs.mkdtempSync(join(tmpdir(), 'constrained-unit-'))); t.after(() => fs.rmSync(p, { recursive: true, force: true })); return p; };
 const clone = value => JSON.parse(JSON.stringify(value));
 const cpu = value => Object.fromEntries(CPU_FIELDS.map(name => [name, value]));
-function resourceReport(diagnostics = false, cpuAffinity = null) {
+function resourceReport(diagnostics = false, cpuAffinity = null, workerScheduling = 'default') {
   const affinity = { cpusetCpusEffective: cpuAffinity ?? '0-3', processCpusAllowedList: cpuAffinity ?? '0-3' };
   return { schemaVersion: 1, kind: 'constrained-observer-resources', diagnosticOnly: diagnostics, acceptanceEvidenceEligible: false,
-    resourceProfile: cpuAffinity === null ? 'bandwidth-only' : 'single-logical-cpu', cpuAffinity, affinity: { before: { ...affinity }, after: { ...affinity } },
+    resourceProfile: cpuAffinity === null ? 'bandwidth-only' : 'single-logical-cpu', cpuAffinity, workerScheduling, affinity: { before: { ...affinity }, after: { ...affinity } },
     runtime: { platform: 'linux', node: 'v24.22.2', architecture: 'arm64' },
     controls: { memoryMaxBytes: MEMORY_BYTES, memorySwapMaxBytes: 0, cpuQuotaUs: 100000, cpuPeriodUs: 100000, cpuBurstUs: 0, pidsMax: 128 },
     before: { memoryPeakBytes: 1000, memoryEvents: { oom: 0, oomKill: 0 }, cpu: cpu(0) },
@@ -27,7 +28,7 @@ function resourceReport(diagnostics = false, cpuAffinity = null) {
       samples: diagnostics ? [{ startedNs: '1', endedNs: '2', ...cpu(0) }, { startedNs: '3', endedNs: '4', ...cpu(10) }] : [] } };
 }
 // Synthetic raw report for validation only: this never dispatches a workload.
-function admissionReport({ samples = 250, pollingCost = 1 } = {}) {
+function admissionReport({ samples = 250, pollingCost = 1, workerScheduling = 'default' } = {}) {
   const phaseOrder = ['baseline', 'polling', 'polling', 'baseline'];
   const phases = phaseOrder.map(mode => {
     const cost = mode === 'polling' ? pollingCost : 1, origin = 1000000000n;
@@ -42,8 +43,14 @@ function admissionReport({ samples = 250, pollingCost = 1 } = {}) {
       warmupSamples: raw.slice(0, 50), samples: raw.slice(50), coldFirstCall: raw[0],
       measurementStartedNs: String(from), measurementEndedNs: String(to), measurementDurationMs: samples * 10,
       successfulEffects: samples + 50, finalCalls: samples + 50,
+      workerScheduling: { requested: workerScheduling, before: null, after: null },
       cleanup: { worker: true, clientWorker: true, observer: true, taskServer: true, executor: true, directory: true }, polling: null };
     if (mode === 'polling') {
+      const reading = workerScheduling === 'default' ? { mode: 'default', verified: false } : {
+        mode: 'linux-background', verified: true, workerTid: 12, beforeNice: 0, afterNice: 5, currentNice: 5,
+        ownerTid: 10, ownerBeforeNice: 0, ownerCurrentNice: 0,
+      };
+      phase.workerScheduling.before = { ...reading }; phase.workerScheduling.after = { ...reading };
       const polls = Array.from({ length: Math.floor((samples + 50) * 10 / 250) }, (_, index) => {
         const start = origin + BigInt(index * 250000000), end = start + 1000000n;
         return { startedNs: String(start), completedNs: String(end), startedAtMs: index * 250, durationMs: 1, bytes: 100, ok: true };
@@ -55,14 +62,15 @@ function admissionReport({ samples = 250, pollingCost = 1 } = {}) {
   });
   const gate = admissionGate(phases);
   return { schemaVersion: 2, kind: 'synthetic-admission-polling-benchmark', profile: 'acceptance', diagnosticOnly: false,
+    workerScheduling, schedulingEvidenceValid: true,
     acceptanceEvidenceEligible: true, cpuProfileEnabled: false, hardware: { platform: 'linux', node: 'v24.22.2', architecture: 'arm64' },
     workload: { samples, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 }, phaseOrder, phases, gate, passed: gate.passed };
 }
 test('constrained options default to full acceptance and require immutable images and diagnostic smoke', () => {
-  assert.deepEqual(configuration(), { profile: 'acceptance', diagnostics: false, cpuProfile: false, image: PINNED_IMAGE, cpuAffinity: null, resourceProfile: 'bandwidth-only', eligible: true });
+  assert.deepEqual(configuration(), { profile: 'acceptance', diagnostics: false, cpuProfile: false, image: PINNED_IMAGE, cpuAffinity: null, workerScheduling: 'default', resourceProfile: 'bandwidth-only', eligible: true });
   assert.equal(configuration({ profile: 'smoke', diagnostics: true }).eligible, false);
   assert.equal(configuration({ diagnostics: true }).eligible, false);
-  for (const value of [{ profile: 'smoke' }, { image: 'node:24' }, { image: '--privileged' }, { diagnostics: 'false' }, { profile: 'fast' }]) assert.throws(() => configuration(value));
+  for (const value of [{ profile: 'smoke' }, { image: 'node:24' }, { image: '--privileged' }, { diagnostics: 'false' }, { profile: 'fast' }, { workerScheduling: 'fast' }, { workerScheduling: null }]) assert.throws(() => configuration(value));
   for (const value of ['0', '9', '4095']) assert.equal(configuration({ cpuAffinity: value }).resourceProfile, 'single-logical-cpu');
   for (const cpuAffinity of [0, 1, true, '', '00', '01', '-1', '4096', '1.0', '0-1', '0,1', '0\n', ' 0', '0 ', '0\0', '1e0'])
     assert.throws(() => configuration({ cpuAffinity }), /CPU_AFFINITY_INVALID/);
@@ -101,7 +109,7 @@ test('owner CPU profiling requires diagnostics, retains the original gate and ca
   assert.equal(validateAdmission(missed, config).gate.failureReasons[0].code, 'POLL_CADENCE_SKIPPED');
 });
 test('payload forwards explicit profiling once without changing full workload or resource preflight', t => {
-  const output = temporary(t), resource = resourceReport(true, '0');
+  const output = temporary(t), resource = resourceReport(true, '0', 'linux-background');
   // Isolate the mocked Linux resource fixture from the actual host/test process.
   const program = `
     import assert from 'node:assert/strict';
@@ -109,13 +117,13 @@ test('payload forwards explicit profiling once without changing full workload or
     Object.defineProperty(process, 'platform', { value: 'linux' });
     const fixture = ${JSON.stringify(resource)};
     let calls = 0;
-    const exit = await runPayload('acceptance', true, { cpuAffinity: '0', cpuProfile: true,
+    const exit = await runPayload('acceptance', true, { cpuAffinity: '0', cpuProfile: true, workerScheduling: 'linux-background',
       output: ${JSON.stringify(output)},
       read: () => ({ controls: fixture.controls, affinity: fixture.affinity.before, sample: fixture.before }),
       sampleCpu: () => fixture.before.cpu,
       benchmark: async args => {
         calls++;
-        assert.deepEqual(args, ['--profile', 'acceptance', '--diagnostics', '--cpu-profile', '--output', ${JSON.stringify(output + '/admission.json')}]);
+        assert.deepEqual(args, ['--profile', 'acceptance', '--diagnostics', '--cpu-profile', '--worker-scheduling', 'linux-background', '--output', ${JSON.stringify(output + '/admission.json')}]);
         return 0;
       } });
     assert.equal(calls, 1); assert.equal(exit, 0);
@@ -124,6 +132,29 @@ test('payload forwards explicit profiling once without changing full workload or
   const captured = JSON.parse(fs.readFileSync(join(output, 'resources.json')));
   assert.equal(captured.checksPassed, true); assert.equal(captured.diagnosticOnly, true);
   assert.equal(captured.acceptanceEvidenceEligible, false); assert.equal(captured.cpuAffinity, '0');
+  assert.equal(captured.workerScheduling, 'linux-background');
+});
+test('explicit background policy requires exact before/after evidence without changing the original numerical gate', () => {
+  const selected = { workerScheduling: 'linux-background' }, report = admissionReport(selected);
+  const checked = validateAdmission(report, selected);
+  assert.equal(checked.schedulingEvidenceValid, true); assert.equal(checked.acceptanceEvidenceEligible, true);
+  assert.deepEqual(checked.gate, admissionGate(report.phases));
+  assert.throws(() => validateAdmission(report, {}));
+  assert.throws(() => validateAdmission(admissionReport(), selected));
+  for (const mutate of [r => { delete r.workerScheduling; }, r => { delete r.schedulingEvidenceValid; },
+    r => { r.phases[1].workerScheduling.after.currentNice = 0; }, r => { r.phases[1].workerScheduling.after.ownerCurrentNice = 5; },
+    r => { r.phases[1].workerScheduling.after.workerTid++; }, r => { r.phases[1].workerScheduling.before = null; },
+    r => { r.phases[0].workerScheduling.before = r.phases[1].workerScheduling.before; },
+    r => { r.phases[1].workerScheduling.before.private = 'not allowed'; }]) {
+    const changed = clone(report); mutate(changed); assert.throws(() => validateAdmission(changed, selected));
+  }
+  const drift = clone(report); drift.phases[1].workerScheduling.after.currentNice = 0;
+  drift.schedulingEvidenceValid = schedulingEvidenceValid(drift.phases, selected.workerScheduling); drift.passed = false;
+  const rejected = validateAdmission(drift, selected);
+  assert.equal(rejected.gate.passed, true); assert.equal(rejected.schedulingEvidenceValid, false);
+  assert.equal(rejected.acceptanceEvidenceEligible, false);
+  assert.throws(() => validateResources(resourceReport(false, null, 'linux-background'), {}));
+  assert.equal(validateResources(resourceReport(false, null, 'linux-background'), selected).memoryPeakBytes, 2000);
 });
 test('host recomputes exact raw timestamps, sample coverage and original gate without filtering failures', () => {
   const report = admissionReport(); assert.equal(validateAdmission(report, {}).effects, 1200);
@@ -207,6 +238,15 @@ test('staging uses only reviewed runtime files and rejects links, unexpected dis
   const hard = join(p, 'hard'); fs.linkSync(file, hard); assert.throws(() => boundedFile(hard, 4 * 1024 * 1024), /INPUT_FILE_INVALID/);
 });
 const id = 'a'.repeat(64), imageId = 'sha256:' + 'b'.repeat(64), owner = 'unit-owner', name = 'guard-constrained-unit';
+test('explicit worker policy adds only fixed payload arguments without altering Docker controls or historical default', () => {
+  const options = { name, owner, input: '/private/input', output: '/private/output', image: PINNED_IMAGE,
+    user: '1001:1001', profile: 'acceptance', diagnostics: false, cpuAffinity: '0' };
+  const original = containerArguments(options), selected = containerArguments({ ...options, workerScheduling: 'linux-background' });
+  assert.deepEqual(selected.slice(0, -2), original);
+  assert.deepEqual(selected.slice(-2), ['--worker-scheduling', 'linux-background']);
+  assert.equal(original.includes('--worker-scheduling'), false);
+  assert.throws(() => containerArguments({ ...options, workerScheduling: 'invalid' }));
+});
 function container(input = '/private/input', output = '/private/output', user = '1001:1001') {
   const [uid, gid] = user.split(':');
   return { Id: id, Name: '/' + name, Image: imageId, State: { Running: false, OOMKilled: false, ExitCode: 0 },

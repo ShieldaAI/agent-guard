@@ -27,6 +27,11 @@ on:
         description: Add bounded main-thread CPU profile (requires admission_diagnostics)
         type: boolean
         default: false
+      worker_scheduling:
+        description: Explicit Linux background observer policy, or historical unchanged default
+        type: choice
+        options: ['linux-background', 'default']
+        default: 'linux-background'
 permissions:
   contents: read
 concurrency:
@@ -36,6 +41,8 @@ jobs:
   pilot:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      WORKER_SCHEDULING: ${{ inputs.worker_scheduling || 'linux-background' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -59,7 +66,15 @@ jobs:
         run: uv run python scripts/benchmark-pilot.py --profile '${{ inputs.full_benchmark && 'acceptance' || 'smoke' }}' --samples 100 --output "$RUNNER_TEMP/agent-guard-pilot-benchmark.json"
         working-directory: integrations/cartography
       - name: Admission during inventory polling
-        run: node scripts/benchmark-admission.mjs --profile '${{ inputs.full_benchmark && 'acceptance' || 'smoke' }}' ${{ inputs.admission_diagnostics && '--diagnostics' || '' }} ${{ inputs.admission_cpu_profile && '--cpu-profile' || '' }} --output "$RUNNER_TEMP/agent-guard-pilot-admission.json"
+        shell: bash
+        run: |
+          scheduling_args=()
+          if [[ "$WORKER_SCHEDULING" == 'linux-background' ]]; then
+            scheduling_args+=(--worker-scheduling linux-background)
+          elif [[ "$WORKER_SCHEDULING" != 'default' ]]; then
+            exit 1
+          fi
+          node scripts/benchmark-admission.mjs --profile '${{ inputs.full_benchmark && 'acceptance' || 'smoke' }}' ${{ inputs.admission_diagnostics && '--diagnostics' || '' }} ${{ inputs.admission_cpu_profile && '--cpu-profile' || '' }} "${scheduling_args[@]}" --output "$RUNNER_TEMP/agent-guard-pilot-admission.json"
       - name: Retain safe verification reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { projectInventory, validateInventorySource } from '../dist/inventory.js';
+import { projectInventory, projectInventoryJson, validateInventorySource } from '../dist/inventory.js';
 // Existing hash-pinned pre-finalizer fixture also preserves the original identifier
 // validator. Its provenance/hash is checked by inventory-finalizer.test.mjs.
 import { projectInventory as originalProject, validateInventorySource as originalSource } from './fixtures/inventory-before-finalizer.mjs';
@@ -37,11 +37,16 @@ test('short and long Unicode identifiers preserve exact legacy projection and so
     const actual = projectInventory(state, new Map(), enrollment, { tenantId: 'tenant' }, time);
     const expected = originalProject(state, new Map(), enrollment, { tenantId: 'tenant' }, time);
     assert.deepEqual(canonical(actual), canonical(expected), name);
+    const encoded = projectInventoryJson(state, new Map(), enrollment, { tenantId: 'tenant' }, time);
+    assert.deepEqual(canonical(JSON.parse(encoded.json)), canonical(expected), name);
+    assert.equal(encoded.bytes, Buffer.byteLength(encoded.json), name);
     assert.equal(actual.tasks[0].principalId, value, name);
     assert.deepEqual(validateInventorySource(source), originalSource(source), name);
     // Scope uses the same point limit but a distinct error category.
     const scoped = ledger(value);
     assert.deepEqual(canonical(projectInventory(scoped, new Map(), enrollment, { tenantId: value }, time)),
+      canonical(originalProject(scoped, new Map(), enrollment, { tenantId: value }, time)), name);
+    assert.deepEqual(canonical(JSON.parse(projectInventoryJson(scoped, new Map(), enrollment, { tenantId: value }, time).json)),
       canonical(originalProject(scoped, new Map(), enrollment, { tenantId: value }, time)), name);
   }
 });
@@ -51,7 +56,11 @@ test('Unicode scalar, NUL, blank and exact point-count denials preserve each leg
     for (const [code, current, original] of [
       ['INVENTORY_STATE_INVALID', () => projectInventory(ledger('tenant', value), new Map(), enrollment, { tenantId: 'tenant' }, time),
         () => originalProject(ledger('tenant', value), new Map(), enrollment, { tenantId: 'tenant' }, time)],
+      ['INVENTORY_STATE_INVALID', () => projectInventoryJson(ledger('tenant', value), new Map(), enrollment, { tenantId: 'tenant' }, time),
+        () => originalProject(ledger('tenant', value), new Map(), enrollment, { tenantId: 'tenant' }, time)],
       ['INVENTORY_SCOPE_INVALID', () => projectInventory(ledger(), new Map(), enrollment, { tenantId: value }, time),
+        () => originalProject(ledger(), new Map(), enrollment, { tenantId: value }, time)],
+      ['INVENTORY_SCOPE_INVALID', () => projectInventoryJson(ledger(), new Map(), enrollment, { tenantId: value }, time),
         () => originalProject(ledger(), new Map(), enrollment, { tenantId: value }, time)],
       ['INVENTORY_CONFIG_INVALID', () => validateInventorySource({ ...enrollment, companyId: value }),
         () => originalSource({ ...enrollment, companyId: value })],

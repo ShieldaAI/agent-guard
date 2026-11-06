@@ -13,6 +13,7 @@ import { LedgerStore } from '../packages/executor/dist/store.js';
 import { createAdmissionDiagnostics, instrumentInventoryObservation, instrumentObserverRequests, instrumentAdmissionMethods,
   instrumentAdmissionWorkers, recordAdmissionThreadCounters, DIAGNOSTIC_ROLES } from './benchmark-admission-diagnostics.mjs';
 import { startAdmissionCpuProfile } from './benchmark-admission-profile.mjs';
+import { workerSchedulingMode, validateSchedulingReading, schedulingEvidenceValid } from './benchmark-admission-scheduling.mjs';
 
 export const PHASE_ORDER = Object.freeze(['baseline', 'polling', 'polling', 'baseline']);
 export function percentile95(values) {
@@ -76,18 +77,21 @@ function waitMessage(worker, predicate, timeout = 10_000) {
   });
 }
 
-export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false, cpuProfile = false }) {
+export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false, cpuProfile = false, workerScheduling = 'default' }) {
   if (!['baseline', 'polling'].includes(mode) || !Number.isInteger(samples) || samples < 1 || samples > 1000 ||
       !Number.isInteger(warmup) || warmup < 1 || warmup > 100 || !Number.isInteger(tasks) || tasks < 1 || tasks > 100 ||
       !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000 || typeof decisionTraces !== 'boolean' || typeof diagnostics !== 'boolean' ||
       typeof cpuProfile !== 'boolean' || (cpuProfile && !diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
+  workerSchedulingMode(workerScheduling);
+  if (workerScheduling === 'linux-background' && process.platform !== 'linux') throw new Error('ADMISSION_WORKER_SCHEDULING_INVALID');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'agent-guard-admission-')));
   let executor, taskServer, observer, worker, clientWorker, credential;
-  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler, workerDiagnostics;
+  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler, workerDiagnostics, readScheduling;
   let successfulEffects = 0;
   const phase = { mode, executorThreadId: threadId, clientThreadId: null, clockOriginNs: process.hrtime.bigint().toString(), warmupSamples: [], coldFirstCall: null, samples: [],
     measurementStartedNs: null, measurementEndedNs: null, measurementDurationMs: 0,
-    successfulEffects: 0, finalCalls: 0, polling: null, cleanup: {} };
+    successfulEffects: 0, finalCalls: 0, polling: null, cleanup: {},
+    workerScheduling: { requested: workerScheduling, before: null, after: null } };
   try {
     executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: randomBytes(32),
       ...(decisionTraces ? { decisionTraces: { maxEventsPerTenant: 4096 } } : {}),
@@ -116,13 +120,19 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       }
     }
     if (mode === 'polling') {
+      const { readInventoryWorkerScheduling } = await import('../packages/executor/dist/inventory-observer.js');
+      readScheduling = () => {
+        const result = readInventoryWorkerScheduling(executor);
+        validateSchedulingReading(result, workerScheduling); return result;
+      };
       if (diagnostic) {
         const { InventoryObservationSession } = await import('../packages/executor/dist/inventory-observer.js');
         restoreExport = instrumentInventoryObservation(InventoryObservationSession, diagnostic);
       }
       const token = createInventoryObserverToken();
       observer = await startInventoryServer({ executor, observers: [{ token, tenantIds: ['synthetic-admission'], profile: 'core' }],
-        rateLimit: { maxRequests: 10000, windowMs: 60_000 } });
+        rateLimit: { maxRequests: 10000, windowMs: 60_000 }, workerScheduling });
+      phase.workerScheduling.before = readScheduling();
       if (diagnostic) restoreRequests = instrumentObserverRequests(observer.server, diagnostic);
       const create = () => new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: { kind: 'poll', url: observer.url, token, tasks, grants, pollIntervalMs, clockOriginNs: phase.clockOriginNs, diagnostics } });
       worker = workerDiagnostics ? workerDiagnostics.construct(DIAGNOSTIC_ROLES.poll, create) : create();
@@ -161,6 +171,10 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
             BigInt(sample.completedNs) >= BigInt(phase.measurementStartedNs) && BigInt(sample.completedNs) <= BigInt(phase.measurementEndedNs)).length;
       } catch { phase.error = 'ADMISSION_POLLING_FAILED'; }
     }
+    if (observer) {
+      try { phase.workerScheduling.after = readScheduling(); }
+      catch { phase.error = 'ADMISSION_SCHEDULING_UNVERIFIED'; }
+    }
     for (const [name, close] of [['worker', () => worker?.terminate()], ['clientWorker', () => clientWorker?.terminate()], ['observer', () => observer?.close()],
       ['taskServer', () => taskServer?.close()], ['executor', () => executor?.close()],
       ['directory', () => rm(directory, { recursive: true, force: true })]]) {
@@ -186,14 +200,17 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false } }, strict: true });
+  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false }, 'worker-scheduling': { type: 'string', default: 'default' } }, strict: true });
   if (!['smoke', 'acceptance'].includes(values.profile) || !values.output || (values['cpu-profile'] && !values.diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
+  const workerScheduling = workerSchedulingMode(values['worker-scheduling']);
+  if (workerScheduling === 'linux-background' && process.platform !== 'linux') throw new Error('ADMISSION_WORKER_SCHEDULING_INVALID');
   const destination = resolve(values.output); await stat(resolve(destination, '..'));
   const output = await open(destination, 'wx', 0o600);
   const acceptance = values.profile === 'acceptance';
   const settings = { samples: acceptance ? 250 : 100, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 };
   const report = { schemaVersion: 2, kind: 'synthetic-admission-polling-benchmark', profile: values.profile,
     diagnosticOnly: values.diagnostics, acceptanceEvidenceEligible: acceptance && !values.diagnostics, cpuProfileEnabled: values['cpu-profile'],
+    workerScheduling, schedulingEvidenceValid: false,
     startedAt: new Date().toISOString(), passed: false, phases: [], workload: settings, phaseOrder: PHASE_ORDER,
     hardware: { platform: platform(), release: release(), architecture: arch(), logicalCpus: cpus().length, memoryBytes: totalmem(), node: process.version },
     measurement: 'Independent workload-worker HTTP execute request initiation to executor-thread governed tool entry, using shared process.hrtime.bigint nanoseconds serialized as strings. Includes durable admission, server event-loop queueing and transport; excludes tool work/settlement. Prepare, complete execute and combined durations and all timestamp boundaries are retained. Successful poll completion membership uses the workload worker exact measured interval.',
@@ -221,15 +238,16 @@ export async function main(argv = process.argv.slice(2)) {
   try {
     for (const mode of PHASE_ORDER) {
       process.stderr.write(`Admission benchmark phase ${report.phases.length + 1}/4: ${mode}\n`);
-      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics, cpuProfile: values['cpu-profile'] }));
+      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics, cpuProfile: values['cpu-profile'], workerScheduling }));
       await sleep(100);
     }
     report.gate = admissionGate(report.phases, { enforcePerformance: acceptance });
+    report.schedulingEvidenceValid = schedulingEvidenceValid(report.phases, workerScheduling);
     if (values.diagnostics) report.diagnosticsComplete = report.phases.every(phase => phase.diagnostics?.complete === true);
-    report.passed = report.gate.passed && (!values.diagnostics || report.diagnosticsComplete);
+    report.passed = report.gate.passed && report.schedulingEvidenceValid && (!values.diagnostics || report.diagnosticsComplete);
   } catch { report.error = 'ADMISSION_BENCHMARK_FAILED'; }
   finally { report.completedAt = new Date().toISOString(); await output.writeFile(JSON.stringify(report, null, 2) + '\n'); await output.close(); }
-  process.stdout.write(JSON.stringify({ passed: report.passed, profile: values.profile,
+  process.stdout.write(JSON.stringify({ passed: report.passed, profile: values.profile, workerScheduling,
     diagnosticOnly: report.diagnosticOnly, acceptanceEvidenceEligible: report.acceptanceEvidenceEligible, output: destination }) + '\n');
   return report.passed ? 0 : 1;
 }

@@ -217,8 +217,66 @@ function finalizeConstructedInventory(snapshot: InventorySnapshot): InventorySna
   return visit(snapshot, 0) as InventorySnapshot;
 }
 
-/** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
-export function projectInventory(
+/**
+ * Encode only our fresh validated constructors, without object serialization hooks.
+ * Their object keys are fixed non-array-index schema fields, so lexical order is
+ * also the synchronous finalizer's JSON property order. Future dynamic/index-key
+ * fields require JavaScript integer-key enumeration, not this lexical traversal.
+ */
+function serializeConstructedInventory(snapshot: InventorySnapshot): { json: string; bytes: number } {
+  const maxBytes = MAX_BYTES - 16 * snapshot.tasks.length;
+  const encoded = new Map<string, { text: string; bytes: number }>();
+  let nodes = 0, bytes = 0;
+  const limit = (): never => fail('INVENTORY_LIMIT_EXCEEDED');
+  const addBytes = (count: number): void => { bytes += count; if (bytes > maxBytes) limit(); };
+  const string = (value: string): string => {
+    if (value.length > maxBytes - bytes) limit();
+    let entry = encoded.get(value);
+    if (entry === undefined) {
+      const text = JSON.stringify(value);
+      entry = { text, bytes: Buffer.byteLength(text, 'utf8') };
+      // Snapshot-local encoded strings never carry authority or suppress charging.
+      if (encoded.size < 1024) encoded.set(value, entry);
+    }
+    addBytes(entry.bytes); return entry.text;
+  };
+  const visit = (value: unknown, depth: number): string => {
+    if (++nodes > MAX_VALUES || depth > 32) return limit();
+    if (typeof value === 'string') return string(value);
+    if (value === null || typeof value === 'boolean') {
+      addBytes(value === false ? 5 : 4); return value === null ? 'null' : value ? 'true' : 'false';
+    }
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return limit();
+      const text = JSON.stringify(value); addBytes(text.length); return text;
+    }
+    if (typeof value !== 'object') return limit();
+    addBytes(2);
+    if (Array.isArray(value)) {
+      if (value.length > MAX_VALUES - nodes) return limit();
+      const result: string[] = [];
+      for (let index = 0; index < value.length; index++) {
+        if (index > 0) addBytes(1);
+        result.push(visit(value[index], depth + 1));
+      }
+      return '[' + result.join(',') + ']';
+    }
+    const keys = Object.keys(value).sort();
+    if (keys.length > MAX_VALUES - nodes) return limit();
+    const result: string[] = [];
+    for (let index = 0; index < keys.length; index++) {
+      if (index > 0) addBytes(1);
+      const key = keys[index]!, text = string(key); addBytes(1);
+      result.push(text + ':' + visit((value as Record<string, unknown>)[key], depth + 1));
+    }
+    return '{' + result.join(',') + '}';
+  };
+  const json = visit(snapshot, 0);
+  return { json, bytes };
+}
+
+/** Fresh snapshot-local constructors shared by synchronous and worker output. */
+function constructInventory(
   state: Ledger,
   live: ReadonlyMap<string, InventoryRegistration>,
   source: InventorySourceOptions,
@@ -329,9 +387,45 @@ export function projectInventory(
       manifest: { status: 'not_collected' }, mcp: { status: 'not_collected' }, cloud: { status: 'not_collected' } },
     tasks, tools,
   };
-  // Python may serialize a fractional deadline with a longer exponent than JavaScript.
-  // Reserve headroom per task so a producer-accepted snapshot also fits the consumer's 8 MiB cap.
-  // Constructed fields above are JSON data; the remaining failure mode is a bounded output limit.
+  return snapshot;
+}
+
+/** Internal synchronous projection over one ledger read. No authorization callbacks or writes. */
+export function projectInventory(
+  state: Ledger,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventorySnapshot {
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey);
+  // Both finalizers reserve per-task headroom for the Python numeric serializer.
+  // Constructed fields are JSON data; remaining failures are bounded output limits.
   try { return finalizeConstructedInventory(snapshot); }
   catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
+}
+
+/** Private worker result; intentionally absent from the package's public index. */
+export interface InventoryJson {
+  readonly json: string;
+  readonly bytes: number;
+  readonly profile: 'core';
+  readonly source: InventorySnapshot['source'];
+}
+
+/** Internal direct core wire projection. No parsing, authority cache or host/MCP composition. */
+export function projectInventoryJson(
+  state: Ledger,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventoryJson {
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey);
+  try {
+    const { json, bytes } = serializeConstructedInventory(snapshot);
+    return Object.freeze({ json, bytes, profile: snapshot.profile, source: Object.freeze(snapshot.source) });
+  } catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
 }

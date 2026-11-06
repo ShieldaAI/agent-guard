@@ -6,6 +6,8 @@ import type { InventoryScope, InventorySourceOptions, InventoryRegistration } fr
 import type { InventoryManifest } from './inventory-manifest.js';
 import type { InventoryMcpSourceBinding } from './inventory-mcp.js';
 import { captureMcpBefore, captureMcpAfter, type McpCapture } from './inventory-mcp-capture.js';
+import { currentLinuxThreadPriority, readLinuxThreadPriority, schedulingMode, schedulingUnavailable,
+  type InventoryWorkerScheduling, type WorkerSchedulingEvidence } from './inventory-scheduling.js';
 
 export interface LedgerObservation {
   readonly payload: string; readonly key: Uint8Array; readonly maxBytes: number;
@@ -35,7 +37,7 @@ const MAX_JOBS = 4, MAX_RESULT = 8 * 1024 * 1024;
 const safeErrors = new Set(['INVENTORY_DISABLED', 'INVENTORY_SCOPE_INVALID', 'INVENTORY_STATE_INVALID', 'INVENTORY_LIMIT_EXCEEDED',
   'INVENTORY_CLOCK_INVALID', 'INVENTORY_CONFIG_INVALID', 'INVENTORY_MANIFEST_INVALID', 'INVENTORY_MANIFEST_LIMIT_EXCEEDED',
   'INVENTORY_MANIFEST_SOURCE_MISMATCH', 'INVENTORY_MANIFEST_REFERENCE_INVALID', 'INVENTORY_SNAPSHOT_INVALID',
-  'INVENTORY_MCP_INVALID', 'INVENTORY_MCP_LIMIT_EXCEEDED', 'INVENTORY_MCP_CONFIG_INVALID']);
+  'INVENTORY_MCP_INVALID', 'INVENTORY_MCP_LIMIT_EXCEEDED', 'INVENTORY_MCP_CONFIG_INVALID', 'INVENTORY_SCHEDULING_UNAVAILABLE']);
 const unavailable = () => new ExecutorError('INVENTORY_UNAVAILABLE');
 function safeError(error: unknown): ExecutorError {
   return error instanceof ExecutorError && safeErrors.has(error.code) ? error : unavailable();
@@ -63,6 +65,9 @@ interface Job {
 }
 class ObservationPool {
   readonly #entry: ExecutorEntry; readonly #ledger: LedgerEntry;
+  readonly scheduling: InventoryWorkerScheduling;
+  readonly #ownerScheduling: { readonly tid: number; readonly nice: number } | undefined;
+  #workerScheduling: WorkerSchedulingEvidence | undefined;
   readonly #sessions = new Set<InventoryObservationSession>(); readonly #queue: Job[] = [];
   #worker: Worker | undefined; #ready = false; #readyPromise: Promise<void> | undefined;
   #readyResolve: (() => void) | undefined; #readyReject: ((error: ExecutorError) => void) | undefined;
@@ -70,7 +75,21 @@ class ObservationPool {
   #stopping: Promise<void> | undefined; #closed = false; #sequence = 0; #teardownFailed = false;
   #closePromise: Promise<void> | undefined;
   get closed(): boolean { return this.#closed; }
-  constructor(entry: ExecutorEntry, ledger: LedgerEntry) { this.#entry = entry; this.#ledger = ledger; ledger.pools.add(this); }
+  constructor(entry: ExecutorEntry, ledger: LedgerEntry, scheduling: InventoryWorkerScheduling) {
+    this.#entry = entry; this.#ledger = ledger; this.scheduling = scheduling;
+    this.#ownerScheduling = scheduling === 'linux-background' ? currentLinuxThreadPriority() : undefined;
+    ledger.pools.add(this);
+  }
+  schedulingEvidence(): InventorySchedulingEvidence {
+    if (this.#closed || this.#entry.closed || this.#ledger.closed || !this.#ready || !this.#worker) throw schedulingUnavailable();
+    if (this.scheduling === 'default') return Object.freeze({ mode: 'default', verified: false });
+    const worker = this.#workerScheduling, owner = this.#ownerScheduling;
+    if (!worker || worker.mode !== 'linux-background' || !owner) throw schedulingUnavailable();
+    const current = currentLinuxThreadPriority(), currentNice = readLinuxThreadPriority(worker.workerTid);
+    if (current.tid !== owner.tid || current.nice !== owner.nice || currentNice !== worker.afterNice) throw schedulingUnavailable();
+    return Object.freeze({ ...worker, verified: true, currentNice,
+      ownerTid: owner.tid, ownerBeforeNice: owner.nice, ownerCurrentNice: current.nice });
+  }
   async attach(session: InventoryObservationSession): Promise<void> {
     if (this.#closed || this.#entry.closed || this.#ledger.closed) throw unavailable();
     this.#sessions.add(session);
@@ -84,22 +103,24 @@ class ObservationPool {
     try {
       // No inherited preload/inspector flags, environment secrets or listening port.
       const worker = new Worker(new URL('./inventory-worker.js', import.meta.url), { execArgv: [], env: {}, stdout: true, stderr: true,
+        workerData: { scheduling: this.scheduling },
         resourceLimits: { maxOldGenerationSizeMb: 128 + Math.ceil(this.#ledger.maxBytes / 1024 / 1024) * 32,
           maxYoungGenerationSizeMb: 32, stackSizeMb: 4 } });
       this.#worker = worker; worker.stdout?.resume(); worker.stderr?.resume();
-      worker.on('message', message => { try { this.#message(worker, message); } catch { void this.#failWorker(worker); } });
-      worker.on('error', () => { void this.#failWorker(worker); });
+      worker.on('message', message => { try { this.#message(worker, message); } catch (error) { void this.#failWorker(worker, safeError(error)); } });
+      worker.on('error', () => { void this.#failWorker(worker,
+        !this.#ready && this.scheduling === 'linux-background' ? schedulingUnavailable() : unavailable()); });
       worker.on('exit', () => { if (this.#worker === worker) void this.#failWorker(worker); });
       this.#startup = setTimeout(() => { void this.#failWorker(worker); }, 5000);
       this.#startup.unref();
     } catch { this.#readyReject?.(unavailable()); this.#readyReject = undefined; }
     return this.#readyPromise;
   }
-  async #failWorker(worker: Worker): Promise<void> {
+  async #failWorker(worker: Worker, failure: ExecutorError = unavailable()): Promise<void> {
     if (this.#worker !== worker) return this.#stopping;
-    this.#worker = undefined; this.#ready = false;
+    this.#worker = undefined; this.#ready = false; this.#workerScheduling = undefined;
     if (this.#startup) clearTimeout(this.#startup); this.#startup = undefined;
-    this.#readyReject?.(unavailable()); this.#readyReject = undefined; this.#readyResolve = undefined; this.#readyPromise = undefined;
+    this.#readyReject?.(failure); this.#readyReject = undefined; this.#readyResolve = undefined; this.#readyPromise = undefined;
     const active = this.#active;
     if (active) this.#settle(active, unavailable());
     const stopping = worker.terminate().then(() => undefined, () => {
@@ -177,6 +198,17 @@ class ObservationPool {
     const message = value as Record<string, unknown>;
     if (!message || typeof message !== 'object') throw unavailable();
     if (message.type === 'ready' && !this.#ready && !this.#active) {
+      const evidence = message.scheduling as Record<string, unknown> | undefined;
+      if (!evidence || typeof evidence !== 'object' || Array.isArray(evidence) || evidence.mode !== this.scheduling) throw schedulingUnavailable();
+      if (this.scheduling === 'linux-background') {
+        const { workerTid, beforeNice, afterNice } = evidence;
+        const owner = this.#ownerScheduling!;
+        if (typeof workerTid !== 'number' || !Number.isSafeInteger(workerTid) || workerTid < 1 || workerTid > 2_147_483_647 || workerTid === owner.tid || workerTid === process.pid ||
+            typeof beforeNice !== 'number' || !Number.isInteger(beforeNice) || beforeNice < -20 || beforeNice > 19 ||
+            typeof afterNice !== 'number' || afterNice !== Math.min(19, beforeNice + 5) ||
+            readLinuxThreadPriority(workerTid) !== afterNice || readLinuxThreadPriority(owner.tid) !== owner.nice) throw schedulingUnavailable();
+        this.#workerScheduling = { mode: 'linux-background', workerTid, beforeNice, afterNice };
+      } else this.#workerScheduling = { mode: 'default' };
       if (this.#startup) clearTimeout(this.#startup); this.#startup = undefined; this.#ready = true;
       this.#readyResolve?.(); this.#readyResolve = undefined; this.#readyReject = undefined; worker.unref(); this.#pump(); return;
     }
@@ -227,11 +259,25 @@ export class InventoryObservationSession {
   }
   close(): Promise<void> { if (!this.#closing) { this.#closed = true; this.#closing = this.#pool.detach(this); } return this.#closing; }
 }
-export async function createInventoryObservationSession(executor: object): Promise<InventoryObservationSession> {
+export async function createInventoryObservationSession(executor: object, policy: InventoryWorkerScheduling = 'default'): Promise<InventoryObservationSession> {
+  const scheduling = schedulingMode(policy);
   const entry = executors.get(executor), ledger = entry && ledgers.get(entry.ledger);
   if (!entry || !ledger || entry.closed || ledger.closed) throw unavailable();
   if (entry.pool?.closed) await entry.pool.close();
   if (entry.closed || ledger.closed) throw unavailable();
-  const pool = entry.pool ?? new ObservationPool(entry, ledger); entry.pool = pool;
+  if (entry.pool && entry.pool.scheduling !== scheduling) throw schedulingUnavailable();
+  const pool = entry.pool ?? new ObservationPool(entry, ledger, scheduling); entry.pool = pool;
   const session = new InventoryObservationSession(pool); await pool.attach(session); return session;
+}
+
+export type InventorySchedulingEvidence = { readonly mode: 'default'; readonly verified: false } | {
+  readonly mode: 'linux-background'; readonly verified: true; readonly workerTid: number;
+  readonly beforeNice: number; readonly afterNice: number; readonly currentNice: number;
+  readonly ownerTid: number; readonly ownerBeforeNice: number; readonly ownerCurrentNice: number;
+};
+/** Private local qualification metadata. Never exported by the SDK index or observer HTTP. */
+export function readInventoryWorkerScheduling(executor: object): InventorySchedulingEvidence {
+  const entry = executors.get(executor);
+  if (!entry || entry.closed || !entry.pool) throw schedulingUnavailable();
+  return entry.pool.schedulingEvidence();
 }

@@ -499,6 +499,29 @@ returns 503 `INVENTORY_BUSY`. Closing one listener leaves other listeners usable
 closing the last listener waits for worker termination. An unverified termination
 leaves observation unavailable for that executor instead of starting another worker.
 
+The trusted host can explicitly select a Linux background scheduling policy:
+
+```js
+const observer = await startInventoryServer({
+  executor,
+  observers: [{ token, tenantIds: ['tenant'] }],
+  workerScheduling: 'linux-background',
+});
+```
+
+The default `workerScheduling: 'default'` leaves native priorities unchanged.
+`linux-background` synchronously verifies the worker's own Linux native thread
+identity and lowers its priority by up to five nice levels, capped at nice 19.
+It never raises priority or requires `CAP_SYS_NICE`. Startup refuses with
+`INVENTORY_SCHEDULING_UNAVAILABLE` if Linux `/proc` identity, the priority operation,
+or exact readback cannot be verified; there is no fallback to default scheduling.
+Listeners sharing an executor must select the same policy, and replacement workers
+retain it. The policy applies to that native worker thread; it does not promise a
+priority for every V8 helper or GC thread. Lower priority can delay observation,
+so qualify both admission overhead and polling cadence for the selected deployment
+without changing request deadlines, quotas or memory limits. The setting is not an
+observer credential or request option.
+
 Each dispatched request captures fresh encrypted state and verifies its current
 witness and recovery mirror on the owning thread. The worker authenticates and
 decodes that captured state, projects the tenant's inventory, composes the host

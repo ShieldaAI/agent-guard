@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { projectInventory } from '../dist/inventory.js';
+import { projectInventory, projectInventoryJson } from '../dist/inventory.js';
 import { projectInventory as previousProjection } from './fixtures/inventory-before-finalizer.mjs';
 
 const source = { companyId: 'company', sourceId: 'executor', enrollmentGeneration: 'enrollment' };
@@ -41,11 +41,24 @@ function equivalent(actual, expected, path = '') {
 function compare(state, key, registrations) {
   const actual = project(projectInventory, state, key, registrations);
   const expected = project(previousProjection, state, key, registrations);
+  const encoded = project(projectInventoryJson, state, key, registrations);
   equivalent(actual, expected);
   // UUID generation is the only varying field; preserve exact serialized key order.
   assert.equal(JSON.stringify(actual), JSON.stringify(expected)
     .replace(`"snapshotId":"${expected.snapshotId}"`, `"snapshotId":"${actual.snapshotId}"`));
+  exactWire(encoded, actual);
   return actual;
+}
+function exactWire(encoded, expected) {
+  const wire = JSON.parse(encoded.json);
+  assert.equal(encoded.json, JSON.stringify(expected)
+    .replace(`"snapshotId":"${expected.snapshotId}"`, `"snapshotId":"${wire.snapshotId}"`));
+  assert.equal(encoded.bytes, Buffer.byteLength(encoded.json));
+  assert.equal(encoded.profile, expected.profile);
+  assert.deepEqual({ ...encoded.source }, { ...expected.source });
+  assert.equal(Object.isFrozen(encoded), true);
+  assert.equal(Object.isFrozen(encoded.source), true);
+  assert.match(wire.snapshotId, /^[a-f0-9-]{36}$/);
 }
 const values = value => value === null || typeof value !== 'object' ? 1 :
   1 + Object.values(value).reduce((sum, item) => sum + values(item), 0);
@@ -89,7 +102,7 @@ test('constructed inventory is equivalent across scopes, Unicode, escaping, norm
 });
 
 test('finalization never evaluates inherited object or array serialization hooks', () => {
-  const state = ledger(); let invoked = 0, actual, expected;
+  const state = ledger(); let invoked = 0, actual, expected, encoded;
   const hook = () => { invoked++; throw new Error('inherited serialization hook'); };
   const oldObject = Object.getOwnPropertyDescriptor(Object.prototype, 'toJSON');
   const oldArray = Object.getOwnPropertyDescriptor(Array.prototype, 'toJSON');
@@ -97,11 +110,12 @@ test('finalization never evaluates inherited object or array serialization hooks
     Object.defineProperty(Object.prototype, 'toJSON', { configurable: true, get: hook });
     Object.defineProperty(Array.prototype, 'toJSON', { configurable: true, get: hook });
     actual = project(projectInventory, state); expected = project(previousProjection, state);
+    encoded = project(projectInventoryJson, state);
   } finally {
     if (oldObject) Object.defineProperty(Object.prototype, 'toJSON', oldObject); else delete Object.prototype.toJSON;
     if (oldArray) Object.defineProperty(Array.prototype, 'toJSON', oldArray); else delete Array.prototype.toJSON;
   }
-  assert.equal(invoked, 0); equivalent(actual, expected);
+  assert.equal(invoked, 0); equivalent(actual, expected); exactWire(encoded, expected);
 });
 
 test('encoded-length cache preserves every value beyond 1024 entries and across snapshots', () => {
@@ -130,7 +144,7 @@ test('cache hits charge exact UTF-8 bytes at the reserved consumer boundary', ()
   const accepted = compare(state);
   assert.equal(Buffer.byteLength(JSON.stringify(accepted)), maximum);
   state.tasks.alpha.options.principalId += 'x';
-  for (const implementation of [previousProjection, projectInventory])
+  for (const implementation of [previousProjection, projectInventory, projectInventoryJson])
     assert.throws(() => project(implementation, state), { code: 'INVENTORY_LIMIT_EXCEEDED' });
 });
 
@@ -149,7 +163,8 @@ test('constructed inventory preserves the exact 500000-value boundary', () => {
   assert.equal(values(actual), 500000); assert.equal(values(expected), 500000);
   assert.equal(JSON.stringify(actual), JSON.stringify(expected)
     .replace(`"snapshotId":"${expected.snapshotId}"`, `"snapshotId":"${actual.snapshotId}"`));
+  exactWire(project(projectInventoryJson, state), expected);
   state.tasks['task-0'].options.grants[0].resources.push('one-over');
-  for (const implementation of [previousProjection, projectInventory])
+  for (const implementation of [previousProjection, projectInventory, projectInventoryJson])
     assert.throws(() => project(implementation, state), { code: 'INVENTORY_LIMIT_EXCEEDED' });
 });

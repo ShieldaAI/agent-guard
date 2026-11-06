@@ -1253,6 +1253,468 @@
         "rawMalformedInputRetained": false
       },
       "interpretation": "Overall diagnostic failed because phase 1 CPU profiling was incomplete. The raw admission gate passed, but instrumentation and incompleteness make this ineligible as acceptance evidence. The prior missed-poll stall did not recur."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-1ef859c-qualification/constrained-verification.json",
+        "sha256": "e4e471c1e919b0559f031c593bd1cda46f38288a4df7ac104587099b952cd997"
+      },
+      "sourceCommit": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+      "testedCommit": "4141576597e67834c699a53d16a940f34dc1bb28",
+      "sourceTree": "a2f4af503c852d22f1b6d117310f54829aa99e9b",
+      "testedTreeEqualsSource": true,
+      "runId": 42281492227,
+      "jobId": 128111326983,
+      "predeclaredRole": "auto",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "diagnosticOnly": false,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 52.032071,
+        "pollingP95Ms": 61.326985,
+        "ratio": 1.1786381710618437,
+        "regressionPercent": 17.863817106184364
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 189,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "phases": [
+        {
+          "phase": 1,
+          "mode": "baseline",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 37.366421,
+          "admissionP95Ms": 52.230769,
+          "measurementDurationMs": 19776.783001,
+          "measurementCallsPerSecond": 12.641085255744523,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 2,
+          "mode": "polling",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 39.018071,
+          "admissionP95Ms": 62.048165,
+          "measurementDurationMs": 20998.242835,
+          "measurementCallsPerSecond": 11.905758113402635,
+          "polling": {
+            "scheduled": 95,
+            "started": 95,
+            "successful": 95,
+            "failed": 0,
+            "skippedBusy": 0,
+            "measuredCoverage": 83,
+            "maxMs": 257.591593,
+            "firstMs": 150.119659
+          },
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 3,
+          "mode": "polling",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 39.535842,
+          "admissionP95Ms": 61.326985,
+          "measurementDurationMs": 20767.587598,
+          "measurementCallsPerSecond": 12.037989430417811,
+          "polling": {
+            "scheduled": 94,
+            "started": 94,
+            "successful": 94,
+            "failed": 0,
+            "skippedBusy": 0,
+            "measuredCoverage": 82,
+            "maxMs": 201.36076,
+            "firstMs": 133.713759
+          },
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 4,
+          "mode": "baseline",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 35.937529,
+          "admissionP95Ms": 51.761214,
+          "measurementDurationMs": 19269.02101,
+          "measurementCallsPerSecond": 12.97419312949309,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        }
+      ],
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 171163648,
+      "memoryEvents": {
+        "oom": 0,
+        "oomKill": 0
+      },
+      "cpuCounterDelta": {
+        "usage_usec": 92019503,
+        "user_usec": 68950893,
+        "system_usec": 23068610,
+        "nr_periods": 924,
+        "nr_throttled": 51,
+        "throttled_usec": 12170
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "8ae1df35b5c9ece67402bef59dd78dbc13d43c6a9aff59d1bc843280bbf0a101",
+      "artifactDigestVerified": true,
+      "admissionSha256": "526218af95c8786266135572156bdde7c5397c0c174c3f0dc557c8da308b88fb",
+      "interpretation": "One of two predeclared qualification runs. Automatic run failed the unchanged 10% ratio; manual run passed. Required two-run qualification failed. Neither observation is discarded or substituted."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-1ef859c-qualification/constrained-verification.json",
+        "sha256": "e4e471c1e919b0559f031c593bd1cda46f38288a4df7ac104587099b952cd997"
+      },
+      "sourceCommit": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+      "testedCommit": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+      "sourceTree": "a2f4af503c852d22f1b6d117310f54829aa99e9b",
+      "testedTreeEqualsSource": true,
+      "runId": 42281509136,
+      "jobId": 128111393722,
+      "predeclaredRole": "manual",
+      "profile": "full",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "diagnosticOnly": false,
+      "passed": true,
+      "acceptanceEvidenceEligible": true,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 34.611115,
+        "pollingP95Ms": 37.785869,
+        "ratio": 1.0917264295010431,
+        "regressionPercent": 9.172642950104315
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 118,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "phases": [
+        {
+          "phase": 1,
+          "mode": "baseline",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 23.10072,
+          "admissionP95Ms": 34.139403,
+          "measurementDurationMs": 12359.719678,
+          "measurementCallsPerSecond": 20.226995960514696,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 2,
+          "mode": "polling",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 24.907333,
+          "admissionP95Ms": 39.2273,
+          "measurementDurationMs": 13086.139984,
+          "measurementCallsPerSecond": 19.10418200521062,
+          "polling": {
+            "scheduled": 59,
+            "started": 59,
+            "successful": 59,
+            "failed": 0,
+            "skippedBusy": 0,
+            "measuredCoverage": 52,
+            "maxMs": 106.50037,
+            "firstMs": 92.601295
+          },
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 3,
+          "mode": "polling",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 25.133192,
+          "admissionP95Ms": 36.020788,
+          "measurementDurationMs": 13035.320335,
+          "measurementCallsPerSecond": 19.178661787754216,
+          "polling": {
+            "scheduled": 59,
+            "started": 59,
+            "successful": 59,
+            "failed": 0,
+            "skippedBusy": 0,
+            "measuredCoverage": 52,
+            "maxMs": 117.240071,
+            "firstMs": 79.945663
+          },
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        },
+        {
+          "phase": 4,
+          "mode": "baseline",
+          "measuredSamples": 250,
+          "warmupSamples": 50,
+          "admissionMedianMs": 23.628396,
+          "admissionP95Ms": 34.896016,
+          "measurementDurationMs": 12934.736512,
+          "measurementCallsPerSecond": 19.327799972428227,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          }
+        }
+      ],
+      "runtime": {
+        "node": "v24.22.1",
+        "architecture": "x64",
+        "platform": "linux"
+      },
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "memoryPeakBytes": 182362112,
+      "memoryEvents": {
+        "oom": 0,
+        "oomKill": 0
+      },
+      "cpuCounterDelta": {
+        "usage_usec": 58088667,
+        "user_usec": 38216484,
+        "system_usec": 19872183,
+        "nr_periods": 585,
+        "nr_throttled": 24,
+        "throttled_usec": 5121
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "a3fa145463c072d374a35696edc5d40d74ea3741dc47a1d64732d77bdb9ce2ea",
+      "artifactDigestVerified": true,
+      "admissionSha256": "e271d2553876eb05b106649c3ca5ad1e6c646f4ce7bc34337afd624035eb5aa1",
+      "interpretation": "One of two predeclared qualification runs. Automatic run failed the unchanged 10% ratio; manual run passed. Required two-run qualification failed. Neither observation is discarded or substituted."
+    },
+    {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-1ef859c-qualification/pilot-verification.json",
+        "sha256": "04a90d07a12cc94e136b2095dbf5eae7759111e7e726acb819c57662a66cc82e"
+      },
+      "sourceCommit": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+      "runId": 42281511693,
+      "jobId": 128111403007,
+      "profile": "full",
+      "resourceProfile": "ordinary-hosted-not-one-cpu-constrained",
+      "diagnosticOnly": false,
+      "passed": false,
+      "qualified": false,
+      "rawArithmeticVerified": true,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 52.69385,
+        "pollingP95Ms": 35.569633,
+        "ratio": 0.6750243719143696,
+        "regressionPercent": -32.49756280856304
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 106,
+      "failedPolls": 0,
+      "skippedPolls": 2,
+      "pollingPhases": [
+        {
+          "phase": 2,
+          "completed": 53,
+          "failed": 0,
+          "skippedBusy": 1,
+          "completedDuringMeasurement": 44,
+          "firstMs": 51.625731,
+          "maximumMs": 322.10325
+        },
+        {
+          "phase": 3,
+          "completed": 53,
+          "failed": 0,
+          "skippedBusy": 1,
+          "completedDuringMeasurement": 45,
+          "firstMs": 47.507647,
+          "maximumMs": 353.720578
+        }
+      ],
+      "allPhaseCleanup": true,
+      "artifactId": 13536465316,
+      "artifactSha256": "3181423907da3f63c87d6505876b5dd71048345293b38a6faadd6bafffb53e09",
+      "artifactDigestVerified": true,
+      "admissionSha256": "805f96b41c47c770e75dfd4d5d7c8bd5dd7f9759d1d138ce61bc4a693dc1ad32",
+      "graph": {
+        "passed": true,
+        "counts": {
+          "sources": 100,
+          "tasks": 10000,
+          "grants": 100000,
+          "databaseNodes": 128201,
+          "databaseRelationships": 481100
+        },
+        "publicationCount": 100,
+        "publicationMaximumSeconds": 9.908152105,
+        "queryCount": 100,
+        "queryCountPerOperation": 50,
+        "queryP95Seconds": {
+          "get_agent_access": 0.18120566099999996,
+          "explain_access": 0.2374755869999999
+        },
+        "cleanup": true
+      },
+      "recovery": {
+        "status": "passed",
+        "authorityStatePreserved": true,
+        "collectionPreservesAuthority": true,
+        "executorSurvivesRollback": true,
+        "restoreLogicalContentMatches": true,
+        "restoreSnapshotPointersMatch": true,
+        "scopeChecks": 3
+      },
+      "interpretation": "Ordinary full acceptance failed one busy skip in each polling phase despite a lower numerical p95 ratio. Graph capacity/publication/query and recovery gates passed. This is a separate resource profile and does not qualify one-CPU operation."
     }
   ],
   "decisions": [
@@ -1268,7 +1730,12 @@
     "Subsequent a910 automatic native pinned acceptance passed with unchanged 9709 runtime bytes; its separate owner-profile diagnostic failed completeness. Preserve both observations and every prior failure. No observer stall fix has been proved.",
     "Both private fresh-decoder traversal microexperiments were neutral and remain unadopted. The direct serializer prototype showed local projection improvement and passed differential checks, but was not adopted as a one-CPU latency fix.",
     "The registered exact-9709 Windows serial test-file experiment passed all previously failing cases and installed consumers, with the same 147 platform skips and unchanged assertions/deadlines. The initial pre-registration 404 is setup evidence only. A maintained Windows-only launcher is implemented and awaits final changed-source CI; other platforms retain their original file concurrency.",
-    "The frozen HTTP fairness candidate passed 98 focused checks and the local 1,283-test full check with zero skips plus installed consumers. Final hosted Windows and unchanged full constrained performance qualification remain pending; these functional results do not establish a fix for prior observer timing failures."
+    "The frozen HTTP fairness candidate passed 98 focused checks and the local 1,283-test full check with zero skips plus installed consumers. Final hosted Windows and unchanged full constrained performance qualification remain pending; these functional results do not establish a fix for prior observer timing failures.",
+    "Actual 1ef qualification remains failed: automatic native pinned run exceeded 10% while the predeclared manual run passed; both-run requirement failed. Separate ordinary full acceptance missed cadence twice. All effect, cleanup and source/cap evidence is retained.",
+    "Maintained Windows file scheduling passed the exact 1ef ordinary job with explicit platform skips, and all 11 ordinary CI jobs passed. CodeQL separately failed on open alert23; removing temporary workflow registration awaits new-source security verification.",
+    "A pending combined candidate implements direct core JSON serialization, optional verified Linux worker demotion, and narrow authenticated crypto-copy reduction. Focused proofs and their initial test-fixture failures are retained; combined full and hosted checks are pending. No observer performance fix or release approval is claimed.",
+    "The first combined full check failed 1 of 1,307 tests because the copied validation CLI alias fixture omitted the newly required scheduling helper; test:pack was not reached. Correcting only that copy list preserves the 10-second bound and assertions. The failure is retained and the second complete check is pending.",
+    "The corrected combined second full check passed 1,307/1,307 with zero skips plus installed-package consumers; the focused CLI alias check passed 1/1. The first full-check fixture failure remains retained. New-source hosted ordinary, security and unchanged performance qualification remain pending; Node/release approval is unchanged."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -2315,5 +2782,674 @@
       "performanceAcceptanceEvidence": false
     },
     "interpretation": "Functional and security regression evidence supports the cooperative yield and preserved authority checks. It offers a scheduling opportunity, not guaranteed QoS, and has not yet demonstrated a constrained timing fix. The 250 ms cadence, first poll, workload, resource caps, 10% ratio and all earlier failures remain unchanged."
+  },
+  "fairnessHostedQualification": {
+    "source": {
+      "head": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+      "tree": "a2f4af503c852d22f1b6d117310f54829aa99e9b",
+      "sha256": "4bf201462e98cdbae89dbd33d3aed4367c9ddc960fb186736fc0f17d6164a1cc",
+      "files": 445,
+      "testedMerge": "4141576597e67834c699a53d16a940f34dc1bb28",
+      "equal": true
+    },
+    "constrainedVerification": {
+      "path": "artifacts/agent-cartography/hosted-1ef859c-qualification/constrained-verification.json",
+      "sha256": "e4e471c1e919b0559f031c593bd1cda46f38288a4df7ac104587099b952cd997"
+    },
+    "ordinaryFullVerification": {
+      "path": "artifacts/agent-cartography/hosted-1ef859c-qualification/pilot-verification.json",
+      "sha256": "04a90d07a12cc94e136b2095dbf5eae7759111e7e726acb819c57662a66cc82e"
+    },
+    "predeclaredRuns": [
+      42281492227,
+      42281509136
+    ],
+    "retries": 0,
+    "requiredBothConstrainedRunsPass": false,
+    "stagedInputProof": {
+      "files": 91,
+      "bothManifestsEqual": true,
+      "manifestSha256": "15f72fd1e4007766c5e54f6ad5cee32516375f518b3b68380f271e39227e72d0",
+      "priorManifest": "artifacts/agent-cartography/hosted-a91028c-owner-profile/auto/constrained-observer/staged-inputs.json",
+      "changedFilesOnly": [
+        "packages/executor/dist/http.js",
+        "packages/executor/dist/response-code.js"
+      ],
+      "compiledRuntimeFilesIncludingDeclarations": 78
+    },
+    "conclusion": "Predeclared two-run qualification failed. Automatic run exceeded10% admission p95 regression; manual run passed. Both retained all1200effects, no failed/skippedpolls, exactlimits and verifiedcleanup. No retry or substitution.",
+    "interpretationLimits": [
+      "Same staged inputs differ substantially in absolute throughput across the two native hosts; no host-cause assertion follows from this alone.",
+      "One observed poll exceeded250ms without a skippedbusy tick; original scheduler-based cadence gate is retained unchanged.",
+      "Added cooperative yield is not proven to fix prior stalls or guarantee stable overhead across supported hosts.",
+      "Absolute baseline and polling latency are retained; a ratio improvement from baseline padding is not claimed."
+    ],
+    "ordinaryFullPassed": false,
+    "noObserverTimingFixProven": true,
+    "ci": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-1ef859c/ci-1ef859c.json",
+        "sha256": "add7642ef274525bfd7e6e91b5acfda96f7986ea3f177ecd5db5523a48d4923c"
+      },
+      "runId": 42281492189,
+      "successfulJobs": 11,
+      "failedJobs": 0,
+      "platforms": [
+        {
+          "jobId": 128111326948,
+          "name": "check (22)",
+          "node": "v22.23.4",
+          "counts": {
+            "tests": 1283,
+            "pass": 1275,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "nativeCheckpointObserved": true,
+          "log": {
+            "path": "job-128111326948.log",
+            "bytes": 550084,
+            "sha256": "5137ea5472a94baacf2da58c688f1c432dd40e6cef6c48ad030193fa385191a5"
+          },
+          "skipList": {
+            "path": "job-128111326948-skips.json",
+            "bytes": 831,
+            "sha256": "2279981639c594747d58b36d263ecaf4b16a5f06124d40603775bd7bd233b858"
+          }
+        },
+        {
+          "jobId": 128111327065,
+          "name": "check (24)",
+          "node": "v24.22.2",
+          "counts": {
+            "tests": 1283,
+            "pass": 1275,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "nativeCheckpointObserved": true,
+          "log": {
+            "path": "job-128111327065.log",
+            "bytes": 202227,
+            "sha256": "d76ceea8b76e6e43c575874d08e400cd5eade6460ac7fda4c6bf37badce914e0"
+          },
+          "skipList": {
+            "path": "job-128111327065-skips.json",
+            "bytes": 918,
+            "sha256": "93c09dbb6f855905803a7d53d19c8cd1aeb1d7837877b424f816bbd39ceeb845"
+          }
+        },
+        {
+          "jobId": 128111326925,
+          "name": "check (26)",
+          "node": "v26.13.0",
+          "counts": {
+            "tests": 1283,
+            "pass": 1275,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "nativeCheckpointObserved": true,
+          "log": {
+            "path": "job-128111326925.log",
+            "bytes": 184158,
+            "sha256": "1008fccd859a9af9172aa0f09f110a263e638f42782f3c8bceed694305dc60c7"
+          },
+          "skipList": {
+            "path": "job-128111326925-skips.json",
+            "bytes": 918,
+            "sha256": "64a78339ad3ee30031bda5f790a66de6c450ee29b26b46376371230031d5d23e"
+          }
+        },
+        {
+          "jobId": 128111327183,
+          "name": "check (macos-latest, 24)",
+          "node": "v24.22.1",
+          "counts": {
+            "tests": 1283,
+            "pass": 1275,
+            "fail": 0,
+            "skipped": 8
+          },
+          "installedConsumersPassed": true,
+          "nativeCheckpointObserved": true,
+          "log": {
+            "path": "job-128111327183.log",
+            "bytes": 183163,
+            "sha256": "43a7b6ae415a276bcb0ff330df1c43e603791140574b34f33dad859e4bebf3c2"
+          },
+          "skipList": {
+            "path": "job-128111327183-skips.json",
+            "bytes": 917,
+            "sha256": "7599154a061b4d4c6159258999371f6f490f88b60fb90675f9772dfc0e7803d9"
+          }
+        },
+        {
+          "jobId": 128111327061,
+          "name": "check (windows-latest, 24)",
+          "node": "v24.22.2",
+          "counts": {
+            "tests": 1284,
+            "pass": 1136,
+            "fail": 0,
+            "skipped": 148
+          },
+          "installedConsumersPassed": true,
+          "nativeCheckpointObserved": false,
+          "log": {
+            "path": "job-128111327061.log",
+            "bytes": 185694,
+            "sha256": "5934c116dc66ec37d8a0297548014a2325d9dd8df6f8ce6d72a13b999c9ae503"
+          },
+          "skipList": {
+            "path": "job-128111327061-skips.json",
+            "bytes": 9318,
+            "sha256": "5aafab34e160f8d9acfbdd1c6b764c0bdd401ab6e2c0fb8a3baa03f3f85abcf4"
+          }
+        }
+      ],
+      "windowsScope": "Maintained launcher serializes Windows test files only; 148 explicit platform skips retained. POSIX scheduling, per-test assertions and deadlines unchanged. Prior9709 failure cause remains unproven.",
+      "workflowOutcomes": [
+        {
+          "id": 42281492268,
+          "name": "Python dependency audit",
+          "conclusion": "success"
+        },
+        {
+          "id": 42281492339,
+          "name": "Dependency Review",
+          "conclusion": "success"
+        },
+        {
+          "id": 42281492195,
+          "name": "CodeQL",
+          "conclusion": "failure"
+        },
+        {
+          "id": 42281492228,
+          "name": "Cartography pilot",
+          "conclusion": "success"
+        },
+        {
+          "id": 42281492296,
+          "name": "Cartography integration",
+          "conclusion": "success"
+        },
+        {
+          "id": 42281492189,
+          "name": "CI",
+          "conclusion": "success"
+        }
+      ],
+      "browser": {
+        "scans": 195,
+        "violations": 0,
+        "scope": "Synthetic Ops contract and real disposable Ops/Map gateways; no representative human study."
+      },
+      "isolation": {
+        "tests": 45,
+        "passed": true,
+        "mcpChecks": 21,
+        "mcpPassed": true,
+        "cleanup": true
+      },
+      "python": {
+        "unit": {
+          "passed": 1011,
+          "failed": 0,
+          "skipped": 0,
+          "durationSeconds": 30.96
+        },
+        "integration": {
+          "passed": 150,
+          "failed": 0,
+          "skipped": 0,
+          "durationSeconds": 180.71
+        },
+        "installedWheelConsumer": true,
+        "sourceAndWheelPackaging": true,
+        "ownedContainerAndTunnelCleanup": true
+      },
+      "productionProfilePassed": true
+    },
+    "security": {
+      "codeqlRun": 42281492195,
+      "analysisJobs": "passed",
+      "unresolvedAlertsGate": "failed",
+      "alerts": [
+        {
+          "commit": "4141576597e67834c699a53d16a940f34dc1bb28",
+          "location": {
+            "end_column": 7,
+            "end_line": 39,
+            "path": ".github/workflows/windows-serial-experiment.yml",
+            "start_column": 9,
+            "start_line": 35
+          },
+          "message": "Potential unsafe checkout of untrusted pull request on non-privileged workflow.",
+          "number": 23,
+          "ref": "refs/pull/10/merge",
+          "rule": "actions/untrusted-checkout/medium",
+          "severity": "medium",
+          "url": "https://github.com/ShieldaAI/agent-guard/security/code-scanning/23"
+        }
+      ],
+      "mainAlertStatus": "not queried by this record",
+      "workspaceAudit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "browserAudit": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "nativeNodeHighHold": "unresolved; dependency audits do not clear it"
+    },
+    "securityFixStatus": "Only the temporary pull_request registration trigger was removed from the manual Windows experiment workflow. New-source CodeQL verification pending; alert23 is not represented as cleared here.",
+    "releaseArtifacts": {
+      "path": "artifacts/agent-cartography/release-1ef859c/manifest.json",
+      "sha256": "da67a3fad97dc7ee8d17712d7c3ca882252108d95acafa2db6802749e12a09d8"
+    },
+    "actualStableReleasePreflight": {
+      "path": "artifacts/agent-cartography/release-1ef859c/release-preflight.json",
+      "sha256": "8d5b5e2d14385c97e2871323afa19bc48d1d5586c03a6a3f1dd08ae304d0e0a1"
+    },
+    "releaseApprovalChanged": false
+  },
+  "combinedOptimizationCandidateCheckpoint": {
+    "baseCommit": "1ef859c66897dfbdc3d5da8a086bad962b15b2a8",
+    "candidateCommit": null,
+    "status": "local_functional_passed_hosted_qualification_pending",
+    "fullWorkspaceCheck": "passed_second_attempt",
+    "hostedQualification": "pending",
+    "performanceQualified": false,
+    "serializer": {
+      "proof": {
+        "path": "artifacts/agent-cartography/inventory-direct-json-proof.json",
+        "sha256": "011b95e352d7905b289aa97557cb686fdc4b27b58aa9db0e4384d5f6c0ce9cbc"
+      },
+      "originalSynchronousFinalizerUnchanged": true,
+      "originalFinalizerSha256": "e065f3f9f966d4724a571fa8beb11c7f8f2dfce765f422e055c7ab9d0b2efb1f",
+      "tests": {
+        "total": 46,
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 2133.840167,
+        "log": {
+          "path": "artifacts/agent-cartography/inventory-direct-json-focused.log",
+          "bytes": 4205,
+          "sha256": "13f9f18e0d91a0485d5409f6b0537ed297567872bf6406f5c1116345b2b81c0d"
+        }
+      },
+      "coverage": [
+        "Existing hash-pinned pre-finalizer oracle retains synchronous null-prototype/frozen graph/descriptors/order; direct JSON exact except fresh UUID.",
+        "Both outputs share fresh constructors and preserve tenant filtering, live flags, opaque reference modes and error codes.",
+        "Exact 8MiB less16bytes/task consumer headroom and500000-value boundaries; overflow fails entire snapshot.",
+        "Unicode scalar/codepoint limits,escaping,-0/fractions/exponents; inherited object/array toJSON getters are not invoked.",
+        "Snapshot-local1024-string cache remains charged and detached across scope,key,revision,source changes.",
+        "Actual compiled private serializer rejects depth33/non-JSON/non-finite leaves; no new public index export or JSON.parse."
+      ],
+      "limits": [
+        "Focused local correctness only, not admission acceptance or CPU improvement measurement.",
+        "Host/MCP composition and worker integration are separately reviewed/tested.",
+        "Prior22percent local projection CPU microgain was isolated, not whole-workload latency."
+      ],
+      "sourceBindingLimit": "Focused proof input hashes precede a comment-only canonical-order invariant addition; worker/profile integration is separately covered by the scheduling and script checks. Final combined source binding awaits the full check and commit.",
+      "adoptionStatus": "Implemented in pending candidate for core worker JSON output only; historical unadopted prototype records are preserved as their earlier state."
+    },
+    "scheduling": {
+      "review": {
+        "path": "artifacts/agent-cartography/inventory-scheduling-review.json",
+        "sha256": "30cffd55041ba91f909ac874907b696f020221fbae341c84a0964dbde787fe04"
+      },
+      "changes": [
+        "Explicit trusted-host Linux background worker scheduling, default unchanged",
+        "Fixed own-native-TID +5/clamp19 and exact startup/readback refusal",
+        "Immutable shared-pool mode, conflict refusal, worker restart retention",
+        "Private live scheduling proof rejects owner or worker priority drift",
+        "Core-only direct JSON publication; host/MCP and owner authority validation unchanged"
+      ],
+      "compile": {
+        "command": "npm run build --workspace @shieldaai/agent-guard-executor",
+        "exitCode": 0,
+        "log": {
+          "path": "artifacts/agent-cartography/inventory-scheduling-compile.log",
+          "sha256": "7791ab83fae144cc6ac8d21cac48870786a04981fff0edf8fafe4009e0770bd1"
+        }
+      },
+      "localFocused": {
+        "tests": 66,
+        "passed": 66,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 3887.513167,
+        "log": {
+          "path": "artifacts/agent-cartography/inventory-scheduling-focused-final.log",
+          "sha256": "549d99b68cf87504be7bfef4354785268e20d666bfd789a98b68b84e981bda9c"
+        }
+      },
+      "historicalFocusedFixtureFailure": {
+        "log": {
+          "path": "artifacts/agent-cartography/inventory-scheduling-focused.log",
+          "sha256": "85ea7879c60faf8c9312d7dc5063f0c925ab0ebd073bdc94f77874fd3ee3ad5c"
+        },
+        "cause": "Test-local fs.openSync substitution was installed before importing the actual helper, intercepting Node module-source reads. Imported helper before boundary substitution; production unchanged by this correction.",
+        "counts": {
+          "tests": 66,
+          "pass": 63,
+          "fail": 3,
+          "skipped": 0
+        }
+      },
+      "nativeFunctional": {
+        "record": "artifacts/agent-cartography/inventory-scheduling-linux/verification.json",
+        "sha256": "5bc54a2d32b0eb232f7f1fdffcaba637efd88c94bdbad5f24a42904d9135f4a3",
+        "tests": 6,
+        "passed": 6,
+        "failed": 0,
+        "skipped": 0,
+        "arch": "arm64",
+        "node": "24.22.1",
+        "nonrootUid": 65532,
+        "capabilities": 0,
+        "defaultSeccomp": true,
+        "noNewPrivileges": true,
+        "cpuAffinity": "0",
+        "cpus": 1,
+        "memoryBytes": 536870912,
+        "extraSwapBytes": 0,
+        "pids": 128,
+        "cleanupVerified": true
+      },
+      "limitations": [
+        "Functional Linux capability checks do not establish latency or throughput improvement.",
+        "Policy applies only to verified current native worker TID, not all V8 GC/helper threads.",
+        "Both existing cadence and overhead gates still apply. Prior default-profile failures remain.",
+        "Latest hosted uninstrumented qualification is still pending for the new source/profile."
+      ],
+      "wiringFocused": {
+        "log": {
+          "path": "artifacts/agent-cartography/worker-scheduling-wiring-focused.log",
+          "sha256": "cf7f7b34d4b6a979dab2458847535834bdfd3d30f1532b3617eca2d07e6a1ec7"
+        },
+        "tests": 46,
+        "passed": 46,
+        "failed": 0,
+        "skipped": 0,
+        "durationMs": 5961.540792
+      },
+      "defaultChanged": false,
+      "qualificationScope": "Explicit host-selected Linux background-worker mode. The current worker native TID alone is demoted by +5/clamp19 and verified; owner/other V8 helper threads are not relabeled as controlled. No cadence/limit increase or performance proof.",
+      "independentWiringReview": {
+        "path": "artifacts/agent-cartography/scheduling-wiring-independent-review.json",
+        "sha256": "75056a840fa79946eb7ab5af2d79b1cd526e8066feec463ef555e542a9830f20"
+      }
+    },
+    "crypto": {
+      "review": {
+        "path": "artifacts/agent-cartography/crypto-copy-production-review.json",
+        "sha256": "b54f1e65f792d44af1bceeb81f017da3c42d3b931d030923f172bf4e38f4cf6d"
+      },
+      "files": [
+        {
+          "path": "packages/executor/src/store.ts",
+          "sha256": "96fbb53064ba5efa3c1c8bfe80c0b479fb51d0ab024e84186a31b55b7d027028"
+        },
+        {
+          "path": "packages/executor/test/ledger-crypto.test.mjs",
+          "sha256": "8c288d1507278828e7c730a44edf98fcfd4a2c297650c17b884d0627a392cdaa"
+        },
+        {
+          "path": "packages/executor/dist/store.js",
+          "sha256": "0bd414d6b1179f4d1baafdf6146d48628fce72f5d24de7787f78fe3fde0a8eb3"
+        }
+      ],
+      "implementation": {
+        "decrypt": "Always run GCM final authentication before returning update plaintext. Skip concat only when final is empty. Wipe tentative plaintext on auth/size/concat failure and retain final outside try so finally wipes it even when concatenation throws. Existing decode caller wipes successful plaintext.",
+        "seal": "Only avoid Buffer.concat when GCM final is empty; preserve final call and envelope formatting.",
+        "preserved": [
+          "Buffer.from(base64) input decoding",
+          "AAD, random 12-byte nonce, keys and authentication tag",
+          "Exact plaintext and encoded-payload caps",
+          "Fresh reads, state ownership, schema checks, witness and mirror verification",
+          "SQLite transaction/rotation/recovery ordering and durability",
+          "Public APIs and production exports"
+        ]
+      },
+      "tests": {
+        "initial": {
+          "log": {
+            "path": "artifacts/agent-cartography/crypto-copy-production-focused.log",
+            "sha256": "0b9ecd19e9a3cd1229f385d8a7718fab0bb7bc2852b5bc6b0a23ffe70367895f"
+          },
+          "tests": 71,
+          "passed": 70,
+          "failed": 1,
+          "skipped": 0,
+          "testFixtureFailure": "New old-key assertion expected STORE_UNAVAILABLE for a mirrored store; implementation correctly returned existing STORE_WITNESS_UNAVAILABLE. Test now selects the exact witnessed/non-witnessed contract; no product change."
+        },
+        "correctedNewFile": {
+          "log": {
+            "path": "artifacts/agent-cartography/crypto-copy-production-corrected.log",
+            "sha256": "e17911671506b26247708789da1d86c94685b018999483aa820d861abcd6db35"
+          },
+          "tests": 8,
+          "passed": 8,
+          "failed": 0,
+          "skipped": 0
+        },
+        "existingSuites": {
+          "passed": 63,
+          "failed": 0,
+          "skipped": 0,
+          "files": [
+            "ledger-decoder.test.mjs",
+            "ledger-limits.test.mjs",
+            "ledger-maintenance.test.mjs",
+            "ledger-custody.test.mjs",
+            "ledger-recovery.test.mjs",
+            "recovery.test.mjs"
+          ],
+          "coverage": "Authenticated equality/corruption, capacity, key rotation, custody, current-state repair, native super-journal loss and reopen/rollback."
+        },
+        "newCoverage": [
+          "Fresh returned graph and successful plaintext wiping after final authentication",
+          "Tampered ciphertext/tag/IV/key/AAD rejection and tentative plaintext wiping",
+          "Exact decoded-byte cap and early encoded-size refusal",
+          "Authenticated JSON/schema failure wipes plaintext",
+          "Nonempty final success wipes both temporary parts and combined plaintext",
+          "Concat throw preserves exact exception and wipes both temporary parts",
+          "Actual string-seal/Buffer-rekey with no empty-final concat, fresh IVs, old-key refusal, mirror bytes and reopen",
+          "Actual cipher-final failure rolls transaction back"
+        ]
+      },
+      "independentReview": {
+        "reviewer": "mapux",
+        "result": "No actionable source or test issue found; authentication, wiping, seal/rekey and authority checks preserved."
+      },
+      "qualification": {
+        "fullWorkspaceCheck": "pending",
+        "hostedConstrainedAcceptance": "pending",
+        "newProductionBenchmarkPerformed": false,
+        "statement": "The ignored precursor showed local helper CPU/copy reduction only. The production change adds final-buffer wiping on exceptional fallback paths and has not yet qualified end-to-end observer timing or established the prior stall cause."
+      },
+      "priorIgnoredMicroexperiment": {
+        "review": {
+          "path": "artifacts/agent-cartography/crypto-copy-microbenchmark-1/review.json",
+          "sha256": "336371977c12636f6ff434700dae817fbe688717652815b7201148703ee0f99d"
+        },
+        "result": {
+          "path": "artifacts/agent-cartography/crypto-copy-microbenchmark-1/result.json",
+          "sha256": "03b05aba182448ac4eac5b8ba8591de085f9a4d05909ad103d1bbff582921a28"
+        },
+        "diagnosticOnly": true,
+        "acceptanceEvidenceEligible": false,
+        "differentialTests": 20,
+        "differentialPassed": 20,
+        "measurement": {
+          "operation": "fresh AES-GCM seal plus authenticated decrypt, including envelope JSON/base64, fresh nonce and plaintext wipe; no JSON state decode",
+          "fixture": {
+            "tasks": 100,
+            "grants": 1000,
+            "completedActions": 300,
+            "auditEntries": 1200,
+            "plaintextBytes": 426660,
+            "plaintextSha256": "44dfe5b52d6352f86ec2481f84a5a48d65ffe9c3893abb3f062dcd9bf29efe9f"
+          },
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 0.66112499999997,
+            "p95Ms": 2.2014159999999947,
+            "totalWallMs": 413.92629299999993,
+            "totalCpuMs": 324.594
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 0.5901250000000005,
+            "p95Ms": 1.2207920000000172,
+            "totalWallMs": 283.426251,
+            "totalCpuMs": 259.639
+          },
+          "wallRatio": 0.6847263771185467,
+          "cpuRatio": 0.799888476065485,
+          "allSamplesRetained": true,
+          "cycles": [
+            {
+              "cycle": 0,
+              "baseline": {
+                "cpuMs": 78.795,
+                "wallMs": 83.85954200000003
+              },
+              "candidate": {
+                "cpuMs": 63.382000000000005,
+                "wallMs": 62.35970800000001
+              },
+              "cpuRatio": 0.8043911415698967,
+              "wallRatio": 0.7436208988596669
+            },
+            {
+              "cycle": 1,
+              "baseline": {
+                "cpuMs": 107.324,
+                "wallMs": 160.65849999999995
+              },
+              "candidate": {
+                "cpuMs": 75.476,
+                "wallMs": 90.32558399999999
+              },
+              "cpuRatio": 0.703253699079423,
+              "wallRatio": 0.5622210091591794
+            },
+            {
+              "cycle": 2,
+              "baseline": {
+                "cpuMs": 77.35,
+                "wallMs": 108.49679200000003
+              },
+              "candidate": {
+                "cpuMs": 63.035000000000004,
+                "wallMs": 73.24125000000004
+              },
+              "cpuRatio": 0.8149321266968327,
+              "wallRatio": 0.6750545214276936
+            },
+            {
+              "cycle": 3,
+              "baseline": {
+                "cpuMs": 61.125,
+                "wallMs": 60.91145899999992
+              },
+              "candidate": {
+                "cpuMs": 57.745999999999995,
+                "wallMs": 57.49970899999994
+              },
+              "cpuRatio": 0.9447198364008179,
+              "wallRatio": 0.9439883717117992
+            }
+          ]
+        },
+        "copyProbe": {
+          "baseline": {
+            "concatCalls": 2,
+            "concatCopiedPayloadBytes": 853320
+          },
+          "candidate": {
+            "concatCalls": 0,
+            "concatCopiedPayloadBytes": 0
+          }
+        },
+        "limits": [
+          "One local Node26 macOSarm64 same-process microbenchmark, not constrained Linux/HTTP/durable admission acceptance.",
+          "Every measured sample retained; no retries, outlier filtering, forced GC or authority caching.",
+          "The separate concat probe measures exactly those full-payload copy allocations, not total allocation rate, all native crypto allocations, retained heap or per-variant RSS.",
+          "Memory snapshots and process maxRSS cover alternating variants/GC and cannot attribute memory reduction.",
+          "No tracked runtime source or dist edits. Only exact helper copies plus isolated actual-store regression imports changed.",
+          "Improvement here does not identify earlier missed-poll cause or establish end-to-end latency qualification."
+        ]
+      },
+      "prototypeDifference": "Production adds outer final-buffer retention and finally wiping so a nonempty-final concat exception also wipes that final buffer. No new production benchmark has been performed."
+    },
+    "counting": "Focused suites overlap; their counts are separate observations, not a sum of unique tests.",
+    "interpretation": "These are source-review, functional and isolated helper-cost proofs. The combined candidate is not yet qualified for the unchanged full polling/admission gates; earlier failures remain. Node security hold and release-state approval are unchanged.",
+    "fullCheckAttempts": [
+      {
+        "attempt": 1,
+        "command": "npm run check",
+        "log": {
+          "path": "artifacts/agent-cartography/background-worker-full-check-1.log",
+          "sha256": "5b137aa7bbbed179945ffb00a66c6ef7c1e90a66b429ba90ca68394b3a4fe6a4"
+        },
+        "exitCode": 1,
+        "tests": 1307,
+        "passed": 1306,
+        "failed": 1,
+        "skipped": 0,
+        "installedConsumerRun": false,
+        "failure": {
+          "category": "copied-validation-cli-fixture-missing-helper",
+          "code": "ERR_MODULE_NOT_FOUND",
+          "description": "The validation CLI alias fixture copied benchmark dependencies but omitted the newly required scheduling helper. No product assertion failed; the copy list is being corrected without changing the original 10-second deadline or assertions."
+        },
+        "scope": "The failed full check remains retained and cannot be reported as a complete pass."
+      },
+      {
+        "attempt": 2,
+        "command": "npm run check (both immutable isolation image variables set)",
+        "log": {
+          "path": "artifacts/agent-cartography/background-worker-full-check-2.log",
+          "sha256": "8966155ce55f02d14388f706e7f8af08da228e1b03b17c8d4c999ece550d355b"
+        },
+        "status": "passed",
+        "exitCode": 0,
+        "tests": 1307,
+        "passed": 1307,
+        "failed": 0,
+        "skipped": 0,
+        "installedConsumersPassed": true,
+        "precedingFixtureCorrection": {
+          "log": {
+            "path": "artifacts/agent-cartography/validation-cli-scheduling-fixture-focused.log",
+            "sha256": "ccd7007266067e585a968cc68148ea290d32ecc440a06cc5282515e48a0b4b82"
+          },
+          "tests": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "change": "Copied the new scheduling helper into the validation CLI alias fixture; original 10-second bound and assertions unchanged."
+        }
+      }
+    ]
   }
 }

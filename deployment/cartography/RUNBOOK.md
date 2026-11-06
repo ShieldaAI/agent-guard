@@ -184,11 +184,14 @@ volumes. Local measurements do not establish a completed hosted CI run.
 The configured acceptance profile measures the same uninstrumented full admission
 workload on native Linux/cgroup v2 with placement on one logical CPU, a one-CPU
 bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
-period and zero burst. It **passed on exact source `e4e42f`** at 7.2766% admission
+period and zero burst. The new candidate additionally requires explicit
+`workerScheduling: 'linux-background'` and remains unqualified. The earlier
+default-worker profile **passed on exact source `e4e42f`** at 7.2766% admission
 overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
 cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
 with unchanged runtime bytes. Both remain evidence, without a proven cause or fix.
-The HTTP fairness candidate's two declared native qualification runs remain pending.
+The subsequent `1ef859c` default-mode failures also remain evidence. None of these
+results qualifies the new mode; its two declared native runs remain pending.
 This profile does not replace the graph or ordinary hosted admission gate. Build
 first and run once per reviewed candidate without a competing local workload:
 
@@ -197,6 +200,7 @@ export NODE_IMAGE='node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3
 docker pull "$NODE_IMAGE"
 mkdir -p artifacts/constrained-observer-runs
 node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --cpu-affinity 0 \
+  --worker-scheduling linux-background \
   --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
 ```
 
@@ -222,6 +226,15 @@ explicitly selects affinity `0` for PR/default manual acceptance and executes on
 full run without diagnostics or retries. Manual `none` remains available for
 historical quota-only comparisons; no default resource cap or threshold changes.
 
+Select `--worker-scheduling linux-background` explicitly for configured admission
+qualification. The trusted host option lowers only the observer worker's native
+main-thread priority by up to five nice points, capped at 19. Startup and private
+before/after evidence verify readback and unchanged owner priority; GC/helper
+thread priorities are not claimed. Unsupported hosts or failed verification refuse
+the mode without fallback. Generic CLI/SDK calls retain `default`, and manual
+historical comparisons select `default` without passing the new flag to old source.
+The ordinary graph-load/host-MCP fixture keeps its existing default policy.
+
 The [6 November evidence](../../docs/validation/one-cpu-observer-2026-11-06.json)
 retains the first setup failure caused by an unshared macOS temporary directory
 and the private-sibling correction. The subsequent bandwidth-only full run
@@ -242,8 +255,11 @@ The current public task HTTP server yields once on prepare/execute after bounded
 JSON parsing and before fresh second authentication. It preserves fresh authority
 reads, the original monotonic body deadline, transport guards and the immutable
 validated route. A fixed `REQUEST_TIMEOUT` does not cause automatic retry. The
-98 focused checks and local 1,283-test full check passed with zero skips, plus
-installed consumers; hosted qualification remains pending. This scheduling change
+98 focused checks and local 1,283-test full check passed on `1ef859c` with zero skips,
+plus installed consumers. The new serializer/background-policy candidate's second
+local full check passed 1,307/1,307 tests with zero skips plus installed consumers;
+the first copied-fixture omission remains recorded. Hosted and performance
+qualification are pending. This scheduling change
 does not alter the immediate first poll, cadence, resource limits or acceptance
 gates, and is not a real-time guarantee or a change to every SDK embedding.
 
@@ -255,6 +271,10 @@ observer. They do not define a complete service; identity, storage, networking
 and hardening still belong to that service's reviewed deployment. The reference
 Agent Ops service does not start an inventory observer and is not the target of
 these settings.
+
+Also set `workerScheduling: 'linux-background'` in the service's trusted
+`startInventoryServer()` options. The resource fields alone do not select that
+policy; do not infer it from CPU affinity or expose it as an agent-controlled option.
 
 ```yaml
 cpus: 1.0

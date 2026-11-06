@@ -7,7 +7,11 @@ automatically certify that expansion or remove the release hold below.
 
 The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2,
 one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
-burst, 512 MiB memory, no extra swap and 128 PIDs. The controlled exact-source
+burst, 512 MiB memory, no extra swap and 128 PIDs. The new configured candidate
+also explicitly selects `workerScheduling: 'linux-background'`: only the observer
+worker's native main-thread priority is lowered by up to five nice points, capped at 19,
+with verified readback and unchanged owner priority. No GC/helper-thread priority
+change is claimed. Generic SDK/CLI defaults remain unchanged. The controlled exact-source
 `e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
 149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
 the Colima-affined failure also remains evidence. The later `9709f70` constrained
@@ -18,6 +22,8 @@ Neither result establishes the prior failure's cause or a timing fix. See the
 This profile belongs to a company's observer-owning executor, not the reference
 Agent Ops service, which does not start an observer. It reserves neither an
 exclusive nor physical core and does not guarantee an unknown deployment's latency.
+Those prior runs used default worker scheduling and cannot qualify the new mode;
+the later `1ef859c` default-mode failures remain retained as well.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second
@@ -26,11 +32,19 @@ transport guards and the immutable validated route remain enforced; fixed
 `REQUEST_TIMEOUT` errors do not cause automatic retries. No resource cap,
 immediate first poll, cadence or acceptance gate changes. This is scoped HTTP
 scheduling, not a fairness or real-time guarantee for all SDK embeddings.
-Its 98 focused checks and full local check passed: **1,283/1,283 tests, zero skips,
-plus installed consumers**. Hosted full and both declared native qualification
-runs remain pending. The controlled exact-`9709f70` Windows serial experiment
+On `1ef859c`, its 98 focused checks and full local check passed: **1,283/1,283 tests,
+zero skips, plus installed consumers**; all 11 hosted CI jobs also passed with
+platform skips recorded. Its CodeQL unresolved-alert gate failed on the temporary
+Windows experiment registration trigger; the manual-only correction still needs a
+new scan. The subsequent direct core serializer and explicit background-worker
+candidate still requires new hosted checks, hosted full and both declared native
+qualification runs. Its first combined local run passed 1,306 of 1,307 tests with
+zero skips; one copied CLI fixture lacked the new helper, and packaging was not
+reached. Its minimal copy-list correction passed the focused regression; the
+second full check passed **1,307/1,307 tests, zero skips, plus installed consumers**.
+The controlled exact-`9709f70` Windows serial experiment
 passed the previously failing cases and installed consumers; the maintained
-Windows-only test launcher still requires final changed-source CI. Prior failures
+Windows-only test launcher subsequently passed on `1ef859c`. Prior failures
 remain evidence and their underlying cause is unproven. The Node HIGH hold remains;
 these results authorize no publication, merge, tag or production acceptance.
 

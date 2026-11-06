@@ -19,7 +19,7 @@ test('validation CLIs invoked through a directory alias evaluate the inputs and 
   const evidence = join(actual, 'artifacts', 'platform-evidence.json');
   mkdirSync(join(actual, 'artifacts'));
   writeFileSync(evidence, '{"passed":true}');
-  for (const helper of ['benchmark-admission-client.mjs', 'benchmark-admission-diagnostics.mjs', 'benchmark-admission-profile.mjs'])
+  for (const helper of ['benchmark-admission-client.mjs', 'benchmark-admission-diagnostics.mjs', 'benchmark-admission-profile.mjs', 'benchmark-admission-scheduling.mjs'])
     copyFileSync(join(here, 'scripts', helper), join(actual, 'scripts', helper));
   for (const [name, status] of [['verify-platform.mjs', 1], ['score-operator-study.mjs', 2], ['benchmark-admission.mjs', 1]]) {
     copyFileSync(join(here, 'scripts', name), join(actual, 'scripts', name));
