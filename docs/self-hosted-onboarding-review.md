@@ -1,5 +1,10 @@
 # Self-hosted onboarding and configurable limits — 2026-11-05
 
+> Historical record. Results and remaining-work statements below reflect the
+> November 5 snapshot, including key-retirement follow-up. See the current
+> [production readiness acceptance](production-readiness.md) and
+> [deployment runbook](../deployment/production/README.md) for current status and procedures.
+
 Each company owns its installation, identity enrollment, ticket data, keys and
 backup custody. The implementation adds private local onboarding and reviewed
 configuration/data changes to the existing single-owner Linux profile. Follow

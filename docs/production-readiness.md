@@ -5,20 +5,25 @@ The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert
 review described below.
-The latest verified branch revision is `4b2cdc9`: all six hosted workflows passed,
-including CI, the Cartography smoke pilot and integration, CodeQL, Dependency
-Review and the Python dependency audit. These results replace `ab56766` as the
-current hosted verification pointer; its records remain historical evidence.
+The pending [ledger-decoder candidate](validation/ledger-decoder-2026-11-06.json)
+uses private normalization of a freshly parsed graph; authenticated reads,
+witness checks and transactions remain unchanged. Its full local check passed
+**1,116/1,116 tests, zero skips**, plus installed consumers. Image comparison
+found only the compiled decoder module changed, and hardened Linux recovery
+passed. Candidate hosted workflows and uninstrumented full performance acceptance
+remain pending.
+All six ordinary workflows passed on its parent `ee0d589`. The exact-artifact
+record for `4b2cdc9` remains the prior validated baseline, not verification of the
+new decoder. Earlier `ab56766` records remain historical evidence.
 The evidence record retains pending and failed checks explicitly. No final
 production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
-The subsequent inventory finalizer correction has passed 223 focused tests and
-the complete 1,099-test local suite with zero skips, plus installed-package checks.
-Its current Linux recovery verification passed. Full and smoke performance runs
-still missed isolated polling intervals, despite correct effects and cleanup.
-Opt-in timing diagnostics are being used to locate those stalls. Manual run
-`42194605365` on `f6dec31` completed but measured **11.35%** overhead, above the
-10% target; instrumented results cannot certify performance acceptance.
+Prior full and smoke performance runs missed isolated polling intervals despite
+correct effects and cleanup. Diagnostic runs `42194605365` and `42199037007`
+measured **11.35%** and **14.37%** overhead respectively; both are ineligible as
+acceptance evidence. The second completed 249 polls without skips and attributed
+66% of measured stack observations to decode/reviver work. That is not exact CPU
+time, and the earlier rare stalls were not reproduced.
 
 The target is at least **9.5/10 independently in every R1–R10 category**, with no
 open critical or high security defect, broken supported workflow, misleading
@@ -138,7 +143,7 @@ repository root. Tests use disposable synthetic identities, records and keys.
 | R9 | Ops onboarding/limits/observability/recovery-status tests, `check-browser.mjs`, `check-browser-service.mjs`, Map `check-browser.mjs`: setup, empty/stale/error/mobile/keyboard states, explicit uncertain outcomes, data import, policy explanations and accessible operation. |
 | R10 | `npm run check`, all five installed tarball consumers, the actual alpha.3 upgrade/downgrade-fence consumer, hosted platform/browser/Linux/isolation/security gates, and the dated validation record linked below. |
 
-## Recorded candidate verification
+## Recorded candidate and baseline verification
 
 The [dated evidence record](validation/production-readiness-2026-11-06.json)
 identifies source revisions, image IDs, command results and hashes. It separates
@@ -146,22 +151,31 @@ the runtime candidate from subsequent documentation or Python integration change
 It is the authoritative index for exact hosted run status; a workflow definition
 alone is not passing evidence.
 
+- The pending decoder candidate's local result and exact source fingerprint are
+  in the [decoder record](validation/ledger-decoder-2026-11-06.json). Its parent
+  `ee0d589` passed all six ordinary workflows; those passes predate the decoder.
+  The candidate's hardened Linux checks also passed current-state repair,
+  rotation, retirement, cold restore, history and receipt recovery with witness
+  preservation. Its 40 reads at eight clients over 2,001 tickets measured 83 ms
+  p95 against the 2,000 ms target, with 27 overload refusals. This is a separate
+  service-load check, not the admission-overhead acceptance gate. The remaining
+  Linux and hosted results below identify the prior validated baseline.
 - The local inventory-finalizer check at `c38cf47` passed **1,099/1,099 tests,
   zero skips**, plus installed-package checks. The earlier `53acbde` local
   1,093-test result remains in the history. Actual published alpha.3 state
   upgrades preserve spent authority; the old reader refuses new semantics.
 - Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  verified branch commit `4b2cdc9` in CI run `42195606471`. The ordinary hosted
+  prior baseline `4b2cdc9` in CI run `42195606471`. The ordinary hosted
   Node 24 suite passed 1,097 of 1,105 tests and skipped eight optional container
   cases; the separate required
   Linux isolation gate passed **44/44**, zero skips, including those cases and
-  every MCP lifecycle/cleanup observation. All eight current CI artifact ZIP
+  every MCP lifecycle/cleanup observation. All eight baseline CI artifact ZIP
   hashes were verified and bind to that head. Its PR merge tree is identical;
   [the exact CI record](validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
   retains job status, source binding and artifact digests.
 - Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
   AMD64. Production and verification images share **4,327 application entries**;
-  the two test-only fixtures are explicitly excluded from production. Current
+  the two test-only fixtures are explicitly excluded from production. Baseline
   `4b2cdc9` AMD64 evidence and historical `c38cf47` ARM64 evidence report the same
   application manifest hash. This does not equate their architecture-specific
   base images or certify customer storage. Runtime
@@ -170,7 +184,7 @@ alone is not passing evidence.
   recovered current state after primary-directory loss, retained historical and
   latest receipts, and reopened in a fresh container with read-only config/history.
   At eight clients and 40 measured 500-row reads, p95 was **163 ms on local ARM64**
-  and **201 ms on current hosted AMD64**, within the 2,000 ms test target. The older
+  and **201 ms on baseline hosted AMD64**, within the 2,000 ms test target. The older
   156/183 ms observations remain in the history. Each overload
   run refused 27 reads through the documented rate/busy responses without effects.
 - Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
@@ -187,7 +201,7 @@ alone is not passing evidence.
   A deterministic real-service regression reproduced it; the correction preserves
   navigation nodes while expired decisions disappear on the existing expiry tick. All three
   engines passed both timer/click regressions and 117 focused accessibility scans
-  (Ops contract and real-service states). The current `4b2cdc9` hosted run passed all
+  (Ops contract and real-service states). The baseline `4b2cdc9` hosted run passed all
   nine suites and **156 accessibility scans**, including both regressions in every engine.
 - Historical Python integration evidence records **928 unit and 143 authenticated Neo4j tests**,
   package builds and the installed consumer. Four locked platform selections
@@ -246,7 +260,7 @@ The supported operational boundary remains material:
   Preserve failed attempts and measured overhead; passing smoke must not be
   described as achieving the separate 10% performance acceptance target. The
   earlier hosted smoke passed its correctness/stress gates with **24.41%** measured
-  admission overhead. One current local full run observed **1.64%** overhead and
+  admission overhead. One earlier local full run observed **1.64%** overhead and
   passed its numeric gate, but unrelated CPU-heavy work was active; it is
   explicitly not quiescent acceptance evidence. A subsequent unchanged full
   acceptance run in a separate GitHub job passed the enforced 10% gate at
@@ -261,13 +275,14 @@ The supported operational boundary remains material:
   validation, authenticated reads, output equivalence and exact caps remain
   enforced. Differential and boundary tests pass. The optimized full run still
   missed one interval, and the checkout-only follow-up smoke missed two.
-  Current `4b2cdc9` pilot run `42195606557` passed smoke; it does not waive the
+  Baseline `4b2cdc9` pilot run `42195606557` passed smoke; it does not waive the
   `c38cf47` full-profile or `8cabb88` smoke cadence failures. Bounded, opt-in
   request/export/GC/event-loop diagnostics preserve every gate and are explicitly
-  ineligible as acceptance evidence. The completed `f6dec31` diagnostic run
-  `42194605365` measured **11.35%** overhead and failed its numeric target.
-  A regular, uninstrumented full run still needs to establish the result under
-  the same workload and gates.
+  ineligible as acceptance evidence. The completed `f6dec31` and `ee0d589`
+  diagnostic runs measured **11.35%** and **14.37%** overhead and failed their
+  numeric targets. The second had no cadence misses but did not reproduce the
+  earlier rare stalls. The pending decoder candidate must pass a regular,
+  uninstrumented full run under the same workload and gates.
   This deliberate 250 ms observer stress profile is bounded evidence on the
   recorded runner, not a deployment-wide latency guarantee; the collector
   defaults to five minutes.

@@ -1,0 +1,168 @@
+{
+  "schemaVersion": 1,
+  "status": "local-functional-and-linux-checks-passed-hosted-acceptance-pending",
+  "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+  "purpose": "Reduce observed ledger decode/reviver work without caching authority or removing fresh authenticated reads.",
+  "evidence": "admission-diagnostics-2026-11-06.json",
+  "implementation": {
+    "scope": "Private decode in packages/executor/src/store.ts only. JSON.parse creates a fresh graph; an iterative walk changes only freshly parsed non-array record prototypes to null.",
+    "preserved": [
+      "every fresh read and authenticated ciphertext check",
+      "witness and exact mirror validation",
+      "transaction boundaries, durable commits and rollback",
+      "own keys, insertion/enumeration order, descriptors and numeric values",
+      "ordinary arrays and fresh mutable graph ownership"
+    ],
+    "engineDepthLimit": "No new depth policy. Iterative normalization avoids the former reviver engine-dependent recursion overflow on unusually deep JSON; this is not a new public workload guarantee.",
+    "compiledModuleOnlyDecodeChanged": true,
+    "beforeCompiledStoreSha256": "15b67ff12b98cb84cc68d71c8e7f7857848e12f8eb084f63fdb127b6359d6bd9",
+    "afterCompiledStoreSha256": "38ca02f6c13056a5c23f8ec7b178916e3de6930f68b2a52288d8d54f42296c80"
+  },
+  "inputSha256": {
+    "packages/executor/src/store.ts": "8804e6aa54da0a55f5e270f3acba68f527452956977c524a05180e3edad60244",
+    "packages/executor/test/ledger-decoder.test.mjs": "1edc5da6a4412f7839c7b2f2a1b51d896bd8a4dff7d660f8fb2c80258d27b6a4"
+  },
+  "independentSourceReview": "Approved private fresh-graph boundary and all six actual encrypted-store tests; no other authentication, witness or transaction code changed.",
+  "validation": {
+    "fullLocalCheck": {
+      "command": "npm run check",
+      "status": "passed",
+      "tests": 1116,
+      "passed": 1116,
+      "failed": 0,
+      "skipped": 0,
+      "installedPackageChecks": "passed",
+      "newEncryptedStoreTests": 6,
+      "logSha256": "bfa536a1059dafccb3f3c57fbf3170093ab57cdffd90f2b377e9ba1d315362f0",
+      "host": "Node26.12.0/macOS ARM64",
+      "sandboxImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+      "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53"
+    },
+    "linuxImageAndRecovery": {
+      "status": "passed",
+      "imageComparison": {
+        "status": "passed",
+        "measuredAt": "2026-11-06T10:23:00.907Z",
+        "productionImage": "sha256:9c01877457eb390d275195078e774a6f69444d50934f999b150806437b9a3f76",
+        "verificationImage": "sha256:73f94e12ad89bb0e29c8a65e046b40336332c063df1bbdf315e8cae925be4163",
+        "node": "24.22.1",
+        "identicalApplicationEntries": 4327,
+        "globalPackageManagersAbsent": true,
+        "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
+        "excludedVerificationFixtures": [
+          "/app/deployment/production/verify-cli.mjs",
+          "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+        ]
+      },
+      "changedApplicationEntriesSincePriorVerifiedRuntime": [
+        "/app/packages/executor/dist/store.js"
+      ],
+      "linux": {
+        "schema": 1,
+        "measuredAt": "2026-11-06T10:23:01.050Z",
+        "status": "passed",
+        "verificationImage": "sha256:73f94e12ad89bb0e29c8a65e046b40336332c063df1bbdf315e8cae925be4163",
+        "imagePlatform": "linux/arm64",
+        "docker": {
+          "version": "29.5.2",
+          "os": "linux",
+          "arch": "arm64"
+        },
+        "composeControls": "passed",
+        "maintenance": {
+          "status": "passed",
+          "platform": "linux",
+          "node": "24.22.1",
+          "twoStoreRotation": true,
+          "interruptedReceiptReconciled": true,
+          "duplicateEffectPrevented": true,
+          "archivePersisted": true,
+          "rollbackRejected": true,
+          "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+          "repairLeavesWitnessesUnchanged": true
+        },
+        "storage": {
+          "driver": "local",
+          "separateDataWitnessConfigAndHistoryVolumes": true,
+          "freshContainerReopen": true
+        },
+        "cli": {
+          "status": "passed",
+          "platform": "linux",
+          "arch": "arm64",
+          "node": "24.22.1",
+          "companyOnboarding": true,
+          "noAuthorityBeforeInit": true,
+          "preflight": true,
+          "startupTlsAndCustodyEnforced": true,
+          "unenrolledSeedRefused": true,
+          "rejectedStartupLeavesAuthorityUnchanged": true,
+          "configuredLimitsRaised": true,
+          "rotationBeyondLegacyFourKeyDefault": true,
+          "ticketImportPreviewAndApply": true,
+          "bulkImportedTickets": 2000,
+          "paginatedTicketsVerified": 2001,
+          "setupCountsAndLimits": true,
+          "signedOidc": true,
+          "reviewedUpdate": true,
+          "processKillRestart": true,
+          "sessionsInvalidated": true,
+          "pendingReviewInvalidated": true,
+          "secondOwnerRejected": true,
+          "coldRestoreWithoutWitnessRollback": true,
+          "partialRotationRecoverable": true,
+          "bothStoresRotated": true,
+          "subsequentUpdate": true,
+          "archiveViaHttps": true,
+          "staleRestoreRejected": true,
+          "healthcheck": true,
+          "hardenedContainer": true,
+          "historyCompacted": true,
+          "historicalReceiptVerified": true,
+          "managedCustodyEnrolled": true,
+          "activeKeyRetirementWithHistoricalEscrow": true,
+          "custodySecretRotated": true,
+          "managedBypassRefused": true,
+          "authenticatedBackupAndRestore": true,
+          "missingHistoryRecovered": true,
+          "latestStateRecoveredAfterPrimaryDirectoryLoss": true,
+          "repairLeavesWitnessesUnchanged": true,
+          "relocatedHistoryReenrolled": true,
+          "historicalAndLatestReceiptsPreserved": true,
+          "persistentVolumes": true,
+          "load": {
+            "tickets": 2001,
+            "concurrentClients": 8,
+            "measuredReads": 40,
+            "pageSize": 500,
+            "p95ReadMs": 83,
+            "targetP95Ms": 2000,
+            "overloadRefusals": 27,
+            "effectsUnchanged": true
+          },
+          "reopenedInFreshContainer": true,
+          "runtimeConfigAndHistoryReadOnly": true
+        },
+        "limits": [
+          "Disposable local Linux containers; no customer deployment",
+          "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+          "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
+        ]
+      },
+      "rawImageComparisonSha256": "fad06a9a218568192d2a2ed40910f7ee0d9c7bddf1b3a0b05adca9edb0bfe87e",
+      "rawLinuxEvidenceSha256": "704ee4b33ca691eab52892b684f4a50b9f0a676a278dccf67ebd8f9810fd2d1f"
+    },
+    "hostedOrdinaryWorkflows": "pending",
+    "uninstrumentedFullAcceptance": "pending"
+  },
+  "performanceProtocol": {
+    "plannedUninstrumentedFullRuns": 1,
+    "diagnostics": false,
+    "cpuProfile": false,
+    "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
+    "previousFailuresPreserved": true
+  },
+  "productionAcceptance": "pending; performance evidence and undisclosed Node HIGH prealert remain open; no score or new release asserted.",
+  "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+  "sourceFiles": 411
+}

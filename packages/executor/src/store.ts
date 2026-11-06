@@ -57,8 +57,21 @@ export interface Ledger {
 }
 
 function decode(text: string): Ledger {
-  return JSON.parse(text, (_key, value: unknown) => value && typeof value === 'object' && !Array.isArray(value)
-    ? Object.assign(Object.create(null), value) : value) as Ledger;
+  // Only JSON.parse-created data enters this walk: no caller references,
+  // accessors, proxies, cycles or callbacks can observe intermediate prototypes.
+  const value: unknown = JSON.parse(text);
+  const pending: object[] = value !== null && typeof value === 'object' ? [value] : [];
+  while (pending.length) {
+    const current = pending.pop()!;
+    const children: unknown[] = Array.isArray(current) ? current : Object.values(Object.setPrototypeOf(current, null));
+    for (let index = 0; index < children.length; index++) {
+      const child = children[index];
+      if (child !== null && typeof child === 'object') pending.push(child);
+    }
+  }
+  // No new depth policy: normalization avoids the old reviver's engine-dependent
+  // recursion overflow on unusually deep JSON outside supported workload states.
+  return value as Ledger;
 }
 
 function privateDatabasePath(path: string, flags: number): string {

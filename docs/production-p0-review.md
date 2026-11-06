@@ -1,5 +1,9 @@
 # P0 reference deployment verification — 2026-11-05
 
+> Historical record. Results and next-work statements below reflect the November 5
+> snapshot. See the current [production readiness acceptance](production-readiness.md)
+> and [deployment runbook](../deployment/production/README.md) for current status and procedures.
+
 The implementation targets the selected durable reference ticket service, standard
 OIDC and a single-owner Linux Docker Compose deployment. The application and
 deployment contracts are in [Agent Ops](../apps/agent-ops/README.md) and the

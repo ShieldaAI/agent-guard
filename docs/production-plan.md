@@ -6,6 +6,10 @@ recorded construction evidence remain in [protection-assessment.md](protection-a
 Deployment acceptance follows the actual enabled tools, identities, backends and
 host profile.
 
+Use [production readiness acceptance](production-readiness.md) for the current
+verified revision and unresolved acceptance gates. The November 5 reviews linked
+below preserve historical implementation snapshots.
+
 The implemented reference profile and its measured checks are recorded in the
 [P0 verification review](production-p0-review.md). Use the
 [Linux runbook](../deployment/production/README.md) for installation and recovery.

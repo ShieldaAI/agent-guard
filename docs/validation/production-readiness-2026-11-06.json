@@ -12,11 +12,12 @@
     "hostedMergeCommit": "0c3a1ffc20576201c1643a04b8c1001645e3a80a",
     "mergeTreeMatchesHead": true,
     "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
-    "followupScope": "Current branch includes the c38cf47 inventory finalizer, portable oracle checkout, opt-in admission diagnostics and the 4b2cdc9 aliased-CLI fixture correction. All six required hosted workflows passed; the pilot workflow was smoke and full performance acceptance remains pending.",
+    "followupScope": "This prior baseline includes the c38cf47 inventory finalizer, portable oracle checkout, opt-in admission diagnostics and the 4b2cdc9 aliased-CLI fixture correction. All six required hosted workflows passed; the pilot workflow was smoke and full performance acceptance remains pending.",
     "runtimeImplementationIntroducedAt": "53acbde035614f21e74a342ebf0c5010f95686fe",
     "uiCorrectionIntroducedAt": "ab567668522c908f18ef8ccfb264d68387e9141b",
     "gitTree": "7c9c5b09a3428562572f67b6fd0104d54efdd229",
-    "inventoryFinalizerIntroducedAt": "c38cf472107b89e574d466d8ae26cf68704a4c44"
+    "inventoryFinalizerIntroducedAt": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+    "evidenceRole": "Prior validated exact-artifact baseline at 4b2cdc9; new decoder candidate is pending and separately identified below."
   },
   "acceptance": {
     "targetPerCategory": 9.5,
@@ -77,14 +78,20 @@
   "fullLocalCheck": {
     "command": "npm run check",
     "status": "passed",
-    "tests": 1099,
-    "passed": 1099,
+    "tests": 1116,
+    "passed": 1116,
     "failed": 0,
     "skipped": 0,
-    "logSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
     "installedPackageChecks": "passed",
-    "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44",
-    "scope": "Historical local full check of the inventory-finalizer revision. Current 4b2cdc9 is verified by the separately recorded completed hosted platform and installed-package checks; no new local full check was run during reconciliation."
+    "newEncryptedStoreTests": 6,
+    "logSha256": "bfa536a1059dafccb3f3c57fbf3170093ab57cdffd90f2b377e9ba1d315362f0",
+    "host": "Node26.12.0/macOS ARM64",
+    "sandboxImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+    "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+    "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+    "sourceFiles": 411,
+    "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+    "scope": "Pending private-decoder candidate; local full suite and installed consumers passed. Hardened Linux recovery passed separately. Candidate hosted workflows and uninstrumented full performance acceptance remain pending."
   },
   "linux": {
     "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
@@ -316,7 +323,8 @@
       "digestVerified": true
     },
     "previousSharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
-    "crossArchitectureScope": "ARM64 evidence is from c38cf47; current AMD64 evidence is from 4b2cdc9. Both production/verification comparisons report the same 4,327-entry application manifest SHA256 965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51. This binds application entries, not architecture-specific base images or customer storage durability."
+    "crossArchitectureScope": "ARM64 evidence is from c38cf47; baseline AMD64 evidence is from 4b2cdc9. Both production/verification comparisons report the same 4,327-entry application manifest SHA256 965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51. This binds application entries, not architecture-specific base images or customer storage durability.",
+    "evidenceRole": "Prior validated baseline; decoder image/recovery validation is recorded separately in pendingDecoderCandidate."
   },
   "runtimeIsolation": {
     "sourceCommit": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
@@ -477,7 +485,8 @@
       "headSha": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
       "expired": false,
       "digestVerified": true
-    }
+    },
+    "evidenceRole": "Prior validated 4b2cdc9 hosted isolation; decoder-candidate hosted validation remains pending."
   },
   "hosted": {
     "ciRun": 42195606471,
@@ -679,7 +688,7 @@
         "conclusion": "success"
       }
     ],
-    "artifactsScope": "All eight current CI artifact ZIP SHA256 digests were independently verified against GitHub metadata and bound to 4b2cdc9. Historical artifacts remain under historicalVerification and prior dated records.",
+    "artifactsScope": "All eight baseline CI artifact ZIP SHA256 digests were independently verified against GitHub metadata and bound to 4b2cdc9. Historical artifacts remain under historicalVerification and prior dated records.",
     "finalEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json",
     "node24Check": {
       "jobId": 127817992544,
@@ -688,6 +697,19 @@
       "failed": 0,
       "skipped": 8,
       "scope": "Ordinary Linux Node24 unit suite; optional container cases are separately required by the passing 44/44 Linux isolation gate. Installed-package consumers and npm pack steps also passed."
+    },
+    "evidenceRole": "Prior validated 4b2cdc9 exact-artifact baseline; not decoder-candidate verification.",
+    "ordinaryParentFollowup": {
+      "head": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+      "allSixWorkflowsPassed": true,
+      "runs": {
+        "CI": 42199027588,
+        "Cartography smoke pilot": 42199027636,
+        "Cartography integration": 42199027596,
+        "CodeQL": 42199027571,
+        "Dependency Review": 42199027518,
+        "Python dependency audit": 42199027550
+      }
     }
   },
   "browsers": {
@@ -762,7 +784,7 @@
       "webkit": "Job timed out during system dependency installation; browser suites skipped",
       "host": "Ubuntu 26.04.1, image ubuntu26/20261101.186",
       "observedCause": "Slow/retried apt retrieval from azure.archive.ubuntu.com; no failed application assertions observed",
-      "followup": "Resolved in subsequent hosted runs by the pinned Ubuntu 24.04 browser host and reviewed signed official archive selection. Current 4b2cdc9 browser suites all passed; the original failed run is preserved."
+      "followup": "Resolved in subsequent hosted runs by the pinned Ubuntu 24.04 browser host and reviewed signed official archive selection. Baseline 4b2cdc9 browser suites all passed; the original failed run is preserved."
     },
     "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json",
     "localFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/local-53acbde.json",
@@ -877,7 +899,8 @@
     "historicalHostedEvidence": [
       "docs/validation/production-readiness-browser-2026-11-06/ci-ab56766.json",
       "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json"
-    ]
+    ],
+    "evidenceRole": "Prior validated baseline browser reports; no decoder-candidate hosted result is inferred."
   },
   "security": {
     "codeql": {
@@ -900,7 +923,7 @@
         21
       ],
       "triage": "docs/validation/codeql-triage-2026-11-06.md",
-      "scope": "Current PR merge ref has zero open alerts. Default main separately has five open alerts; no closure on main is claimed.",
+      "scope": "Recorded 4b2cdc9 PR merge ref query had zero open alerts; main separately had five. Parent ee0d589 CodeQL workflow also passed, but decoder-candidate hosted checks remain pending.",
       "uiCorrectionVerification": {
         "run": 42148204949,
         "head": "ab567668522c908f18ef8ccfb264d68387e9141b",
@@ -965,7 +988,7 @@
           }
         ]
       },
-      "currentEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json"
+      "baselineEvidence": "docs/validation/production-readiness-ci-2026-11-06-4b2cdc9.json"
     },
     "runtimeNpm": {
       "image": "sha256:c1bb25623a460658f509abfa211290192954d4f744911dad35d9cb3f9ea39bc7",
@@ -1687,8 +1710,9 @@
     ]
   },
   "remainingVerification": [
-    "Resolve the recorded c38cf47 full-profile and 8cabb88 smoke cadence failures with unchanged workload and gates. The latest 4b2cdc9 smoke pass does not waive them.",
-    "Obtain eligible, uninstrumented full-profile acceptance evidence. Manual diagnostic 42194605365 completed but measured 11.35% overhead and is explicitly ineligible."
+    "Complete ordinary hosted checks for the exact decoder commit. Local full-suite and hardened Linux recovery checks passed; prior 4b2cdc9 artifacts and parent ee0d589 workflow passes do not cover candidate hosted checks.",
+    "Run the predeclared uninstrumented full acceptance profile on the decoder candidate with every workload and gate unchanged. Preserve the c38cf47 full and 8cabb88 smoke cadence failures and all earlier observations.",
+    "Diagnostic 42199037007 completed 249 polls with no skips but 14.37% overhead; like the earlier 11.35% diagnostic, it is ineligible. Decode/reviver stack concentration does not establish the cause of unreproduced rare stalls."
   ],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
@@ -1716,7 +1740,7 @@
     "scope": "Superseded by the history capacity guard. Exact original record is retained in the Git history of this file at 53acbde. Browser install timeouts and pilot failures are retained in separate referenced records."
   },
   "cartographyPerformance": {
-    "hostedSmoke": "Current 4b2cdc9 Cartography pilot workflow 42195606557 passed in smoke mode. The separate full 10% performance acceptance is not established by this run.",
+    "hostedSmoke": "Prior baseline 4b2cdc9 Cartography pilot workflow 42195606557 passed in smoke mode. The separate full 10% performance acceptance is not established by this run.",
     "localFullObservation": "Observed 1.64% overhead with numeric gate enforced/passed, but unrelated CPU-heavy checks were active; not qualified as quiescent acceptance evidence.",
     "evidence": "docs/validation/cartography-pilot-2026-11-06.json",
     "scope": "Deliberate 250 ms synthetic observer stress; deployed collector defaults to five minutes. No production latency/10% guarantee inferred.",
@@ -1736,7 +1760,8 @@
       "head": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
       "workflowRun": 42195606557,
       "status": "passed",
-      "fullPerformanceAcceptance": false
+      "fullPerformanceAcceptance": false,
+      "evidenceRole": "Prior baseline smoke result; parent ee0d589 ordinary smoke also passed, not decoder/full acceptance."
     },
     "unresolvedFinalizerAttempts": [
       {
@@ -1755,20 +1780,51 @@
       }
     ],
     "latestDiagnosticRun": {
-      "run": 42194605365,
-      "job": 127814605231,
-      "source": "f6dec314d8f18f9d7858e3da8bb129b1e6b8013c",
+      "run": 42199037007,
+      "job": 127829454037,
+      "source": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
       "status": "complete-diagnostic-performance-gate-failed",
       "diagnosticsComplete": true,
       "acceptanceEvidenceEligible": false,
-      "regressionPercent": 11.350652008945428,
+      "regressionPercent": 14.369934377530114,
       "performancePassed": false,
       "gateFailureReasons": [
         {
           "code": "ADMISSION_REGRESSION_EXCEEDED"
         }
       ],
+      "successfulEffects": 1200,
+      "successfulPolls": 249,
+      "busySkippedIntervals": 0,
+      "allResourcesClosed": true,
+      "profileFinding": "Decode and its reviver account for 65,870 of 99,785 definite measurement stack observations (66.0%). This identifies a repeated code path, not exact CPU time. Broad activation brackets limit attribution to individual short spans. The earlier rare stalls were not reproduced.",
+      "fixtureLimit": "The encrypted file-backed benchmark has no rollback witness or recovery mirror; it does not measure their additional production checks.",
       "evidence": "docs/validation/admission-diagnostics-2026-11-06.json"
+    },
+    "previousDiagnosticRuns": [
+      {
+        "run": 42194605365,
+        "job": 127814605231,
+        "source": "f6dec314d8f18f9d7858e3da8bb129b1e6b8013c",
+        "status": "complete-diagnostic-performance-gate-failed",
+        "diagnosticsComplete": true,
+        "acceptanceEvidenceEligible": false,
+        "regressionPercent": 11.350652008945428,
+        "performancePassed": false,
+        "gateFailureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "evidence": "docs/validation/admission-diagnostics-2026-11-06.json"
+      }
+    ],
+    "pendingDecoderAcceptance": {
+      "evidence": "docs/validation/ledger-decoder-2026-11-06.json",
+      "status": "pending",
+      "uninstrumented": true,
+      "plannedFullRuns": 1,
+      "unchangedWorkloadAndGates": true
     }
   },
   "publication": {
@@ -1983,7 +2039,8 @@
       "pilotSmokeConclusion": "success",
       "fullAcceptanceRun": 42151041418,
       "fullAcceptanceStatus": "running"
-    }
+    },
+    "evidenceRole": "Historical inventory-finalizer candidate and prior validated baseline checks; pendingDecoderCandidate owns current decoder status."
   },
   "historicalVerification": {
     "ab56766": {
@@ -2123,5 +2180,115 @@
       }
     }
   },
-  "reconciledAt": "2026-11-06T09:54:07.400507+00:00"
+  "reconciledAt": "2026-11-06T10:24:55.110672+00:00",
+  "pendingDecoderCandidate": {
+    "status": "local-functional-and-linux-checks-passed-hosted-acceptance-pending",
+    "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
+    "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
+    "sourceFiles": 411,
+    "evidence": "docs/validation/ledger-decoder-2026-11-06.json",
+    "implementation": {
+      "scope": "Private decode in packages/executor/src/store.ts only. JSON.parse creates a fresh graph; an iterative walk changes only freshly parsed non-array record prototypes to null.",
+      "preserved": [
+        "every fresh read and authenticated ciphertext check",
+        "witness and exact mirror validation",
+        "transaction boundaries, durable commits and rollback",
+        "own keys, insertion/enumeration order, descriptors and numeric values",
+        "ordinary arrays and fresh mutable graph ownership"
+      ],
+      "engineDepthLimit": "No new depth policy. Iterative normalization avoids the former reviver engine-dependent recursion overflow on unusually deep JSON; this is not a new public workload guarantee.",
+      "compiledModuleOnlyDecodeChanged": true,
+      "beforeCompiledStoreSha256": "15b67ff12b98cb84cc68d71c8e7f7857848e12f8eb084f63fdb127b6359d6bd9",
+      "afterCompiledStoreSha256": "38ca02f6c13056a5c23f8ec7b178916e3de6930f68b2a52288d8d54f42296c80"
+    },
+    "independentSourceReview": "Approved private fresh-graph boundary and all six actual encrypted-store tests; no other authentication, witness or transaction code changed.",
+    "validation": {
+      "fullLocalCheck": {
+        "command": "npm run check",
+        "status": "passed",
+        "tests": 1116,
+        "passed": 1116,
+        "failed": 0,
+        "skipped": 0,
+        "installedPackageChecks": "passed",
+        "newEncryptedStoreTests": 6,
+        "logSha256": "bfa536a1059dafccb3f3c57fbf3170093ab57cdffd90f2b377e9ba1d315362f0",
+        "host": "Node26.12.0/macOS ARM64",
+        "sandboxImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
+        "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53"
+      },
+      "linuxImageAndRecovery": {
+        "status": "passed",
+        "evidence": "docs/validation/ledger-decoder-2026-11-06.json",
+        "platform": "linux/arm64",
+        "measuredAt": "2026-11-06T10:23:01.050Z",
+        "maintenance": {
+          "status": "passed",
+          "platform": "linux",
+          "node": "24.22.1",
+          "twoStoreRotation": true,
+          "interruptedReceiptReconciled": true,
+          "duplicateEffectPrevented": true,
+          "archivePersisted": true,
+          "rollbackRejected": true,
+          "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+          "repairLeavesWitnessesUnchanged": true
+        },
+        "load": {
+          "tickets": 2001,
+          "concurrentClients": 8,
+          "measuredReads": 40,
+          "pageSize": 500,
+          "p95ReadMs": 83,
+          "targetP95Ms": 2000,
+          "overloadRefusals": 27,
+          "effectsUnchanged": true
+        },
+        "rawImageComparisonSha256": "fad06a9a218568192d2a2ed40910f7ee0d9c7bddf1b3a0b05adca9edb0bfe87e",
+        "rawLinuxEvidenceSha256": "704ee4b33ca691eab52892b684f4a50b9f0a676a278dccf67ebd8f9810fd2d1f",
+        "scope": "Hardened service recovery and load verification; not the admission-overhead acceptance gate."
+      },
+      "hostedOrdinaryWorkflows": "pending",
+      "uninstrumentedFullAcceptance": "pending"
+    },
+    "imageComparison": {
+      "status": "passed",
+      "measuredAt": "2026-11-06T10:23:00.907Z",
+      "productionImage": "sha256:9c01877457eb390d275195078e774a6f69444d50934f999b150806437b9a3f76",
+      "verificationImage": "sha256:73f94e12ad89bb0e29c8a65e046b40336332c063df1bbdf315e8cae925be4163",
+      "node": "24.22.1",
+      "identicalApplicationEntries": 4327,
+      "globalPackageManagersAbsent": true,
+      "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
+      "excludedVerificationFixtures": [
+        "/app/deployment/production/verify-cli.mjs",
+        "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+      ],
+      "changedApplicationEntriesSinceBaseline": [
+        "/app/packages/executor/dist/store.js"
+      ]
+    },
+    "performanceProtocol": {
+      "plannedUninstrumentedFullRuns": 1,
+      "diagnostics": false,
+      "cpuProfile": false,
+      "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
+      "previousFailuresPreserved": true
+    },
+    "productionAcceptance": "pending; performance evidence and undisclosed Node HIGH prealert remain open; no score or new release asserted."
+  },
+  "historicalLocalChecks": [
+    {
+      "command": "npm run check",
+      "status": "passed",
+      "tests": 1099,
+      "passed": 1099,
+      "failed": 0,
+      "skipped": 0,
+      "logSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
+      "installedPackageChecks": "passed",
+      "sourceCommit": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+      "scope": "Historical local full check of the inventory-finalizer revision. Current 4b2cdc9 is verified by the separately recorded completed hosted platform and installed-package checks; no new local full check was run during reconciliation."
+    }
+  ]
 }
