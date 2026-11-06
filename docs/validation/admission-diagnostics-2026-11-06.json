@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "parentCommit": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+  "purpose": "Diagnose isolated polling stalls without changing the workload or acceptance gates.",
+  "admissionGateUnchanged": true,
+  "gateSha256": "f7e3c1721886436fdaebbf15227addf98b94f697ffeebcfc0756bcb39c7f2edb",
+  "diagnosticOnly": true,
+  "acceptanceEvidenceEligible": false,
+  "inputSha256": {
+    "scripts/benchmark-admission.mjs": "aa76bd2098f8f5bcba8ad1778fa92a908afc829356e0995d7de8dac3bb234d9c",
+    "scripts/benchmark-admission-diagnostics.mjs": "9c7fb2d1820240f393c63ec8049acbacc8fed33ddd418b136341dc3bf889a667",
+    "scripts/benchmark-admission-diagnostics.test.mjs": "f6cfd3e4971959025520cb15a1590a754bf07d443f63cb7630ca03dfcc2b943d",
+    ".github/workflows/cartography-pilot.yml": "301bfc26500d3eff41821548c4c4bba4e07eb7bad6b6d83fbfbf5f99e22c0bc0"
+  },
+  "focusedVerification": {
+    "command": "node --test scripts/benchmark-admission.test.mjs scripts/benchmark-admission-diagnostics.test.mjs",
+    "tests": 10,
+    "passed": 10,
+    "failed": 0,
+    "skipped": 0,
+    "scope": "Functional unit checks including a tiny 17-effect phase, behavior preservation, privacy, bounds, clock spans and teardown; not latency evidence."
+  },
+  "independentSourceReview": "Approved after fixing inherited stream-name rejection and enforcing a boolean processMetrics option.",
+  "hostedDiagnosticRun": "pending",
+  "productionRuntimeChanged": false
+}

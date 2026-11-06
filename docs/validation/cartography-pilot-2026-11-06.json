@@ -1181,5 +1181,183 @@
       }
     ],
     "scope": "Docs-only commit, same runtime inputs as ab56766. Prior full acceptance pass is retained but does not waive this failed cadence gate. No causal claim about host contention is established. Reopened the profiled redundant projection-copy cost for a bounded implementation fix; no test threshold or workload change."
+  },
+  "finalizerFullAttempt": {
+    "head": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+    "workflowRun": 42151041418,
+    "jobId": 127674083976,
+    "artifactId": 13472348910,
+    "artifactZipSha256": "24804dab42640848804df909957e17baf87627d6914d11b6a2ac15a1e35d8505",
+    "artifactDigestVerified": true,
+    "retainedReports": [
+      {
+        "path": "cartography-finalizer-full-admission-2026-11-06-c38cf47.json.gz",
+        "sha256": "90bc66f2b47e760df2f2c3a5942c83254d63f5728acdf194810c7fddf17eb6e9",
+        "uncompressedSha256": "4f66e3c93175062315ccdc1346da94ae6acd131a7ac784f589ba53f1a99c9aef"
+      },
+      {
+        "path": "cartography-finalizer-full-benchmark-2026-11-06-c38cf47.json.gz",
+        "sha256": "1192e56ab4dd8ea1a005766a25facd7b1cd519a0304aff5afbb4a320d04b68ce",
+        "uncompressedSha256": "ff8a2cbee56c610da08e1e996dd4c7f9d0852c3e1f1f185b8320b48961d91693"
+      },
+      {
+        "path": "cartography-finalizer-full-verification-2026-11-06-c38cf47.json.gz",
+        "sha256": "deccb001c6a08f2e39a1c06d3abd7fb591cc7b5d595d695fa6531f1b6482b079",
+        "uncompressedSha256": "2ad98f05561476331aa3c8d2409b00bc4da025fa86907ecd5f72dcd463e23945"
+      }
+    ],
+    "gate": {
+      "passed": false,
+      "correctnessPassed": false,
+      "effectAccountingPassed": true,
+      "stressProfileValid": false,
+      "latencySamplesValid": true,
+      "failureReasons": [
+        {
+          "phase": 2,
+          "code": "POLL_CADENCE_SKIPPED"
+        }
+      ],
+      "performanceEnforced": true,
+      "performancePassed": false,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 131.496292,
+      "pollingP95Ms": 61.492615,
+      "ratio": 0.4676376349836541,
+      "regressionPercent": -53.23623650163458
+    },
+    "workload": {
+      "samples": 250,
+      "warmup": 50,
+      "tasks": 100,
+      "grants": 10,
+      "pollIntervalMs": 250
+    },
+    "hardware": {
+      "platform": "linux",
+      "release": "7.0.0-1019-azure",
+      "architecture": "x64",
+      "logicalCpus": 4,
+      "memoryBytes": 16759439360,
+      "node": "v24.22.2"
+    },
+    "successfulEffects": 1200,
+    "allCleanup": true,
+    "polls": [
+      {
+        "phase": 2,
+        "scheduled": 100,
+        "started": 99,
+        "completed": 99,
+        "failed": 0,
+        "skippedBusy": 1,
+        "completedDuringMeasurement": 87,
+        "maximumPollMs": 396.570002
+      },
+      {
+        "phase": 3,
+        "scheduled": 104,
+        "started": 104,
+        "completed": 104,
+        "failed": 0,
+        "skippedBusy": 0,
+        "completedDuringMeasurement": 92,
+        "maximumPollMs": 209.061223
+      }
+    ],
+    "graphGates": {
+      "passed": true,
+      "checks": {
+        "published_source_count": true,
+        "task_count": true,
+        "grant_count": true,
+        "publication_deadline": true,
+        "query_success": true,
+        "query_p95": true
+      },
+      "query_p95_seconds": {
+        "get_agent_access": 0.20634339699999965,
+        "explain_access": 0.25108581099999994
+      },
+      "publication_max_seconds": 9.844996344000009,
+      "targets": {
+        "publication_per_source_seconds": 120.0,
+        "query_p95_seconds": 2.0
+      },
+      "expected": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000
+      }
+    },
+    "scope": "Failed full acceptance: one busy interval in the first polling phase. The favorable aggregate ratio does not turn this into a pass or a speedup claim. No runner-contention cause is established; bounded stage/CPU/event-loop diagnostics are the next investigation.",
+    "existingTimingCorrelation": {
+      "phase": 2,
+      "pollDurationMs": 396.570002,
+      "overlappingWorkload": [
+        {
+          "sampleIndexIncludingWarmup": 185,
+          "startsAfterPollMs": -61.154145,
+          "endsAfterPollMs": 20.747315,
+          "prepareMs": 29.990063,
+          "admissionMs": 41.52349,
+          "executeMs": 51.911397,
+          "totalMs": 81.90146
+        },
+        {
+          "sampleIndexIncludingWarmup": 186,
+          "startsAfterPollMs": 20.775738,
+          "endsAfterPollMs": 444.814436,
+          "prepareMs": 365.039265,
+          "admissionMs": 48.580199,
+          "executeMs": 58.999433,
+          "totalMs": 424.038698
+        }
+      ],
+      "interpretation": "The long poll overlaps a 365 ms prepare interval. These existing spans cannot distinguish projection work, I/O, transport or scheduling; no root cause is asserted."
+    }
+  },
+  "finalizerCheckoutSmoke": {
+    "head": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+    "workflowRun": 42151601618,
+    "jobId": 127675900047,
+    "artifactId": 13471829452,
+    "artifactZipSha256": "1c59443fa76045eff8881ca24de873b534eb6e5117f8988cdebf4cf0fbda3d56",
+    "artifactDigestVerified": true,
+    "report": {
+      "path": "cartography-finalizer-smoke-failed-2026-11-06-8cabb88.json.gz",
+      "sha256": "97e2441a9345117f330d64094c603dd216f87cfdb87a92bf1bc53c9b03e9018f",
+      "uncompressedSha256": "ea7b6264ff5865f54b13a32aa306c60b1b4b4bc97927bd2e5ef0f989948d982c"
+    },
+    "gate": {
+      "passed": false,
+      "correctnessPassed": false,
+      "effectAccountingPassed": true,
+      "stressProfileValid": false,
+      "latencySamplesValid": true,
+      "failureReasons": [
+        {
+          "phase": 2,
+          "code": "POLL_CADENCE_SKIPPED"
+        }
+      ],
+      "performanceEnforced": false,
+      "performancePassed": false,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 45.626771,
+      "pollingP95Ms": 54.26915,
+      "ratio": 1.1894146530772474,
+      "regressionPercent": 18.941465307724737
+    },
+    "workload": {
+      "samples": 100,
+      "warmup": 50,
+      "tasks": 100,
+      "grants": 10,
+      "pollIntervalMs": 250
+    },
+    "successfulEffects": 600,
+    "allCleanup": true,
+    "scope": "Same runtime as c38cf47; only checkout rule and evidence changed. The cadence failure is retained; no retry or acceptance waiver."
   }
 }

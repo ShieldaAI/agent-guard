@@ -18,5 +18,11 @@
   },
   "sourceFingerprintIncludesGitAttributes": true,
   "productCodeChanged": false,
-  "remaining": "Actual hosted Windows verification of the checkout rule."
+  "remaining": "None for the fixture checkout correction; hosted Windows job 127675898072 passed on 8cabb88.",
+  "hostedVerification": {
+    "head": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+    "workflowRun": 42151601371,
+    "jobId": 127675898072,
+    "status": "passed"
+  }
 }

@@ -1569,7 +1569,7 @@
     ]
   },
   "remainingVerification": [
-    "Verify the projection finalizer with current Linux images, hosted platform/security/browser checks and unchanged full Cartography acceptance."
+    "Diagnose and resolve isolated cadence stalls on the optimized profile with unchanged workload and acceptance gates."
   ],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
@@ -1788,7 +1788,13 @@
       "sourceSha256": "f115b375e3742dcc4948b3c75d854790e0d3875174ab3848f6ba7d5cee789dce",
       "sourceFiles": 406,
       "evidence": "docs/validation/inventory-oracle-checkout-2026-11-06.json",
-      "runtimeUnchanged": true
+      "runtimeUnchanged": true,
+      "hostedVerification": {
+        "head": "8cabb88a2c31b93c5d4aaf70f3b82700ec14d875",
+        "workflowRun": 42151601371,
+        "windowsJob": 127675898072,
+        "status": "passed"
+      }
     },
     "hostedProgress": {
       "ciRun": 42151021545,
@@ -1799,6 +1805,12 @@
       "pilotSmokeConclusion": "success",
       "fullAcceptanceRun": 42151041418,
       "fullAcceptanceStatus": "running"
+    },
+    "fullAcceptance": {
+      "run": 42151041418,
+      "status": "failed",
+      "failure": "One poll cadence skip; all 1,200 effects and cleanup correct. Negative aggregate overhead does not waive the cadence failure.",
+      "record": "docs/validation/cartography-pilot-2026-11-06.json"
     }
   }
 }

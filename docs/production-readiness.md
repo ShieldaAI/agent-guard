@@ -12,7 +12,10 @@ production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
 The subsequent inventory finalizer correction has passed 223 focused tests and
 the complete 1,099-test local suite with zero skips, plus installed-package checks.
-Its current Linux and hosted performance verification remains pending.
+Its current Linux recovery verification passed. Full and smoke performance runs
+still missed isolated polling intervals, despite correct effects and cleanup.
+Opt-in timing diagnostics are being used to locate those stalls; their results
+cannot certify performance acceptance.
 
 The target is at least **9.5/10 independently in every R1–R10 category**, with no
 open critical or high security defect, broken supported workflow, misleading
@@ -244,8 +247,11 @@ The supported operational boundary remains material:
   the earlier full-profile pass does not waive it. The profiled projection cost
   is corrected by a private finalizer for newly constructed output; input
   validation, authenticated reads, output equivalence and exact caps remain
-  enforced. Differential and boundary tests pass. Hosted acceptance still needs
-  to establish the result under the same workload and gates.
+  enforced. Differential and boundary tests pass. The optimized full run still
+  missed one interval, and the checkout-only follow-up smoke missed two.
+  Bounded, opt-in request/export/GC/event-loop diagnostics preserve every gate and
+  are explicitly ineligible as acceptance evidence. A regular full run still
+  needs to establish the result under the same workload and gates.
   This deliberate 250 ms observer stress profile is bounded evidence on the
   recorded runner, not a deployment-wide latency guarantee; the collector
   defaults to five minutes.
