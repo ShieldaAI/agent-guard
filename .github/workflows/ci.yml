@@ -193,6 +193,30 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run build
       - run: npm ci --prefix tools/browser --ignore-scripts
+      - name: Use signed Ubuntu archive for browser dependencies
+        shell: bash
+        run: |
+          sudo python3 - <<'PY'
+          from pathlib import Path
+          import subprocess
+
+          release = dict(line.split('=', 1) for line in Path('/etc/os-release').read_text().splitlines() if '=' in line)
+          if release.get('ID') != 'ubuntu' or release.get('VERSION_ID', '').strip('"') != '24.04' or subprocess.check_output(['dpkg', '--print-architecture'], text=True).strip() != 'amd64':
+              raise SystemExit('Browser dependency mirror requires the reviewed Ubuntu 24.04 amd64 runner.')
+          source = Path('/etc/apt/sources.list.d/ubuntu.sources').read_text()
+          mirror_uri = 'mirror+file:/etc/apt/apt-mirrors.txt'
+          stanzas = [dict(line.split(':', 1) for line in block.splitlines() if ':' in line and not line.lstrip().startswith('#')) for block in source.split('\n\n')]
+          selected = [entry for entry in stanzas if entry.get('URIs', '').strip() == mirror_uri]
+          if not selected or any(entry.get('Signed-By', '').strip() != '/usr/share/keyrings/ubuntu-archive-keyring.gpg' for entry in selected):
+              raise SystemExit('Expected signed Ubuntu mirror-list configuration was not found.')
+          mirrors = Path('/etc/apt/apt-mirrors.txt')
+          expected = [('http://azure.archive.ubuntu.com/ubuntu/', 'priority:1'), ('https://archive.ubuntu.com/ubuntu/', 'priority:2'), ('https://security.ubuntu.com/ubuntu/', 'priority:3')]
+          if [tuple(line.split()) for line in mirrors.read_text().splitlines() if line.strip()] != expected:
+              raise SystemExit('Ubuntu runner mirror list changed; review dependency acquisition before proceeding.')
+          # Change only transport selection; source suites, components and signing policy stay byte-for-byte intact.
+          mirrors.write_text('https://archive.ubuntu.com/ubuntu/\n')
+          print('Browser dependency transport: official Ubuntu HTTPS archive; existing signed sources unchanged.')
+          PY
       - run: tools/browser/node_modules/.bin/playwright install --with-deps ${{ matrix.browser }}
       - name: Verify operator states and accessibility
         run: node apps/agent-ops/check-browser.mjs tools/browser artifacts/browser/${{ matrix.browser }}/mock ${{ matrix.browser }}

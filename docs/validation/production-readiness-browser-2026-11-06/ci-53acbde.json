@@ -1,0 +1,541 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "runId": 42142732668,
+  "runUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732668",
+  "provenance": {
+    "headSha": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "checkoutSha": "462054167d6b7f0f84a21e83c92b6096310b83c1",
+    "headToCheckoutChangedFiles": 0,
+    "comparisonUrl": "https://github.com/ShieldaAI/agent-guard/compare/53acbde035614f21e74a342ebf0c5010f95686fe...462054167d6b7f0f84a21e83c92b6096310b83c1"
+  },
+  "runner": "Ubuntu 24.04.5, ubuntu24/20261101.360.1",
+  "allBrowserGatesPassed": true,
+  "counts": {
+    "plannedSuiteGates": 9,
+    "passedSuiteGates": 9,
+    "pendingSuiteGates": 0,
+    "plannedScenarioSnapshots": 156,
+    "completedScenarioSnapshots": 156,
+    "observedAxeViolationsInCompletedSuites": 0,
+    "observedPageErrorsInCompletedSuites": 0,
+    "skippedSuiteGates": 0,
+    "reportedMobileViewChecks": 39
+  },
+  "jobs": [
+    {
+      "id": 127646754467,
+      "name": "browser (chromium)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps chromium",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        }
+      ]
+    },
+    {
+      "id": 127646754500,
+      "name": "browser (firefox)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps firefox",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        }
+      ]
+    },
+    {
+      "id": 127646754567,
+      "name": "browser (webkit)",
+      "status": "completed",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps webkit",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10
+        },
+        {
+          "name": "Retain browser evidence",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11
+        }
+      ]
+    }
+  ],
+  "completedReports": [
+    {
+      "kind": "synthetic-inventory-real-map-gateways",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health",
+        "inventory unavailable",
+        "company signed in",
+        "company session revoked",
+        "company signed out"
+      ],
+      "mobileViews": 4,
+      "graphGeometry": {
+        "viewportWidth": 660,
+        "minimumRenderedNodeFont": 10.02726131038074,
+        "overlappingNodeLabels": 0
+      },
+      "failedFilterHidesStaleResults": true,
+      "inventoryRetrySucceeded": true,
+      "bearerDenialClearedEvidence": true,
+      "oidcExchange": "local signed fixture",
+      "companyRevocationClearedEvidence": true,
+      "companySignoutClearedEvidence": true
+    },
+    {
+      "kind": "synthetic-operator-ui-contract",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "exact-review",
+        "interrupted-response",
+        "confirmed-receipt",
+        "denied-request",
+        "unconfirmed-outcome",
+        "archive-blocked",
+        "maintenance",
+        "activity-snapshot",
+        "history-capacity-warning",
+        "history-capacity-critical",
+        "history-capacity-full",
+        "self-hosted-setup",
+        "legacy-recovery-setup",
+        "unverified-recovery-setup",
+        "empty-company-setup",
+        "later-ticket-page",
+        "later-request-page",
+        "configured-capacity-reached",
+        "mobile-setup",
+        "mobile-maintenance",
+        "expired-review",
+        "restart-requires-review",
+        "service-unavailable",
+        "permission-ended"
+      ],
+      "mobileViews": 4,
+      "pagedTickets": 505,
+      "pagedRequests": 506,
+      "preparations": 1,
+      "approvals": 1,
+      "denials": 1,
+      "reconciliations": 2,
+      "backendWrites": 1,
+      "archives": 1,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "disposable-real-operator-service",
+      "node": "v24.22.2",
+      "browserEngine": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "axe": "4.14.0",
+      "scanned": [
+        "service-empty",
+        "service-setup",
+        "service-review",
+        "service-completed",
+        "service-unconfirmed",
+        "service-archive-review",
+        "service-activity-snapshot",
+        "service-mobile-setup",
+        "service-mobile-maintenance",
+        "service-empty-tickets",
+        "service-empty-onboarding",
+        "service-later-ticket-page",
+        "service-sign-in-failure",
+        "service-mobile-sign-in-failure"
+      ],
+      "mobileViews": 5,
+      "oidcExchange": "local fixture",
+      "storage": "real encrypted and witnessed SQLite",
+      "recoveryMirrors": "schema3 exact-current, verified after writes",
+      "approvals": 2,
+      "backendWrites": 2,
+      "denials": 1,
+      "receiptOnlyReconciliations": 1,
+      "archives": 1,
+      "pagedTenantTickets": 505,
+      "emptySeed": true,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "synthetic-inventory-real-map-gateways",
+      "browserEngine": "firefox",
+      "browserVersion": "155.0",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health",
+        "inventory unavailable",
+        "company signed in",
+        "company session revoked",
+        "company signed out"
+      ],
+      "mobileViews": 4,
+      "graphGeometry": {
+        "viewportWidth": 660,
+        "minimumRenderedNodeFont": 10.02726131038074,
+        "overlappingNodeLabels": 0
+      },
+      "failedFilterHidesStaleResults": true,
+      "inventoryRetrySucceeded": true,
+      "bearerDenialClearedEvidence": true,
+      "oidcExchange": "local signed fixture",
+      "companyRevocationClearedEvidence": true,
+      "companySignoutClearedEvidence": true
+    },
+    {
+      "kind": "synthetic-operator-ui-contract",
+      "browserEngine": "firefox",
+      "browserVersion": "155.0",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "exact-review",
+        "interrupted-response",
+        "confirmed-receipt",
+        "denied-request",
+        "unconfirmed-outcome",
+        "archive-blocked",
+        "maintenance",
+        "activity-snapshot",
+        "history-capacity-warning",
+        "history-capacity-critical",
+        "history-capacity-full",
+        "self-hosted-setup",
+        "legacy-recovery-setup",
+        "unverified-recovery-setup",
+        "empty-company-setup",
+        "later-ticket-page",
+        "later-request-page",
+        "configured-capacity-reached",
+        "mobile-setup",
+        "mobile-maintenance",
+        "expired-review",
+        "restart-requires-review",
+        "service-unavailable",
+        "permission-ended"
+      ],
+      "mobileViews": 4,
+      "pagedTickets": 505,
+      "pagedRequests": 506,
+      "preparations": 1,
+      "approvals": 1,
+      "denials": 1,
+      "reconciliations": 2,
+      "backendWrites": 1,
+      "archives": 1,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "disposable-real-operator-service",
+      "node": "v24.22.2",
+      "browserEngine": "firefox",
+      "browserVersion": "155.0",
+      "axe": "4.14.0",
+      "scanned": [
+        "service-empty",
+        "service-setup",
+        "service-review",
+        "service-completed",
+        "service-unconfirmed",
+        "service-archive-review",
+        "service-activity-snapshot",
+        "service-mobile-setup",
+        "service-mobile-maintenance",
+        "service-empty-tickets",
+        "service-empty-onboarding",
+        "service-later-ticket-page",
+        "service-sign-in-failure",
+        "service-mobile-sign-in-failure"
+      ],
+      "mobileViews": 5,
+      "oidcExchange": "local fixture",
+      "storage": "real encrypted and witnessed SQLite",
+      "recoveryMirrors": "schema3 exact-current, verified after writes",
+      "approvals": 2,
+      "backendWrites": 2,
+      "denials": 1,
+      "receiptOnlyReconciliations": 1,
+      "archives": 1,
+      "pagedTenantTickets": 505,
+      "emptySeed": true,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "synthetic-inventory-real-map-gateways",
+      "browserEngine": "webkit",
+      "browserVersion": "26.6",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health",
+        "inventory unavailable",
+        "company signed in",
+        "company session revoked",
+        "company signed out"
+      ],
+      "mobileViews": 4,
+      "graphGeometry": {
+        "viewportWidth": 660,
+        "minimumRenderedNodeFont": 10.02726131038074,
+        "overlappingNodeLabels": 0
+      },
+      "failedFilterHidesStaleResults": true,
+      "inventoryRetrySucceeded": true,
+      "bearerDenialClearedEvidence": true,
+      "oidcExchange": "local signed fixture",
+      "companyRevocationClearedEvidence": true,
+      "companySignoutClearedEvidence": true
+    },
+    {
+      "kind": "synthetic-operator-ui-contract",
+      "browserEngine": "webkit",
+      "browserVersion": "26.6",
+      "axe": "4.14.0",
+      "scanned": [
+        "sign-in",
+        "exact-review",
+        "interrupted-response",
+        "confirmed-receipt",
+        "denied-request",
+        "unconfirmed-outcome",
+        "archive-blocked",
+        "maintenance",
+        "activity-snapshot",
+        "history-capacity-warning",
+        "history-capacity-critical",
+        "history-capacity-full",
+        "self-hosted-setup",
+        "legacy-recovery-setup",
+        "unverified-recovery-setup",
+        "empty-company-setup",
+        "later-ticket-page",
+        "later-request-page",
+        "configured-capacity-reached",
+        "mobile-setup",
+        "mobile-maintenance",
+        "expired-review",
+        "restart-requires-review",
+        "service-unavailable",
+        "permission-ended"
+      ],
+      "mobileViews": 4,
+      "pagedTickets": 505,
+      "pagedRequests": 506,
+      "preparations": 1,
+      "approvals": 1,
+      "denials": 1,
+      "reconciliations": 2,
+      "backendWrites": 1,
+      "archives": 1,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    },
+    {
+      "kind": "disposable-real-operator-service",
+      "node": "v24.22.2",
+      "browserEngine": "webkit",
+      "browserVersion": "26.6",
+      "axe": "4.14.0",
+      "scanned": [
+        "service-empty",
+        "service-setup",
+        "service-review",
+        "service-completed",
+        "service-unconfirmed",
+        "service-archive-review",
+        "service-activity-snapshot",
+        "service-mobile-setup",
+        "service-mobile-maintenance",
+        "service-empty-tickets",
+        "service-empty-onboarding",
+        "service-later-ticket-page",
+        "service-sign-in-failure",
+        "service-mobile-sign-in-failure"
+      ],
+      "mobileViews": 5,
+      "oidcExchange": "local fixture",
+      "storage": "real encrypted and witnessed SQLite",
+      "recoveryMirrors": "schema3 exact-current, verified after writes",
+      "approvals": 2,
+      "backendWrites": 2,
+      "denials": 1,
+      "receiptOnlyReconciliations": 1,
+      "archives": 1,
+      "pagedTenantTickets": 505,
+      "emptySeed": true,
+      "automaticResubmissions": 0,
+      "pageErrors": 0
+    }
+  ],
+  "artifacts": [
+    {
+      "id": 13469152097,
+      "name": "browser-chromium",
+      "sha256": "sha256:0030d14866327effa82a1d30ed1f1b85f54b2550cb8259b2c3da8d098c42f138",
+      "headSha": "53acbde035614f21e74a342ebf0c5010f95686fe"
+    },
+    {
+      "id": 13469148764,
+      "name": "browser-firefox",
+      "sha256": "sha256:87d862587d2130f99dc5b83f051651ba7c42d65cc771a8832d3a1b342fb0a572",
+      "headSha": "53acbde035614f21e74a342ebf0c5010f95686fe"
+    },
+    {
+      "id": 13468980906,
+      "name": "browser-webkit",
+      "sha256": "sha256:61cd4970025a705c8d45305d458bcf685e3f7105555b3d945a8965f50884a65d",
+      "headSha": "53acbde035614f21e74a342ebf0c5010f95686fe"
+    }
+  ],
+  "scope": "52 named scenario snapshots per engine: 25 synthetic operator contract, 14 real disposable HTTPS/OIDC/encrypted SQLite service, 13 synthetic inventory with real signed Map gateways. Repeated across Chromium, Firefox and WebKit.",
+  "harnessCorrection": "This hosted run uses the original synthetic capacity status fixture. It passed its assertions but returned no status alerts while lower capacity details showed warnings. A harness-only correction and explicit consistency assertions passed all three local engines; see local-53acbde.json. Runtime operationalStatus was unchanged and has focused threshold regression coverage.",
+  "humanUsability": "Unmeasured; automated regression/accessibility checks and selected keyboard actions are not participant observations or full WCAG conformance.",
+  "visualReview": "Retained WebKit desktop review, mobile Setup and graph screenshots inspected; exact change details and recovery-mode/company-acceptance distinction are clear. Fixture graph default fit has 10.03px minimum node font and zero node-label box overlap.",
+  "screenshots": [
+    {
+      "file": "53acbde-webkit-map.png",
+      "sha256": "b406eae01ad63b034ad7b8f70c82b7baf6133a0f4cae7b617bbc55a09c1e1e4f",
+      "bytes": 272085
+    },
+    {
+      "file": "53acbde-webkit-mobile-setup.png",
+      "sha256": "66b4693b8e35f28995328272aff1d82e6a636fdcf94c3e2ccdd40c333fd3954f",
+      "bytes": 416787
+    },
+    {
+      "file": "53acbde-webkit-review.png",
+      "sha256": "a6460a14840497243fe51ea0845e08c0acd9048566052cb55003195d7a73bafc",
+      "bytes": 119957
+    }
+  ],
+  "recordedAt": "2026-11-06T01:37:57.699686+00:00",
+  "acquisitionObservation": {
+    "currentRunFailed": false,
+    "chromium": {
+      "packagesMB": 21.1,
+      "elapsedSeconds": 518,
+      "reportedKBps": 40.7
+    },
+    "firefox": {
+      "packagesMB": 48.8,
+      "elapsedSeconds": 1101,
+      "reportedKBps": 44.4
+    },
+    "endpoint": "http://azure.archive.ubuntu.com/ubuntu",
+    "conclusion": "All suites passed, but Firefox dependency download consumed more than 18 minutes of the 20-minute job budget. The Ubuntu24 pin stabilized the host without eliminating this transfer bottleneck.",
+    "followup": "Reviewed browser-job-only official HTTPS Ubuntu mirror selection, retaining signing policy, suites/components, all engines/gates and timeout. Follow-up hosted acquisition remains to be verified.",
+    "details": "dependency-acquisition.md"
+  }
+}

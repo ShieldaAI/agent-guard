@@ -2,12 +2,12 @@
 
 Status: **P0 implementation complete; final production acceptance pending**.
 The configurable self-hosted profile, durable approvals, archival, key custody
-and exact-current recovery are implemented. Final acceptance still needs the
-remaining hosted browser/Python gates and a resolved Cartography pilot result,
-as well as the upstream Node HIGH security prealert review described below.
-The final history-capacity guard is covered by focused tests; its full follow-up
-suite and image verification are still being collected. The evidence record
-retains pending and failed checks explicitly. No final
+and exact-current recovery are implemented. Final acceptance requires all
+recorded candidate gates to pass and the upstream Node HIGH security prealert
+review described below.
+The final history-capacity guard passed the full local suite, hosted platform
+matrix and Linux image verification. The evidence record retains pending and
+failed checks explicitly. No final
 production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
 
@@ -137,11 +137,11 @@ the runtime candidate from subsequent documentation or Python integration change
 It is the authoritative index for exact hosted run status; a workflow definition
 alone is not passing evidence.
 
-- The final local runtime check passed **1,086/1,086 tests, zero skips**, plus the
+- The final local runtime check passed **1,093/1,093 tests, zero skips**, plus the
   installed-package and public README/type consumers. Actual published alpha.3
   state upgrades preserve spent authority; the old reader refuses new semantics.
 - Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  runtime commit `48ff3fa`. The separate Linux isolation gate passed **44/44**, zero
+  runtime commit `53acbde`. The separate Linux isolation gate passed **44/44**, zero
   skips, and every MCP lifecycle/cleanup observation.
 - Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
   AMD64. Production and verification images share **4,327 application entries**;
@@ -151,14 +151,24 @@ alone is not passing evidence.
 - Both Linux runs imported 2,000 company records, verified 2,001 paginated tickets,
   recovered current state after primary-directory loss, retained historical and
   latest receipts, and reopened in a fresh container with read-only config/history.
-  At eight clients and 40 measured 500-row reads, p95 was **276 ms on local ARM64**
-  and **188 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
+  At eight clients and 40 measured 500-row reads, p95 was **156 ms on local ARM64**
+  and **226 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
   run refused 27 reads through the documented rate/busy responses without effects.
-- Local Chromium, Firefox and WebKit runs covered 22 Ops contract states, 14 real
-  HTTPS/OIDC service states and 13 Map states per engine: **147 accessibility
+- Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
+  HTTPS/OIDC service states and 13 Map states per engine: **156 accessibility
   scans**, zero axe violations or page errors. These are repeated automated
-  scenarios, not 147 distinct human tasks. Selected screenshots were reviewed;
-  graph label fitting was corrected and checked in all three engines.
+  scenarios, not 156 distinct human tasks. Selected screenshots were reviewed;
+  graph label fitting was corrected and checked in all three engines. The mock
+  threshold alerts were subsequently aligned with the real server and all three
+  contract engines rerun; runtime application code was unchanged. All three
+  hosted browser jobs also passed on `53acbde`. A final CI transport follow-up
+  changes only the reviewed Ubuntu package mirror; its hosted result is tracked
+  separately in the evidence index.
+- The Python integration passed **928 unit and 143 authenticated Neo4j tests**,
+  package builds and the installed consumer. Four locked platform selections
+  each audited 194 packages with zero known vulnerabilities. The archived
+  dependency notice remains recorded in the
+  [Python evidence](validation/cartography-python-2026-11-06.json).
 - CodeQL analyzed the runtime candidate and its **Unresolved security alerts**
   gate passed with zero open alerts for the PR merge ref. The
   [triage record](validation/codeql-triage-2026-11-06.md) documents the fixes and
@@ -207,7 +217,14 @@ The supported operational boundary remains material:
   live provider evaluation or acceptance of an unknown company installation.
 - Cartography's admission benchmark smoke has a strict polling-cadence gate.
   Preserve failed attempts and measured overhead; passing smoke must not be
-  described as achieving the separate 10% performance acceptance target.
+  described as achieving the separate 10% performance acceptance target. The
+  final hosted smoke passed its correctness/stress gates with **15.19%** measured
+  admission overhead. One current local full run observed **1.64%** overhead and
+  passed its numeric gate, but unrelated CPU-heavy work was active; it is
+  explicitly not quiescent acceptance evidence. Both observations and earlier
+  failed attempts remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
+  This deliberate 250 ms observer stress profile does not establish production
+  latency or a deployment-wide 10% guarantee; the collector defaults to five minutes.
 
 The old [construction assessment](protection-assessment.md),
 [P0 implementation record](production-p0-review.md), and

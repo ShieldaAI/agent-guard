@@ -1,23 +1,20 @@
 {
   "schema": 1,
-  "measuredAt": "2026-11-06T00:53:29.392728+00:00",
+  "measuredAt": "2026-11-06T01:25:31.021804+00:00",
   "status": "production-acceptance-pending",
   "productionScore": null,
   "candidate": {
-    "runtimeCommit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
-    "runtimeSourceSha256": "66e890009620f638fb7117d47c55b86be7bd500caaf0b4c932201e4b2f8823c3",
-    "runtimeSourceFiles": 399,
+    "verifiedImplementationCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "sourceSha256": "18306c2f7739ccd4cc253ea0e7022b56211c7275b910507354c880b9979050d8",
+    "sourceFiles": 403,
     "sourceIdentifier": "python3 docs/validation/protection-source-id.py",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
-    "hostedMergeCommit": "a9f91398498337a7f0bead0672cda0e6cc724510",
+    "hostedMergeCommit": "462054167d6b7f0f84a21e83c92b6096310b83c1",
     "mergeTreeMatchesHead": true,
     "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
-    "followupSourceSha256": "e0f76abe5b11583f731e3911b158123be45407e00012d7a7b60da2b166acfc01",
-    "followupSourceFiles": 401,
-    "followupScope": "Python advisory patch/workflow, benchmark failure diagnostics and acceptance documentation. Runtime application source is unchanged from 48ff3fa; final hosted follow-up checks pending.",
-    "finalSourceSha256": "18306c2f7739ccd4cc253ea0e7022b56211c7275b910507354c880b9979050d8",
-    "finalSourceFiles": 403,
-    "finalScope": "Runtime48ff candidate plus shared history recovery-capacity guard/operator warnings, Python advisory patch/gate, benchmark failure diagnostics and stable browser CI host. Full final verification pending."
+    "followupScope": "Mock browser alerts aligned with real status and all three contract engines rerun. Browser CI uses the official signed Ubuntu HTTPS archive after observed slow Azure-mirror downloads; final hosted transport verification pending. Documentation/evidence updated; runtime implementation unchanged.",
+    "followupSourceSha256": "4be85c1a8523dc60c772d4c6d63437cea4265add1257995d83acf97a6ad494e5",
+    "followupSourceFiles": 403
   },
   "acceptance": {
     "targetPerCategory": 9.5,
@@ -78,24 +75,25 @@
   "fullLocalCheck": {
     "command": "npm run check",
     "status": "passed",
-    "tests": 1086,
-    "passed": 1086,
+    "tests": 1093,
+    "passed": 1093,
     "failed": 0,
     "skipped": 0,
     "node": "v26.12.0",
     "platform": "darwin-arm64",
     "sandboxImage": "alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30",
     "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
-    "logSha256": "cd8b63dc157d362a5ed16973e6ffe81a65673fd37b6ecc663ab56f136e62e12e",
-    "installedPackageChecks": "All five tarballs, public examples/types, real published alpha.3 upgrade and old-reader rejection, exact-current primary-loss recovery, MCP/identity/build admission and synthetic model loops passed."
+    "logSha256": "06efcb3641f879fd7b871b05576c0281f6b852d8068205c7023a7424754a699f",
+    "installedPackageChecks": "All five tarballs, public examples/types, real published alpha.3 upgrade and old-reader rejection, exact-current primary-loss recovery, MCP/identity/build admission and synthetic model loops passed.",
+    "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe"
   },
   "linux": {
     "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
     "localArm64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T00:47:55.002Z",
+      "measuredAt": "2026-11-06T01:17:46.324Z",
       "status": "passed",
-      "verificationImage": "sha256:94fb3c8f88e978c1f7ad4221541e49cf3b84b30c956b51adda3b3ea76a1a8b18",
+      "verificationImage": "sha256:535fa384a92de39f4c4ee799d3723bba3bfccc2ba6cedc7597e34d73367845b8",
       "imagePlatform": "linux/arm64",
       "docker": {
         "version": "29.5.2",
@@ -169,7 +167,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 276,
+          "p95ReadMs": 156,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -185,9 +183,9 @@
     },
     "hostedAmd64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T00:44:22.379Z",
+      "measuredAt": "2026-11-06T01:17:08.179Z",
       "status": "passed",
-      "verificationImage": "sha256:3970cd1bc9514d9fbd5eb59b2601c3eadbd9cab8caee89203938738f17295eea",
+      "verificationImage": "sha256:c46c261bd4c5004cf8193e6d3f5149868f16896f15e55ed9a7423367d5da2dbf",
       "imagePlatform": "linux/amd64",
       "docker": {
         "version": "29.4.2",
@@ -261,7 +259,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 188,
+          "p95ReadMs": 226,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -277,13 +275,13 @@
     },
     "localImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T00:47:54.784Z",
-      "productionImage": "sha256:8b14ec10c087d9b5418610ab7e86e27072fa364d7515073808cb00b1693de303",
-      "verificationImage": "sha256:94fb3c8f88e978c1f7ad4221541e49cf3b84b30c956b51adda3b3ea76a1a8b18",
+      "measuredAt": "2026-11-06T01:17:46.180Z",
+      "productionImage": "sha256:c1bb25623a460658f509abfa211290192954d4f744911dad35d9cb3f9ea39bc7",
+      "verificationImage": "sha256:535fa384a92de39f4c4ee799d3723bba3bfccc2ba6cedc7597e34d73367845b8",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
-      "applicationManifestSha256": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b",
+      "applicationManifestSha256": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
       "excludedVerificationFixtures": [
         "/app/deployment/production/verify-cli.mjs",
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
@@ -291,19 +289,19 @@
     },
     "hostedImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T00:44:22.318Z",
-      "productionImage": "sha256:801440d5c17d31c3b1064ab32170985e8444051cf6248b3b789fc5afafb62290",
-      "verificationImage": "sha256:3970cd1bc9514d9fbd5eb59b2601c3eadbd9cab8caee89203938738f17295eea",
+      "measuredAt": "2026-11-06T01:17:08.109Z",
+      "productionImage": "sha256:9cbcc4852ac99c9ece8a1eeb65c01ef08c77ac3650993dfc878dcb92f6c32cd0",
+      "verificationImage": "sha256:c46c261bd4c5004cf8193e6d3f5149868f16896f15e55ed9a7423367d5da2dbf",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
-      "applicationManifestSha256": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b",
+      "applicationManifestSha256": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
       "excludedVerificationFixtures": [
         "/app/deployment/production/verify-cli.mjs",
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
       ]
     },
-    "sharedApplicationManifest": "fde00f6ab1a6353a066d1cc12b876c689b106b5d7dca6842ddb12d8bbb2def4b"
+    "sharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32"
   },
   "runtimeIsolation": {
     "host": {
@@ -335,11 +333,11 @@
         "a directory swap during capture cannot send an outside file to the guest"
       ]
     },
-    "platformEvidenceSha256": "996a4188f92ebe93a85fc3af21c12a71829b4ee90cdc11efb5fbfda327bd8030",
+    "platformEvidenceSha256": "c8c0ade974c26b362fb32d71d055afd3de42e63d6392d8f365c78eb428e17769",
     "mcp": {
       "version": 1,
       "expectedHost": "Linux",
-      "time": "2026-11-06T00:44:20.250Z",
+      "time": "2026-11-06T01:16:59.909Z",
       "image": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
       "isolation": "linux-container-network-none",
       "host": {
@@ -456,8 +454,9 @@
     }
   },
   "hosted": {
-    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768310",
-    "status": "browser-infrastructure-timeouts",
+    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732668",
+    "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "status": "passed",
     "passedJobs": [
       "check (22)",
       "check (24)",
@@ -466,51 +465,129 @@
       "check (windows-latest, 24)",
       "production-profile (linux, node24)",
       "runtime-isolation (linux, node24)",
-      "dependency-inventory"
+      "dependency-inventory",
+      "browser (webkit)",
+      "browser (chromium)",
+      "browser (firefox)"
     ],
     "artifacts": [
       {
         "name": "dependency-inventory",
-        "id": 13466249540,
-        "digest": "sha256:d7d72e08df9c30d36c1b78fe000aa7c728639f603c62808929df5baf613bd2cd"
+        "id": 13468751168,
+        "digest": "sha256:47bfa4ee222769f0a831a7022bd812d0d04edaa5e27b5052c328d42faa75c5d2"
       },
       {
         "name": "production-profile-linux-node24",
-        "id": 13467445814,
-        "digest": "sha256:91b08ff30c1b9348ed21c7553d5b42f70247093431b90d93816f5dc1da58dbb5"
+        "id": 13468866200,
+        "digest": "sha256:32408ee222c0fdafc9caa27b8657c1df916610e6b060b979133868e8742fc2da"
       },
       {
         "name": "provider-outcome-evaluation",
-        "id": 13468030006,
-        "digest": "sha256:6b81035fe7abb8b7ad4d934191dee445504dc9738a309c63260eb0ffd880a3c5"
+        "id": 13469450325,
+        "digest": "sha256:cbbc25c9c3c61aafdc9937c8672a23b83ff9e52984377436b9bcf12212ba1220"
       },
       {
         "name": "runtime-isolation-linux-node24",
-        "id": 13467740206,
-        "digest": "sha256:cddcf702cc0f6ed858a16128e935a81bcf7ac684c32902abdc799f9a4c7edc24"
+        "id": 13469360221,
+        "digest": "sha256:63a67f8035f0afc390d015011d395c071e6841bdf7f6097037c1a4c82577c265"
       }
     ],
-    "cartographyPilot": {
-      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768296",
-      "status": "unresolved-performance-failures",
-      "attempts": [
-        {
-          "attempt": 1,
-          "step": "Admission during inventory polling",
-          "summary": "All 600 effects and charged calls agree; skippedBusy counts of 1 and 3 failed the strict 250 ms polling cadence."
-        },
-        {
-          "attempt": 2,
-          "step": "Bounded publication and HTTP performance",
-          "summary": "No measurements were retained. A 120.394-second failure strongly suggests Neo4j readiness timeout, but the original generic error discarded the definitive cause. New safe stage diagnostics do not change gates."
-        }
-      ],
-      "retainedFailureRecord": "docs/validation/cartography-pilot-2026-11-06.json",
-      "diagnosticsFix": "Safe startup stage/readiness/owned-container state; exact effect accounting and diagnostic latency values survive stress-profile failure. Existing gates and deadlines unchanged; new source requires hosted check."
-    }
+    "pythonEvidence": "docs/validation/cartography-python-2026-11-06.json",
+    "cartographyPilotEvidence": "docs/validation/cartography-pilot-2026-11-06.json",
+    "cartographyPilotStatus": "smoke-passed; separate-10-percent-performance-target-not-established"
   },
   "browsers": {
-    "local": {
+    "graphFit": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T00:21:21.871388+00:00",
+      "status": "passed",
+      "inputCount": 374,
+      "inputSha256Before": "6c9ba5cd6f0ad7e99fcbf68dfa9adc07757a4b1e0bb954c9e9db8a50fc965a43",
+      "inputSha256After": "6d93c0a20bb179ae76fbad02f2a159854969dbff167a4817c0d73c01e0b337f2",
+      "sourceAndDistStable": false,
+      "changedSinceFullBrowserGate": [
+        "apps/agent-map/check-browser.mjs",
+        "apps/agent-map/dist/app.js",
+        "apps/agent-map/src/app.jsx",
+        "apps/agent-ops/test/history-recovery.test.mjs",
+        "packages/agent-map/test/identity-http.test.mjs"
+      ],
+      "results": [
+        {
+          "engine": "chromium",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        },
+        {
+          "engine": "firefox",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        },
+        {
+          "engine": "webkit",
+          "states": 13,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "passed": true
+        }
+      ],
+      "axeViolations": 0,
+      "pageErrors": 0,
+      "focusedTests": {
+        "viewer": 16,
+        "identityGateway": 30,
+        "failed": 0,
+        "skipped": 0
+      },
+      "visualReview": "Default fitted 660px graph has separate compact node labels at 10.03px; full identifiers remain in the evidence selector/detail. Actual Chromium image reviewed. No product source changed during this rerun.",
+      "evidenceType": "Automated synthetic inventory and local signed OIDC tests, not a human participant study.",
+      "changedDuringMapRun": [
+        "apps/agent-ops/test/history-recovery.test.mjs"
+      ],
+      "productionAndConsumedBrowserInputsStable": true,
+      "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
+    },
+    "hostedStatus": "all-three-engines-passed",
+    "priorHostedInstallFailure": {
+      "run": 42138768310,
+      "chromium": "All three suites passed: 49 scans",
+      "firefox": "Job timed out during system dependency installation; browser suites skipped",
+      "webkit": "Job timed out during system dependency installation; browser suites skipped",
+      "host": "Ubuntu 26.04.1, image ubuntu26/20261101.186",
+      "observedCause": "Slow/retried apt retrieval from azure.archive.ubuntu.com; no failed application assertions observed",
+      "followup": "Pin browser job to supported Ubuntu 24.04; keep all engines, gates and timeout unchanged. Final follow-up result pending."
+    },
+    "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json",
+    "localFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/local-53acbde.json",
+    "hostedFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-53acbde.json",
+    "finalLocalSummary": {
+      "engines": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "contractStatesPerEngine": 25,
+      "realServiceStatesPerEngine": 14,
+      "mapStatesPerEngine": 13,
+      "totalSnapshots": 156,
+      "axeViolations": 0,
+      "pageErrors": 0,
+      "fixtureCorrection": "Mock threshold alerts aligned with the real server; all 25 contract states rerun in every engine with stable inputs."
+    },
+    "localHistoricPreCap": {
       "schema": 1,
       "measuredAt": "2026-11-06T00:17:08.986584+00:00",
       "status": "passed",
@@ -589,87 +666,13 @@
       "evidenceType": "Automated functional/accessibility checks using synthetic identities and records; local real HTTPS/OIDC/encrypted SQLite in service suites. Not a representative human usability study or customer deployment acceptance.",
       "visualReview": "Setup states are distinct and readable. The initial graph fit had small labels; see final-map-fit-run.json and the replaced Map screenshots for the verified label-clearance correction.",
       "mapFollowup": "final-map-fit-run.json"
-    },
-    "graphFit": {
-      "schema": 1,
-      "measuredAt": "2026-11-06T00:21:21.871388+00:00",
-      "status": "passed",
-      "inputCount": 374,
-      "inputSha256Before": "6c9ba5cd6f0ad7e99fcbf68dfa9adc07757a4b1e0bb954c9e9db8a50fc965a43",
-      "inputSha256After": "6d93c0a20bb179ae76fbad02f2a159854969dbff167a4817c0d73c01e0b337f2",
-      "sourceAndDistStable": false,
-      "changedSinceFullBrowserGate": [
-        "apps/agent-map/check-browser.mjs",
-        "apps/agent-map/dist/app.js",
-        "apps/agent-map/src/app.jsx",
-        "apps/agent-ops/test/history-recovery.test.mjs",
-        "packages/agent-map/test/identity-http.test.mjs"
-      ],
-      "results": [
-        {
-          "engine": "chromium",
-          "states": 13,
-          "graphGeometry": {
-            "viewportWidth": 660,
-            "minimumRenderedNodeFont": 10.02726131038074,
-            "overlappingNodeLabels": 0
-          },
-          "passed": true
-        },
-        {
-          "engine": "firefox",
-          "states": 13,
-          "graphGeometry": {
-            "viewportWidth": 660,
-            "minimumRenderedNodeFont": 10.02726131038074,
-            "overlappingNodeLabels": 0
-          },
-          "passed": true
-        },
-        {
-          "engine": "webkit",
-          "states": 13,
-          "graphGeometry": {
-            "viewportWidth": 660,
-            "minimumRenderedNodeFont": 10.02726131038074,
-            "overlappingNodeLabels": 0
-          },
-          "passed": true
-        }
-      ],
-      "axeViolations": 0,
-      "pageErrors": 0,
-      "focusedTests": {
-        "viewer": 16,
-        "identityGateway": 30,
-        "failed": 0,
-        "skipped": 0
-      },
-      "visualReview": "Default fitted 660px graph has separate compact node labels at 10.03px; full identifiers remain in the evidence selector/detail. Actual Chromium image reviewed. No product source changed during this rerun.",
-      "evidenceType": "Automated synthetic inventory and local signed OIDC tests, not a human participant study.",
-      "changedDuringMapRun": [
-        "apps/agent-ops/test/history-recovery.test.mjs"
-      ],
-      "productionAndConsumedBrowserInputsStable": true,
-      "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
-    },
-    "hostedStatus": "chromium-passed-firefox-webkit-install-timeouts",
-    "priorHostedInstallFailure": {
-      "run": 42138768310,
-      "chromium": "All three suites passed: 49 scans",
-      "firefox": "Job timed out during system dependency installation; browser suites skipped",
-      "webkit": "Job timed out during system dependency installation; browser suites skipped",
-      "host": "Ubuntu 26.04.1, image ubuntu26/20261101.186",
-      "observedCause": "Slow/retried apt retrieval from azure.archive.ubuntu.com; no failed application assertions observed",
-      "followup": "Pin browser job to supported Ubuntu 24.04; keep all engines, gates and timeout unchanged. Final follow-up result pending."
-    },
-    "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json"
+    }
   },
   "security": {
     "codeql": {
-      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42138768341",
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732611",
       "passed": true,
-      "headCommit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+      "headCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
       "ref": "refs/pull/8/merge",
       "openAlerts": 0,
       "gate": "Unresolved security alerts",
@@ -689,13 +692,17 @@
       "scope": "PR candidate only; does not claim default-branch alerts closed before merge."
     },
     "runtimeNpm": {
-      "image": "sha256:8b14ec10c087d9b5418610ab7e86e27072fa364d7515073808cb00b1693de303",
+      "image": "sha256:c1bb25623a460658f509abfa211290192954d4f744911dad35d9cb3f9ea39bc7",
+      "observed": {
+        "node": "v24.22.1",
+        "arch": "arm64",
+        "nodeBinarySha256": "77df20e2814b9c890cf7020e8c5a6f1982627e8dff80a7a3c756abad05f3bbc8"
+      },
       "summary": {
         "installedPackages": 36,
         "thirdPartyPackages": 31,
         "publishedNpmAdvisories": 0,
         "nodeBinaryMatchesReviewedBase": true,
-        "manifestMatchesHostedAmd64": true,
         "globalPackageManagersAbsent": true
       },
       "query": {
@@ -811,8 +818,8 @@
       "querySha256": "9e2e06d8b49fc70dcb0a66ed6466fcc00e81348e7795587658d94628b0bbd3aa",
       "responseSha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
       "advisories": {},
-      "recordSha256": "9d57458b649583551b39e591500880a2681e4040e3d3f717198d02161cd9438b",
-      "scope": "Exact local Linux ARM64 application package manifests and Node binary. Hosted AMD64 has the same application file manifest; its native Node binary has different architecture. Does not clear the unresolved Node HIGH prealert or unpublished issues. Builder npm and Python cartography are separate inventories."
+      "scope": "Exact final ARM64 production image; every application node_modules and package entry matches the prior fully enumerated inventory. Fresh npm advisory query; native Node binary matches reviewed base. Does not clear the unreleased Node HIGH prealert or attest unpublished vulnerabilities.",
+      "recordSha256": "ee980f4a0e6e83c50896b0bd8d57cb43085e037320c498267f836f03477d8454"
     },
     "workspaceNpm": {
       "auditReportVersion": 2,
@@ -1088,7 +1095,7 @@
       "scope": "Build tooling only, locked input and disabled dependency scripts; not dismissed as false positives or included in runtime."
     },
     "python": {
-      "status": "local-audits-passed-hosted-pending",
+      "status": "hosted-audit-and-integration-passed",
       "uv": "0.13.6",
       "python": "3.13",
       "lockSha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2",
@@ -1370,7 +1377,10 @@
       },
       "currentUnitTests": 928,
       "integrationTestsForDependencyUpdate": 143,
-      "currentDiagnosticRegressionTests": "Included in the 928 unit tests; existing 143 integration tests passed after oauthlib patch, before diagnostic helper changes. New hosted integration is pending."
+      "currentDiagnosticRegressionTests": "Included in the 928 unit tests; existing 143 integration tests passed after oauthlib patch, before diagnostic helper changes. New hosted integration is pending.",
+      "finalEvidence": "docs/validation/cartography-python-2026-11-06.json",
+      "finalUnitTests": 928,
+      "finalIntegrationTests": 143
     }
   },
   "limitations": [
@@ -1395,42 +1405,12 @@
   },
   "remainingVerification": [
     {
-      "gate": "Full hosted Firefox/WebKit browser suites",
-      "status": "prior-install-timeout-new-host-check-pending",
-      "run": 42138768310
-    },
-    {
-      "gate": "Hosted Python advisory workflow and integration after dependency update",
-      "status": "pending-new-commit"
-    },
-    {
-      "gate": "Cartography pilot stress profile",
-      "status": "failed-prior-candidate-pending-new-check",
-      "run": 42138768296
-    },
-    {
-      "gate": "Final follow-up source hosted CI/CodeQL",
-      "status": "pending-new-commit"
-    },
-    {
-      "gate": "History capacity must preserve the 10,000-segment recovery closure",
-      "status": "implemented-focused-tests-passed-final-check-pending",
-      "finding": "Compaction previously could create a segment beyond the collection ceiling; backup and exact-current repair would then refuse. Add pre-mutation capacity checks, pending-resume accounting and operator warnings."
+      "gate": "Final browser fixture and CI package-mirror follow-up",
+      "status": "focused-contract-and-mirror-configuration-checks-passed-hosted-publication-pending"
     }
   ],
-  "followupLocalCheckBeforeHistoryGuard": {
-    "status": "passed",
-    "command": "npm run check",
-    "tests": 1087,
-    "passed": 1087,
-    "failed": 0,
-    "skipped": 0,
-    "sourceSha256": "e0f76abe5b11583f731e3911b158123be45407e00012d7a7b60da2b166acfc01",
-    "logSha256": "aca684f53034e5344f283a00237515b0270a6867e19ce1c87c77aca3db47396a",
-    "scope": "Python advisory/benchmark diagnostic follow-up, before the newly identified history capacity guard and browser runner pin."
-  },
   "historyCapacityGuard": {
-    "status": "focused-checks-passed-full-final-check-pending",
+    "status": "full-local-and-hosted-platform-checks-passed",
     "limit": 10000,
     "scope": "Deployment-wide committed segments plus one durable pending reservation",
     "newCompactionFailure": "HISTORY_SEGMENT_CAPACITY",
@@ -1444,5 +1424,20 @@
     "boundaryEvidence": "Real 5,000 + 4,999 encrypted tenant chains; last-slot intent and SDK-commit interruption/resume; complete 10,000-file mirror closure; exact archived receipt preserved; 10,001 refusal and pre-existing-over-cap startup preserve databases/witnesses/keyring/history listings.",
     "independentReview": "Read-only source/assertion review found no ordering or pending-reservation blocker; execution results recorded separately.",
     "operatorExperience": "Committed/reserved/total/limit in Setup and Maintenance, status/stdout/Prometheus; 80% warning and 95% critical; fixed recovery ceiling has no configure-limits override."
+  },
+  "previousCandidateSummary": {
+    "commit": "48ff3fa87fef587b7d78dade41ef27f4f0d89b86",
+    "sourceSha256": "66e890009620f638fb7117d47c55b86be7bd500caaf0b4c932201e4b2f8823c3",
+    "tests": 1086,
+    "passed": 1086,
+    "skipped": 0,
+    "ciRun": 42138768310,
+    "scope": "Superseded by the history capacity guard. Exact original record is retained in the Git history of this file at 53acbde. Browser install timeouts and pilot failures are retained in separate referenced records."
+  },
+  "cartographyPerformance": {
+    "hostedSmoke": "Correctness/stress gates passed; measured admission overhead 15.19%, numeric performance target not enforced or passed.",
+    "localFullObservation": "Observed 1.64% overhead with numeric gate enforced/passed, but unrelated CPU-heavy checks were active; not qualified as quiescent acceptance evidence.",
+    "evidence": "docs/validation/cartography-pilot-2026-11-06.json",
+    "scope": "Deliberate 250 ms synthetic observer stress; deployed collector defaults to five minutes. No production latency/10% guarantee inferred."
   }
 }

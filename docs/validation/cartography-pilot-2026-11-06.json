@@ -231,5 +231,456 @@
     "This diagnosis does not replace failed runs with a success or waive any existing gate.",
     "The four-per-second stress cadence differs from the deployed five-minute polling default.",
     "Physical host contention was not measured and is not asserted as root cause."
-  ]
+  ],
+  "finalCandidateVerification": {
+    "sourceRevision": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "checkoutMergeRevision": "462054167d6b7f0f84a21e83c92b6096310b83c1",
+    "workflowRun": 42142732592,
+    "jobId": 127646754484,
+    "jobUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732592/job/127646754484",
+    "hostedJobConclusion": "success",
+    "artifactId": 13469535274,
+    "artifactUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732592/artifacts/13469535274",
+    "artifactZipSha256": "67a9d55d0f65d3149cd02ffbd785f937ed8f9e9850acc2a7a2d20481a5591f12",
+    "artifactDigestMatchesGitHub": true,
+    "priorEvidenceDocumentSha256": "3c21b86120c09d52d6a2851307f02b2255263f3d7536bd1897da7c038d773b20",
+    "priorFailureDetailsPreserved": true,
+    "scope": "Final candidate synthetic hosted pilot and smoke profiles. This is a new candidate run with added diagnostics, not replacement of either earlier failed attempt. No customer deployment or separate admission-performance acceptance claim.",
+    "livePilot": {
+      "status": "passed",
+      "profile": "synthetic-live-pilot",
+      "durationSeconds": 54.293,
+      "collectionDurationsMs": [
+        6985,
+        1608,
+        768,
+        328
+      ],
+      "authorityStatePreserved": true,
+      "collectionPreservesAuthority": true,
+      "executorSurvivesRollback": true,
+      "restoreLogicalContentMatches": true,
+      "restoreSnapshotPointersMatch": true,
+      "scopeChecks": 3,
+      "replay": {
+        "status": "complete",
+        "published": 4,
+        "pendingExcluded": 0,
+        "uncertainExcluded": 0
+      },
+      "cleanupEvidence": "Hosted live-pilot step exited 0 after ownership-checked finally cleanup; the report has no separate disposableCleanup field."
+    },
+    "publicationAndHttp": {
+      "profile": "smoke",
+      "passed": true,
+      "startedAt": "2026-11-06T01:18:03.294251+00:00",
+      "completedAt": "2026-11-06T01:18:26.758600+00:00",
+      "stage": "performance-gates",
+      "readiness": {
+        "attempts": 13,
+        "elapsedSeconds": 6.719
+      },
+      "gates": {
+        "passed": true,
+        "checks": {
+          "published_source_count": true,
+          "task_count": true,
+          "grant_count": true,
+          "publication_deadline": true,
+          "query_success": true,
+          "query_p95": true
+        },
+        "query_p95_seconds": {
+          "get_agent_access": 0.1271125729999999,
+          "explain_access": 0.10483428700000058
+        },
+        "publication_max_seconds": 6.771514074999999,
+        "targets": {
+          "publication_per_source_seconds": 120.0,
+          "query_p95_seconds": 2.0
+        },
+        "expected": {
+          "sources": 2,
+          "tasks": 40,
+          "grants": 400
+        }
+      },
+      "graph": {
+        "sources": 2,
+        "tasks": 40,
+        "grants": 400,
+        "databaseNodes": 581,
+        "databaseRelationships": 2022
+      },
+      "publicationSeconds": [
+        6.771514074999999,
+        1.0027365530000054
+      ],
+      "batchSeconds": 8.103808893999997,
+      "snapshotBytes": {
+        "maximum": 30057,
+        "total": 60114
+      },
+      "disposableCleanup": true,
+      "hardware": {
+        "os": "Linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x86_64",
+        "hostLogicalCpus": 4,
+        "hostMemoryBytes": 16759439360,
+        "containerCpus": 4,
+        "containerMemoryBytes": 4294967296,
+        "dataTmpfsBytes": 2147483648
+      },
+      "versions": {
+        "python": "3.13.18",
+        "cartography": "0.144.0",
+        "neo4jPythonDriver": "6.4.1",
+        "neo4jImage": "neo4j:5.26.32-community@sha256:414adfe41c6ff32abb752be37f265c77607c166cab298f65a917fc4f05776218",
+        "docker": "29.4.2"
+      },
+      "queries": {
+        "get_agent_access": {
+          "samples": 50,
+          "successful": 50,
+          "p95Seconds": 0.1271125729999999
+        },
+        "explain_access": {
+          "samples": 50,
+          "successful": 50,
+          "p95Seconds": 0.10483428700000058
+        }
+      },
+      "containerStateAtFailurePresent": false
+    },
+    "admission": {
+      "profile": "smoke",
+      "passed": true,
+      "startedAt": "2026-11-06T01:18:26.881Z",
+      "completedAt": "2026-11-06T01:18:54.539Z",
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "hardware": {
+        "platform": "linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x64",
+        "logicalCpus": 4,
+        "memoryBytes": 16759439360,
+        "node": "v24.22.2"
+      },
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 27.539644,
+        "pollingP95Ms": 31.722872,
+        "ratio": 1.1518984050774221,
+        "regressionPercent": 15.189840507742215
+      },
+      "phases": [
+        {
+          "mode": "baseline",
+          "successfulEffects": 150,
+          "finalCalls": 150,
+          "measurementDurationMs": 4607.11735,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          },
+          "measuredSamples": 100,
+          "warmupSamples": 50
+        },
+        {
+          "mode": "polling",
+          "successfulEffects": 150,
+          "finalCalls": 150,
+          "measurementDurationMs": 4813.371367,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          },
+          "measuredSamples": 100,
+          "warmupSamples": 50,
+          "polling": {
+            "scheduled": 28,
+            "started": 28,
+            "completed": 28,
+            "failed": 0,
+            "skippedBusy": 0,
+            "completedDuringMeasurement": 19
+          }
+        },
+        {
+          "mode": "polling",
+          "successfulEffects": 150,
+          "finalCalls": 150,
+          "measurementDurationMs": 4656.622183,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          },
+          "measuredSamples": 100,
+          "warmupSamples": 50,
+          "polling": {
+            "scheduled": 26,
+            "started": 26,
+            "completed": 26,
+            "failed": 0,
+            "skippedBusy": 0,
+            "completedDuringMeasurement": 18
+          }
+        },
+        {
+          "mode": "baseline",
+          "successfulEffects": 150,
+          "finalCalls": 150,
+          "measurementDurationMs": 4548.883238,
+          "cleanup": {
+            "worker": true,
+            "clientWorker": true,
+            "observer": true,
+            "taskServer": true,
+            "executor": true,
+            "directory": true
+          },
+          "measuredSamples": 100,
+          "warmupSamples": 50
+        }
+      ],
+      "successfulEffects": 600,
+      "chargedCalls": 600,
+      "busySkips": 0,
+      "failedPolls": 0,
+      "allPhaseResourcesClosed": true,
+      "performanceQualification": "Smoke passed exact accounting and the declared 250 ms stress cadence. The measured ratio 1.1518984050774221 exceeds 1.10; performanceEnforced=false and performancePassed=false. This is not a pass of the separate 10% acceptance target."
+    },
+    "rawFiles": [
+      {
+        "name": "agent-guard-pilot-admission.json",
+        "sha256": "1d13e7e2096196851e5351e2d4e2d529ca2cba5554077f7bfb4816db5fadd199"
+      },
+      {
+        "name": "agent-guard-pilot-benchmark.json",
+        "sha256": "2aa1c8f9a8a829d971ee7938342dae7eea28e29b8fe4770041bffcfc86fcefc7"
+      },
+      {
+        "name": "agent-guard-pilot-verification.json",
+        "sha256": "5f8c4d68acab2ac6ca94d1b1232c2aee403a43646351f29c96d834c0a0993ce4"
+      },
+      {
+        "name": "artifact.zip",
+        "sha256": "67a9d55d0f65d3149cd02ffbd785f937ed8f9e9850acc2a7a2d20481a5591f12"
+      },
+      {
+        "name": "job-127646754484.log",
+        "sha256": "69dfd1cf1b69d19539c93dc4f1128b7a2d798a7cc384700ea2b7bd90ff991c6e"
+      }
+    ],
+    "limitations": [
+      "Previous failed observations remain valid and retained.",
+      "A successful later startup does not identify the discarded root cause of the earlier readiness failure.",
+      "The smoke graph has 40 tasks/400 grants across 2 sources, not the 10,000 task/100,000 grant acceptance scale.",
+      "Synthetic hosted timings do not establish production latency, customer validation or physical power-loss durability."
+    ]
+  },
+  "localAdmissionObservation": {
+    "sourceRevision": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "startedAt": "2026-11-06T01:24:49.078Z",
+    "completedAt": "2026-11-06T01:25:41.262Z",
+    "command": "node scripts/benchmark-admission.mjs --profile acceptance --output <new-private-artifact>/raw-report.json",
+    "runsPerformed": 1,
+    "exitCode": 0,
+    "result": "benchmark-gate-passed-with-documented-contention",
+    "qualifiesAsQuiescentAcceptance": false,
+    "hardware": {
+      "platform": "darwin",
+      "release": "27.0.0",
+      "architecture": "arm64",
+      "logicalCpus": 10,
+      "memoryBytes": 17179869184,
+      "node": "v26.12.0"
+    },
+    "workload": {
+      "samples": 250,
+      "warmup": 50,
+      "tasks": 100,
+      "grants": 10,
+      "pollIntervalMs": 250
+    },
+    "phaseOrder": [
+      "baseline",
+      "polling",
+      "polling",
+      "baseline"
+    ],
+    "gate": {
+      "passed": true,
+      "correctnessPassed": true,
+      "effectAccountingPassed": true,
+      "stressProfileValid": true,
+      "latencySamplesValid": true,
+      "failureReasons": [],
+      "performanceEnforced": true,
+      "performancePassed": true,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 27.983792,
+      "pollingP95Ms": 28.441375,
+      "ratio": 1.0163517153072035,
+      "regressionPercent": 1.6351715307203474
+    },
+    "phases": [
+      {
+        "mode": "baseline",
+        "successfulEffects": 300,
+        "finalCalls": 300,
+        "measurementDurationMs": 11187.052416,
+        "cleanup": {
+          "worker": true,
+          "clientWorker": true,
+          "observer": true,
+          "taskServer": true,
+          "executor": true,
+          "directory": true
+        },
+        "measuredSamples": 250,
+        "warmupSamples": 50
+      },
+      {
+        "mode": "polling",
+        "successfulEffects": 300,
+        "finalCalls": 300,
+        "measurementDurationMs": 11447.4175,
+        "cleanup": {
+          "worker": true,
+          "clientWorker": true,
+          "observer": true,
+          "taskServer": true,
+          "executor": true,
+          "directory": true
+        },
+        "measuredSamples": 250,
+        "warmupSamples": 50,
+        "polling": {
+          "scheduled": 52,
+          "started": 52,
+          "completed": 52,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 46
+        }
+      },
+      {
+        "mode": "polling",
+        "successfulEffects": 300,
+        "finalCalls": 300,
+        "measurementDurationMs": 11223.347667,
+        "cleanup": {
+          "worker": true,
+          "clientWorker": true,
+          "observer": true,
+          "taskServer": true,
+          "executor": true,
+          "directory": true
+        },
+        "measuredSamples": 250,
+        "warmupSamples": 50,
+        "polling": {
+          "scheduled": 51,
+          "started": 51,
+          "completed": 51,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 45
+        }
+      },
+      {
+        "mode": "baseline",
+        "successfulEffects": 300,
+        "finalCalls": 300,
+        "measurementDurationMs": 11250.898625,
+        "cleanup": {
+          "worker": true,
+          "clientWorker": true,
+          "observer": true,
+          "taskServer": true,
+          "executor": true,
+          "directory": true
+        },
+        "measuredSamples": 250,
+        "warmupSamples": 50
+      }
+    ],
+    "successfulEffects": 1200,
+    "chargedCalls": 1200,
+    "busySkips": 0,
+    "failedPolls": 0,
+    "allPhaseResourcesClosed": true,
+    "sourceBinding": {
+      "distFiles": 120,
+      "distManifestSha256": "feb17ed52cc4c8760fce4f3c218dc1a58026ddb808e40a3631e117cf924349db",
+      "allCompiledFilesUnchangedBeforeAfter": true,
+      "benchmarkSha256": "8ab5a17560429b97c809428c7e3a63d7025f7ef7cb583fc95cd339caccb7c099",
+      "sdkSourceAndBenchmarkCleanAtHeadBeforeAfter": true,
+      "buildEvidence": "Root confirmed all five dist trees came from the completed final 53acbde npm run check: 1,093 tests and installed consumers passed; this measurement performed no build."
+    },
+    "quiescence": {
+      "rootBuildsAndDockerVerificationComplete": true,
+      "browserAgentExplicitlyReleasedHost": true,
+      "established": false,
+      "observedOtherWork": [
+        "check-maintainability.mjs",
+        "check-tenant-route-db-scopes.mjs",
+        "check-system-worker-db-boundaries.mjs"
+      ],
+      "explanation": "Pre-run process capture and benchmark launch were one sequential shell call. When its output returned, the capture showed three unrelated CPU-heavy Node checks. The benchmark had already started. Their presence was disclosed before the benchmark result was known; none was stopped, and no benchmark retry was performed. The requested quiescent condition was not met."
+    },
+    "retainedArtifacts": [
+      {
+        "path": "docs/validation/admission-acceptance-contended-2026-11-06-53acbde.json.gz",
+        "compression": "gzip",
+        "sha256": "ea9574f9b0368666848365c40bac8219571aa502585c43cbc28775239472dcea",
+        "uncompressedSha256": "77895155c14bf485478352f91d6c924c06c876dba437869d5ea236356bcc9223",
+        "scope": "Exact raw report with all 1,000 measured samples and 200 warmup samples; no outliers removed."
+      },
+      {
+        "path": "docs/validation/admission-acceptance-binding-2026-11-06-53acbde.json.gz",
+        "compression": "gzip",
+        "sha256": "ffaec8aa03cf77b0331d40a5554c0de2ca713b7252af21f330cc3cf874e813ff",
+        "uncompressedSha256": "14ed0c99d53b19dd21aee0b415d99f6211447b7f7e2eb9d7b904aa00ddb1cf2d",
+        "scope": "Exact before-run compiled file manifest and source/build binding; all 120 entries matched after completion."
+      }
+    ],
+    "priorEvidenceDocumentSha256": "74480e1e40ddda4964093db4325657ab58e395b3b1aa240fc35802d65ef17d4b",
+    "comparisonWithHostedSmoke": "The local Darwin arm64/Node 26.12.0 acceptance profile enforces the 10% gate and uses 250 measured calls per phase. Hosted Linux x64/Node 24.22.2 smoke uses 100 calls per phase and does not enforce that gate. The local ratio 1.01635 and hosted ratio 1.15190 are separate observations on different hosts/runtimes with different sample counts; they do not establish a code change, resolve earlier failures or prove a production latency SLA.",
+    "limitations": [
+      "This is one observed pass of the unchanged benchmark under disclosed local contention, not quiescent performance certification.",
+      "No additional attempt was made to obtain a passing or uncontended result.",
+      "The full graph-load acceptance benchmark was not run.",
+      "Previous hosted failures and the hosted smoke performancePassed=false result remain unchanged.",
+      "The synthetic file-backed 100-task/1,000-grant fixture does not certify customer workloads or production storage performance."
+    ]
+  }
 }

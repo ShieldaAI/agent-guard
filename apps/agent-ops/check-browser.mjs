@@ -37,7 +37,7 @@ let archiveBlocked = true;
 let dropApprovalResponse = true;
 let operatorRoles = ['requester', 'reviewer', 'operator'];
 let recoveryMode = 'current-state-mirror';
-let historyCapacity = { committed: 7998, reserved: 1, total: 7999, limit: 10_000 };
+let historyCapacity = { committed: 7999, reserved: 0, total: 7999, limit: 10_000 };
 const limits = { maxTickets: 1000, maxRequests: 8000, maxBackendBytes: 32 * 1_048_576, maxLedgerBytes: 32 * 1_048_576, maxRetainedKeys: 8 };
 const counts = { preparations: 0, approvals: 0, denials: 0, reconciliations: 0, backendWrites: 0, archives: 0 };
 const tickets = [
@@ -144,14 +144,20 @@ try {
         limits, records: requests.length, recordLimit: limits.maxRequests, usage: { tickets: 820, requests: 42, receipts: 20, backendBytes: 1_048_576 }, capacityWarning: true,
         statistics: { ledgerBytes: 524_288, ledgerByteLimit: limits.maxLedgerBytes },
         historyCapacity,
-        history: { archivedRequests: '123', segments: 2, lastCommittedAt: now - 60_000, commitment: 'e'.repeat(64), pending: false, mode: 'reviewed-offline' },
+        history: { archivedRequests: '123', segments: 2, lastCommittedAt: now - 60_000, commitment: 'e'.repeat(64), pending: historyCapacity.reserved > 0, mode: 'reviewed-offline' },
         keyRotation: { state: 'offline_required', keyId: 'ledger-key-generation-2', message: 'Stop the executor and use the host rotation CLI. Verify the new key before removing recovery material.' } }); return;
     }
     if (url.pathname === '/api/status') {
       assert.equal(operatorRoles.includes('operator'), true);
+      const ratio = historyCapacity.total / historyCapacity.limit;
+      const alerts = [{ id: 'capacity_tickets', severity: 'warning', message: 'Review retained usage and the offline maintenance plan before accepting more work.' }];
+      if (ratio >= .8) alerts.push({ id: 'capacity_history_segments', severity: ratio >= .95 ? 'critical' : 'warning',
+        message: ratio >= .95
+          ? `History recovery capacity is ${ratio >= 1 ? 'exhausted' : 'nearly exhausted'}. Pause new compaction and plan a separately reviewed compatible recovery adapter or migration with the deployment owner. Preserve all records, history, witnesses and keys.`
+          : 'History has reached 80% of the fixed recovery-supported segment limit. Include pending reservations in capacity planning; arrange a deployment-owner review before it fills.' });
       await reply({ schemaVersion: 1, capturedAt: Date.now(), scope: { tenantId: 'northstar', workflow: 'tenant', capacity: 'deployment', http: 'deployment' },
         service: { ready: true }, workflow: { requests: requests.length, pending: 0, unconfirmed: 0, oldestUnconfirmedMs: 0 },
-        http: { recent: { requests: 20, serverErrors: 0, p95UpperBoundMs: 250 } }, alerts: [] }); return;
+        http: { recent: { requests: 20, serverErrors: 0, p95UpperBoundMs: 250 } }, alerts }); return;
     }
     if (url.pathname === '/api/audit/export') {
       assert.equal(operatorRoles.includes('operator'), true); assert.deepEqual(body, {});
@@ -269,11 +275,16 @@ try {
     await button('Refresh').click();
     await page.getByRole('row', { name: `History segments (committed + reserved) ${total.toLocaleString('en-US')} 10,000 · fixed`, exact: true }).waitFor();
     await page.getByText(`Deployment-wide history: ${(total - 1).toLocaleString('en-US')} committed + 1 reserved = ${total.toLocaleString('en-US')} segments. Pending compaction reserves its slot before creating history.`, { exact: true }).waitFor();
-    await page.getByText(total < 9500 ? /History has reached 80%/ : total < 10_000 ? /History recovery capacity is nearly exhausted/ : /History recovery capacity is exhausted/).waitFor();
+    await page.getByText(total < 9500 ? /^History has reached 80%/ : total < 10_000 ? /^History recovery capacity is nearly exhausted/ : /^History recovery capacity is exhausted/).waitFor();
+    await page.getByRole('region', { name: 'Operational status' }).getByText(total < 9500
+      ? /^Needs attention: History has reached 80%/
+      : total < 10_000 ? /^Action required: History recovery capacity is nearly exhausted/ : /^Action required: History recovery capacity is exhausted/).waitFor();
+    await page.getByText('Pending offline recovery', { exact: true }).waitFor();
+    assert.equal(await page.getByText(/^No configured alert thresholds are currently exceeded/).count(), 0);
     await page.getByText('This fixed recovery limit includes every tenant. The configure-limits command cannot raise it.', { exact: true }).waitFor();
     await scan(`history-capacity-${stateName}`);
   }
-  historyCapacity = { committed: 7998, reserved: 1, total: 7999, limit: 10_000 };
+  historyCapacity = { committed: 7999, reserved: 0, total: 7999, limit: 10_000 };
   await button('Refresh').click();
   await page.locator('#nav-setup').click();
   await heading('Your company workspace').waitFor();
