@@ -19,6 +19,8 @@ test('validation CLIs invoked through a directory alias evaluate the inputs and 
   const evidence = join(actual, 'artifacts', 'platform-evidence.json');
   mkdirSync(join(actual, 'artifacts'));
   writeFileSync(evidence, '{"passed":true}');
+  copyFileSync(join(here, 'scripts', 'benchmark-admission-diagnostics.mjs'),
+    join(actual, 'scripts', 'benchmark-admission-diagnostics.mjs'));
   for (const [name, status] of [['verify-platform.mjs', 1], ['score-operator-study.mjs', 2], ['benchmark-admission.mjs', 1]]) {
     copyFileSync(join(here, 'scripts', name), join(actual, 'scripts', name));
     const result = spawnSync(process.execPath, [join(alias, 'scripts', name)], {

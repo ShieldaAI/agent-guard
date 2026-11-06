@@ -21,6 +21,29 @@
     "scope": "Functional unit checks including a tiny 17-effect phase, behavior preservation, privacy, bounds, clock spans and teardown; not latency evidence."
   },
   "independentSourceReview": "Approved after fixing inherited stream-name rejection and enforcing a boolean processMetrics option.",
-  "hostedDiagnosticRun": "pending",
-  "productionRuntimeChanged": false
+  "hostedDiagnosticRun": {
+    "run": 42194605365,
+    "job": 127814605231,
+    "source": "f6dec314d8f18f9d7858e3da8bb129b1e6b8013c",
+    "status": "running",
+    "fullBenchmark": true,
+    "admissionDiagnostics": true
+  },
+  "productionRuntimeChanged": false,
+  "cliFixtureCorrection": {
+    "failedRun": 42194585456,
+    "representativeFailedJob": 127814536737,
+    "failure": "The directory-alias fixture copied the entry point but omitted its newly imported diagnostics helper, producing ERR_MODULE_NOT_FOUND before the expected ADMISSION_START_FAILED.",
+    "correction": "Copy the helper into the disposable aliased checkout; preserve the original status and error assertions.",
+    "scriptTests": {
+      "command": "node --test scripts/*.test.mjs",
+      "tests": 142,
+      "passed": 141,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Optional real MCP container test; the separate required hosted Linux isolation gate passed.",
+      "logSha256": "b65b734f24aded20814b8d542bce13a2f034cd955ee98e1885ff045aee5be7ac"
+    },
+    "hostedCorrection": "pending"
+  }
 }
