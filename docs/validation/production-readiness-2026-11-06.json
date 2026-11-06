@@ -1668,6 +1668,137 @@
     "fullCheckLogSha256": "2386c2eae7975663cd0a6f40e2f6890bfa22285e4da7008672352d0ac8d57209",
     "independentReview": "Exact JSON counting, byte charging, output prototypes/descriptors/order and current constructor ownership reviewed; no blocker found.",
     "diagnosticEvidence": "docs/validation/inventory-cpu-profile-finalizer-2026-11-06.json",
-    "acceptanceLimitsUnchanged": true
+    "acceptanceLimitsUnchanged": true,
+    "commit": "c38cf472107b89e574d466d8ae26cf68704a4c44",
+    "linuxArm64": {
+      "schema": 1,
+      "measuredAt": "2026-11-06T02:33:38.343Z",
+      "status": "passed",
+      "verificationImage": "sha256:1e58e454bd94ab01118f61b921468fc6db47f47af42f04453b0da9ba50f46df0",
+      "imagePlatform": "linux/arm64",
+      "docker": {
+        "version": "29.5.2",
+        "os": "linux",
+        "arch": "arm64"
+      },
+      "composeControls": "passed",
+      "maintenance": {
+        "status": "passed",
+        "platform": "linux",
+        "node": "24.22.1",
+        "twoStoreRotation": true,
+        "interruptedReceiptReconciled": true,
+        "duplicateEffectPrevented": true,
+        "archivePersisted": true,
+        "rollbackRejected": true,
+        "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+        "repairLeavesWitnessesUnchanged": true
+      },
+      "storage": {
+        "driver": "local",
+        "separateDataWitnessConfigAndHistoryVolumes": true,
+        "freshContainerReopen": true
+      },
+      "cli": {
+        "status": "passed",
+        "platform": "linux",
+        "arch": "arm64",
+        "node": "24.22.1",
+        "companyOnboarding": true,
+        "noAuthorityBeforeInit": true,
+        "preflight": true,
+        "startupTlsAndCustodyEnforced": true,
+        "unenrolledSeedRefused": true,
+        "rejectedStartupLeavesAuthorityUnchanged": true,
+        "configuredLimitsRaised": true,
+        "rotationBeyondLegacyFourKeyDefault": true,
+        "ticketImportPreviewAndApply": true,
+        "bulkImportedTickets": 2000,
+        "paginatedTicketsVerified": 2001,
+        "setupCountsAndLimits": true,
+        "signedOidc": true,
+        "reviewedUpdate": true,
+        "processKillRestart": true,
+        "sessionsInvalidated": true,
+        "pendingReviewInvalidated": true,
+        "secondOwnerRejected": true,
+        "coldRestoreWithoutWitnessRollback": true,
+        "partialRotationRecoverable": true,
+        "bothStoresRotated": true,
+        "subsequentUpdate": true,
+        "archiveViaHttps": true,
+        "staleRestoreRejected": true,
+        "healthcheck": true,
+        "hardenedContainer": true,
+        "historyCompacted": true,
+        "historicalReceiptVerified": true,
+        "managedCustodyEnrolled": true,
+        "activeKeyRetirementWithHistoricalEscrow": true,
+        "custodySecretRotated": true,
+        "managedBypassRefused": true,
+        "authenticatedBackupAndRestore": true,
+        "missingHistoryRecovered": true,
+        "latestStateRecoveredAfterPrimaryDirectoryLoss": true,
+        "repairLeavesWitnessesUnchanged": true,
+        "relocatedHistoryReenrolled": true,
+        "historicalAndLatestReceiptsPreserved": true,
+        "persistentVolumes": true,
+        "load": {
+          "tickets": 2001,
+          "concurrentClients": 8,
+          "measuredReads": 40,
+          "pageSize": 500,
+          "p95ReadMs": 163,
+          "targetP95Ms": 2000,
+          "overloadRefusals": 27,
+          "effectsUnchanged": true
+        },
+        "reopenedInFreshContainer": true,
+        "runtimeConfigAndHistoryReadOnly": true
+      },
+      "limits": [
+        "Disposable local Linux containers; no customer deployment",
+        "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+        "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
+      ]
+    },
+    "imageComparison": {
+      "status": "passed",
+      "measuredAt": "2026-11-06T02:33:38.140Z",
+      "productionImage": "sha256:62b04b6d1da34fca4905897325e8b9f1f11a4d8a1e081339c1f66e2a0a256488",
+      "verificationImage": "sha256:1e58e454bd94ab01118f61b921468fc6db47f47af42f04453b0da9ba50f46df0",
+      "node": "24.22.1",
+      "identicalApplicationEntries": 4327,
+      "globalPackageManagersAbsent": true,
+      "applicationManifestSha256": "965a27313369c3df678d496e079bde7c062667f9fc6473a02491e4f532653b51",
+      "excludedVerificationFixtures": [
+        "/app/deployment/production/verify-cli.mjs",
+        "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+      ]
+    },
+    "imageChangesFromAb56766": {
+      "entries": [
+        "/app/packages/executor/dist/inventory.d.ts",
+        "/app/packages/executor/dist/inventory.js"
+      ],
+      "dependencyEntriesChanged": false,
+      "fullManifestComparisonPassed": true
+    },
+    "checkoutCorrection": {
+      "sourceSha256": "f115b375e3742dcc4948b3c75d854790e0d3875174ab3848f6ba7d5cee789dce",
+      "sourceFiles": 406,
+      "evidence": "docs/validation/inventory-oracle-checkout-2026-11-06.json",
+      "runtimeUnchanged": true
+    },
+    "hostedProgress": {
+      "ciRun": 42151021545,
+      "otherTenCiJobs": "passed",
+      "windows": "Oracle CRLF checksum failure reproduced and fixed; hosted correction pending",
+      "codeql": 42151021542,
+      "pilotSmoke": 42151021573,
+      "pilotSmokeConclusion": "success",
+      "fullAcceptanceRun": 42151041418,
+      "fullAcceptanceStatus": "running"
+    }
   }
 }
