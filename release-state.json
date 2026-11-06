@@ -4,7 +4,7 @@
   "status": "blocked",
   "blockers": [
     "Node HIGH security prealert for 22.x, 24.x and 26.x remains unresolved; fixed versions and applicability are not yet disclosed.",
-    "Merged release-commit checks, registry artifact verification and final security review remain pending while the candidate is held."
+    "Observer-change acceptance under the unchanged full and constrained profiles, updated-runtime verification, merged release-commit checks and final security review remain pending."
   ],
   "evidence": [
     "docs/releases/0.1.0.md",

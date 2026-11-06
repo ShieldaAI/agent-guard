@@ -7,10 +7,11 @@ import { join, resolve } from 'node:path';
 import { isEntry } from '../examples/providers/replay.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
-import { isMainThread, parentPort, threadId, Worker, workerData } from 'node:worker_threads';
+import { isMainThread, threadId, Worker } from 'node:worker_threads';
 import { DurableExecutor, createInventoryObserverToken, startExecutorServer, startInventoryServer } from '../packages/executor/dist/index.js';
 import { LedgerStore } from '../packages/executor/dist/store.js';
-import { createAdmissionDiagnostics, instrumentInventoryObservation, instrumentObserverRequests, instrumentAdmissionMethods } from './benchmark-admission-diagnostics.mjs';
+import { createAdmissionDiagnostics, instrumentInventoryObservation, instrumentObserverRequests, instrumentAdmissionMethods,
+  instrumentAdmissionWorkers, recordAdmissionThreadCounters, DIAGNOSTIC_ROLES } from './benchmark-admission-diagnostics.mjs';
 import { startAdmissionCpuProfile } from './benchmark-admission-profile.mjs';
 
 export const PHASE_ORDER = Object.freeze(['baseline', 'polling', 'polling', 'baseline']);
@@ -64,117 +65,6 @@ export function admissionGate(phases, { enforcePerformance = true } = {}) {
     ratio, regressionPercent: ratio === null ? null : (ratio - 1) * 100 };
 }
 
-async function pollWorker() {
-  const stats = { scheduled: 0, started: 0, completed: 0, failed: 0, skippedBusy: 0, completedDuringMeasurement: 0, samples: [] };
-  const diagnostics = workerData.diagnostics ? createAdmissionDiagnostics() : null;
-  let stopping = false, pending = null;
-  const phaseStarted = BigInt(workerData.clockOriginNs);
-  const tick = () => {
-    if (stopping) return;
-    stats.scheduled++;
-    if (pending) {
-      stats.skippedBusy++;
-      diagnostics?.add('ticks', { atNs: process.hrtime.bigint().toString(), scheduled: stats.scheduled, skippedBusy: true, poll: stats.started });
-      return;
-    }
-    const startedNs = process.hrtime.bigint();
-    stats.started++;
-    const poll = stats.started;
-    diagnostics?.add('ticks', { atNs: startedNs.toString(), scheduled: stats.scheduled, skippedBusy: false, poll });
-    pending = (async () => {
-      let bytes = 0, ok = false;
-      let headersNs = null, bodyNs = null, parseStartedNs = null, parsedNs = null, status = null;
-      try {
-        const response = await fetch(workerData.url + '/v1/inventory/snapshot', { method: 'POST', redirect: 'error',
-          headers: { authorization: `Bearer ${workerData.token}`, 'content-type': 'application/json' },
-          body: '{"tenantId":"synthetic-admission"}', signal: AbortSignal.timeout(5000) });
-        if (diagnostics) { headersNs = process.hrtime.bigint(); status = response.status; }
-        const chunks = []; const reader = response.body.getReader();
-        try { for (;;) { const item = await reader.read(); if (item.done) break; bytes += item.value.byteLength;
-          if (bytes > 8 * 1024 * 1024) throw new Error('POLL_LIMIT'); chunks.push(item.value); }
-        } finally { await reader.cancel().catch(() => {}); }
-        if (diagnostics) { bodyNs = process.hrtime.bigint(); parseStartedNs = process.hrtime.bigint(); }
-        const value = JSON.parse(Buffer.concat(chunks).toString());
-        if (diagnostics) parsedNs = process.hrtime.bigint();
-        ok = response.status === 200 && value.profile === 'core' && value.tasks.length === workerData.tasks &&
-          value.tasks.reduce((sum, task) => sum + task.grants.length, 0) === workerData.tasks * workerData.grants;
-      } catch { /* Stable metrics only; never retain requests, tokens or backend errors. */ }
-      const completedNs = process.hrtime.bigint();
-      if (ok) stats.completed++; else stats.failed++;
-      stats.samples.push({ startedNs: startedNs.toString(), completedNs: completedNs.toString(),
-        startedAtMs: Number(startedNs - phaseStarted) / 1e6, durationMs: Number(completedNs - startedNs) / 1e6, bytes, ok });
-      diagnostics?.add('polls', { poll, startedNs: startedNs.toString(), headersNs: headersNs?.toString() ?? null,
-        bodyNs: bodyNs?.toString() ?? null, parseStartedNs: parseStartedNs?.toString() ?? null,
-        parsedNs: parsedNs?.toString() ?? null, completedNs: completedNs.toString(), status, bytes, ok });
-    })().finally(() => { pending = null; });
-  };
-  const timer = setInterval(tick, workerData.pollIntervalMs);
-  parentPort.on('message', async message => {
-    if (message === 'stop') {
-      stopping = true; clearInterval(timer);
-      try {
-        if (pending) await pending;
-        if (diagnostics) stats.diagnostics = diagnostics.stop();
-        parentPort.postMessage({ stats });
-      } finally { diagnostics?.stop(); parentPort.close(); }
-    }
-  });
-  parentPort.once('close', () => { clearInterval(timer); diagnostics?.stop(); });
-  tick(); parentPort.postMessage('ready');
-}
-
-// HTTP request initiation must run independently of the executor's event loop:
-// owner-thread work can then queue requests after their timestamp.
-async function workloadWorker() {
-  const diagnostics = workerData.diagnostics ? createAdmissionDiagnostics() : null;
-  try {
-  const call = async (operation, body) => {
-    const response = await fetch(workerData.url + '/v1/task/' + operation, { method: 'POST', redirect: 'error',
-      headers: { authorization: `Bearer ${workerData.token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body), signal: AbortSignal.timeout(10_000) });
-    if (response.status !== 200) { await response.body?.cancel(); throw new Error('ADMISSION_REQUEST_FAILED'); }
-    return response.json();
-  };
-  const record = async () => {
-    const startedNs = process.hrtime.bigint();
-    let executeStartedNs = null, enteredNs = null, finishedNs;
-    try {
-      const action = await call('prepare', { tool: 'synthetic.read-0', args: null });
-      executeStartedNs = process.hrtime.bigint();
-      const result = await call('execute', { actionId: action.id });
-      finishedNs = process.hrtime.bigint();
-      if (typeof result.value?.enteredAtNs !== 'string' || !/^\d{1,30}$/.test(result.value.enteredAtNs)) throw new Error('ADMISSION_RESULT_INVALID');
-      enteredNs = BigInt(result.value.enteredAtNs);
-      if (enteredNs < executeStartedNs || enteredNs > finishedNs) throw new Error('ADMISSION_RESULT_INVALID');
-      return { ok: true, startedNs: startedNs.toString(), executeStartedNs: executeStartedNs.toString(),
-        toolEnteredNs: enteredNs.toString(), finishedNs: finishedNs.toString(),
-        admissionMs: Number(enteredNs - executeStartedNs) / 1e6, prepareMs: Number(executeStartedNs - startedNs) / 1e6,
-        executeMs: Number(finishedNs - executeStartedNs) / 1e6, totalMs: Number(finishedNs - startedNs) / 1e6 };
-    } catch {
-      return { ok: false, error: 'ADMISSION_REQUEST_FAILED', startedNs: startedNs.toString(),
-        executeStartedNs: executeStartedNs?.toString() ?? null, toolEnteredNs: enteredNs?.toString() ?? null,
-        finishedNs: process.hrtime.bigint().toString(), admissionMs: null, prepareMs: null, executeMs: null, totalMs: null };
-    }
-  };
-  let ok = true, measurementStartedNs = null, measurementEndedNs = null;
-  for (let index = 0; index < workerData.warmup; index++) {
-    const sample = await record(); parentPort.postMessage({ kind: 'warmup-sample', sample });
-    if (!sample.ok) { ok = false; break; }
-  }
-  if (ok) {
-    measurementStartedNs = process.hrtime.bigint();
-    parentPort.postMessage({ kind: 'measurement-start', measurementStartedNs: measurementStartedNs.toString() });
-    for (let index = 0; index < workerData.samples; index++) {
-      const sample = await record(); parentPort.postMessage({ kind: 'sample', sample });
-      if (!sample.ok) { ok = false; break; }
-    }
-    measurementEndedNs = process.hrtime.bigint();
-  }
-  parentPort.postMessage({ kind: 'complete', ok, clientThreadId: threadId, measurementStartedNs: measurementStartedNs?.toString() ?? null,
-    measurementEndedNs: measurementEndedNs?.toString() ?? null, ...(diagnostics ? { diagnostics: diagnostics.stop() } : {}) });
-  parentPort.close();
-  } finally { diagnostics?.stop(); }
-}
 
 function waitMessage(worker, predicate, timeout = 10_000) {
   return new Promise((resolveMessage, reject) => {
@@ -193,7 +83,7 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       typeof cpuProfile !== 'boolean' || (cpuProfile && !diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'agent-guard-admission-')));
   let executor, taskServer, observer, worker, clientWorker, credential;
-  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler;
+  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler, workerDiagnostics;
   let successfulEffects = 0;
   const phase = { mode, executorThreadId: threadId, clientThreadId: null, clockOriginNs: process.hrtime.bigint().toString(), warmupSamples: [], coldFirstCall: null, samples: [],
     measurementStartedNs: null, measurementEndedNs: null, measurementDurationMs: 0,
@@ -217,6 +107,8 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     taskServer = await startExecutorServer({ executor, adminToken: randomBytes(32).toString('base64url'), operatorId: 'synthetic-benchmark' });
     if (diagnostics) {
       diagnostic = createAdmissionDiagnostics({ processMetrics: true });
+      workerDiagnostics = instrumentAdmissionWorkers(Worker, diagnostic);
+      recordAdmissionThreadCounters(diagnostic, DIAGNOSTIC_ROLES.owner, 0);
       phase.diagnostics = { diagnosticOnly: true, acceptanceEvidenceEligible: false, main: null, workload: null };
       if (cpuProfile) {
         restoreMethods = instrumentAdmissionMethods(executor, LedgerStore, diagnostic);
@@ -232,11 +124,13 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       observer = await startInventoryServer({ executor, observers: [{ token, tenantIds: ['synthetic-admission'], profile: 'core' }],
         rateLimit: { maxRequests: 10000, windowMs: 60_000 } });
       if (diagnostic) restoreRequests = instrumentObserverRequests(observer.server, diagnostic);
-      worker = new Worker(new URL(import.meta.url), { workerData: { kind: 'poll', url: observer.url, token, tasks, grants, pollIntervalMs, clockOriginNs: phase.clockOriginNs, diagnostics } });
+      const create = () => new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: { kind: 'poll', url: observer.url, token, tasks, grants, pollIntervalMs, clockOriginNs: phase.clockOriginNs, diagnostics } });
+      worker = workerDiagnostics ? workerDiagnostics.construct(DIAGNOSTIC_ROLES.poll, create) : create();
       await waitMessage(worker, value => value === 'ready');
     }
-    clientWorker = new Worker(new URL(import.meta.url), { workerData: { kind: 'workload', url: taskServer.url,
+    const createClient = () => new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: { kind: 'workload', url: taskServer.url,
       token: credential.token, samples, warmup, diagnostics } });
+    clientWorker = workerDiagnostics ? workerDiagnostics.construct(DIAGNOSTIC_ROLES.workload, createClient) : createClient();
     clientWorker.on('message', value => {
       if (value?.kind === 'warmup-sample') phase.warmupSamples.push(value.sample);
       if (value?.kind === 'sample') phase.samples.push(value.sample);
@@ -274,7 +168,7 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     }
     } finally {
     if (diagnostic) {
-      for (const restore of [restoreRequests, restoreExport, restoreMethods]) { try { restore?.(); } catch { diagnostic.fail(); } }
+      for (const restore of [restoreRequests, restoreExport, restoreMethods, () => workerDiagnostics?.restore()]) { try { restore?.(); } catch { diagnostic.fail(); } }
       if (profiler) {
         try { phase.diagnostics.cpuProfile = await profiler.stop(); }
         catch { diagnostic.fail(); }
@@ -282,7 +176,8 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
       phase.diagnostics.main = diagnostic.stop();
       phase.diagnostics.complete = phase.diagnostics.main.complete && phase.diagnostics.workload?.complete === true &&
         (mode === 'baseline' || (phase.polling?.diagnostics?.complete === true &&
-          phase.diagnostics.main.streams.observations.observed === phase.polling.started)) &&
+          phase.diagnostics.main.streams.observations.observed === phase.polling.started &&
+          phase.polling.diagnostics.streams.fetches.observed === phase.polling.started)) &&
         (!cpuProfile || phase.diagnostics.cpuProfile?.complete === true);
     }
     }
@@ -314,6 +209,7 @@ export async function main(argv = process.argv.slice(2)) {
     stages: 'Poll start→headers→body drained and reader cancelled→UTF-8 decode/JSON parse→shape validation complete. Server request→finish means handed to the OS, not client delivery. Async observation includes bounded queue wait, fresh witnessed ciphertext capture, worker decrypt/decode/projection and serialization through Promise settlement; it is not the historical synchronous export span.',
     attribution: 'Request→observation includes body processing and scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations and the optional CPU profile are thread-local and do not measure the trusted inventory worker. Missing GC or I/O counter changes cannot prove a host cause.',
     privacy: 'Only bounded timestamps, counters, booleans and fixed labels; no request headers, URLs, credentials, bodies, results or error messages.',
+    coldPath: 'Fetch entry/return preserves the original Promise with no added settlement reaction. AsyncLocalStorage and synchronous Undici subscribers add diagnostic overhead. Connection events are pooled, have no request attribution, and join to sends only by socket object identity. Worker online/role-entry brackets include native startup, module evaluation and scheduling; role-entry is after static imports. Parent post/result edges include IPC, worker processing and owner scheduling, not isolated worker CPU. Thread counters are absolute, sampled only at role entry and the first three fetch boundaries; event 0=role entry, 1=before fetch, 2=after fetch. Missing facilities are explicit nulls. No first poll, warmup or outlier is removed.',
   };
   if (values['cpu-profile']) report.diagnosticContract.cpuProfile = {
     methods: 'Public prepare/execute and repo-private LedgerStore read/transaction are wrapped only in this disposable process. this, arguments, return, thrown values and original Promise identity are preserved; Promise reaction/handledness and profiling overhead are added.',
@@ -337,8 +233,7 @@ export async function main(argv = process.argv.slice(2)) {
   return report.passed ? 0 : 1;
 }
 
-if (!isMainThread && workerData?.kind === 'poll') await pollWorker();
-else if (!isMainThread && workerData?.kind === 'workload') await workloadWorker();
-else if (isEntry(import.meta)) {
+if (!isMainThread) throw new Error('ADMISSION_CLIENT_ENTRY_REQUIRED');
+if (isEntry(import.meta)) {
   try { process.exitCode = await main(); } catch { process.stderr.write('ADMISSION_START_FAILED\n'); process.exitCode = 1; }
 }

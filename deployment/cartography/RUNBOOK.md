@@ -179,6 +179,55 @@ It uploads only safe
 verification reports for 30 days, never config, credentials, archives or database
 volumes. Local measurements do not establish a completed hosted CI run.
 
+## Constrained observer qualification
+
+The committed runner measures the same uninstrumented full admission workload
+under a one-CPU bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the
+default 100 ms CPU period and zero burst. This additional profile is **unqualified**;
+it does not replace the graph or ordinary hosted admission gate. Build first and
+run once per reviewed candidate without a competing local workload:
+
+```sh
+export NODE_IMAGE='node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53'
+docker pull "$NODE_IMAGE"
+mkdir -p artifacts/constrained-observer-runs
+node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" \
+  --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
+```
+
+Run from the repository root as a nonroot POSIX user, with built packages and
+dependencies present. The output directory must not exist; its existing canonical
+parent must be available to the Docker daemon. The runner never pulls or builds.
+It stages only allowlisted inputs in a new private sibling of the output directory,
+mounts the stage read-only, uses fresh synthetic authority, verifies real cgroup
+controls and retains `admission.json`, `resources.json`, `staged-inputs.json` and
+`verification.json`. Exact owned-container removal, absence and staging cleanup
+are required for success. It never mounts the whole checkout or company data.
+
+An explicit `--cpu-affinity SINGLE_INDEX` selects a separate, stricter
+`single-logical-cpu` profile. Supply one canonical decimal index in 0–4095 that
+is available to the Docker host. This constrains placement to one logical CPU;
+it does not reserve exclusive capacity or identify a physical core. The one-CPU
+quota, 100 ms period, zero burst, memory/swap/PID limits and all workload/gate
+requirements remain unchanged. Both the kernel effective CPU set and process
+allowed CPU list must match that singleton before and after the workload. Without
+the option the profile stays `bandwidth-only`; a pass under one placement cannot
+qualify the other. The [hosted workflow](../../.github/workflows/constrained-observer.yml)
+keeps the unaffined default and executes one full run without diagnostics or retries.
+
+The [6 November evidence](../../docs/validation/one-cpu-observer-2026-11-06.json)
+retains the first setup failure caused by an unshared macOS temporary directory
+and the private-sibling correction. The subsequent bandwidth-only full run
+completed all 1,200 effects and 222 polls but failed with 10 skipped polls and a
+1.239 p95 ratio. The single-logical-CPU-0 run completed 1,200 effects and 116 polls
+but failed with three skipped polls despite a 0.476 ratio and less throttling.
+Lower latency or throttling does not satisfy a failed cadence requirement.
+Neither profile is promoted or recommended as production configuration. Earlier
+diagnostic, control and 10 ms-period attempts remain separate failed/unqualified
+evidence. Use the [release checklist](../../docs/releasing.md#node-update-checklist-for-010)
+for candidate/source/image binding and the unresolved Node security update;
+these runs do not clear that hold.
+
 ## Private backups and reconstruction
 
 Back up collector evidence, never the executor's authority ledger. Stop the

@@ -8,6 +8,106 @@ candidate checks. The security hold follows the existing
 Do not publish or create a stable GitHub release while these gates remain open.
 Normal `npm run check` and `npm run pack` remain available for candidate work.
 
+## Node-update checklist for 0.1.0
+
+This is a preparation checklist, not permission to publish while the release
+state is blocked. Record results against one immutable candidate; retain failed
+attempts and keep diagnostic/smoke evidence separate from acceptance.
+
+1. Read the [official Node advisory](https://nodejs.org/en/blog/vulnerability/november-2026-security-releases)
+   and [official source](https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md).
+   On 6 November the notice still announces HIGH fixes for 22/24/26 on or shortly
+   after 11 November, without individual issues or fixed versions. Record each
+   disclosed issue, affected feature, fixed version and applicability decision.
+   Keep the hold open until fixes or evidence-backed non-applicability are reviewed;
+   an empty npm/OS audit does not resolve native Node findings.
+2. Review replacement official Node images and pin repository digests. Update
+   both `AGENT_GUARD_MCP_ISOLATION_IMAGE` and `NODE_IMAGE` in
+   [CI](../.github/workflows/ci.yml), `NODE_IMAGE` in the
+   [constrained acceptance workflow](../.github/workflows/constrained-observer.yml),
+   `PINNED_IMAGE` in the [constrained runner configuration](../scripts/constrained-observer-validation.mjs),
+   the version-floor map in
+   [Dockerfile](../deployment/production/Dockerfile), and the corresponding floors
+   in the [deployment runbook](../deployment/production/README.md#build-and-local-verification).
+   The existing image is `node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53`;
+   existing floors are 22.23.4/24.22.1/26.12.1. The verified `b42620f` baseline used
+   Node 22.23.4/24.22.2/26.13.0 in native CI and 24.22.1 in the production image.
+   These are historical inputs, not the undisclosed November fixed versions.
+   Record the replacement index digest, per-platform manifest, image ID and actual
+   `node --version`. Preserve the dated advisory review; add a new review including
+   base OS and builder-tool findings. Do not substitute a mutable tag or silently
+   carry an old image's evidence forward.
+3. With builds coordinated, run `npm ci --ignore-scripts`, `npm run check` and
+   `npm run pack` on the new source/runtime. Require the ordinary hosted matrix,
+   three browser engines, CodeQL, dependency review/audits, Python packaging and
+   authenticated integration, installed consumers and unskipped required Linux
+   isolation. Build production and verification images from the same source and
+   base digest, then run the existing [image comparison and hardened recovery
+   commands](../deployment/production/README.md#repeatable-deployment-gate).
+   Record actual runner/runtime versions; a major-only `setup-node` selection is
+   not an exact runtime identity. Preserve the real alpha.3 upgrade fixture.
+4. Require the uninstrumented full graph/admission acceptance and the additional
+   measured 512 MiB/one-CPU observer profile with no swap. Keep ABBA order, 100 tasks/1,000 grants,
+   250 measured plus 50 warmup calls per phase, 250 ms serial polling, all 1,200
+   effects, zero failed/skipped polls, cleanup and the 10% p95 bound unchanged.
+   Retain every measured sample and actual cgroup/resource settings. Instrumented
+   diagnostics and smoke cannot qualify either profile. The existing full hosted
+   workflow can be requested using `CANDIDATE_REF`, the frozen candidate branch or
+   tag; verify the resulting run's head equals the recorded `CANDIDATE_COMMIT`:
+
+   ```sh
+   gh workflow run cartography-pilot.yml --ref "$CANDIDATE_REF" \
+     -f full_benchmark=true -f admission_diagnostics=false -f admission_cpu_profile=false
+   ```
+
+   This graph/admission workflow does not impose the one-CPU/512 MiB/no-extra-swap
+   limits. The separate [constrained workflow](../.github/workflows/constrained-observer.yml)
+   runs the committed runner once with full uninstrumented defaults, the original
+   100 ms CPU period and zero burst. To run that same qualification locally after
+   building, cache the reviewed image, create only the output's parent, and use a
+   new output directory:
+
+   ```sh
+   docker pull "$NODE_IMAGE"
+   mkdir -p artifacts/constrained-observer-runs
+   node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" \
+     --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
+   ```
+
+   Set `NODE_IMAGE` to the reviewed immutable digest. The runner requires a
+   nonroot POSIX host and cached Linux image; it never pulls or builds. The output
+   must be new, with an existing canonical parent shared with the Docker daemon.
+   The runner creates a separate private input-stage sibling under that parent,
+   mounts only that stage read-only and fresh output writable, and checks actual
+   cgroup limits and cleanup. Keep `admission.json`, `resources.json`, `staged-inputs.json`
+   and `verification.json` with the platform/image/source binding. Local and hosted
+   qualifications are separate records. Qualification remains pending until an
+   actual full run passes; prior diagnostic, control and 10 ms-period failures
+   remain unqualified. Do not add diagnostics, change limits, or retry away failures.
+   The optional `--cpu-affinity SINGLE_INDEX` restricts execution to one selected
+   logical CPU while retaining the same one-CPU quota, 100 ms period, zero burst,
+   512 MiB memory, no extra swap and 128-PID limit. It provides neither exclusivity
+   nor a physical-core guarantee. Its requested and effective CPU sets are checked
+   before and after the workload and recorded as a separate profile; its result
+   cannot qualify the default bandwidth-only profile. Both remain unqualified in
+   the [current evidence](validation/one-cpu-observer-2026-11-06.json).
+   Keep the workflow unaffined; no placement profile is promoted or recommended
+   for production on these results.
+5. Bind reports to `git rev-parse HEAD`, `git rev-parse HEAD^{tree}` and
+   `python3 docs/validation/protection-source-id.py`. Retain workflow/run/job IDs,
+   actual tested merge/tree, artifact/log hashes, package integrity, dependency
+   locks and production/verification manifest equality. Any changed protected
+   source or Node image needs matching verification. Review those records before
+   changing the exact-version release state to approved; it does not verify its
+   evidence links automatically. Follow the protected merge and exact merged-commit
+   checks below. Keep the release state blocked while any prepublication gate is open.
+6. Authenticate with npm/MFA and publish the five packages in the order below.
+   Registry integrity, exact `gitHead`, registry-installed consumers and final
+   dist-tags are checked **after upload**, before the immutable tag/GitHub release.
+   They are postpublication completion checks, not impossible prerequisites for
+   the first upload. Do not repeat an accepted upload or reuse a published version
+   with changed source. Keep this release incomplete if any post-upload check fails.
+
 The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. Version `0.1.0-alpha.2` introduced the executor and Agent Map to npm alongside updates to the other three packages. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
 
 Publish only the five workspaces listed below. The React/Cytoscape viewer remains
@@ -39,7 +139,7 @@ The npm account must have publishing rights in the `shieldaai` organization. Kee
 2. Update the version in the root manifest, all five package manifests plus the private viewer manifest, and internal dependency versions together. Keep lockfile workspace metadata aligned without changing third-party resolution unnecessarily. If regenerating it, use `npm install --package-lock-only --ignore-scripts` and review the diff. Set public `publishConfig.tag` to `latest` for a non-prerelease or `alpha` for an alpha. Never publish changed source under an existing version.
 3. Run `npm ci --ignore-scripts` and `npm run check`. Review the threat model, release notes and package contents. The checks install the actual tarballs in a temporary consumer, compile their public declarations and README TypeScript examples, execute an MCP dispatch, and run the conformance fixtures.
 4. Run `npm run pack` and inspect `artifacts/`. Builds remove old output before compiling; direct workspace `npm pack` commands also rebuild through `prepack`. Only JavaScript, declarations, package metadata, README and license belong in the tarballs.
-5. Resolve every applicable release gate. A stable release requires committed
+5. Resolve every applicable prepublication release gate. A stable release requires committed
    `release-state.json` with `schemaVersion: 1`, the exact candidate `version`,
    `status: "approved"`, an empty `blockers` array, and nonempty `evidence`
    references. This is the existing engineering acceptance decision, not a new
@@ -86,17 +186,29 @@ An accepted publish can report that the package is still being processed. npm sc
 
 After all versions become available, install their exact versions from the public registry into a clean project, verify the MCP adapter and run the conformance suite. Verify their tarball integrity and recorded `gitHead` against the committed source used for publication. Create release notes and a version tag for that exact commit using an administrator account. Tags matching `v*` are protected against updates and deletion, so verify the commit before creating the tag. Preserve any existing stable `latest` version when publishing a prerelease, and do not imply a production security guarantee.
 
-For the approved `0.1.0` release, verify `npm view <package>@0.1.0 version
-dist.integrity gitHead --json` and `npm view <package> dist-tags --json` for each
-of the five names. Preserve the public registry tarballs, their hashes, installed
-consumer results and exact release commit. Set `RELEASE_COMMIT` to that verified
+After approved `0.1.0` uploads, retrieve the registry metadata and tarballs:
+
+```sh
+mkdir -p artifacts/registry-0.1.0
+for package in @shieldaai/agent-guard @shieldaai/agent-guard-mcp \
+  @shieldaai/agent-guard-scenarios @shieldaai/agent-guard-executor @shieldaai/agent-map; do
+  npm view "$package@0.1.0" version dist.integrity gitHead --json
+  npm view "$package" dist-tags --json
+  npm pack "$package@0.1.0" --ignore-scripts --pack-destination artifacts/registry-0.1.0
+done
+```
+
+Compare each tarball with its registry integrity and reviewed package bytes;
+compare each `gitHead` with the release commit and confirm `latest` is `0.1.0`.
+Preserve that metadata, tarball hashes, fresh registry-installed consumer results
+and exact release commit. Set `RELEASE_COMMIT` to that verified
 merged commit before using the commands below
 (these commands are **not authorized by the current blocked record**):
 
 ```sh
 git tag -a v0.1.0 "$RELEASE_COMMIT" -m 'Agent Guard 0.1.0'
 git push origin refs/tags/v0.1.0
-gh release create v0.1.0 artifacts/*-0.1.0.tgz --verify-tag --latest \
+gh release create v0.1.0 artifacts/registry-0.1.0/*-0.1.0.tgz --verify-tag --latest \
   --title 'Agent Guard 0.1.0' --notes-file docs/releases/0.1.0.md
 ```
 

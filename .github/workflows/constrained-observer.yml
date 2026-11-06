@@ -1,0 +1,61 @@
+name: Constrained observer acceptance
+on:
+  pull_request:
+    paths:
+      - packages/core/**
+      - packages/executor/**
+      - scripts/benchmark-admission*
+      - scripts/check-constrained-observer*
+      - scripts/constrained-observer-*
+      - examples/providers/replay.mjs
+      - examples/providers/protected-ticket.mjs
+      - package.json
+      - package-lock.json
+      - tsconfig.base.json
+      - scripts/build.mjs
+      - .github/workflows/constrained-observer.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: constrained-observer-${{ github.ref }}
+  # Let the owned container finish cleanup instead of cancelling a timed sample.
+  cancel-in-progress: false
+jobs:
+  acceptance:
+    name: constrained-observer (linux, one CPU, 512 MiB)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Reviewed Node 24.22.1 image index. Update alongside the runner default.
+      NODE_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Require a nonroot native Linux host
+        run: node -e 'if (process.platform !== "linux" || process.arch !== "x64" || process.getuid() === 0) throw Error("NONROOT_NATIVE_LINUX_HOST_REQUIRED"); console.log(JSON.stringify({platform:process.platform,architecture:process.arch,node:process.version}));'
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Pull the reviewed immutable Node image
+        run: docker pull --platform linux/amd64 "$NODE_IMAGE"
+      - name: Run one full uninstrumented constrained acceptance
+        run: |
+          mkdir -p artifacts
+          node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --output artifacts/constrained-observer
+      - name: Retain bounded reports, including failed qualification
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: constrained-observer-linux-node24
+          path: |
+            artifacts/constrained-observer/admission.json
+            artifacts/constrained-observer/resources.json
+            artifacts/constrained-observer/staged-inputs.json
+            artifacts/constrained-observer/verification.json
+          if-no-files-found: error
+          retention-days: 30

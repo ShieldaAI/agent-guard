@@ -90,7 +90,26 @@ function command(args, maximum = 1_048_576) {
   assert(result.status === 0, "DOCKER_COMMAND_FAILED");
   return result.stdout;
 }
-function makeStdio(name, canary) {
+// Harness-only observations. No request data, stderr text, paths or error messages.
+export function makeStdio(name, canary, {
+  spawnProcess = spawn,
+  clock = () => Number(process.hrtime.bigint()) / 1e6,
+} = {}) {
+  const origin = clock(), elapsed = () => Math.max(0, clock() - origin);
+  const trace = { spawnStartedMs: null, spawnedMs: null, firstStdoutMs: null,
+    firstStderrMs: null, closeRequestedMs: null, closedMs: null, exitCode: null,
+    exitSignal: null, stdoutBytes: 0, stderrBytes: 0, receivedFrames: 0, failure: null };
+  const requests = new Map();
+  const observeRequest = (message) => {
+    const kind = message.method === "initialize" ? "initialize" : message.method === "tools/list" ? "tools-list" : null;
+    if (!kind || !Number.isSafeInteger(message.id)) return null;
+    const observation = { id: message.id, sentMs: elapsed(), writeCompletedMs: null, responseMs: null };
+    requests.set(kind, observation); return observation;
+  };
+  const observeResponse = (message) => {
+    if (!message || typeof message !== "object" || !Number.isSafeInteger(message.id)) return;
+    for (const value of requests.values()) if (value.id === message.id && value.responseMs === null) value.responseMs = elapsed();
+  };
   let child,
     pending = "",
     bytes = 0,
@@ -98,8 +117,23 @@ function makeStdio(name, canary) {
     closed = false,
     closing;
   const transport = {
+    diagnostics() {
+      const atMs = elapsed(), requestTimeoutMs = 1500;
+      // A later inspect/cleanup delay must not turn an earlier rejection into a
+      // supposed timeout. Stop the unanswered interval when close first began.
+      const cutoffMs = trace.closeRequestedMs ?? trace.closedMs ?? atMs;
+      const observed = [...requests].map(([kind, value]) => ({ kind, sentMs: value.sentMs,
+        writeCompletedMs: value.writeCompletedMs, responseMs: value.responseMs,
+        unansweredMs: value.responseMs === null ? Math.max(0, cutoffMs - value.sentMs) : null }));
+      const reason = trace.failure ?? (observed.some(value => value.unansweredMs !== null && value.unansweredMs >= requestTimeoutMs)
+        ? "RESPONSE_NOT_OBSERVED_BY_DEADLINE" : observed.some(value => value.responseMs !== null)
+          ? "RESPONSE_OBSERVED" : "CONNECTION_FAILURE_UNCLASSIFIED");
+      return { ...trace, observedAtMs: atMs, requestTimeoutMs, requests: observed, reason,
+        interpretation: "Missing reply at the configured deadline is an observation, not proof of an SDK timeout or its cause." };
+    },
     async start() {
-      child = spawn(
+      trace.spawnStartedMs = elapsed();
+      try { child = spawnProcess(
         "docker",
         ["exec", "-i", name, "node", "/input/guest.mjs"],
         {
@@ -108,44 +142,55 @@ function makeStdio(name, canary) {
           shell: false,
           env: { ...process.env, HOST_ONLY_CANARY: canary },
         },
-      );
-      const failed = () => {
+      ); } catch (error) { trace.failure = "STDIO_SPAWN_ERROR"; throw error; }
+      const failed = (reason) => {
         if (!ended) {
+          trace.failure ??= reason;
           ended = true;
           child.kill("SIGKILL");
           transport.onerror?.(new Error("ISOLATED_TRANSPORT_FAILED"));
           transport.onclose?.();
         }
       };
-      child.stdin.on("error", failed);
-      child.stdout.on("error", failed);
-      child.stderr.on("error", failed);
-      child.once("error", failed);
-      child.once("close", () => {
+      child.once("spawn", () => { trace.spawnedMs = elapsed(); });
+      child.stdin.on("error", () => failed("STDIO_INPUT_ERROR"));
+      child.stdout.on("error", () => failed("STDIO_OUTPUT_ERROR"));
+      child.stderr.on("error", () => failed("STDIO_STDERR_ERROR"));
+      child.once("error", () => failed("STDIO_SPAWN_ERROR"));
+      child.once("close", (code, signal) => {
+        trace.closedMs = elapsed();
+        trace.exitCode = Number.isInteger(code) ? code : null;
+        trace.exitSignal = ["SIGTERM", "SIGKILL", "SIGABRT", "SIGSEGV", "SIGPIPE"].includes(signal) ? signal : null;
         closed = true;
         if (!ended) {
+          trace.failure ??= "STDIO_UNEXPECTED_CLOSE";
           ended = true;
           transport.onclose?.();
         }
       });
       child.stderr.on("data", (value) => {
+        trace.firstStderrMs ??= elapsed(); trace.stderrBytes += value.length;
         bytes += value.length;
-        if (bytes > 262144) failed();
+        if (bytes > 262144) failed("STDIO_OUTPUT_LIMIT");
       });
       child.stdout.on("data", (value) => {
+        trace.firstStdoutMs ??= elapsed(); trace.stdoutBytes += value.length;
         bytes += value.length;
-        if (bytes > 262144 || Buffer.byteLength(pending) + value.length > 65536)
-          return failed();
+        if (bytes > 262144) return failed("STDIO_OUTPUT_LIMIT");
+        if (Buffer.byteLength(pending) + value.length > 65536) return failed("STDIO_FRAME_LIMIT");
         pending += value.toString("utf8");
         for (;;) {
           const end = pending.indexOf("\n");
           if (end < 0) break;
           const line = pending.slice(0, end);
           pending = pending.slice(end + 1);
-          try {
-            transport.onmessage?.(JSON.parse(line));
-          } catch {
-            failed();
+          let message;
+          try { message = JSON.parse(line); }
+          catch { failed("STDIO_FRAME_INVALID"); break; }
+          trace.receivedFrames++; observeResponse(message);
+          try { transport.onmessage?.(message); }
+          catch {
+            failed("STDIO_DELIVERY_FAILED");
             break;
           }
         }
@@ -155,15 +200,18 @@ function makeStdio(name, canary) {
       assert(child && !ended, "ISOLATED_TRANSPORT_CLOSED");
       const line = JSON.stringify(message) + "\n";
       assert(Buffer.byteLength(line) <= 65536, "ISOLATED_REQUEST_LIMIT");
+      const observation = observeRequest(message);
       await new Promise((resolve, reject) =>
-        child.stdin.write(line, (error) =>
-          error ? reject(new Error("ISOLATED_TRANSPORT_FAILED")) : resolve(),
-        ),
+        child.stdin.write(line, (error) => {
+          if (error) { trace.failure ??= "STDIO_WRITE_FAILED"; reject(new Error("ISOLATED_TRANSPORT_FAILED")); }
+          else { if (observation) observation.writeCompletedMs = elapsed(); resolve(); }
+        }),
       );
     },
     async close() {
       if (!child || !child.pid || closed) return;
       if (closing) return closing;
+      trace.closeRequestedMs = elapsed();
       ended = true;
       closing = new Promise((resolve, reject) => {
         const term = setTimeout(() => child.kill("SIGTERM"), 500);
@@ -184,6 +232,13 @@ function makeStdio(name, canary) {
     },
   };
   return transport;
+}
+export function safeGuestState(value, name, id) {
+  if (!value || value.Name !== "/" + name || !/^[a-f0-9]{64}$/.test(id ?? "") || value.Id !== id ||
+      value.Config?.Labels?.["io.shielda.agent-guard.owner-pid"] !== String(process.pid) ||
+      typeof value.State?.Running !== "boolean" || typeof value.State?.OOMKilled !== "boolean" ||
+      !Number.isInteger(value.State?.ExitCode)) return { available: false };
+  return { available: true, running: value.State.Running, oomKilled: value.State.OOMKilled, exitCode: value.State.ExitCode };
 }
 export function cleanupGuestStage(
   { name, directory, input, created },
@@ -215,7 +270,7 @@ async function startGuest(image, canary, hostSecret) {
   );
   chmodSync(input, 0o555);
   const name = `agent-guard-${randomUUID()}`;
-  let created = false,
+  let containerId, lastTransport, created = false,
     cleaned = false;
   const close = async () => {
     if (cleaned) return true;
@@ -232,18 +287,25 @@ async function startGuest(image, canary, hostSecret) {
     return true;
   };
   try {
-    command(
+    containerId = command(
       buildDockerCreateArgs(
         { image, timeoutMs: 10_000, memoryMb: 128 },
         input,
         name,
       ),
-    );
+    ).trim();
     created = true;
     command(["start", name]);
     return {
       name,
-      transport: () => makeStdio(name, canary),
+      transport: () => (lastTransport = makeStdio(name, canary)),
+      connectionDiagnostics: () => lastTransport?.diagnostics() ?? null,
+      diagnostics: () => {
+        const transport = lastTransport?.diagnostics() ?? null;
+        let state = { available: false };
+        try { state = safeGuestState(JSON.parse(command(["inspect", name]))?.[0], name, containerId); } catch { /* Never replace the original failure. */ }
+        return { transport, container: state };
+      },
       close,
       counts: () =>
         JSON.parse(
@@ -533,7 +595,9 @@ export async function verifyMcpIsolation({
       encryptionKey: randomBytes(32),
       decisionTraces: { maxEventsPerTenant: 256 },
     });
+    stage = "local-guest-start";
     local = await startGuest(image, canary, hostSecret);
+    stage = "local-connection";
     connection = await ManagedMcpConnection.connect({
       guard: executor,
       identity: identity(),
@@ -541,6 +605,7 @@ export async function verifyMcpIsolation({
       tools: bindings(),
       limits: { requestTimeoutMs: 1500 },
     });
+    report.initialConnection = local.connectionDiagnostics();
     const taskId = task(executor, connection.registrations, "local");
     await denied(() => prepare(executor, taskId));
     reviewTools(executor, connection);
@@ -883,6 +948,7 @@ export async function verifyMcpIsolation({
     );
     mark(stage);
   } catch (error) {
+    try { if (local) report.localDiagnostics = local.diagnostics(); } catch { report.localDiagnostics = { available: false }; }
     if (error.container)
       (report.cleanupFailures ??= []).push({ container: error.container });
     report.failure = {

@@ -1,0 +1,776 @@
+{
+  "schemaVersion": 1,
+  "date": "2026-11-06",
+  "status": "qualification_pending",
+  "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
+  "unchangedGates": {
+    "memoryBytes": 536870912,
+    "cpus": 1,
+    "pids": 128,
+    "pollIntervalMs": 250,
+    "maximumAdmissionP95Ratio": 1.1,
+    "failedPolls": 0,
+    "skippedPolls": 0,
+    "fullSamplesPerPhase": 250,
+    "warmupPerPhase": 50,
+    "tasks": 100,
+    "grantsPerTask": 10,
+    "phaseOrder": [
+      "baseline",
+      "polling",
+      "polling",
+      "baseline"
+    ]
+  },
+  "attempts": [
+    {
+      "directory": "artifacts/agent-cartography/worker-memory-final",
+      "profile": "smoke",
+      "diagnosticOnly": false,
+      "acceptanceEvidenceEligible": false,
+      "passed": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 72.685618,
+        "pollingP95Ms": 48.628281,
+        "ratio": 0.6690220478004328,
+        "regressionPercent": -33.097795219956716
+      },
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 43,
+          "started": 42,
+          "completed": 42,
+          "failed": 0,
+          "skippedBusy": 1,
+          "completedDuringMeasurement": 22,
+          "firstPollMs": 343.016575,
+          "maximumPollMs": 343.016575
+        },
+        {
+          "phase": 3,
+          "scheduled": 24,
+          "started": 24,
+          "completed": 24,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 17,
+          "firstPollMs": 38.948736,
+          "maximumPollMs": 83.667428
+        }
+      ],
+      "resources": {
+        "node": "v24.22.1",
+        "architecture": "arm64",
+        "limitBytes": 536870912,
+        "peakBytes": 163872768,
+        "memoryEvents": {
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpuQuota": 100000,
+        "cpuPeriod": 100000
+      },
+      "artifactSha256": {
+        "memory.json": "57ee30000881cc802f06e830a4014c31f7e53b4fa87a41c9c7e47b5500f510fb",
+        "container.log": "18479f8024dc3cce12b88894a0e258c7582fceec6ebb50659254327946bcf97f",
+        "admission.json": "a6488d22bde546ad13a1a8dbb083e7013906ca929a9229f84ab10ba4fe776600"
+      }
+    },
+    {
+      "directory": "artifacts/agent-cartography/worker-memory-diagnostic-final",
+      "profile": "smoke",
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "passed": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": false,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 47.328971,
+        "pollingP95Ms": 45.654306,
+        "ratio": 0.9646164925073059,
+        "regressionPercent": -3.5383507492694144
+      },
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 24,
+          "started": 24,
+          "completed": 24,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 17,
+          "firstPollMs": 42.588422,
+          "maximumPollMs": 95.30183
+        },
+        {
+          "phase": 3,
+          "scheduled": 23,
+          "started": 23,
+          "completed": 23,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 16,
+          "firstPollMs": 34.537984,
+          "maximumPollMs": 76.499768
+        }
+      ],
+      "resources": {
+        "node": "v24.22.1",
+        "architecture": "arm64",
+        "observed": 224,
+        "dropped": 0,
+        "errors": 0,
+        "complete": true,
+        "memory": {
+          "limitBytes": 536870912,
+          "peakBytes": 146690048,
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpu": {
+          "quota": 100000,
+          "period": 100000
+        }
+      },
+      "artifactSha256": {
+        "cgroup.json": "3c02ae8a1da20f131934d09475e393c87c1a36220ac3e5e8db4a17db8c3e67ce",
+        "container.log": "e746f5b4150c97999474c1535bf4e99dcfd5a23aed03e030d1d5ea8a53b5ae8e",
+        "execution.json": "ec2405f752e0a36008a02455171e74829510e7a544649a34bf1f862b5d0a0c1b",
+        "admission.json": "15ca6d1d6f091138668d18aa4391e37421d83d9ef5edb256dd5e946517e29f27"
+      }
+    },
+    {
+      "directory": "artifacts/agent-cartography/cold-observer-diagnostic-1",
+      "profile": "smoke",
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "passed": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 172.313443,
+        "pollingP95Ms": 168.30725,
+        "ratio": 0.9767505487079148,
+        "regressionPercent": -2.324945129208522
+      },
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 95,
+          "started": 73,
+          "completed": 73,
+          "failed": 0,
+          "skippedBusy": 22,
+          "completedDuringMeasurement": 48,
+          "firstPollMs": 321.317263,
+          "maximumPollMs": 560.324963
+        },
+        {
+          "phase": 3,
+          "scheduled": 89,
+          "started": 75,
+          "completed": 75,
+          "failed": 0,
+          "skippedBusy": 14,
+          "completedDuringMeasurement": 51,
+          "firstPollMs": 492.751223,
+          "maximumPollMs": 492.751223
+        }
+      ],
+      "resources": {
+        "node": "v24.22.1",
+        "architecture": "arm64",
+        "observed": 610,
+        "dropped": 0,
+        "errors": 0,
+        "complete": true,
+        "memory": {
+          "limitBytes": 536870912,
+          "peakBytes": 161878016,
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpu": {
+          "quota": 100000,
+          "period": 100000
+        }
+      },
+      "artifactSha256": {
+        "cgroup.json": "0d35ed6f220cbc757af73047abcb7d9c0daa5c363919dc4d253d09200a15e17f",
+        "container.log": "fe8e6442738b614aea3b03def3020d45faab98403e0e44182b32b2597197a8a8",
+        "execution.json": "e12e8492c370eb5ac88c4a072e98b7ec13d019bef44dbb370608a9483d7f169b",
+        "admission.json": "28968615899695bdadf60022cf38425b9b7b38c5f016b99e681e39adb869b56d"
+      }
+    },
+    {
+      "directory": "artifacts/agent-cartography/cold-observer-control-1",
+      "profile": "smoke",
+      "diagnosticOnly": false,
+      "acceptanceEvidenceEligible": false,
+      "passed": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 96.388492,
+        "pollingP95Ms": 93.302983,
+        "ratio": 0.9679888238110417,
+        "regressionPercent": -3.2011176188958324
+      },
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 65,
+          "started": 62,
+          "completed": 62,
+          "failed": 0,
+          "skippedBusy": 3,
+          "completedDuringMeasurement": 39,
+          "firstPollMs": 458.803298,
+          "maximumPollMs": 458.803298
+        },
+        {
+          "phase": 3,
+          "scheduled": 54,
+          "started": 54,
+          "completed": 54,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 39,
+          "firstPollMs": 157.175708,
+          "maximumPollMs": 214.581093
+        }
+      ],
+      "resources": {
+        "node": "v24.22.1",
+        "architecture": "arm64",
+        "limitBytes": 536870912,
+        "peakBytes": 171503616,
+        "memoryEvents": {
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpuQuota": 100000,
+        "cpuPeriod": 100000
+      },
+      "artifactSha256": {
+        "memory.json": "f1ca784b530a3433c42c6a5be4e5cbe884dd14fc8cd566be6caf1569c626f7d9",
+        "container.log": "18479f8024dc3cce12b88894a0e258c7582fceec6ebb50659254327946bcf97f",
+        "execution.json": "f8a94d193212532f67957f2fa783ad46c5c8db0488c2015a87a2c8cabd585451",
+        "admission.json": "88802ce2e70ad8ec1d9850dd4019c7c6fc420ed00683d94abc0d9f4977f0535a"
+      }
+    },
+    {
+      "directory": "artifacts/agent-cartography/cold-observer-period10-1",
+      "profile": "smoke",
+      "diagnosticOnly": false,
+      "acceptanceEvidenceEligible": false,
+      "passed": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": false,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 200.544377,
+        "pollingP95Ms": 168.358219,
+        "ratio": 0.8395060560586048,
+        "regressionPercent": -16.049394394139515
+      },
+      "workload": {
+        "samples": 100,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 70,
+          "started": 61,
+          "completed": 61,
+          "failed": 0,
+          "skippedBusy": 9,
+          "completedDuringMeasurement": 40,
+          "firstPollMs": 210.286802,
+          "maximumPollMs": 610.673916
+        },
+        {
+          "phase": 3,
+          "scheduled": 90,
+          "started": 72,
+          "completed": 72,
+          "failed": 0,
+          "skippedBusy": 18,
+          "completedDuringMeasurement": 53,
+          "firstPollMs": 239.343491,
+          "maximumPollMs": 1058.139669
+        }
+      ],
+      "resources": {
+        "node": "v24.22.1",
+        "architecture": "arm64",
+        "limitBytes": 536870912,
+        "peakBytes": 154914816,
+        "memoryEvents": {
+          "oom": 0,
+          "oomKill": 0
+        },
+        "cpuQuota": 10000,
+        "cpuPeriod": 10000,
+        "cpuBurst": 0
+      },
+      "artifactSha256": {
+        "memory.json": "82ffd93ed4b44ea36753b18330d02c9728a0a31c37a666d63ab3f0b18f0d189c",
+        "container.log": "18479f8024dc3cce12b88894a0e258c7582fceec6ebb50659254327946bcf97f",
+        "execution.json": "49e95b3395dd1b29a646dd19514acb8c9700264d5a6e3922c5df0f2a36f666b6",
+        "admission.json": "b68ded25f5eac042f5b5a3213f005e8f525f8f0675183f770b0835d00bc2d7fc"
+      }
+    },
+    {
+      "directory": "artifacts/agent-cartography/thin-client-constrained-acceptance-1",
+      "profile": "acceptance",
+      "resourceProfile": "bandwidth-only",
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "stage": "create",
+      "controlsVerified": false,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": false,
+        "removalSucceeded": false,
+        "absenceVerified": true
+      },
+      "stagingRemoved": true,
+      "stagedInputsUnchanged": true,
+      "artifactSha256": {
+        "verification.json": "a2395845d38b896f449689f08b08e0d1f6b8bf812f19c4d8b3f656cdf396e4b9",
+        "staged-inputs.json": "527e601f2b9dc9d162769032061de202c49be542d5eae66d21f1628d2cebe165"
+      },
+      "failure": "CONSTRAINED_VERIFICATION_FAILED",
+      "interpretation": "Docker rejected the unshared host temporary-directory bind before any workload started; later setup-only evidence confirmed private sibling staging works under the same controls."
+    },
+    {
+      "directory": "artifacts/agent-cartography/thin-client-constrained-acceptance-2",
+      "profile": "acceptance",
+      "resourceProfile": "bandwidth-only",
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "stage": "complete",
+      "controlsVerified": true,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "stagingRemoved": true,
+      "stagedInputsUnchanged": true,
+      "artifactSha256": {
+        "resources.json": "e69e21df1d3a6c669b6bf254f2b29fe31f796ec0238adf91dc7d23e2fd1613f6",
+        "verification.json": "a53dd006cae80a4365b7e75b25528fc0f4b29ff8a42705c557ff943c79128e02",
+        "staged-inputs.json": "527e601f2b9dc9d162769032061de202c49be542d5eae66d21f1628d2cebe165",
+        "admission.json": "871d784ebeecae0323ea8228c7580afba0a3aad6287a12334777d2946077ad5d"
+      },
+      "admission": {
+        "gate": {
+          "passed": false,
+          "correctnessPassed": false,
+          "effectAccountingPassed": true,
+          "stressProfileValid": false,
+          "latencySamplesValid": true,
+          "failureReasons": [
+            {
+              "phase": 2,
+              "code": "POLL_CADENCE_SKIPPED"
+            },
+            {
+              "phase": 3,
+              "code": "POLL_CADENCE_SKIPPED"
+            }
+          ],
+          "performanceEnforced": true,
+          "performancePassed": false,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": 77.878714,
+          "pollingP95Ms": 96.497576,
+          "ratio": 1.2390751085078267,
+          "regressionPercent": 23.907510850782664
+        },
+        "diagnosticsComplete": true,
+        "acceptanceEvidenceEligible": false,
+        "effects": 1200,
+        "polls": 222
+      },
+      "resources": {
+        "schemaVersion": 1,
+        "kind": "constrained-observer-resources",
+        "diagnosticOnly": false,
+        "acceptanceEvidenceEligible": false,
+        "runtime": {
+          "node": "v24.22.1",
+          "architecture": "arm64",
+          "platform": "linux"
+        },
+        "controls": {
+          "memoryMaxBytes": 536870912,
+          "memorySwapMaxBytes": 0,
+          "cpuQuotaUs": 100000,
+          "cpuPeriodUs": 100000,
+          "cpuBurstUs": 0,
+          "pidsMax": 128
+        },
+        "before": {
+          "memoryPeakBytes": 21573632,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 529864,
+            "user_usec": 308155,
+            "system_usec": 221709,
+            "nr_periods": 5,
+            "nr_throttled": 3,
+            "throttled_usec": 67365
+          }
+        },
+        "after": {
+          "memoryPeakBytes": 168067072,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 108732299,
+            "user_usec": 71217824,
+            "system_usec": 37514475,
+            "nr_periods": 1093,
+            "nr_throttled": 1078,
+            "throttled_usec": 58726823
+          }
+        },
+        "sampler": {
+          "enabled": false,
+          "intervalMs": 100,
+          "limit": 4096,
+          "observed": 0,
+          "dropped": 0,
+          "errors": 0,
+          "closed": true,
+          "samples": []
+        },
+        "checksPassed": true
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 129,
+          "started": 123,
+          "completed": 123,
+          "failed": 0,
+          "skippedBusy": 6,
+          "completedDuringMeasurement": 105,
+          "firstPollMs": 254.706011,
+          "maximumPollMs": 508.200877
+        },
+        {
+          "phase": 3,
+          "scheduled": 103,
+          "started": 99,
+          "completed": 99,
+          "failed": 0,
+          "skippedBusy": 4,
+          "completedDuringMeasurement": 84,
+          "firstPollMs": 179.134714,
+          "maximumPollMs": 445.787787
+        }
+      ]
+    },
+    {
+      "directory": "artifacts/agent-cartography/single-cpu-affinity-acceptance-1",
+      "profile": "acceptance",
+      "resourceProfile": "single-logical-cpu",
+      "cpuAffinity": "0",
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "stage": "complete",
+      "controlsVerified": true,
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "stagingRemoved": true,
+      "stagedInputsUnchanged": true,
+      "admission": {
+        "gate": {
+          "passed": false,
+          "correctnessPassed": false,
+          "effectAccountingPassed": true,
+          "stressProfileValid": false,
+          "latencySamplesValid": true,
+          "failureReasons": [
+            {
+              "phase": 2,
+              "code": "POLL_CADENCE_SKIPPED"
+            }
+          ],
+          "performanceEnforced": true,
+          "performancePassed": false,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": 71.784119,
+          "pollingP95Ms": 34.150491,
+          "ratio": 0.4757388051248494,
+          "regressionPercent": -52.42611948751505
+        },
+        "diagnosticsComplete": true,
+        "acceptanceEvidenceEligible": false,
+        "effects": 1200,
+        "polls": 116
+      },
+      "resources": {
+        "schemaVersion": 1,
+        "kind": "constrained-observer-resources",
+        "diagnosticOnly": false,
+        "resourceProfile": "single-logical-cpu",
+        "cpuAffinity": "0",
+        "affinity": {
+          "before": {
+            "cpusetCpusEffective": "0",
+            "processCpusAllowedList": "0"
+          },
+          "after": {
+            "cpusetCpusEffective": "0",
+            "processCpusAllowedList": "0"
+          }
+        },
+        "acceptanceEvidenceEligible": false,
+        "runtime": {
+          "node": "v24.22.1",
+          "architecture": "arm64",
+          "platform": "linux"
+        },
+        "controls": {
+          "memoryMaxBytes": 536870912,
+          "memorySwapMaxBytes": 0,
+          "cpuQuotaUs": 100000,
+          "cpuPeriodUs": 100000,
+          "cpuBurstUs": 0,
+          "pidsMax": 128
+        },
+        "before": {
+          "memoryPeakBytes": 21110784,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 284072,
+            "user_usec": 164463,
+            "system_usec": 119609,
+            "nr_periods": 3,
+            "nr_throttled": 0,
+            "throttled_usec": 0
+          }
+        },
+        "after": {
+          "memoryPeakBytes": 184086528,
+          "memoryEvents": {
+            "oom": 0,
+            "oomKill": 0
+          },
+          "cpu": {
+            "usage_usec": 67235322,
+            "user_usec": 49522786,
+            "system_usec": 17712536,
+            "nr_periods": 680,
+            "nr_throttled": 91,
+            "throttled_usec": 159247
+          }
+        },
+        "sampler": {
+          "enabled": false,
+          "intervalMs": 100,
+          "limit": 4096,
+          "observed": 0,
+          "dropped": 0,
+          "errors": 0,
+          "closed": true,
+          "samples": []
+        },
+        "checksPassed": true
+      },
+      "polling": [
+        {
+          "phase": 2,
+          "scheduled": 64,
+          "started": 61,
+          "completed": 61,
+          "failed": 0,
+          "skippedBusy": 3,
+          "completedDuringMeasurement": 50,
+          "firstPollMs": 241.347323,
+          "maximumPollMs": 512.713998
+        },
+        {
+          "phase": 3,
+          "scheduled": 55,
+          "started": 55,
+          "completed": 55,
+          "failed": 0,
+          "skippedBusy": 0,
+          "completedDuringMeasurement": 49,
+          "firstPollMs": 97.049246,
+          "maximumPollMs": 129.188687
+        }
+      ],
+      "artifactSha256": {
+        "resources.json": "43de22ad9214ccb119dcfeb176099f0ffa85a22ce6254940b6130bf4dead1d32",
+        "verification.json": "f31eac9dd027597de29f0df7230ce568f23eab676e4c425a513f848480886845",
+        "staged-inputs.json": "05c525f7168cba00584c9ae3591f00da1d796b7698e95bc1b3deaf3ae045cc05",
+        "admission.json": "0d967049055048d1ac489f3a4925d1ea8bb1601ee19bdf6fc214d82e713ccf93"
+      }
+    }
+  ],
+  "decisions": [
+    "Preserve all prior failed and diagnostic attempts. Smoke and instrumentation cannot certify full acceptance.",
+    "A 10 ms CPU quota/period experiment kept one-CPU bandwidth but failed, so the default 100 ms CPU period remains unchanged.",
+    "Remove unused server/SDK imports from HTTP-only synthetic clients, without moving the first poll, warming clients, changing request logic, filtering samples, or changing the gate. New qualification is pending.",
+    "No production enforcement changes are justified by these traces alone. No host processes or system settings were changed.",
+    "Node HIGH security review and fixed-runtime qualification remain a publication hold.",
+    "The single-logical-CPU experiment also failed. It substantially reduced aggregate quota throttling but does not qualify either profile or prove the remaining stall cause.",
+    "A fresh native Linux CI check and disposable worker-stage CPU diagnostics are pending. The release remains blocked."
+  ],
+  "evidenceLimits": [
+    "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
+    "All measurements are workload/platform/source-specific; the shared developer host is not an exclusive CPU reservation."
+  ],
+  "functionalVerification": {
+    "fullCheck": {
+      "command": "npm run check (both immutable isolation image variables set)",
+      "tests": 1248,
+      "passed": 1247,
+      "failed": 1,
+      "skipped": 0,
+      "installedConsumerRun": false,
+      "log": "artifacts/agent-cartography/observer-full-check-1.log",
+      "sha256": "53e421cceb068d410c5d70b010bfc7889c0156abee4e3b2a2f02cc5e69ab1166",
+      "failure": "Initial disposable MCP connection failed; stale runtime-image label followed successful runtime preflight. Existing report does not distinguish timeout, early exit, framing or metadata rejection. No underlying-cause or fix claim."
+    },
+    "mcpDiagnostic": {
+      "passed": true,
+      "checks": 21,
+      "cleanup": true,
+      "report": "artifacts/agent-cartography/mcp-connection-diagnostic-1.json",
+      "sha256": "a27e8801bc4bffe087d7b4b723abab3e38af8a19d96deaeccf48b3bef4118263",
+      "interpretation": "The earlier initial-connection failure did not recur. This result does not establish its original cause or an underlying fix; request deadlines and framing/output caps remain unchanged."
+    },
+    "secondFullCheck": {
+      "passed": true,
+      "command": "npm run check (both immutable isolation image variables set)",
+      "tests": 1256,
+      "passedTests": 1256,
+      "failedTests": 0,
+      "skippedTests": 0,
+      "installedConsumersPassed": true,
+      "hostNode": "v26.12.0",
+      "guestNode": "v24.22.1",
+      "log": "artifacts/agent-cartography/observer-full-check-2.log",
+      "sha256": "99dd534acb2e86c8fa2844240b66455b6c902e2cf01ece8da07a438e935224db",
+      "interpretation": "Full functional check with improved connection diagnostics passed. The prior isolated connection failure remains unexplained; no deadline was increased."
+    }
+  }
+}

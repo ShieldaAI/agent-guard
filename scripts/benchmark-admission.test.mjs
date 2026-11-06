@@ -79,7 +79,7 @@ test('independent HTTP client includes executor event-loop queueing in admission
   let client;
   try {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-    client = new Worker(new URL('./benchmark-admission.mjs', import.meta.url), { workerData: {
+    client = new Worker(new URL('./benchmark-admission-client.mjs', import.meta.url), { workerData: {
       kind: 'workload', url: `http://127.0.0.1:${server.address().port}`, token: 'synthetic-test', warmup: 1, samples: 1 } });
     const result = await new Promise((resolve, reject) => {
       const timer = setTimeout(() => reject(new Error('test client timed out')), 10_000);
