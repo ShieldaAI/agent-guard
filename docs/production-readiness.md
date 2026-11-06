@@ -141,7 +141,7 @@ alone is not passing evidence.
   installed-package and public README/type consumers. Actual published alpha.3
   state upgrades preserve spent authority; the old reader refuses new semantics.
 - Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  runtime commit `53acbde`. The separate Linux isolation gate passed **44/44**, zero
+  final source commit `b677a74`. The separate Linux isolation gate passed **44/44**, zero
   skips, and every MCP lifecycle/cleanup observation.
 - Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
   AMD64. Production and verification images share **4,327 application entries**;
@@ -152,7 +152,7 @@ alone is not passing evidence.
   recovered current state after primary-directory loss, retained historical and
   latest receipts, and reopened in a fresh container with read-only config/history.
   At eight clients and 40 measured 500-row reads, p95 was **156 ms on local ARM64**
-  and **226 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
+  and **218 ms on hosted AMD64**, within the 2,000 ms test target. Each overload
   run refused 27 reads through the documented rate/busy responses without effects.
 - Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
   HTTPS/OIDC service states and 13 Map states per engine: **156 accessibility
@@ -161,9 +161,9 @@ alone is not passing evidence.
   graph label fitting was corrected and checked in all three engines. The mock
   threshold alerts were subsequently aligned with the real server and all three
   contract engines rerun; runtime application code was unchanged. All three
-  hosted browser jobs also passed on `53acbde`. A final CI transport follow-up
-  changes only the reviewed Ubuntu package mirror; its hosted result is tracked
-  separately in the evidence index.
+  hosted browser jobs also passed on final source `b677a74`. Its reviewed signed
+  Ubuntu archive selection preserved all test gates and cut the observed package
+  downloads from 8–18 minutes to 3–16 seconds.
 - The Python integration passed **928 unit and 143 authenticated Neo4j tests**,
   package builds and the installed consumer. Four locked platform selections
   each audited 194 packages with zero known vulnerabilities. The archived
@@ -218,7 +218,7 @@ The supported operational boundary remains material:
 - Cartography's admission benchmark smoke has a strict polling-cadence gate.
   Preserve failed attempts and measured overhead; passing smoke must not be
   described as achieving the separate 10% performance acceptance target. The
-  final hosted smoke passed its correctness/stress gates with **15.19%** measured
+  final hosted smoke passed its correctness/stress gates with **24.41%** measured
   admission overhead. One current local full run observed **1.64%** overhead and
   passed its numeric gate, but unrelated CPU-heavy work was active; it is
   explicitly not quiescent acceptance evidence. Both observations and earlier

@@ -1,20 +1,19 @@
 {
   "schema": 1,
-  "measuredAt": "2026-11-06T01:25:31.021804+00:00",
+  "measuredAt": "2026-11-06T01:47:12.554048+00:00",
   "status": "production-acceptance-pending",
   "productionScore": null,
   "candidate": {
-    "verifiedImplementationCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
-    "sourceSha256": "18306c2f7739ccd4cc253ea0e7022b56211c7275b910507354c880b9979050d8",
+    "verifiedImplementationCommit": "b677a744b4303f4d40098369cd41f584e78a8605",
+    "sourceSha256": "4be85c1a8523dc60c772d4c6d63437cea4265add1257995d83acf97a6ad494e5",
     "sourceFiles": 403,
     "sourceIdentifier": "python3 docs/validation/protection-source-id.py",
     "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
-    "hostedMergeCommit": "462054167d6b7f0f84a21e83c92b6096310b83c1",
+    "hostedMergeCommit": "f271b67d2969566dff9eb1b03292626482227c7e",
     "mergeTreeMatchesHead": true,
     "baseCommit": "55b577bf3fb0c2c99eff2f4102d8e15bd8401682",
-    "followupScope": "Mock browser alerts aligned with real status and all three contract engines rerun. Browser CI uses the official signed Ubuntu HTTPS archive after observed slow Azure-mirror downloads; final hosted transport verification pending. Documentation/evidence updated; runtime implementation unchanged.",
-    "followupSourceSha256": "4be85c1a8523dc60c772d4c6d63437cea4265add1257995d83acf97a6ad494e5",
-    "followupSourceFiles": 403
+    "followupScope": "Mock threshold alerts aligned with real server and all three contract engines rerun. Official signed Ubuntu HTTPS package transport validated on all hosted browser workers. Runtime implementation unchanged from 53acbde.",
+    "runtimeImplementationIntroducedAt": "53acbde035614f21e74a342ebf0c5010f95686fe"
   },
   "acceptance": {
     "targetPerCategory": 9.5,
@@ -85,7 +84,8 @@
     "mcpIsolationImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
     "logSha256": "06efcb3641f879fd7b871b05576c0281f6b852d8068205c7023a7424754a699f",
     "installedPackageChecks": "All five tarballs, public examples/types, real published alpha.3 upgrade and old-reader rejection, exact-current primary-loss recovery, MCP/identity/build admission and synthetic model loops passed.",
-    "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe"
+    "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+    "scope": "Exact 53acbde local runtime build and installed consumers. Subsequent CI/mocked-browser-fixture changes did not alter runtime code; final hosted platform checks independently passed on b677a74."
   },
   "linux": {
     "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
@@ -183,9 +183,9 @@
     },
     "hostedAmd64": {
       "schema": 1,
-      "measuredAt": "2026-11-06T01:17:08.179Z",
+      "measuredAt": "2026-11-06T01:39:37.718Z",
       "status": "passed",
-      "verificationImage": "sha256:c46c261bd4c5004cf8193e6d3f5149868f16896f15e55ed9a7423367d5da2dbf",
+      "verificationImage": "sha256:037761f789c059db9bcdb94bec73efdd227c375edfff3ab894031218f825270e",
       "imagePlatform": "linux/amd64",
       "docker": {
         "version": "29.4.2",
@@ -259,7 +259,7 @@
           "concurrentClients": 8,
           "measuredReads": 40,
           "pageSize": 500,
-          "p95ReadMs": 226,
+          "p95ReadMs": 218,
           "targetP95Ms": 2000,
           "overloadRefusals": 27,
           "effectsUnchanged": true
@@ -289,9 +289,9 @@
     },
     "hostedImageComparison": {
       "status": "passed",
-      "measuredAt": "2026-11-06T01:17:08.109Z",
-      "productionImage": "sha256:9cbcc4852ac99c9ece8a1eeb65c01ef08c77ac3650993dfc878dcb92f6c32cd0",
-      "verificationImage": "sha256:c46c261bd4c5004cf8193e6d3f5149868f16896f15e55ed9a7423367d5da2dbf",
+      "measuredAt": "2026-11-06T01:39:37.635Z",
+      "productionImage": "sha256:b7ce5f561636682b124ccadabb379a7a951e930826874ccac33a060dc18562ba",
+      "verificationImage": "sha256:037761f789c059db9bcdb94bec73efdd227c375edfff3ab894031218f825270e",
       "node": "24.22.1",
       "identicalApplicationEntries": 4327,
       "globalPackageManagersAbsent": true,
@@ -301,7 +301,12 @@
         "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
       ]
     },
-    "sharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32"
+    "sharedApplicationManifest": "ebc67de7de58d05612ecc85450332e09ae297d26e7e8e4ec7cc8aaae3526ee32",
+    "finalHostedArtifact": {
+      "name": "production-profile-linux-node24",
+      "id": 13469597550,
+      "digest": "sha256:6ec6c69350db7050ba0f5b8deabc3852df34c7219781ad4b68f83a3e17cdbc4d"
+    }
   },
   "runtimeIsolation": {
     "host": {
@@ -454,9 +459,9 @@
     }
   },
   "hosted": {
-    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732668",
-    "sourceCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
-    "status": "passed",
+    "ciRun": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228499",
+    "sourceCommit": "b677a744b4303f4d40098369cd41f584e78a8605",
+    "status": "all-six-workflows-passed",
     "passedJobs": [
       "check (22)",
       "check (24)",
@@ -494,7 +499,120 @@
     ],
     "pythonEvidence": "docs/validation/cartography-python-2026-11-06.json",
     "cartographyPilotEvidence": "docs/validation/cartography-pilot-2026-11-06.json",
-    "cartographyPilotStatus": "smoke-passed; separate-10-percent-performance-target-not-established"
+    "cartographyPilotStatus": "smoke-passed; separate-10-percent-performance-target-not-established",
+    "finalRuns": [
+      {
+        "id": 42145228453,
+        "name": "Python dependency audit",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228453"
+      },
+      {
+        "id": 42145228509,
+        "name": "Dependency Review",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228509"
+      },
+      {
+        "id": 42145228526,
+        "name": "CodeQL",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228526"
+      },
+      {
+        "id": 42145228458,
+        "name": "Cartography pilot",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228458"
+      },
+      {
+        "id": 42145228499,
+        "name": "CI",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228499"
+      },
+      {
+        "id": 42145228508,
+        "name": "Cartography integration",
+        "status": "completed",
+        "conclusion": "success",
+        "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228508"
+      }
+    ],
+    "finalCiJobs": [
+      {
+        "id": 127654975804,
+        "name": "dependency-inventory",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654975963,
+        "name": "check (22)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654975994,
+        "name": "browser (webkit)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976002,
+        "name": "browser (firefox)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976003,
+        "name": "browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976020,
+        "name": "check (26)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976027,
+        "name": "check (macos-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976032,
+        "name": "check (24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976095,
+        "name": "runtime-isolation (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976146,
+        "name": "production-profile (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127654976367,
+        "name": "check (windows-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "artifactsScope": "Earlier 53acbde artifacts retained for unchanged implementation; final browser and production artifacts are separately identified."
   },
   "browsers": {
     "graphFit": {
@@ -560,7 +678,7 @@
       "productionAndConsumedBrowserInputsStable": true,
       "inputStabilityNote": "One unrelated Ops history-recovery regression file changed during the Map run. It is not imported or executed by the Map browser harness. All production code, built assets and consumed browser fixtures remained unchanged. Full manifest stability is correctly false."
     },
-    "hostedStatus": "all-three-engines-passed",
+    "hostedStatus": "final-source-all-three-engines-passed",
     "priorHostedInstallFailure": {
       "run": 42138768310,
       "chromium": "All three suites passed: 49 scans",
@@ -572,7 +690,7 @@
     },
     "retainedHostedAttempt": "docs/validation/production-readiness-browser-2026-11-06/ci-48ff3fa.json",
     "localFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/local-53acbde.json",
-    "hostedFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-53acbde.json",
+    "hostedFinalEvidence": "docs/validation/production-readiness-browser-2026-11-06/ci-b677a74.json",
     "finalLocalSummary": {
       "engines": [
         "chromium",
@@ -666,13 +784,24 @@
       "evidenceType": "Automated functional/accessibility checks using synthetic identities and records; local real HTTPS/OIDC/encrypted SQLite in service suites. Not a representative human usability study or customer deployment acceptance.",
       "visualReview": "Setup states are distinct and readable. The initial graph fit had small labels; see final-map-fit-run.json and the replaced Map screenshots for the verified label-clearance correction.",
       "mapFollowup": "final-map-fit-run.json"
+    },
+    "finalMirrorValidation": {
+      "source": "b677a744b4303f4d40098369cd41f584e78a8605",
+      "signedArchiveStepPassed": true,
+      "sourceSuitesComponentsAndKeyringUnchanged": true,
+      "acquisition": "Official Ubuntu HTTPS archive",
+      "packageFetchSeconds": {
+        "chromium": 3,
+        "firefox": 3,
+        "webkit": 16
+      }
     }
   },
   "security": {
     "codeql": {
-      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42142732611",
+      "run": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228526",
       "passed": true,
-      "headCommit": "53acbde035614f21e74a342ebf0c5010f95686fe",
+      "headCommit": "b677a744b4303f4d40098369cd41f584e78a8605",
       "ref": "refs/pull/8/merge",
       "openAlerts": 0,
       "gate": "Unresolved security alerts",
@@ -1380,7 +1509,14 @@
       "currentDiagnosticRegressionTests": "Included in the 928 unit tests; existing 143 integration tests passed after oauthlib patch, before diagnostic helper changes. New hosted integration is pending.",
       "finalEvidence": "docs/validation/cartography-python-2026-11-06.json",
       "finalUnitTests": 928,
-      "finalIntegrationTests": 143
+      "finalIntegrationTests": 143,
+      "finalUnchangedSourceRerun": {
+        "audit": 42145228453,
+        "integration": 42145228508,
+        "status": "passed",
+        "source": "b677a744b4303f4d40098369cd41f584e78a8605",
+        "lockSha256": "387798274ce2b594217404c97106b7e26767256e3e14cc1aabf81ef4fe24aef2"
+      }
     }
   },
   "limitations": [
@@ -1403,12 +1539,7 @@
       "Require passing hosted gates for final source/image."
     ]
   },
-  "remainingVerification": [
-    {
-      "gate": "Final browser fixture and CI package-mirror follow-up",
-      "status": "focused-contract-and-mirror-configuration-checks-passed-hosted-publication-pending"
-    }
-  ],
+  "remainingVerification": [],
   "historyCapacityGuard": {
     "status": "full-local-and-hosted-platform-checks-passed",
     "limit": 10000,
@@ -1435,9 +1566,16 @@
     "scope": "Superseded by the history capacity guard. Exact original record is retained in the Git history of this file at 53acbde. Browser install timeouts and pilot failures are retained in separate referenced records."
   },
   "cartographyPerformance": {
-    "hostedSmoke": "Correctness/stress gates passed; measured admission overhead 15.19%, numeric performance target not enforced or passed.",
+    "hostedSmoke": "Final b677a74 smoke correctness/stress gates passed; measured admission overhead 24.405%, numeric performance target not enforced or passed. Prior 53acbde smoke measured 15.19%; both reports are retained.",
     "localFullObservation": "Observed 1.64% overhead with numeric gate enforced/passed, but unrelated CPU-heavy checks were active; not qualified as quiescent acceptance evidence.",
     "evidence": "docs/validation/cartography-pilot-2026-11-06.json",
-    "scope": "Deliberate 250 ms synthetic observer stress; deployed collector defaults to five minutes. No production latency/10% guarantee inferred."
+    "scope": "Deliberate 250 ms synthetic observer stress; deployed collector defaults to five minutes. No production latency/10% guarantee inferred.",
+    "separateStressProfileAcceptance": "Not established by current uncontended full-profile evidence; no deployment-wide 10% guarantee claimed."
+  },
+  "publication": {
+    "status": "draft-pr-production-acceptance-held",
+    "pullRequest": "https://github.com/ShieldaAI/agent-guard/pull/8",
+    "newNpmRelease": false,
+    "reason": "R5 Node HIGH prealert applicability remains unassessed. All candidate repository workflows pass; the separate 250 ms Cartography stress-performance target is not certified."
   }
 }

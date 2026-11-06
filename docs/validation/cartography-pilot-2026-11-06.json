@@ -682,5 +682,235 @@
       "Previous hosted failures and the hosted smoke performancePassed=false result remain unchanged.",
       "The synthetic file-backed 100-task/1,000-grant fixture does not certify customer workloads or production storage performance."
     ]
-  }
+  },
+  "followUpVerifications": [
+    {
+      "sourceRevision": "b677a744b4303f4d40098369cd41f584e78a8605",
+      "checkoutMergeRevision": "f271b67d2969566dff9eb1b03292626482227c7e",
+      "workflowRun": 42145228458,
+      "jobId": 127654975161,
+      "jobUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228458/job/127654975161",
+      "hostedJobConclusion": "success",
+      "artifactId": 13469842344,
+      "artifactUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228458/artifacts/13469842344",
+      "artifactZipSha256": "1dc5c2bcf9cab2d6038e6e8f1ba33d68571e4188efd64f51809fc33a94070aa3",
+      "artifactDigestMatchesGitHub": true,
+      "priorEvidenceDocumentSha256": "3d4b2c127b32d2371ad0e6c3aa2c3b4ff39b95bd9033fb08a60bb35f19791722",
+      "priorObservationsPreserved": true,
+      "scope": "Evidence-only follow-up for the final source: hosted synthetic live pilot and smoke benchmarks. No local benchmark, build, source change or rerun was performed for this record.",
+      "livePilot": {
+        "status": "passed",
+        "profile": "synthetic-live-pilot",
+        "durationSeconds": 60.287,
+        "authorityStatePreserved": true,
+        "collectionPreservesAuthority": true,
+        "executorSurvivesRollback": true,
+        "restoreLogicalContentMatches": true,
+        "restoreSnapshotPointersMatch": true,
+        "scopeChecks": 3,
+        "cleanupEvidence": "The hosted step exited 0 after ownership-checked finally cleanup; this report has no separate disposableCleanup field."
+      },
+      "publicationAndHttp": {
+        "profile": "smoke",
+        "passed": true,
+        "startedAt": "2026-11-06T01:40:25.408933+00:00",
+        "completedAt": "2026-11-06T01:40:50.934419+00:00",
+        "stage": "performance-gates",
+        "readiness": {
+          "attempts": 14,
+          "elapsedSeconds": 7.319
+        },
+        "gates": {
+          "passed": true,
+          "checks": {
+            "published_source_count": true,
+            "task_count": true,
+            "grant_count": true,
+            "publication_deadline": true,
+            "query_success": true,
+            "query_p95": true
+          },
+          "query_p95_seconds": {
+            "get_agent_access": 0.1311982680000001,
+            "explain_access": 0.10710839600000008
+          },
+          "publication_max_seconds": 7.243898969999975,
+          "targets": {
+            "publication_per_source_seconds": 120.0,
+            "query_p95_seconds": 2.0
+          },
+          "expected": {
+            "sources": 2,
+            "tasks": 40,
+            "grants": 400
+          }
+        },
+        "graph": {
+          "sources": 2,
+          "tasks": 40,
+          "grants": 400,
+          "databaseNodes": 581,
+          "databaseRelationships": 2022
+        },
+        "disposableCleanup": true,
+        "queries": {
+          "samples": 100,
+          "successful": 100,
+          "perOperation": 50
+        }
+      },
+      "admission": {
+        "profile": "smoke",
+        "passed": true,
+        "startedAt": "2026-11-06T01:40:51.073Z",
+        "completedAt": "2026-11-06T01:41:20.472Z",
+        "hardware": {
+          "platform": "linux",
+          "release": "7.0.0-1019-azure",
+          "architecture": "x64",
+          "logicalCpus": 4,
+          "memoryBytes": 16759439360,
+          "node": "v24.22.2"
+        },
+        "workload": {
+          "samples": 100,
+          "warmup": 50,
+          "tasks": 100,
+          "grants": 10,
+          "pollIntervalMs": 250
+        },
+        "gate": {
+          "passed": true,
+          "correctnessPassed": true,
+          "effectAccountingPassed": true,
+          "stressProfileValid": true,
+          "latencySamplesValid": true,
+          "failureReasons": [],
+          "performanceEnforced": false,
+          "performancePassed": false,
+          "maximumRatio": 1.1,
+          "baselineP95Ms": 27.274207,
+          "pollingP95Ms": 33.930546,
+          "ratio": 1.2440525218570058,
+          "regressionPercent": 24.405252185700576
+        },
+        "phases": [
+          {
+            "mode": "baseline",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 4836.034854,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "measuredSamples": 100,
+            "warmupSamples": 50
+          },
+          {
+            "mode": "polling",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 5280.703028,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "measuredSamples": 100,
+            "warmupSamples": 50,
+            "polling": {
+              "scheduled": 29,
+              "started": 29,
+              "completed": 29,
+              "failed": 0,
+              "skippedBusy": 0,
+              "completedDuringMeasurement": 21
+            }
+          },
+          {
+            "mode": "polling",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 4959.58136,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "measuredSamples": 100,
+            "warmupSamples": 50,
+            "polling": {
+              "scheduled": 28,
+              "started": 28,
+              "completed": 28,
+              "failed": 0,
+              "skippedBusy": 0,
+              "completedDuringMeasurement": 20
+            }
+          },
+          {
+            "mode": "baseline",
+            "successfulEffects": 150,
+            "finalCalls": 150,
+            "measurementDurationMs": 4849.033175,
+            "cleanup": {
+              "worker": true,
+              "clientWorker": true,
+              "observer": true,
+              "taskServer": true,
+              "executor": true,
+              "directory": true
+            },
+            "measuredSamples": 100,
+            "warmupSamples": 50
+          }
+        ],
+        "successfulEffects": 600,
+        "chargedCalls": 600,
+        "busySkips": 0,
+        "failedPolls": 0,
+        "allPhaseResourcesClosed": true,
+        "qualification": "Smoke correctness and the declared 250 ms stress cadence passed. Admission p95 was 27.274207 ms baseline and 33.930546 ms while polling: ratio 1.2440525218570058 (+24.405252185700576%). The separate 10% acceptance target was not enforced and was not met: performanceEnforced=false, performancePassed=false. This workflow success is not performance acceptance."
+      },
+      "rawFiles": [
+        {
+          "name": "agent-guard-pilot-admission.json",
+          "sha256": "574545948b45f31b676a7abbe9ecefd041989ea32ae5fdc9dd1a87b6e36c9f92"
+        },
+        {
+          "name": "agent-guard-pilot-benchmark.json",
+          "sha256": "04d5357b96a1e81ca5579f0758aad2b37138e122874f7f06a579e042c399525b"
+        },
+        {
+          "name": "agent-guard-pilot-verification.json",
+          "sha256": "54ad9a73a30c7056e3f660eec00f839cba72f5bcd9fe1271c33e908cb4421869"
+        },
+        {
+          "name": "artifact.zip",
+          "sha256": "1dc5c2bcf9cab2d6038e6e8f1ba33d68571e4188efd64f51809fc33a94070aa3"
+        },
+        {
+          "name": "job-127654975161.log",
+          "sha256": "8f60dc9bd8967de419243e033e0b7d5f9783f84f565c594f30a1475b2fe2044e"
+        }
+      ],
+      "limitations": [
+        "All earlier hosted failures, the earlier smoke observation and the contended local acceptance observation remain retained and unchanged.",
+        "Smoke graph scale is 2 sources, 40 tasks and 400 grants; the separate full graph acceptance scale was not run.",
+        "A successful startup does not identify the discarded cause of the earlier readiness failure.",
+        "Synthetic hosted timings do not certify customer workloads, production latency or physical storage durability."
+      ]
+    }
+  ]
 }
