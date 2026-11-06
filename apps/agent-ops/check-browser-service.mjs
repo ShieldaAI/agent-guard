@@ -28,6 +28,15 @@ try {
   // The service OIDC client still verifies its configured local CA.
   page = await browser.newPage({ ignoreHTTPSErrors: true, locale: 'en-US', viewport: { width: 1365, height: 950 } });
   page.setDefaultTimeout(12_000);
+  // Schedule the real expiry watcher at a pointer boundary, without replacing application logic.
+  await page.addInitScript(() => {
+    const original = window.setInterval;
+    window.setInterval = (callback, delay, ...args) => {
+      if (delay !== 1000) return original(callback, delay, ...args);
+      window.runOperatorExpiryTick = () => callback(...args);
+      return original(() => { if (!window.holdOperatorExpiryTick) callback(...args); }, delay);
+    };
+  });
   const pageErrors = [], scanned = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   const button = name => page.getByRole('button', { name, exact: true });
@@ -69,6 +78,23 @@ try {
   const first = fixture.workflow.requests('acme').requests[0];
   await page.getByText(first.digest, { exact: true }).waitFor();
   await scan('service-review');
+  // An actual browser-clock expiry must remove approval while preserving held navigation.
+  await page.evaluate(() => { window.holdOperatorExpiryTick = true; window.runOperatorExpiryTick(); });
+  const reviewSetupButton = await page.locator('#nav-setup').boundingBox();
+  await page.mouse.move(reviewSetupButton.x + reviewSetupButton.width / 2, reviewSetupButton.y + reviewSetupButton.height / 2);
+  await page.mouse.down();
+  await page.evaluate(expiresAt => {
+    window.originalOperatorDateNow = Date.now;
+    Date.now = () => expiresAt + 1;
+    window.runOperatorExpiryTick();
+  }, first.expiresAt);
+  assert.equal(await button('Approve and submit once').count(), 0);
+  await page.mouse.up();
+  await page.getByRole('heading', { name: 'Setup', exact: true }).waitFor();
+  assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 1);
+  await page.evaluate(() => { Date.now = window.originalOperatorDateNow; window.holdOperatorExpiryTick = false; });
+  await page.locator('#nav-requests').click();
+  await button('Approve and submit once').waitFor();
   await button('Approve and submit once').focus();
   await page.keyboard.press('Enter');
   await page.getByRole('region', { name: 'Backend receipt' }).waitFor();
@@ -156,6 +182,8 @@ try {
     server: { company: { id: 'acme', name: 'Company with retained data' } },
   });
   pagedFixture.provider.controls.authorizeOverrides = { subject: 'owner' };
+  // Hold the first tick in this fresh document so the unchanged-state race is deterministic.
+  await page.addInitScript(() => { window.holdOperatorExpiryTick = true; });
   await page.goto(pagedFixture.origin);
   await button('Sign in with company account').click();
   await page.locator('#nav-tickets').click();
@@ -166,7 +194,12 @@ try {
   await page.getByText('Company record 504', { exact: true }).last().waitFor();
   assert.equal(await page.getByText('Foreign company record', { exact: true }).count(), 0);
   await scan('service-later-ticket-page');
-  await page.locator('#nav-setup').click();
+  const pagedSetupButton = await page.locator('#nav-setup').boundingBox();
+  await page.mouse.move(pagedSetupButton.x + pagedSetupButton.width / 2, pagedSetupButton.y + pagedSetupButton.height / 2);
+  await page.mouse.down();
+  await page.evaluate(() => window.runOperatorExpiryTick());
+  await page.mouse.up();
+  await page.getByRole('heading', { name: 'Setup', exact: true }).waitFor();
   await page.getByRole('row', { name: 'Tickets 506 1,000', exact: true }).waitFor();
   await button('Sign out').click();
   await button('Sign in with company account').waitFor();
@@ -196,7 +229,8 @@ try {
   const report = { kind: 'disposable-real-operator-service', node: process.version, browserEngine, browserVersion: browser.version(),
     axe: requireTools('axe-core').version, scanned, mobileViews: 5, oidcExchange: 'local fixture',
     storage: 'real encrypted and witnessed SQLite', recoveryMirrors: 'schema3 exact-current, verified after writes', approvals: 2, backendWrites: 2, denials: 1,
-    receiptOnlyReconciliations: 1, archives: 1, pagedTenantTickets: 505, emptySeed: true, automaticResubmissions: 0, pageErrors: 0 };
+    receiptOnlyReconciliations: 1, archives: 1, pagedTenantTickets: 505, emptySeed: true, automaticResubmissions: 0, pageErrors: 0,
+    unchangedExpiryTickPreservesNavigation: true, expiryRemovesApprovalDuringNavigation: true };
   if (screenshotDirectory) await writeFile(join(screenshotDirectory, 'service-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));
 } catch (error) {

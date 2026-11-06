@@ -912,5 +912,197 @@
         "Synthetic hosted timings do not certify customer workloads, production latency or physical storage durability."
       ]
     }
-  ]
+  ],
+  "hostedFullAcceptance": {
+    "sourceRevision": "bb37466f3b6b109146203cec3fe28cf4861378eb",
+    "sourceSha256": "4be85c1a8523dc60c772d4c6d63437cea4265add1257995d83acf97a6ad494e5",
+    "workflowRun": 42147084901,
+    "jobId": 127661067179,
+    "event": "workflow_dispatch",
+    "workflowUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42147084901",
+    "workflowInput": {
+      "full_benchmark": true
+    },
+    "jobConclusion": "success",
+    "artifactId": 13471125412,
+    "artifactZipSha256": "98abbf4a44c29f5c9ad7e4e686367ab2b8d11e57cf12366f08d8a15c33f6ab3f",
+    "artifactDigestMatchesGitHub": true,
+    "scope": "One unchanged full acceptance run in a separate GitHub-hosted job, with no concurrent repository workload launched in that job. Earlier smoke failures and contended local observations remain retained. This does not establish physical host isolation or a deployment-wide latency guarantee.",
+    "thresholdsAndWorkloadChanged": false,
+    "retainedReports": [
+      {
+        "path": "cartography-full-admission-2026-11-06-bb37466.json.gz",
+        "sha256": "d8799c7a610cbdb3ee82541e670ad7cc142078edde760bdb687bc6b4179e824b",
+        "uncompressedSha256": "662db7e36317ad11b96d3c893b0c7a293bcc8158913a516095d7271d3208dcc1"
+      },
+      {
+        "path": "cartography-full-benchmark-2026-11-06-bb37466.json.gz",
+        "sha256": "59cc77e7bdf20a250e2d3af2f8659aa11a8c618e7f62591d8c4efa73d96aa6b8",
+        "uncompressedSha256": "fac50430cf7ff3859f3fe4ef03323d3fa810a023bf9a9934dfca4b83c602307f"
+      },
+      {
+        "path": "cartography-full-verification-2026-11-06-bb37466.json.gz",
+        "sha256": "39c28734b40d15c0093694a15aafb666c8fc8363db3c95ab525249485f84e358",
+        "uncompressedSha256": "3c35abcf1a39aa0c17b3a133adbda5318ece98de95219b327693040df1868908"
+      }
+    ],
+    "admission": {
+      "profile": "acceptance",
+      "startedAt": "2026-11-06T01:59:30.295Z",
+      "completedAt": "2026-11-06T02:00:34.692Z",
+      "workload": {
+        "samples": 250,
+        "warmup": 50,
+        "tasks": 100,
+        "grants": 10,
+        "pollIntervalMs": 250
+      },
+      "phaseOrder": [
+        "baseline",
+        "polling",
+        "polling",
+        "baseline"
+      ],
+      "hardware": {
+        "platform": "linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x64",
+        "logicalCpus": 4,
+        "memoryBytes": 16759439360,
+        "node": "v24.22.2"
+      },
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 34.241515,
+        "pollingP95Ms": 36.015225,
+        "ratio": 1.0517999860695417,
+        "regressionPercent": 5.179998606954173
+      },
+      "successfulEffects": 1200,
+      "finalCalls": 1200,
+      "pollsCompleted": 129,
+      "pollFailures": 0,
+      "pollCadenceSkipped": 0,
+      "completedDuringMeasurement": [
+        56,
+        56
+      ],
+      "allSixResourcesClosedEveryPhase": true
+    },
+    "publicationAndHttp": {
+      "profile": "acceptance",
+      "startedAt": "2026-11-06T01:57:48.177610+00:00",
+      "completedAt": "2026-11-06T01:59:30.176997+00:00",
+      "hardware": {
+        "os": "Linux",
+        "release": "7.0.0-1019-azure",
+        "architecture": "x86_64",
+        "hostLogicalCpus": 4,
+        "hostMemoryBytes": 16759439360,
+        "containerCpus": 4,
+        "containerMemoryBytes": 4294967296,
+        "dataTmpfsBytes": 2147483648
+      },
+      "readiness": {
+        "attempts": 13,
+        "elapsedSeconds": 6.718
+      },
+      "gates": {
+        "passed": true,
+        "checks": {
+          "published_source_count": true,
+          "task_count": true,
+          "grant_count": true,
+          "publication_deadline": true,
+          "query_success": true,
+          "query_p95": true
+        },
+        "query_p95_seconds": {
+          "get_agent_access": 0.16022146599999995,
+          "explain_access": 0.19534729500000003
+        },
+        "publication_max_seconds": 7.755520417,
+        "targets": {
+          "publication_per_source_seconds": 120.0,
+          "query_p95_seconds": 2.0
+        },
+        "expected": {
+          "sources": 100,
+          "tasks": 10000,
+          "grants": 100000
+        }
+      },
+      "graph": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000,
+        "databaseNodes": 128201,
+        "databaseRelationships": 481100
+      },
+      "snapshotBytes": {
+        "maximum": 127146,
+        "total": 12714590
+      },
+      "batchSeconds": 78.666449933,
+      "disposableCleanup": true
+    },
+    "livePilot": {
+      "authorityStatePreserved": true,
+      "collectionDurationsMs": [
+        7166,
+        1662,
+        685,
+        395
+      ],
+      "collectionPreservesAuthority": true,
+      "differenceReport": "report-1793930239289-a2637e1512984145a483ce45f99b7e81.json",
+      "durationSeconds": 56.482,
+      "executorSurvivesRollback": true,
+      "profile": "synthetic-live-pilot",
+      "replay": {
+        "pendingExcluded": 0,
+        "published": 4,
+        "results": [
+          {
+            "originalProjectionId": "8b92d6cc4b09c77a077e2b7af3979544ea6efb31c0f284863624133a21a3a09a",
+            "projectionId": "94c634c48d168fc3a35c15accb46a6f722ade73195aada941d2d4ccb1ff031fb",
+            "snapshotId": "e6767fc2-f959-4c9a-bd24-a3a9bd5e306c",
+            "sourceId": "66e5200ab4adc24138e38e6990ba2b45573a2f41dc921a1e1b7d4021447e48ec"
+          },
+          {
+            "originalProjectionId": "5c2ca0bdaa2465ab174e6d09e4dd56a555b21737171436f4c5b3dea37728cbfd",
+            "projectionId": "003bb6d4916a48964550f0f7807af1dafaf43af7e9eed0800440b5cd03c412b8",
+            "snapshotId": "f211a387-171f-4718-bead-d275791f0fc1",
+            "sourceId": "66e5200ab4adc24138e38e6990ba2b45573a2f41dc921a1e1b7d4021447e48ec"
+          },
+          {
+            "originalProjectionId": "c864aa7cdf6ced27da91db6b7671d7e087be56ab6abd92dd8bed39bbe8ad0306",
+            "projectionId": "f15dc0bce5b1b98029d69bcde6d2a9267fc61f2a325d2256094d47b7b48b40ed",
+            "snapshotId": "2c0a8590-f19c-4aa7-bb17-9d6fd6ad3c81",
+            "sourceId": "f7b7da33c36459940a8eaf202fe14b396b6e7be38dac2160fc44bf01bc7405fc"
+          },
+          {
+            "originalProjectionId": "857902ae236fce389a6dfd2d50c436debffd6703752c540f819c165dca524260",
+            "projectionId": "d482dad04b64aa5875dc323037f73ec68b70219aa5d3e936697310320787c626",
+            "snapshotId": "e31fc90f-f106-4cd0-af27-2bd2a70a4a0b",
+            "sourceId": "f7b7da33c36459940a8eaf202fe14b396b6e7be38dac2160fc44bf01bc7405fc"
+          }
+        ],
+        "status": "complete",
+        "uncertainExcluded": 0
+      },
+      "restoreLogicalContentMatches": true,
+      "restoreSnapshotPointersMatch": true,
+      "scopeChecks": 3,
+      "status": "passed"
+    }
+  }
 }

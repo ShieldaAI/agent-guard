@@ -6,6 +6,11 @@ status change; an OIDC-authenticated reviewer approves or denies it; an operator
 reconciles an uncertain receipt and archives eligible task families. This is a
 reference business integration, not an installation in a customer environment.
 
+For a new installation, build the image and create the private storage directories,
+then follow [Company onboarding](#company-onboarding). It generates the company
+configuration and keyring from your inputs. The manual enrollment procedure below
+is for an existing private configuration.
+
 The supported deployment is one Linux host, one service owner, and local durable
 POSIX filesystems with reliable SQLite locking and synchronization. The process
 owns an encrypted authority database and a separately encrypted ticket database.
@@ -172,6 +177,7 @@ docker compose -f deployment/production/compose.yaml run --rm --entrypoint node 
   --apply --digest REVIEWED_PREVIEW_DIGEST
 docker compose -f deployment/production/compose.yaml run --rm --entrypoint node maintenance \
   apps/agent-ops/cli.mjs check --config "$AGENT_OPS_CONFIG_FILE"
+docker compose -f deployment/production/compose.yaml up -d agent-ops
 ```
 
 A lower limit must accommodate every retained ticket, request, receipt, key and
@@ -189,6 +195,7 @@ onboarding input directory. Each ticket needs a new ID and an explicitly enrolle
 tenant. Existing IDs and versions cannot be overwritten by this import.
 
 ```sh
+docker compose -f deployment/production/compose.yaml stop agent-ops
 docker compose -f deployment/production/compose.yaml run --rm onboarding \
   import-tickets --config "$AGENT_OPS_CONFIG_FILE" --tickets /run/company/additional-tickets.json
 docker compose -f deployment/production/compose.yaml run --rm onboarding \

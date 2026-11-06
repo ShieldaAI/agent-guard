@@ -14,6 +14,7 @@ const state = {
 let generation = 0;
 let workspaceGeneration = 0;
 let expiryTimer;
+let lastReviewExpired;
 const pending = new Set();
 
 function node(tag, attributes = {}, ...children) {
@@ -831,19 +832,28 @@ function workspace() {
     content, node('p', { class: 'session-footnote' }, `Session valid until ${date(state.session.expiresAt)}. Permissions are checked by the host for every operation.`)));
 }
 
-function render(focusId) {
+function visibleExpirySnapshot() {
+  if (state.view === 'requests') return JSON.stringify(state.requests.filter(request => request.state === 'pending')
+    .map(request => [request.id, expired(request.expiresAt)]));
+  if (state.view === 'maintenance' && state.preview) return JSON.stringify([state.preview.id, expired(state.preview.expiresAt)]);
+  return '';
+}
+
+function render(focusId, { expiryOnly = false } = {}) {
   const focused = document.activeElement?.id;
-  app.replaceChildren(header(), state.session?.authenticated ? workspace() : login());
+  // A normal render already reflects current expiry; its next timer tick must not replace it again.
+  lastReviewExpired = visibleExpirySnapshot();
+  const main = expiryOnly && state.session?.authenticated ? document.getElementById('main') : null;
+  // Expired decisions disappear immediately without detaching a navigation button during its click.
+  if (main) main.replaceWith(workspace().querySelector('#main'));
+  else app.replaceChildren(header(), state.session?.authenticated ? workspace() : login());
   const target = document.getElementById(focusId || focused);
   if (target && !target.disabled) target.focus({ preventScroll: !focusId });
 }
 
-let lastReviewExpired;
 setInterval(() => {
   if (!state.session?.authenticated) return;
-  const request = state.requests.find(item => item.id === state.selectedRequestId);
-  const next = `${request?.id}:${expired(request?.expiresAt)}:${state.preview?.id}:${expired(state.preview?.expiresAt)}`;
-  if (next !== lastReviewExpired) { lastReviewExpired = next; render(); }
+  if (visibleExpirySnapshot() !== lastReviewExpired) render(undefined, { expiryOnly: true });
 }, 1000);
 
 document.addEventListener('visibilitychange', () => {

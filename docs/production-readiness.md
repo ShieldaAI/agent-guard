@@ -164,6 +164,11 @@ alone is not passing evidence.
   hosted browser jobs also passed on final source `b677a74`. Its reviewed signed
   Ubuntu archive selection preserved all test gates and cut the observed package
   downloads from 8–18 minutes to 3–16 seconds.
+  A later docs-only CI run exposed an intermittent expiry-timer navigation race.
+  A deterministic real-service regression reproduced it; the correction preserves
+  navigation nodes while expired decisions disappear immediately. All three
+  engines passed both timer/click regressions and 117 focused accessibility scans
+  (Ops contract and real-service states); hosted follow-up checks are pending.
 - The Python integration passed **928 unit and 143 authenticated Neo4j tests**,
   package builds and the installed consumer. Four locked platform selections
   each audited 194 packages with zero known vulnerabilities. The archived
@@ -218,13 +223,18 @@ The supported operational boundary remains material:
 - Cartography's admission benchmark smoke has a strict polling-cadence gate.
   Preserve failed attempts and measured overhead; passing smoke must not be
   described as achieving the separate 10% performance acceptance target. The
-  final hosted smoke passed its correctness/stress gates with **24.41%** measured
+  earlier hosted smoke passed its correctness/stress gates with **24.41%** measured
   admission overhead. One current local full run observed **1.64%** overhead and
   passed its numeric gate, but unrelated CPU-heavy work was active; it is
-  explicitly not quiescent acceptance evidence. Both observations and earlier
-  failed attempts remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
-  This deliberate 250 ms observer stress profile does not establish production
-  latency or a deployment-wide 10% guarantee; the collector defaults to five minutes.
+  explicitly not quiescent acceptance evidence. A subsequent unchanged full
+  acceptance run in a separate GitHub job passed the enforced 10% gate at
+  **5.18%** overhead: 1,200 exact effects, 129 successful polls, no missed cadence,
+  and all resources closed. Its 10,000-task/100,000-grant graph profile also passed
+  publication and query limits. All observations and earlier failed attempts
+  remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
+  This deliberate 250 ms observer stress profile is bounded evidence on the
+  recorded runner, not a deployment-wide latency guarantee; the collector
+  defaults to five minutes.
 
 The old [construction assessment](protection-assessment.md),
 [P0 implementation record](production-p0-review.md), and

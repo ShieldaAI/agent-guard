@@ -472,12 +472,16 @@ JavaScript execution itself cannot be interrupted. A stalled response is closed;
 clients must reject incomplete bodies. Inventory's record/work bounds still apply.
 The [isolated pilot benchmark](../../deployment/cartography/RUNBOOK.md#performance-gate)
 measures admission with and without actual HTTP inventory polling. Its recorded
-100-task/1,000-grant workload passed the provisional 10% p95 admission regression
-target after bounded snapshot-local reference caching: 25.103 ms without
-inventory versus 25.961 ms at a 250 ms polling cadence (+3.42%). Preparation
-p95 increased 25.85% and is recorded separately. This stress cadence is distinct
-from the collector's five-minute default; representative deployment measurements
-are still required. The cache never persists snapshots or changes references.
+[30 October 2026 result](../../deployment/cartography/validation/admission-2026-10-30.json)
+for 100 tasks and 1,000 grants passed the provisional 10% p95 admission regression
+target after bounded snapshot-local reference caching. That historical result
+does not establish acceptance of the current candidate; the
+[6 November candidate record](../../docs/validation/cartography-pilot-2026-11-06.json)
+retains later successes, failures and measurement qualifications. A passing smoke
+check does not certify the separate 10% acceptance target. The 250 ms stress
+cadence is distinct from the collector's five-minute default; representative
+deployment measurements are still required. The cache never persists snapshots
+or changes references.
 
 For a central company collector, use an operator-configured authenticated TLS
 bridge restricted to this route. Preserve the observer's loopback Host header and
