@@ -13,6 +13,44 @@ const task = (id, tenantId = "engineering") => ({
   budget: { maxCalls: 3, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
 });
 
+// Core intentionally masks resolver exceptions. Observe only the fixed Windows
+// helper labels in this test process; never retry or expose the original error.
+function diagnoseWorkspaceResolver(resolve, diagnostic) {
+  return function (...args) {
+    try { return Reflect.apply(resolve, this, args); }
+    catch (error) {
+      try {
+        const own = name => Object.getOwnPropertyDescriptor(error, name)?.value;
+        const code = own("code"), reason = own("reason"), stage = own("stage");
+        if (code === "WORKSPACE_INPUT_UNAVAILABLE" &&
+            ["selection", "startup", "timeout", "spawn", "exit", "protocol", "cleanup"].includes(reason) &&
+            ["not-started", "compiling", "copying", "complete"].includes(stage)) {
+          diagnostic(JSON.stringify({ code, reason, stage }));
+        }
+      } catch { /* A diagnostic must not replace the exact resolver exception. */ }
+      throw error;
+    }
+  };
+}
+
+test("test-only workspace diagnostics preserve resolver calls and retain only fixed error labels", () => {
+  const receiver = {}, argument = {}, result = {}, recorded = [];
+  let calls = 0;
+  const wrapped = diagnoseWorkspaceResolver(function (...args) {
+    calls++; assert.equal(this, receiver); assert.equal(args.length, 1); assert.equal(args[0], argument); return result;
+  }, value => recorded.push(value));
+  assert.equal(Reflect.apply(wrapped, receiver, [argument]), result); assert.equal(calls, 1); assert.deepEqual(recorded, []);
+  const failure = Object.assign(new Error("private selected content and path"),
+    { code: "WORKSPACE_INPUT_UNAVAILABLE", reason: "timeout", stage: "compiling" });
+  const rejecting = diagnoseWorkspaceResolver(() => { calls++; throw failure; }, value => recorded.push(value));
+  assert.throws(rejecting, error => error === failure); assert.equal(calls, 2);
+  assert.deepEqual(recorded, ['{"code":"WORKSPACE_INPUT_UNAVAILABLE","reason":"timeout","stage":"compiling"}']);
+  failure.stage = "private unexpected stage";
+  assert.throws(rejecting, error => error === failure); assert.equal(recorded.length, 1);
+  failure.stage = "copying";
+  assert.throws(diagnoseWorkspaceResolver(() => { throw failure; }, () => { throw new Error("diagnostic failed"); }), error => error === failure);
+});
+
 function build(t) {
   const bytes = Buffer.from("attested fixture bytes");
   const pair = generateKeyPairSync("ed25519");
@@ -126,6 +164,7 @@ test("strict governed tools reject omitted receipts and content replacement befo
     ...toolOptions, command: ["/bin/true"],
   }), { code: "ARTIFACT_ATTESTATION_REQUIRED" });
   const definition = createSandboxTool({ ...toolOptions, inputReceipts: [receipt] });
+  definition.resolve = diagnoseWorkspaceResolver(definition.resolve, value => t.diagnostic(value));
   executor.approveTool("shell", executor.registerTool(definition));
   const prepared = await executor.prepare("scoped", { tool: "shell", args: { command: ["/bin/true"] } });
   const approvalId = executor.approve(prepared.id, { approverId: "operator", expiresAt: Date.now() + 30_000 });

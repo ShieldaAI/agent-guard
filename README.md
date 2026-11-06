@@ -129,6 +129,7 @@ service. `npm run pack` creates installable tarballs in `artifacts/`. For local 
 install the workspace tarballs together into a separate project. `npm run check` also tests
 packed packages in a clean temporary consumer, so workspace links cannot hide missing
 distribution files.
+Linux and macOS recovery tests require a C compiler; see [contributor setup](CONTRIBUTING.md).
 
 The synthetic [SafeCall/executor integration](examples/safecall-executor.mjs) uses
 the Node SafeCall package installed in the caller's environment, or accepts its

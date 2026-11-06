@@ -1,13 +1,14 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "verification-in-progress-publication-held",
+  "status": "native-checkpoint-candidate-verification-pending-publication-held",
   "candidateVersion": "0.1.0",
   "baseCommit": "01f1e330894b64f97627cd0a6446acd7a100edb3",
   "testedSourceFingerprint": {
     "sha256": "e6e06d8148d0860da76238063fe89ed704d4a978fca490d048c3fc6fa0b2d611",
     "files": 431,
-    "method": "docs/validation/protection-source-id.py"
+    "method": "docs/validation/protection-source-id.py",
+    "scope": "Prior complete local verification before release-state description reconciliation; preserved historical checkpoint."
   },
   "changes": {
     "polling": "A single bounded trusted worker per executor authenticates, decodes, projects, composes and serializes each fresh observer capture. The owner still verifies current witness/mirror bytes and captures live primitive tool metadata. No authority, response or cross-poll state cache is introduced.",
@@ -20,7 +21,8 @@
     ],
     "database": "Fixed templates selected from validated access and current/history modes omit logically irrelevant branches while preserving all enforced scope predicates and bounds. No cross-request data cache or retry was added.",
     "readiness": "Fixed allowlisted databaseErrorType plus retry of only bounded ConnectionAcquisitionTimeoutError. Overall120s deadline,2s acquisition,0drivertransactionretry and late-success rejection remain unchanged; generic DriverError/SessionExpired still escape. This does not establish the cause of the earlier generic readiness failure.",
-    "release": "All npm workspace versions and exact internal dependencies prepared as 0.1.0; public distribution metadata uses latest. Stable publication requires a matching reviewed release-state record without unresolved blockers. Normal checks and packing remain available while blocked."
+    "release": "All npm workspace versions and exact internal dependencies prepared as 0.1.0; public distribution metadata uses latest. Stable publication requires a matching reviewed release-state record without unresolved blockers. Normal checks and packing remain available while blocked.",
+    "windowsDiagnosticFollowup": "Subsequent diagnostic-only refinement emits fixed startup stages within the existing successful frame and allowlisted failure reason/stage. It does not change the30000ms deadline, aggregate output limit, native path checks, retry behavior or existing receipt/version assertions. It does not establish or fix the cause of the original Windows stall."
   },
   "unchangedAcceptance": {
     "admissionMaximumRatio": 1.1,
@@ -80,6 +82,39 @@
       "oldProfileDbHits": 30,
       "candidateProfileDbHits": 34,
       "limits": "Fixed-order, cache-sensitive diagnostic. It does not establish one cause for every historical timeout; fewer operators do not imply fewer database hits."
+    },
+    "windows738fbbf": {
+      "jobId": 127931868088,
+      "step": "Run npm run check",
+      "tests": [
+        {
+          "file": "packages/executor/test/artifacts.test.mjs",
+          "line": 155,
+          "name": "invalid receipts and unsafe paths fail before a sandbox can read input",
+          "durationMs": 30128.2948,
+          "expected": "/provenance/",
+          "actual": "Workspace input unavailable or unsafe: symlinks, reparse points, hard links and oversized files are refused"
+        },
+        {
+          "file": "packages/executor/test/build-artifact-import.test.mjs",
+          "line": 113,
+          "name": "strict governed tools reject omitted receipts and content replacement before dispatch",
+          "durationMs": 30939.9103,
+          "actual": "RESOLUTION_FAILED at prepare line130"
+        }
+      ],
+      "rootCause": "Unproven: original helper suppresses subprocess error/status/stage. Durations are near the30000ms subprocess limit; no recorded underlying error proves timeout or host contention.",
+      "laterNativeWindowsChecks": "Alias/exact byte and junction/hardlink/alternate-stream/race cases passed.",
+      "log": "windows24-127931868088.log",
+      "sourceHead": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+      "runId": 42229625088,
+      "counts": {
+        "tests": 1216,
+        "passed": 1071,
+        "failed": 2,
+        "skipped": 143
+      },
+      "logSha256": "bfdd31626a38ddb612821ddc8607b254d2a113d3d6f41a7fb28f0c1520169a81"
     }
   },
   "verification": {
@@ -289,7 +324,375 @@
       "containerOomKilled": false,
       "containerRemoved": true,
       "cleanupConfirmed": true,
-      "followUp": "One separately labeled diagnostic run; not a rerun for acceptance."
+      "followUp": "The separately instrumented diagnostic below completed without the343ms first-poll observation. It is ineligible for acceptance; this original constrained-profile failure remains unqualified.",
+      "releaseScope": "Optional synthetic512MiB/one-CPU250ms observer stress, outside the reference Agent Ops service (which starts no observer) and the default300s Cartography collection interval. Its failure remains unqualified but is not an unconditional release blocker for that reference profile."
+    },
+    "constrainedEmbeddingDiagnostic": {
+      "diagnosticOnly": true,
+      "acceptanceEvidenceEligible": false,
+      "completedPolls": 47,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "effects": 600,
+      "peakMemoryBytes": 146690048,
+      "memoryLimitBytes": 536870912,
+      "oom": 0,
+      "oomKill": 0,
+      "cgroupSamples": 224,
+      "pollMaximumMsByPhase": [
+        95.30183,
+        76.499768
+      ],
+      "ownerReturnMaximumMsByPhase": [
+        2.422082,
+        3.298162
+      ],
+      "compiledRuntimeFilesUnchanged": 128,
+      "cleanupConfirmed": true,
+      "analysisSha256": "27ed56afa66b5ce98877987ac12fae8078e8b15f09fff7cc75a8629a7662e7cb",
+      "report": "artifacts/agent-cartography/worker-memory-diagnostic-final/analysis.json",
+      "artifactSha256": {
+        "admission.json": "15ca6d1d6f091138668d18aa4391e37421d83d9ef5edb256dd5e946517e29f27",
+        "cgroup.json": "3c02ae8a1da20f131934d09475e393c87c1a36220ac3e5e8db4a17db8c3e67ce",
+        "execution.json": "ec2405f752e0a36008a02455171e74829510e7a544649a34bf1f862b5d0a0c1b",
+        "container.log": "e746f5b4150c97999474c1535bf4e99dcfd5a23aed03e030d1d5ea8a53b5ae8e"
+      },
+      "conclusion": "The prior343.016575ms poll did not recur. Observed CPU throttling and stage timings do not establish its cause. This diagnostic cannot close the failed constrained profile."
+    },
+    "hostedAdmission": {
+      "headCommit": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+      "runId": 42229712963,
+      "jobId": 127932176738,
+      "attempt": 1,
+      "conclusion": "success",
+      "acceptanceEvidenceEligible": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 32.782534,
+        "pollingP95Ms": 29.533936,
+        "ratio": 0.9009046097534743,
+        "regressionPercent": -9.90953902465257
+      },
+      "effects": 1200,
+      "completedPolls": 106,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "cleanupConfirmed": true,
+      "graph": {
+        "counts": {
+          "sources": 100,
+          "tasks": 10000,
+          "grants": 100000,
+          "databaseNodes": 128201,
+          "databaseRelationships": 481100
+        },
+        "maximumPublicationSeconds": 12.274276525000005,
+        "accessP95Seconds": 0.22926237500000024,
+        "explanationP95Seconds": 0.31859270299999937,
+        "livePilot": "passed"
+      },
+      "artifact": {
+        "id": 13507233891,
+        "zipSha256": "2fc8a6de8e37c283d20f8a51af6d64002305841a3c39ae9e1e88f6e8536f75eb",
+        "boundedExtraction": {
+          "files": 3,
+          "compressedLimitBytes": 2097152,
+          "totalExpandedLimitBytes": 16777216
+        }
+      },
+      "rawAdmissionSha256": "dc98f8f59f98e654bd0eeb8459e71bb79ea18d530167be0574e2e60b4a23fc45",
+      "independentRecomputation": {
+        "report": "artifacts/agent-cartography/hosted-738fbbf-acceptance/independent-verification.json",
+        "sha256": "9c96e4d6d262a21eb827d089976a350572719a8eaff7f78185319f5220d55319",
+        "allRawSamples": true
+      }
+    },
+    "hostedSmoke": {
+      "headCommit": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+      "runId": 42229625068,
+      "jobId": 127931867293,
+      "attempt": 1,
+      "conclusion": "success",
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": false,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 23.851364,
+        "pollingP95Ms": 26.140491,
+        "ratio": 1.0959746788485556,
+        "regressionPercent": 9.59746788485556
+      },
+      "effects": 600,
+      "completedPolls": 46,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "cleanupConfirmed": true,
+      "graph": {
+        "counts": {
+          "sources": 2,
+          "tasks": 40,
+          "grants": 400,
+          "databaseNodes": 581,
+          "databaseRelationships": 2022
+        },
+        "maximumPublicationSeconds": 11.364326837999982,
+        "accessP95Seconds": 0.1871008189999993,
+        "explanationP95Seconds": 0.1287755189999998,
+        "livePilot": "passed"
+      },
+      "artifact": {
+        "id": 13508620010,
+        "zipSha256": "8eb02f55308a72a68a95af3eccc98f0a4ae618abb01daf3fa38a5403a996889c",
+        "boundedExtraction": {
+          "files": 3,
+          "compressedLimitBytes": 2097152,
+          "totalExpandedLimitBytes": 16777216
+        }
+      },
+      "rawAdmissionSha256": "ad0357c5bbb339b5ac3a8a6edbbc604e996ec6f4ece41b8602645ff4085e9e5d",
+      "independentRecomputation": {
+        "report": "artifacts/agent-cartography/hosted-738fbbf-smoke/independent-verification.json",
+        "sha256": "146e12caf7947244f84649fa1ae869b580ce41bb829b5b5503a41f973408189f",
+        "allRawSamples": true
+      }
+    },
+    "hostedCI": {
+      "headSha": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+      "testedMerge": {
+        "sha": "2ff5f9adc8a0389bbeeaae14648c71447cd4c780",
+        "headTree": "8b96542143e5c27457afcd5a9eb1b53faf5cd5a5",
+        "mergeTree": "8b96542143e5c27457afcd5a9eb1b53faf5cd5a5",
+        "equal": true,
+        "verification": "GitHub git/commits REST API read-only; merge also from CI checkout log"
+      },
+      "runId": 42229625088,
+      "conclusion": "failure",
+      "jobResults": {
+        "runtime-isolation (linux, node24)": {
+          "id": 127931867611,
+          "conclusion": "success"
+        },
+        "production-profile (linux, node24)": {
+          "id": 127931867934,
+          "conclusion": "success"
+        },
+        "browser (chromium)": {
+          "id": 127931868037,
+          "conclusion": "success"
+        },
+        "check (26)": {
+          "id": 127931868043,
+          "conclusion": "success"
+        },
+        "check (windows-latest, 24)": {
+          "id": 127931868088,
+          "conclusion": "failure"
+        },
+        "check (22)": {
+          "id": 127931868102,
+          "conclusion": "success"
+        },
+        "check (24)": {
+          "id": 127931868134,
+          "conclusion": "success"
+        },
+        "dependency-inventory": {
+          "id": 127931868173,
+          "conclusion": "success"
+        },
+        "browser (webkit)": {
+          "id": 127931868266,
+          "conclusion": "success"
+        },
+        "browser (firefox)": {
+          "id": 127931868367,
+          "conclusion": "success"
+        },
+        "check (macos-latest, 24)": {
+          "id": 127931868475,
+          "conclusion": "success"
+        }
+      },
+      "matrix": {
+        "linux22Linux24Linux26MacOS24": {
+          "testsPerJob": 1215,
+          "passedPerJob": 1207,
+          "failed": 0,
+          "skippedPerJob": 8,
+          "installedConsumers": "passed"
+        },
+        "windows24": {
+          "tests": 1216,
+          "passed": 1071,
+          "failed": 2,
+          "skipped": 143,
+          "installedConsumers": "not reached"
+        }
+      },
+      "runtimeIsolation": {
+        "passed": 44,
+        "failed": 0,
+        "skipped": 0,
+        "mcpChecksPassed": 21,
+        "cleanup": true
+      },
+      "production": {
+        "status": "passed",
+        "primaryLossAndLatestReceiptRecovery": "passed",
+        "imageManifestSha256": "bca35eb9ce9fbc7159f261f5cb0eaf797d963710b1fe68035baa14ef4f5c6dff",
+        "identicalApplicationEntries": 4335,
+        "productionImage": "sha256:02af5aa10754a13196a9f1894c0500f7d1d56a370c2c092e70e3ef014e1d3467",
+        "verificationImage": "sha256:392acb3a46ca3ffc7a6e9309c9cb2ebd44b62e8a8d9eb4fc685ace311d93780f",
+        "p95ReadMs": 85
+      },
+      "browser": {
+        "engines": [
+          "chromium",
+          "firefox",
+          "webkit"
+        ],
+        "scans": 195,
+        "suitesPerEngine": {
+          "operatorContract": 25,
+          "realOperatorService": 14,
+          "agentMap": 26
+        },
+        "allFunctionalAndAxeAssertions": "passed",
+        "humanStudy": false
+      },
+      "security": {
+        "codeqlRun": 42229625064,
+        "codeql": "passed",
+        "openPrMergeAlerts": 0,
+        "dependencyReviewRun": 42229625138,
+        "dependencyReview": "passed",
+        "npmKnownWorkspaceAndBrowserVulnerabilities": 0,
+        "nodeHighHold": "unchanged"
+      },
+      "artifactDigests": {
+        "runtime-isolation-linux-node24": {
+          "id": 13507471805,
+          "sha256": "2198297a6b97f213efd13a565506219b5d4d555abf8b4073cd1340b4b5c036aa"
+        },
+        "npm-alpha-packages": {
+          "id": 13507407291,
+          "sha256": "311ab8c225e31bad19e69f2601268c9e63dde19d706c4bf277e5a7fdd5dbc55a"
+        },
+        "browser-firefox": {
+          "id": 13507272431,
+          "sha256": "60fbf929cd198635f0a567a37149bb6832b207722bd3aaa33245c0374bdd2140"
+        },
+        "provider-outcome-evaluation": {
+          "id": 13507143485,
+          "sha256": "8c5e3f38ad9054c1e7df085b3c7b552f53cb0e3769fceae964e3e349ca2f8f0d"
+        },
+        "dependency-inventory": {
+          "id": 13506833768,
+          "sha256": "6912bf0cc3ce78edf6d405bef26412fb9434b7d3e0a15e47b74673af534a3762"
+        },
+        "browser-chromium": {
+          "id": 13506809080,
+          "sha256": "091fdb9e2744f367921d2906d3b89aa2789ce7ea5431d06d66fbbb130bbc106c"
+        },
+        "browser-webkit": {
+          "id": 13506788770,
+          "sha256": "b2ec767ee580996fa8736b4e19a65f4e76bf1e8ac08fb13c30af89a8d57fe467"
+        },
+        "production-profile-linux-node24": {
+          "id": 13506174923,
+          "sha256": "05090456c47c919dc4325c138ee49dce1a0ef407db3ebc5f88e726a58a5e5b31"
+        }
+      },
+      "allEightArchiveHashesVerified": true,
+      "fullRecord": {
+        "path": "artifacts/agent-cartography/hosted-worker-fix/ci-738fbbf.json",
+        "sha256": "b6cf446bc12b8d8b09bd998a6267989633dfdbe32f5e9a44361118482af119b9"
+      },
+      "limits": "Ordinary matrix optional/unsupported skips are separate from the mandatory Linux no-skip job. Windows remains failed for this head."
+    },
+    "hostedPython": {
+      "headCommit": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+      "runId": 42229625211,
+      "jobId": 127931867517,
+      "conclusion": "success",
+      "unit": {
+        "passed": 1011,
+        "failed": 0,
+        "skipped": 0,
+        "elapsedSeconds": 19.89
+      },
+      "neo4j": {
+        "passed": 150,
+        "failed": 0,
+        "skipped": 0,
+        "elapsedSeconds": 152.9,
+        "cleanup": {
+          "kind": "disposable-neo4j-cleanup",
+          "containerCleanupAttempted": true,
+          "containerRemovalConfirmed": true,
+          "tunnelClosedConfirmed": true
+        }
+      },
+      "lint": "passed",
+      "wheelSdistInstalledConsumer": "passed",
+      "integrationLogSha256": "82d641183326bca12f258508e292c9d88887f1bbd14eacaa34bded4667914999",
+      "audit": {
+        "runId": 42229625423,
+        "jobId": 127931868783,
+        "conclusion": "success",
+        "platformSelections": 4,
+        "auditedPackagesPerSelection": 194,
+        "knownVulnerabilities": 0,
+        "maintenanceNotice": "adal is archived",
+        "artifactId": 13507676140,
+        "artifactDigest": "sha256:260f4d486d151e32255367064fcb4ee5ed0ae3a79e26d3977d8f326c8e515992"
+      },
+      "fullRecord": {
+        "path": "artifacts/agent-cartography/hosted-query-fix/summary.json",
+        "sha256": "0069fd6d2da4eeb1942a4661ed619b8733fc518ca5ff0a35ddcfdc0be230f5fc"
+      }
+    },
+    "windowsDiagnosticFollowup": {
+      "status": "local-diagnostic-cases-passed-native-Windows-pending",
+      "change": "Fixed nonsecret stage/reason, unchanged successful framing and30000ms/maxBuffer/native-path/no-retry bounds; observed cleanup stage preserved. No original stall cause is established.",
+      "focused": {
+        "tests": 24,
+        "passed": 21,
+        "failed": 0,
+        "existingDockerSkips": 3,
+        "newDiagnosticCasesPassed": 12,
+        "host": "darwin",
+        "logSha256": "42f5098af0383109db26db072b08fabe97b7163fc922e46dc91c781b9479223f"
+      },
+      "sourceFiles": [
+        {
+          "path": "packages/executor/src/workspace-input-windows.ts",
+          "sha256": "734b203335d691b0333589e8da4e1625b25f69d447fb7434cc3c717dfc4cc7f4"
+        },
+        {
+          "path": "packages/executor/test/workspace-input-windows-diagnostics.test.mjs",
+          "sha256": "84af0ff1a87cb5608d8e07b9d634509d10299d3b3e71e83efdec018f1c07e5e3"
+        }
+      ],
+      "fullRecord": {
+        "path": "artifacts/agent-cartography/hosted-worker-fix/windows-diagnostic-followup.json",
+        "sha256": "c1aa6e5acf4267b5bebf6a5df60a6caf7686de8cd2a583e2abce8859d3856d64"
+      }
     }
   },
   "publication": {
@@ -300,18 +703,124 @@
     "reason": "Supported Node lines have an unresolved HIGH security prealert; issue details and fixed releases are not yet available. This is an applicability-review hold, not a finding that Agent Guard is exploitable."
   },
   "pending": [
-    "Separate constrained-embedding diagnostic; one-CPU 250 ms stress remains unqualified",
-    "Final hosted workflows and capacity acceptance",
-    "Final source and artifact reconciliation"
+    "Native Windows and other ordinary hosted workflows for the native-checkpoint candidate",
+    "Final native-checkpoint candidate committed source/artifact binding",
+    "Native Node HIGH disclosure and applicability review before publication"
   ],
   "limits": [
     "Synthetic and automated evidence is not independent penetration testing, provider evaluation or a representative human usability study.",
     "The unchanged five-second deadline is a fail-closed bound, not a guarantee for arbitrary host load.",
-    "The reference Agent Ops service does not itself start the observer; the constrained embedding test is a separate synthetic workload."
+    "The reference Agent Ops service does not itself start the observer; the constrained embedding test is a separate synthetic workload.",
+    "The hosted full admission pass is one uninstrumented exact-source acceptance run on its declared runner/workload; it is not a universal timing guarantee or a qualification of the separate constrained profile.",
+    "The optional512MiB/one-CPU250ms observer stress profile remains failed/unqualified. Separating it from the reference Agent Ops release gate does not alter its limits, accept its failure or claim a fix."
   ],
   "candidateSourceFingerprint": {
     "sha256": "576b6c275b14924ea16184b85bbdb8af3f887d1b91f913d7e61b1233b03e6942",
     "files": 431,
-    "differenceFromLocalTestedInputs": "Only release-state.json blocker descriptions were reconciled after local verification. Runtime, tests, dependency graph and enforced limits are identical; hosted checks will cover this candidate record."
+    "differenceFromLocalTestedInputs": "Only release-state.json blocker descriptions differed from the prior local checkpoint. Runtime, tests, dependencies and enforced limits were identical. The hosted results below bind this candidate.",
+    "headCommit": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+    "scope": "Hosted738fbbf candidate; excludes the subsequent Windows diagnostic-only source change."
+  },
+  "followupCandidate": {
+    "basedOn": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+    "changeScope": "Windows capture diagnostics, a test-only allowlisted resolver diagnostic preserving production error masking, and evidence reconciliation; not a claimed stall fix.",
+    "commit": "pending",
+    "sourceFingerprint": {
+      "sha256": "cd53c762b8fcea7b266f4fbe69385cc446dc13bb885f7a53c6c2bc5a63395a6e",
+      "files": 432,
+      "provenance": "Root frozen source for the failed final local full check, including test-only resolver diagnostics."
+    },
+    "localFullCheck": {
+      "status": "failed",
+      "command": "npm run check",
+      "exitCode": 1,
+      "tests": 1228,
+      "passed": 1227,
+      "failed": 1,
+      "skipped": 0,
+      "durationMs": 105584.298916,
+      "installedConsumers": "not reached after test failure",
+      "log": "artifacts/agent-cartography/polling-map-fix-windows-followup-npm-check.log",
+      "logSha256": "5d2486bd8a358f1057471eed7f2c64c78055d93ed81e97ce4bb226ffc2b36bd3",
+      "failure": {
+        "file": "packages/executor/test/ledger-recovery.test.mjs",
+        "assertionLine": 61,
+        "test": "primary domain loss after native super-journal publication preserves latest acknowledged authority",
+        "durationMs": 29223.752791,
+        "message": "No surviving-witness super-journal observed",
+        "classification": "Required native crash-point observation was not established; no recovery-data failure is established by this result.",
+        "investigation": "Fixture observation under review; no cause claimed."
+      }
+    },
+    "hostedVerification": {
+      "status": "pending",
+      "owner": "root"
+    },
+    "qualification": "A later pass qualifies the changed candidate; it does not erase or explain the prior Windows failure.",
+    "previousLocalFullCheck": {
+      "sourceFingerprint": {
+        "sha256": "1bca6ed83ee51b4406fdce53939eb404568fa988c51cd6c508b9e5c72aa8ebee",
+        "files": 432,
+        "method": "docs/validation/protection-source-id.py",
+        "provenance": "Root final full-check checkpoint; documentation excluded."
+      },
+      "status": "passed",
+      "command": "npm run check",
+      "exitCode": 0,
+      "tests": 1227,
+      "passed": 1227,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 108908.932333,
+      "installedConsumers": "passed",
+      "log": "artifacts/agent-cartography/polling-map-fix-final-npm-check.log",
+      "logSha256": "b13eefbe0ddd16ac4c3c049bb761e595ca942caebb019482935541efecbb81a6"
+    }
+  },
+  "nativeCheckpointCandidate": {
+    "basedOn": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
+    "commit": "Identified by the protected source fingerprint; hosted commit and run results are recorded in PR #10.",
+    "sourceFingerprint": {
+      "sha256": "81275d271fad753049d342c0c692ab770ea79b1284b62078a3f5b7ec47300c6a",
+      "files": 433,
+      "provenance": "Root frozen source before final native-checkpoint full check."
+    },
+    "changeScope": "Windows diagnostics, test-only resolver diagnostic wrapper, and test-only native crash checkpoint fixture. Production recovery runtime is unchanged.",
+    "checkpoint": {
+      "hook": "Before the actual native master-journal unlink",
+      "requiredEvidence": [
+        "Exact retained master-journal contents",
+        "Both rollback-journal master references with footer length and checksum validated",
+        "No acknowledgement before the injected crash",
+        "Primary domain removal followed by recovery of prior epoch0/stateA"
+      ],
+      "fixtureBytes": 25165824,
+      "productionRecoveryRuntimeChanged": false
+    },
+    "priorFocusedCheckpoint": {
+      "passed": 13,
+      "failed": 0,
+      "reportedBy": "core via root",
+      "scope": "Prior checkpoint before the two final footer/checksum assertion additions; not final-source acceptance."
+    },
+    "localFullCheck": {
+      "status": "passed",
+      "command": "npm run check",
+      "exitCode": 0,
+      "tests": 1228,
+      "passed": 1228,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 111154.200875,
+      "installedConsumers": "passed",
+      "log": "artifacts/agent-cartography/polling-map-fix-native-checkpoint-npm-check.log",
+      "logSha256": "38efb831ca11861fa52e9807554bc8ad30130aee0dcf77c0da0517d138832a16"
+    },
+    "hostedVerification": {
+      "status": "pending at this local documentation checkpoint",
+      "tracking": "https://github.com/ShieldaAI/agent-guard/pull/10"
+    },
+    "priorFailure": "followupCandidate.localFullCheck retains the failed cd53 source, exact assertion and log digest.",
+    "qualification": "The exact local candidate passed. The test now verifies a precise final pre-commit native crash checkpoint without changing production recovery behavior. Prior failures remain recorded; native Windows and Linux hook qualification require hosted evidence."
   }
 }

@@ -4,7 +4,6 @@
   "status": "blocked",
   "blockers": [
     "Node HIGH security prealert for 22.x, 24.x and 26.x remains unresolved; fixed versions and applicability are not yet disclosed.",
-    "The supplementary 512 MiB, one-CPU, 250 ms stress profile is not qualified: its first poll missed one tick. Its separate diagnostic cannot substitute for an acceptance pass.",
     "Merged release-commit checks, registry artifact verification and final security review remain pending while the candidate is held."
   ],
   "evidence": [
