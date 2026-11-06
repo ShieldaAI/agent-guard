@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { closeSync, constants, existsSync, fsyncSync, lstatSync, openSync, renameSync } from 'node:fs';
+import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, mkdtempSync, openSync, renameSync, rmdirSync, unlinkSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { LedgerStore, type Ledger } from './store.js';
 import { withLedgerKeyringState, type LedgerKey, type ParsedKeyring } from './ledger-maintenance.js';
@@ -87,7 +87,6 @@ class Mirror {
     for(const row of statement.iterate(cap)){if(typeof row.id!=='string'||typeof row.payload!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(row.id))fail('RECOVERY_MIRROR_CORRUPT');yield{id:row.id,payload:row.payload};}
   }
   snapshot(path:string):void{
-    const expected=new Map((['authority_archives','custody_catalog'] as const).map(table=>[table,this.reader.auxiliaryDigest(table)]));
     const fd=openSync(path,constants.O_CREAT|constants.O_EXCL|constants.O_RDWR|constants.O_NOFOLLOW,0o600);closeSync(fd);
     const output=new DatabaseSync(path);
     try{
@@ -100,11 +99,48 @@ class Mirror {
       output.exec('COMMIT');
     }finally{output.close();}
     const synced=openSync(path,constants.O_RDONLY|constants.O_NOFOLLOW);try{fsyncSync(synced);}finally{closeSync(synced);}syncDirectory(dirname(path));
+    this.verifySnapshot(path);
+  }
+  verifySnapshot(path:string):void{
+    const expected=new Map((['authority_archives','custody_catalog'] as const).map(table=>[table,this.reader.auxiliaryDigest(table)]));
     const verified=new CustodySnapshot(path,this.key.key,this.commitment);try{verifyAllArchiveStorage(verified);for(const [table,digest]of expected)if(verified.auxiliaryDigest(table)!==digest)fail('RECOVERY_MIRROR_CORRUPT');}finally{verified.close();}
   }
   close():void{this.reader.close();this.db.close();}
 }
-function preserve(path:string,name:string):void{if(existsSync(path)){copyPrivate(path);renameSync(path,join(dirname(path),name));syncDirectory(dirname(path));}}
+function preserve(path:string,name:string):void{
+  // Capture the directory entry atomically, without an existence check or any
+  // attempt to follow/read a possibly damaged original. A fresh private directory
+  // prevents overwriting another retained original. Even dangling symlinks and
+  // interrupted publication hard links remain opaque preserved evidence.
+  const parent=dirname(path),retained=mkdtempSync(join(parent,`${name}-`));
+  syncDirectory(retained);syncDirectory(parent);
+  try{renameSync(path,join(retained,'original'));}
+  catch(error){
+    if((error as NodeJS.ErrnoException).code==='ENOENT'){rmdirSync(retained);syncDirectory(parent);return;}
+    throw error;
+  }
+  syncDirectory(retained);syncDirectory(parent);
+}
+function publish(staged:string,target:string,verify:(path:string)=>void):void{
+  const source=openSync(staged,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+  try{
+    const original=checkPrivate(source,staged);
+    // Exclusive link creation cannot overwrite an entry that appeared after
+    // preservation. Both names are in the same private filesystem directory.
+    try{linkSync(staged,target);}
+    catch(error){if((error as NodeJS.ErrnoException).code==='EEXIST')fail('RECOVERY_PUBLICATION_CHANGED');throw error;}
+    const output=openSync(target,constants.O_RDONLY|constants.O_NOFOLLOW|constants.O_NONBLOCK);
+    try{
+      const linked=fstatSync(output);
+      if(linked.dev!==original.dev||linked.ino!==original.ino||linked.size!==original.size||linked.mtimeMs!==original.mtimeMs||linked.nlink!==2)fail('RECOVERY_PUBLICATION_CHANGED');
+      fsyncSync(output);syncDirectory(dirname(target));
+      unlinkSync(staged);syncDirectory(dirname(target));
+      const published=checkPrivate(output,target);
+      if(published.size!==original.size||published.mtimeMs!==original.mtimeMs)fail('RECOVERY_PUBLICATION_CHANGED');
+      verify(target);
+    }finally{closeSync(output);}
+  }finally{closeSync(source);}
+}
 /** Exact current-state repair. No witness, task identity, quota or epoch is reset. */
 export function manageLedgerRecovery(options:LedgerRecoveryOptions,request:{readonly operation:'enroll'|'repair'},apply?:{readonly expectedDigest:string}):LedgerRecoveryResult{
   validate(options);if(!['enroll','repair'].includes(request.operation)||(apply&&!hashPattern.test(apply.expectedDigest)))fail('RECOVERY_REQUEST_INVALID');
@@ -131,9 +167,9 @@ export function manageLedgerRecovery(options:LedgerRecoveryOptions,request:{read
       for(const file of files){const path=join(options.history!.directory,`.guard-history-repair-${id}-${sha(file.name)}`);copyPrivate(join(options.history!.recoveryDirectory,file.name),path,file.sha256);historyStages.set(file.name,path);}
       for(let index=0;index<options.stores.length;index++){const source=options.stores[index]!;
         for(const suffix of ['', '-journal','-wal','-shm'])preserve(source.database+suffix,`.guard-original-${id}-${index}${suffix||'.sqlite'}`);
-        renameSync(staged.get(source.id)!,source.database);syncDirectory(dirname(source.database));
+        publish(staged.get(source.id)!,source.database,path=>mirrors.get(source.id)!.verifySnapshot(path));
       }
-      for(const file of files){const target=join(options.history!.directory,file.name);preserve(target,`.guard-history-original-${id}-${sha(file.name)}`);renameSync(historyStages.get(file.name)!,target);syncDirectory(dirname(target));}
+      for(const file of files){const target=join(options.history!.directory,file.name);preserve(target,`.guard-history-original-${id}-${sha(file.name)}`);publish(historyStages.get(file.name)!,target,path=>{copyPrivate(path,undefined,file.sha256);});}
       return result;
     }finally{for(const store of stores.values())store.close();for(const mirror of mirrors.values())mirror.close();}
   });

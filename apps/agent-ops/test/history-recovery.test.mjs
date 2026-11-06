@@ -1,6 +1,6 @@
 import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, realpathSync, rmSync, readFileSync, readdirSync, writeFileSync, renameSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, realpathSync, rmSync, readFileSync, readdirSync, writeFileSync, renameSync, lstatSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createLedgerKeyring } from '../../../packages/executor/dist/ledger-maintenance.js';
@@ -204,7 +204,17 @@ for (const pending of [false, true]) {
     }
     const witnesses = [f.config.ledgerWitness, f.config.backendWitness].map(path => readFileSync(path));
     rmSync(f.config.ledgerDatabase); rmSync(f.config.backendDatabase);
-    rmSync(f.config.historyDirectory, { recursive: true }); mkdirSync(f.config.historyDirectory, { mode: 0o700 });
+    // Keep the old directory inode allocated until its replacement exists:
+    // deleting first lets Linux legitimately reuse the enrolled (dev, ino).
+    const oldIdentity = lstatSync(f.config.historyDirectory, { bigint: true });
+    const lostDirectory = `${f.config.historyDirectory}-lost`;
+    renameSync(f.config.historyDirectory, lostDirectory);
+    for (const name of readdirSync(lostDirectory)) rmSync(join(lostDirectory, name), { recursive: true });
+    mkdirSync(f.config.historyDirectory, { mode: 0o700 });
+    const newIdentity = lstatSync(f.config.historyDirectory, { bigint: true });
+    assert.notDeepEqual([newIdentity.dev, newIdentity.ino], [oldIdentity.dev, oldIdentity.ino]);
+    rmSync(lostDirectory, { recursive: true });
+    assert.deepEqual(readdirSync(f.config.historyDirectory), []);
     const preview = manageBusinessRecovery(f.config, { operation: 'repair' });
     assert.equal(preview.historyFiles, 1); assert.equal(preview.applied, false);
     const result = manageBusinessRecovery(f.config, { operation: 'repair', apply: true, digest: preview.digest });

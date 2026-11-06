@@ -5,6 +5,9 @@ FROM ${NODE_IMAGE} AS build
 ARG NODE_IMAGE
 WORKDIR /app
 RUN node -e 'if (!/^.+@sha256:[a-f0-9]{64}$/.test(process.argv[1])) process.exit(1); const [major, minor, patch] = process.versions.node.split(".").map(Number), floor = {22:[23,4],24:[22,1],26:[12,1]}[major]; if (!floor || minor < floor[0] || minor === floor[0] && patch < floor[1]) throw Error("REVIEWED_SECURITY_PATCHED_NODE_REQUIRED")' "$NODE_IMAGE"
+# Checksum-pinned builder update removes the base npm tree's known high findings.
+ADD --checksum=sha256:07fecbf753e2c3bc10ebeb3e9ed8738f6a0cc1292998b79e2e9f1dd2a5525e0c https://registry.npmjs.org/npm/-/npm-12.2.2.tgz /tmp/npm.tgz
+RUN npm install --global --ignore-scripts --engine-strict --no-audit --no-fund /tmp/npm.tgz && test "$(npm --version)" = 12.2.2 && rm /tmp/npm.tgz
 COPY package.json package-lock.json tsconfig.base.json ./
 COPY packages ./packages
 COPY apps/agent-map ./apps/agent-map

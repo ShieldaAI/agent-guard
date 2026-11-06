@@ -1,9 +1,11 @@
 import nodeTest from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
+import { syncBuiltinESMExports } from 'node:module';
+import { fileURLToPath } from 'node:url';
 import { spawn, spawnSync } from 'node:child_process';
 import { DatabaseSync } from 'node:sqlite';
 import { LedgerStore } from '../dist/store.js';
@@ -11,6 +13,7 @@ import { LedgerStore as Schema2Store } from './fixtures/schema2-store.mjs';
 import { manageLedgerRecovery } from '../dist/ledger-recovery.js';
 import { createLedgerKeyring,readLedgerKeyring,loadLedgerKey,rotateLedgerKeyring } from '../dist/ledger-maintenance.js';
 const test=(name,fn)=>nodeTest(name,{skip:process.platform==='win32'},fn);
+const worker=fileURLToPath(new URL('./fixtures/ledger-recovery-worker.mjs',import.meta.url));
 const sha=value=>createHash('sha256').update(value).digest('hex');
 function fixture(t,mirror=true){
  const root=fs.realpathSync(fs.mkdtempSync(join(tmpdir(),'guard-current-recovery-')));for(const dir of ['data','witness','keys'])fs.mkdirSync(join(root,dir),{mode:0o700});t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
@@ -47,15 +50,14 @@ test('repair refuses active owners and stale reviewed commitments',t=>{
  const preview=manageLedgerRecovery(f.options,{operation:'repair'});s=f.open();s.transaction(state=>{state.epoch++;});s.close();assert.throws(()=>manageLedgerRecovery(f.options,{operation:'repair'},{expectedDigest:preview.digest}),{code:'RECOVERY_PREVIEW_CHANGED'});
 });
 for(const point of ['before-commit','after-commit'])test(`process loss ${point} with entire primary directory removed preserves acknowledged mirror`,t=>{
- const f=fixture(t),source=f.options.stores[0];const script=`import {DatabaseSync} from 'node:sqlite';import fs from 'node:fs';import {LedgerStore} from ${JSON.stringify(new URL('../dist/store.js',import.meta.url).href)};const store=new LedgerStore(${JSON.stringify(source.database)},Buffer.from(${JSON.stringify(f.key.toString('base64'))},'base64'),undefined,{path:${JSON.stringify(source.witnessPath)},mode:'resume'},{existingOnly:true});const exec=DatabaseSync.prototype.exec;DatabaseSync.prototype.exec=function(sql){if(sql==='COMMIT'){${point==='after-commit'?'exec.call(this,sql);':''}fs.rmSync(${JSON.stringify(join(f.root,'data'))},{recursive:true});process.kill(process.pid,'SIGKILL');}return exec.call(this,sql);};store.transaction(state=>{state.epoch=42;state.audit.push({time:2,event:'new transaction'});});`;
- const child=spawnSync(process.execPath,['--input-type=module','-e',script],{encoding:'utf8'});assert.equal(child.signal,'SIGKILL',child.stderr);fs.mkdirSync(join(f.root,'data'),{mode:0o700});
+ const f=fixture(t);
+ const child=spawnSync(process.execPath,[worker,point],{input:JSON.stringify(f.options),encoding:'utf8'});assert.equal(child.signal,'SIGKILL',child.stderr);fs.mkdirSync(join(f.root,'data'),{mode:0o700});
  f.apply('repair');const recovered=f.open();assert.equal(recovered.read().epoch,point==='after-commit'?42:0);assert.equal(recovered.read().audit[0].event,'previous acknowledged authority');recovered.close();
 });
 test('primary domain loss after native super-journal publication preserves latest acknowledged authority',async t=>{
  const f=fixture(t),source=f.options.stores[0];const s=f.open();s.transaction(state=>{state.largeFixture='A'.repeat(24*1024*1024);});s.close();
- const script=`import {LedgerStore} from ${JSON.stringify(new URL('../dist/store.js',import.meta.url).href)};const store=new LedgerStore(${JSON.stringify(source.database)},Buffer.from(${JSON.stringify(f.key.toString('base64'))},'base64'),64*1024*1024,{path:${JSON.stringify(source.witnessPath)},mode:'resume'},{existingOnly:true});store.transaction(state=>{state.largeFixture='B'.repeat(24*1024*1024);state.epoch=99;});process.stdout.write('ACKNOWLEDGED\\n');store.close();`;
  let observed=false,child;const watcher=fs.watch(join(f.root,'witness'),(_event,name)=>{if(String(name).includes('-mj')&&fs.existsSync(join(f.root,'witness',String(name)))&&!observed){observed=true;child.kill('SIGKILL');}});
- try{child=spawn(process.execPath,['--input-type=module','-e',script],{stdio:['ignore','pipe','pipe']});let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);const exit=await new Promise(resolve=>child.on('exit',(code,signal)=>resolve({code,signal})));
+ try{child=spawn(process.execPath,[worker,'super-journal'],{stdio:['pipe','pipe','pipe']});child.stdin.end(JSON.stringify(f.options));let out='',err='';child.stdout.on('data',b=>out+=b);child.stderr.on('data',b=>err+=b);const exit=await new Promise(resolve=>child.on('exit',(code,signal)=>resolve({code,signal})));
   assert.equal(observed,true,`No surviving-witness super-journal observed: ${err}`);assert.equal(exit.signal,'SIGKILL');fs.rmSync(join(f.root,'data'),{recursive:true});fs.mkdirSync(join(f.root,'data'),{mode:0o700});
   f.apply('repair');const recovered=f.open(),state=recovered.read();assert.equal(state.audit[0].event,'previous acknowledged authority');assert.ok([0,99].includes(state.epoch));if(out.includes('ACKNOWLEDGED'))assert.equal(state.epoch,99);assert.equal(state.largeFixture[0],state.epoch===99?'B':'A');recovered.close();
   t.diagnostic('Observed native super-journal in surviving witness domain, killed writer, removed complete primary directory including journals, and repaired authenticated current state; process/storage-loss simulation, not physical power loss.');
@@ -64,8 +66,7 @@ test('primary domain loss after native super-journal publication preserves lates
 
 test('interrupted multi-store promotion re-previews current mirrors and preserves original files',t=>{
  const f=fixture(t),before=f.options.stores.map(source=>fs.readFileSync(source.witnessPath));
- const script=`import fs from 'node:fs';import {syncBuiltinESMExports} from 'node:module';import {manageLedgerRecovery} from ${JSON.stringify(new URL('../dist/ledger-recovery.js',import.meta.url).href)};const options=${JSON.stringify(f.options)};const preview=manageLedgerRecovery(options,{operation:'repair'}),rename=fs.renameSync;fs.renameSync=function(from,to){const result=rename.call(this,from,to);if(to===options.stores[0].database)process.kill(process.pid,'SIGKILL');return result;};syncBuiltinESMExports();manageLedgerRecovery(options,{operation:'repair'},{expectedDigest:preview.digest});`;
- const child=spawnSync(process.execPath,['--input-type=module','-e',script],{encoding:'utf8'});assert.equal(child.signal,'SIGKILL',child.stderr);f.apply('repair');
+ const child=spawnSync(process.execPath,[worker,'partial-promotion'],{input:JSON.stringify(f.options),encoding:'utf8'});assert.equal(child.signal,'SIGKILL',child.stderr);assert.equal(fs.lstatSync(f.options.stores[0].database).nlink,2);f.apply('repair');
  assert.ok(fs.readdirSync(join(f.root,'data')).some(name=>name.startsWith('.guard-original-')));
  f.options.stores.forEach((source,index)=>assert.deepEqual(fs.readFileSync(source.witnessPath),before[index]));
  for(let i=0;i<2;i++){const s=f.open(i);assert.equal(s.read().audit[0].event,'previous acknowledged authority');s.close();}
@@ -75,4 +76,35 @@ test('generic recovery CLI requires exact preview and returns only safe metadata
  const f=fixture(t),config=join(f.root,'keys','recovery.json');fs.writeFileSync(config,JSON.stringify({version:1,...f.options}),{mode:0o600});
  const cli=new URL('../dist/ledger-maintenance-cli.js',import.meta.url).pathname,preview=spawnSync(process.execPath,[cli,'recovery','repair','--config',config],{encoding:'utf8'});assert.equal(preview.status,0,preview.stderr);
  const value=JSON.parse(preview.stdout);assert.equal(value.stores,2);const applied=spawnSync(process.execPath,[cli,'recovery','repair','--config',config,'--apply','--digest',value.digest],{encoding:'utf8'});assert.equal(applied.status,0,applied.stderr);assert.equal(JSON.parse(applied.stdout).applied,true);assert.equal(applied.stdout.includes(f.key.toString('base64')),false);
+});
+
+
+test('repair preserves a dangling original entry without following or discarding it',t=>{
+ const f=fixture(t),source=f.options.stores[0],missing=join(f.root,'not-an-authority-file');
+ fs.rmSync(source.database);fs.symlinkSync(missing,source.database);
+ f.apply('repair');
+ const retained=fs.readdirSync(join(f.root,'data'),{withFileTypes:true})
+   .filter(entry=>entry.isDirectory()&&entry.name.startsWith('.guard-original-'))
+   .map(entry=>join(f.root,'data',entry.name,'original'));
+ const captured=retained.find(path=>fs.lstatSync(path).isSymbolicLink());
+ assert.ok(captured);assert.equal(fs.readlinkSync(captured),missing);assert.equal(fs.existsSync(missing),false);
+ assert.equal(fs.lstatSync(dirname(captured)).mode&0o077,0);
+ const recovered=f.open();assert.equal(recovered.read().audit[0].event,'previous acknowledged authority');recovered.close();
+});
+
+test('repair refuses a primary entry appearing after preservation without overwriting it',t=>{
+ const f=fixture(t),source=f.options.stores[0],original=fs.readFileSync(source.database),witness=fs.readFileSync(source.witnessPath);
+ const link=fs.linkSync;let injected=false;
+ fs.linkSync=function(from,to){
+   if(to===source.database&&!injected){injected=true;fs.writeFileSync(to,'concurrent original must survive',{flag:'wx',mode:0o600});}
+   return link.call(this,from,to);
+ };
+ syncBuiltinESMExports();
+ try{assert.throws(()=>f.apply('repair'),{code:'RECOVERY_PUBLICATION_CHANGED'});}finally{fs.linkSync=link;syncBuiltinESMExports();}
+ assert.equal(injected,true);assert.equal(fs.readFileSync(source.database,'utf8'),'concurrent original must survive');
+ const retained=fs.readdirSync(join(f.root,'data'),{withFileTypes:true})
+   .filter(entry=>entry.isDirectory()&&entry.name.startsWith('.guard-original-'))
+   .map(entry=>join(f.root,'data',entry.name,'original'));
+ assert.ok(retained.some(path=>fs.readFileSync(path).equals(original)));assert.deepEqual(fs.readFileSync(source.witnessPath),witness);
+ f.apply('repair');const recovered=f.open();assert.equal(recovered.read().audit[0].event,'previous acknowledged authority');recovered.close();
 });

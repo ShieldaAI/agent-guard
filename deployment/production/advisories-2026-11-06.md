@@ -38,8 +38,16 @@ Exact version/range checks identified `brace-expansion@5.0.9`, `glob@13.0.6`,
 
 The production runtime build removes unused global package managers. Its actual
 image must be checked for absent package files and command shims; a Dockerfile
-instruction alone is not removal evidence. The build stage still uses npm and
-retains its separate advisory scope. These findings were not dismissed as false
+instruction alone is not removal evidence. The build stage updates to checksum-pinned
+npm **12.2.2** before installing workspace dependencies. A disposable installation
+on Node 24.22.1 and workspace install passed with the lockfile unchanged. Its actual
+dependency tree had **zero high/critical findings and two moderate findings**:
+[glob](https://github.com/advisories/GHSA-3g3m-2fjr-6pw4) and
+[minimatch](https://github.com/advisories/GHSA-g3hv-75wg-m249). These require
+attacker-influenced patterns/traversal; the reviewed builder uses a pinned package
+lock and disables dependency lifecycle scripts. Applicability to that fixed build
+was not demonstrated; the findings remain recorded for update review. None of
+this tooling is copied into the runtime. Findings were not dismissed as false
 positives or independently shown exploitable through Agent Ops HTTP operations.
 
 Global npm's Undici 6.28.0 is distinct from Node's embedded Undici 7.30.1.

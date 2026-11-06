@@ -58,6 +58,18 @@ try {
   await button('Explain').click();
   await page.getByText('Execution remains unknown').waitFor();
   assert.equal(await heading('IAM policy evidence').count(), 1);
+  const graphGeometry = await page.locator('.graph').evaluate(container => {
+    const cy = container._cyreg.cy;
+    const boxes = cy.nodes().map(node => node.renderedBoundingBox({ includeLabels: true, includeOverlays: false }));
+    let overlappingNodeLabels = 0;
+    for (let i = 0; i < boxes.length; i++) for (let j = i + 1; j < boxes.length; j++) {
+      const a = boxes[i], b = boxes[j];
+      if (Math.min(a.x2, b.x2) > Math.max(a.x1, b.x1) && Math.min(a.y2, b.y2) > Math.max(a.y1, b.y1)) overlappingNodeLabels++;
+    }
+    return { viewportWidth: container.clientWidth, minimumRenderedNodeFont: Math.min(...cy.nodes().map(node => Number(node.style('font-size').replace('px', '')) * cy.zoom())), overlappingNodeLabels };
+  });
+  assert.equal(graphGeometry.overlappingNodeLabels, 0, 'default graph fit must keep node labels separate');
+  assert.ok(graphGeometry.minimumRenderedNodeFont >= 8, `default graph text too small: ${JSON.stringify(graphGeometry)}`);
   await scan('agent explanation');
   await page.getByLabel('Resource selector').fill('out-of-scope');
   assert.equal(await page.getByText('Execution remains unknown').isVisible(), false);
@@ -151,7 +163,7 @@ try {
   await scan('company signed out');
   assert.deepEqual(errors, []);
   const report = { kind: 'synthetic-inventory-real-map-gateways', browserEngine, browserVersion: browser.version(), axe: await page.evaluate(() => window.axe.version),
-    scanned: scans, mobileViews: 4, failedFilterHidesStaleResults: true, inventoryRetrySucceeded: true, bearerDenialClearedEvidence: true,
+    scanned: scans, mobileViews: 4, graphGeometry, failedFilterHidesStaleResults: true, inventoryRetrySucceeded: true, bearerDenialClearedEvidence: true,
     oidcExchange: 'local signed fixture', companyRevocationClearedEvidence: true, companySignoutClearedEvidence: true };
   if (screenshotDirectory) await writeFile(join(screenshotDirectory, 'map-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));

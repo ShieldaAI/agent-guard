@@ -118,3 +118,24 @@ test('setup explicitly distinguishes legacy recovery and unreported host verific
     } else assert.deepEqual(recovery, { mode: 'unverified', verifiedAt: null });
   }
 });
+
+test('pagination accepts only exact fields and rejects reserved, duplicate and malformed query keys', async t => {
+  const fixture = await httpsSetup(t), operator = await fixture.login();
+  const prototypeKeys = Object.getOwnPropertyNames(Object.prototype);
+  for (const path of ['/api/tickets', '/api/requests']) {
+    for (const query of ['offset=0&limit=1', 'limit=1&offset=0']) {
+      const result = await operator.get(`${path}?${query}`);
+      assert.equal(result.status, 200, result.text);
+      assert.equal(result.json().offset, 0); assert.equal(result.json().limit, 1);
+    }
+    for (const query of ['__proto__=1', 'constructor=1', 'prototype=1', 'toString=1',
+      '%5F%5Fproto%5F%5F=1', 'offset%5B__proto__%5D=1', 'offset=0&offset=1', 'limit=1&limit=2',
+      'Offset=0', 'offset=-1', 'offset=01', 'offset=1.0', 'offset=1e2', 'limit=0', 'limit=501']) {
+      const result = await operator.get(`${path}?${query}`);
+      assert.equal(result.status, 400, `${path}?${query}: ${result.text}`);
+      assert.equal(result.json().error.code, ['limit=0', 'limit=501'].includes(query) ? 'PAGINATION_INVALID' : 'INVALID_INPUT');
+    }
+  }
+  assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), prototypeKeys);
+  assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 1);
+});

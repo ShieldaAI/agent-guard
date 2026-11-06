@@ -3,10 +3,10 @@ import { cpSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } f
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { trustedNpmCli } from './trusted-npm.mjs';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
-const npmCli = process.env.npm_execpath;
-if (!npmCli) throw new Error('Run this script through npm run test:pack.');
+const npmCli = trustedNpmCli();
 const temp = mkdtempSync(join(tmpdir(), 'agent-guard-pack-'));
 function run(command, args, cwd) {
   const result = spawnSync(command, args, { cwd, encoding: 'utf8' });

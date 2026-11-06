@@ -1,9 +1,9 @@
 import { spawnSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { trustedNpmCli } from './trusted-npm.mjs';
 const root = fileURLToPath(new URL('../', import.meta.url));
-const npmCli = process.env.npm_execpath;
-if (!npmCli) throw new Error('Run this script through npm run pack.');
+const npmCli = trustedNpmCli();
 mkdirSync(new URL('../artifacts/', import.meta.url), { recursive: true });
 for (const workspace of ['packages/core', 'packages/mcp', 'packages/scenarios', 'packages/executor', 'packages/agent-map']) {
   const result = spawnSync(process.execPath, [npmCli, 'pack', '--ignore-scripts', '--workspace', workspace, '--pack-destination', 'artifacts'], { cwd: root, stdio: 'inherit' });

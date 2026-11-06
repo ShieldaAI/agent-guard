@@ -40,4 +40,18 @@ test('the actual local health probe verifies hostname in addition to the pinned 
   writeFileSync(configFile, JSON.stringify({ ...config, publicOrigin: `https://foreign-company.invalid:${port}` }));
   await assert.rejects(promisify(execFile)(process.execPath, [probe, configFile], { timeout: 5000 }), { code: 1 });
   assert.equal(probes, 1, 'invalid configured hostname must fail before probing readiness');
+  const foreign = await createTestIdentityProvider(t);
+  writeFileSync(certFile, foreign.cert);
+  writeFileSync(configFile, JSON.stringify(config));
+  await assert.rejects(promisify(execFile)(process.execPath, [probe, configFile], { timeout: 5000 }), { code: 1 });
+  assert.equal(probes, 1, 'a different certificate for the same hostname must fail before the HTTP request');
+  server.setSecureContext({ cert: foreign.cert, key: foreign.key });
+  writeFileSync(certFile, provider.cert + '\n' + foreign.ca);
+  await assert.rejects(promisify(execFile)(process.execPath, [probe, configFile], { timeout: 5000 }), { code: 1 });
+  assert.equal(probes, 1, 'even a trusted same-host chain cannot bypass the exact leaf pin before HTTP dispatch');
+  server.setSecureContext({ cert: provider.cert, key: provider.key });
+  writeFileSync(certFile, provider.cert);
+  writeFileSync(configFile, JSON.stringify({ ...config, port: '443/service' }));
+  await assert.rejects(promisify(execFile)(process.execPath, [probe, configFile], { timeout: 5000 }), { code: 1 });
+  assert.equal(probes, 1, 'the fixed loopback probe accepts only a numeric TCP port');
 });

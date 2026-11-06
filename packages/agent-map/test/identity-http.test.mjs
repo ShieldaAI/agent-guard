@@ -4,6 +4,7 @@ import { request as httpsRequest } from 'node:https';
 import { request as httpRequest } from 'node:http';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { X509Certificate } from 'node:crypto';
+import { constants } from 'node:fs';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -155,11 +156,17 @@ test('IdP top-level redirects can load only the public shell; protected routes k
   const directory = await mkdtemp(join(tmpdir(), 'map-public-shell-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
   for (const [file, content] of [['index.html', '<!doctype html><title>Public shell</title>'], ['app.js', '/* public script */'], ['app.css', '/* public style */']]) await writeFile(join(directory, file), content, { mode: 0o600 });
-  const s = await setup(t, { viewerDirectory: directory });
+  const assetOpensSupported = typeof constants.O_NONBLOCK === 'number' && typeof constants.O_NOFOLLOW === 'number';
+  // Windows supports the API gateway, but cannot serve the POSIX asset profile.
+  // Exercise its explicit startup refusal and still check every protected route.
+  if (!assetOpensSupported) await assert.rejects(setup(t, { viewerDirectory: directory }), { code: 'MAP_CONFIG_INVALID' });
+  const s = await setup(t, assetOpensSupported ? { viewerDirectory: directory } : {});
   const navigation = { 'Sec-Fetch-Site': 'cross-site', 'Sec-Fetch-Mode': 'navigate', 'Sec-Fetch-Dest': 'document' };
   for (const path of ['/', '/?auth_error=1']) {
     const page = await s.client.send(path, { headers: navigation });
-    assert.equal(page.status, 200); assert.equal(page.text, '<!doctype html><title>Public shell</title>');
+    assert.equal(page.status, assetOpensSupported ? 200 : 403);
+    if (assetOpensSupported) assert.equal(page.text, '<!doctype html><title>Public shell</title>');
+    else assert.equal(page.data.error, 'MAP_REQUEST_DENIED');
     assert.equal(page.setCookies.length, 0);
   }
   assert.equal((await s.client.send('/?code=do-not-reflect', { headers: navigation })).status, 400);

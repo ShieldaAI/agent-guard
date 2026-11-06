@@ -55,8 +55,15 @@ export function validateIdentityEnrollment(bindings, agents = []) {
 function pageScope(url) {
   const page = {};
   for (const [key, value] of url.searchParams) {
-    if (!['offset', 'limit'].includes(key) || Object.hasOwn(page, key) || !/^(0|[1-9][0-9]{0,5})$/.test(value)) fail('INVALID_INPUT');
-    page[key] = Number(value);
+    if (!/^(0|[1-9][0-9]{0,5})$/.test(value)) fail('INVALID_INPUT');
+    // Assign only literal fields: request keys never select object properties.
+    if (key === 'offset') {
+      if (Object.hasOwn(page, 'offset')) fail('INVALID_INPUT');
+      page.offset = Number(value);
+    } else if (key === 'limit') {
+      if (Object.hasOwn(page, 'limit')) fail('INVALID_INPUT');
+      page.limit = Number(value);
+    } else fail('INVALID_INPUT');
   }
   return page;
 }
