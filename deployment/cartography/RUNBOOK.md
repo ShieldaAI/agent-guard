@@ -184,23 +184,31 @@ volumes. Local measurements do not establish a completed hosted CI run.
 The configured acceptance profile measures the uninstrumented full admission
 workload on native Linux/cgroup v2 with one logical CPU, a one-CPU bandwidth quota,
 512 MiB memory, no extra swap, 128 PIDs, a 100 ms CPU period and zero burst.
-It explicitly selects `workerScheduling: 'linux-background'`; the new candidate
-uses a fixed relative nice increase of 10, clamped at 19, for the worker's own
-native JavaScript thread. Default scheduling and owner priority are unchanged;
-no V8 helper/GC priority or real-time guarantee is implied.
+It explicitly selects `workerScheduling: 'linux-background'` with a fixed relative
+nice increase of 5, clamped at 19, for the worker's own native JavaScript thread.
+Default scheduling and owner priority are unchanged; no V8 helper/GC priority or
+real-time guarantee is implied.
 
-**6 November checkpoint: +10 qualification pending.** Historical `f28b8e2` used
-+5 and passed two native runs at 6.863%/8.003% and ordinary full admission at
-0.204%. The required `b18b749` follow-up used identical runtime and all 94 staged
-inputs but failed at 10.667%, despite all 1,200 effects and 161 polls with zero
-failed/skipped polls. Its six ordinary workflows passed; its smoke result is
-ineligible for acceptance. The [evidence record](../../docs/validation/one-cpu-observer-2026-11-06.json)
-retains every earlier passing and failed attempt. Lower relative CPU share may
-reduce read-only observer interference during bursts; this is a candidate
-rationale, not proof of the failures' cause or a demonstrated fix.
+**6 November checkpoint: new own-field candidate pending.** The rejected +10
+candidate `b4bf2ce` passed all six ordinary workflows and 11 CI jobs, but all three
+required native runs failed cold-poll cadence: two busy skips each, with zero
+failed polls and all 1,200 effects. Their numerical overheads were 7.356%, 5.527%
+and 11.890%; the third also exceeded the 10% bound. Ordinary full graph/admission
+passed at 6.883%, which does not replace the native failures. Historical +5
+`f28b8e2` passes and the byte-identical `b18b749` 10.667% failure remain retained
+in the [evidence record](../../docs/validation/one-cpu-observer-2026-11-06.json).
 
-For +10, three native runs (automatic plus two manual) and one ordinary full
-graph/admission run are declared before outcomes; **all four are required**.
+The new candidate restores +5 and reduces own-field inspection work only inside
+the private core observer's fresh authenticated JSON projection. Authority reads,
+mirror checks, host/MCP paths and external metadata validation remain unchanged;
+there is no staged priority, synthetic prewarming or authority/response cache.
+A local prototype passed ten differential checks and reduced measured component
+CPU about 8%/9% on two fixtures. It does not establish whole-admission margin,
+cold-poll behavior or the cause of earlier failures.
+
+For the changed implementation, three native runs (automatic plus two manual)
+and one ordinary full graph/admission run are declared before outcomes;
+**all four are required**.
 Keep cold first polls, 250 ms cadence, every sample, original deadlines and the
 10% p95 bound unchanged. Do not retry or substitute results. Later source-bound
 outcomes are retained on [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
@@ -242,7 +250,7 @@ historical quota-only comparisons; no default resource cap or threshold changes.
 
 Select `--worker-scheduling linux-background` explicitly for configured admission
 qualification. The trusted host option lowers only the observer worker's native
-JavaScript-thread priority by up to ten nice points, capped at 19. Startup and private
+JavaScript-thread priority by up to five nice points, capped at 19. Startup and private
 before/after evidence verify readback and unchanged owner priority; GC/helper
 thread priorities are not claimed. Unsupported hosts or failed verification refuse
 the mode without fallback. Generic CLI/SDK calls retain `default`, and manual
@@ -289,13 +297,12 @@ qualifications above and all six ordinary workflows/11 CI jobs. The
 retains raw evidence, prior failures and the unchanged deployment limits. A
 documentation-only follow-up `b18b749` preserved runtime, staged inputs and package
 payloads; its ordinary workflows passed but its required native gate failed.
-Historical +5 results do not qualify the new +10 policy or replace the Node update.
-The separate identifier-cache prototype was rejected and is not adopted; the
-new +10 policy is awaiting qualification at this checkpoint. Prototype
-measurements and the separate owner-profile diagnostic cannot qualify it.
-This scheduling change
-does not alter the immediate first poll, cadence, resource limits or acceptance
-gates, and is not a real-time guarantee or a change to every SDK embedding.
+The +10 `b4bf2ce` ordinary checks also passed, while its required native failures
+remain retained above. The separate identifier-cache prototype was rejected and
+is not adopted. The new +5 own-field candidate requires fresh qualification;
+prototype measurements and owner-profile diagnostics cannot qualify it. The
+immediate first poll, cadence, resource limits and acceptance gates are unchanged,
+and no real-time guarantee or change to every SDK embedding is implied.
 
 ### Matching the observer-owning service
 

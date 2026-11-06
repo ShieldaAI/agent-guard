@@ -1,6 +1,7 @@
 import { createHmac, randomUUID } from 'node:crypto';
 import type { ToolDefinition } from '@shieldaai/agent-guard';
-import { ExecutorError, type InventoryLedgerState } from './store.js';
+import { ExecutorError, decodeCoreInventoryObservation, type InventoryLedgerState } from './store.js';
+import type { LedgerObservation } from './inventory-observer.js';
 
 /** Trusted host enrollment; changing it creates a separate collector source. */
 export interface InventorySourceOptions {
@@ -71,6 +72,19 @@ function field(value: unknown, name: string, code = STATE): unknown {
   if (!('value' in descriptor)) return fail(code);
   return descriptor.value;
 }
+// These readers may inspect ONLY descendants of the fresh JSON parsed inside
+// projectCoreInventoryObservation. No caller state, callback, brand or option
+// selects this path; source/scope/registrations always retain field() above.
+function parsedRecord(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) return fail();
+  return value as Record<string, unknown>;
+}
+function parsedField(value: unknown, name: string): unknown {
+  const object = parsedRecord(value);
+  return Object.hasOwn(object, name) ? object[name] : undefined;
+}
+const descriptorStateReader = Object.freeze({ record, field });
+const parsedStateReader = Object.freeze({ record: parsedRecord, field: parsedField });
 function identifier(value: unknown, code = STATE): string {
   if (typeof value !== 'string' || /^[\s\u001c-\u001f\u0085]*$/u.test(value) || value.includes('\0') ||
       // Reject unpaired surrogates: the Python consumer requires UTF-8 scalar values.
@@ -283,7 +297,9 @@ function constructInventory(
   scope: InventoryScope,
   generatedAt: number,
   referenceKey?: Uint8Array,
+  stateReader = descriptorStateReader,
 ): InventorySnapshot {
+  const stateRecord = stateReader.record, stateField = stateReader.field;
   const enrollment = validateInventorySource(source);
   const scopeCode = 'INVENTORY_SCOPE_INVALID';
   closed(scope, ['tenantId'], scopeCode);
@@ -311,23 +327,23 @@ function constructInventory(
   const tasks: InventoryTask[] = [];
   const names = new Set<string>();
   let selectors = 0;
-  const storedTasks = record(field(state, 'tasks'));
-  const families = record(field(state, 'families'));
+  const storedTasks = stateRecord(stateField(state, 'tasks'));
+  const families = stateRecord(stateField(state, 'families'));
   for (const key of Object.keys(storedTasks).sort()) {
-    const stored = field(storedTasks, key);
-    const options = field(stored, 'options');
+    const stored = stateField(storedTasks, key);
+    const options = stateField(stored, 'options');
     // Tenant membership must be known before claiming complete coverage.
-    const taskTenant = identifier(field(options, 'tenantId'));
+    const taskTenant = identifier(stateField(options, 'tenantId'));
     if (taskTenant !== tenantId) continue;
     limited(tasks.length + 1, 10_000);
-    const taskId = identifier(field(options, 'id'));
+    const taskId = identifier(stateField(options, 'id'));
     if (taskId !== key) fail();
-    const familyId = identifier(field(stored, 'family'));
+    const familyId = identifier(stateField(stored, 'family'));
     const grants = new Map<string, Set<string>>();
-    for (const raw of array(field(options, 'grants'))) {
-      const tool = identifier(field(raw, 'tool'));
+    for (const raw of array(stateField(options, 'grants'))) {
+      const tool = identifier(stateField(raw, 'tool'));
       const resources = grants.get(tool) ?? new Set<string>();
-      for (const resource of array(field(raw, 'resources'))) {
+      for (const resource of array(stateField(raw, 'resources'))) {
         resources.add(identifier(resource)); limited(resources.size, 1024);
       }
       grants.set(tool, resources); limited(grants.size, 2048); names.add(tool);
@@ -336,42 +352,42 @@ function constructInventory(
       selectors += resources.size; limited(selectors, MAX_SELECTORS);
       return { tool, resources: [...resources].map(value => reference('resource', value)).sort() };
     });
-    const rawBudget = field(options, 'budget');
-    const deadline = field(rawBudget, 'deadline');
+    const rawBudget = stateField(options, 'budget');
+    const deadline = stateField(rawBudget, 'deadline');
     if (typeof deadline !== 'number' || !Number.isFinite(deadline) || deadline < 0 || deadline > Number.MAX_SAFE_INTEGER) fail();
-    const parent = field(stored, 'parent');
-    const provenance = field(stored, 'sourceTaskId');
+    const parent = stateField(stored, 'parent');
+    const provenance = stateField(stored, 'sourceTaskId');
     tasks.push({
-      id: taskId, tenantId, principalId: identifier(field(options, 'principalId')),
+      id: taskId, tenantId, principalId: identifier(stateField(options, 'principalId')),
       parentTaskId: parent === null ? null : identifier(parent),
       sourceTaskId: provenance === undefined ? null : identifier(provenance),
       familyId, grants: normalized,
-      budget: { maxCalls: integer(field(rawBudget, 'maxCalls')), maxConcurrent: integer(field(rawBudget, 'maxConcurrent')),
-        maxCost: integer(field(rawBudget, 'maxCost')), deadline },
-      allowedRecipients: strings(field(options, 'allowedRecipients') ?? [], 1024).map(value => reference('recipient', value)).sort(),
-      allowControlPlane: optionalBoolean(field(options, 'allowControlPlane')),
-      revoked: boolean(field(stored, 'revoked')), sensitive: boolean(field(field(families, familyId), 'sensitive')),
-      usage: { calls: integer(field(stored, 'calls')), concurrent: integer(field(stored, 'concurrent')),
-        spent: integer(field(stored, 'spent')), reserved: integer(field(stored, 'reserved')) },
+      budget: { maxCalls: integer(stateField(rawBudget, 'maxCalls')), maxConcurrent: integer(stateField(rawBudget, 'maxConcurrent')),
+        maxCost: integer(stateField(rawBudget, 'maxCost')), deadline },
+      allowedRecipients: strings(stateField(options, 'allowedRecipients') ?? [], 1024).map(value => reference('recipient', value)).sort(),
+      allowControlPlane: optionalBoolean(stateField(options, 'allowControlPlane')),
+      revoked: boolean(stateField(stored, 'revoked')), sensitive: boolean(stateField(stateField(families, familyId), 'sensitive')),
+      usage: { calls: integer(stateField(stored, 'calls')), concurrent: integer(stateField(stored, 'concurrent')),
+        spent: integer(stateField(stored, 'spent')), reserved: integer(stateField(stored, 'reserved')) },
     });
   }
   relations(tasks);
   const tools: InventoryTool[] = [];
-  const storedTools = record(field(state, 'tools'));
+  const storedTools = stateRecord(stateField(state, 'tools'));
   for (const name of [...names].sort()) {
-    const stored = field(storedTools, name);
+    const stored = stateField(storedTools, name);
     if (stored === undefined) continue; // An unresolved grant is not invented tool metadata.
     limited(tools.length + 1, 10_000);
-    const storedFingerprint = field(stored, 'fingerprint');
+    const storedFingerprint = stateField(stored, 'fingerprint');
     if (typeof storedFingerprint !== 'string' || !/^(?:sha256:)?[a-f0-9]{64}$/.test(storedFingerprint)) fail();
     // Agent Guard's native fingerprint includes the algorithm; inventory v1 fixes SHA-256.
     const fingerprint = storedFingerprint.replace(/^sha256:/, '');
-    const revision = integer(field(stored, 'revision'));
+    const revision = integer(stateField(stored, 'revision'));
     const registration = live.get(name);
     const registered = registration !== undefined && field(registration, 'fingerprint') === storedFingerprint &&
       field(registration, 'revision') === revision;
     const definition = registered ? field(registration, 'definition') : undefined;
-    tools.push({ name, fingerprint, revision, registered, approved: boolean(field(stored, 'approved')),
+    tools.push({ name, fingerprint, revision, registered, approved: boolean(stateField(stored, 'approved')),
       requiresApproval: registered ? optionalBoolean(field(definition, 'requiresApproval')) : null,
       controlPlane: registered ? optionalBoolean(field(definition, 'controlPlane')) : null,
       maxCost: registered ? integer(field(definition, 'maxCost') ?? 0) : null });
@@ -380,9 +396,9 @@ function constructInventory(
     schemaVersion: 1, profile: 'core',
     source: { companyId: enrollment.companyId, sourceId: enrollment.sourceId,
       enrollmentGeneration: enrollment.enrollmentGeneration,
-      inventoryInstanceId: identifier(field(state, 'inventoryInstanceId')), tenantId },
+      inventoryInstanceId: identifier(stateField(state, 'inventoryInstanceId')), tenantId },
     snapshotId: randomUUID(), generatedAt: timestamp,
-    ledgerRevision: integer(field(state, 'revision')), policyEpoch: integer(field(state, 'epoch')),
+    ledgerRevision: integer(stateField(state, 'revision')), policyEpoch: integer(stateField(state, 'epoch')),
     coverage: { tasks: { status: 'complete', observedAt: timestamp }, tools: { status: 'complete', observedAt: timestamp },
       manifest: { status: 'not_collected' }, mcp: { status: 'not_collected' }, cloud: { status: 'not_collected' } },
     tasks, tools,
@@ -424,6 +440,33 @@ export function projectInventoryJson(
   referenceKey?: Uint8Array,
 ): InventoryJson {
   const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey);
+  try {
+    const { json, bytes } = serializeConstructedInventory(snapshot);
+    return Object.freeze({ json, bytes, profile: snapshot.profile, source: Object.freeze(snapshot.source) });
+  } catch { return fail('INVENTORY_LIMIT_EXCEEDED'); }
+}
+
+/**
+ * Private fixed-worker entry: fresh authenticated ciphertext to detached core JSON.
+ * Parsed state never escapes or enters a caller callback. Only this stack selects
+ * the own-field reader; authority, synchronous and host/MCP paths keep descriptors.
+ */
+export function projectCoreInventoryObservation(
+  ledger: LedgerObservation,
+  live: ReadonlyMap<string, InventoryRegistration>,
+  source: InventorySourceOptions,
+  scope: InventoryScope,
+  generatedAt: number,
+  referenceKey?: Uint8Array,
+): InventoryJson {
+  if (!(ledger.key instanceof Uint8Array) || ledger.key.byteLength !== 32 || typeof ledger.payload !== 'string' ||
+      ledger.payload.length > ledger.maxBytes * 2 + 512) throw new Error();
+  const state = decodeCoreInventoryObservation(ledger.payload, ledger.key, ledger.maxBytes, ledger.witnessed);
+  const mode = (state as typeof state & { recoveryMirror?: unknown }).recoveryMirror;
+  // A fresh owner-verified mirror capture is mandatory for all mirror semantics.
+  if ((mode !== undefined || state.schema === 3 || ledger.mirror) &&
+      (!ledger.witnessed || !ledger.mirror || mode !== 1 || state.schema !== 3)) throw new Error();
+  const snapshot = constructInventory(state, live, source, scope, generatedAt, referenceKey, parsedStateReader);
   try {
     const { json, bytes } = serializeConstructedInventory(snapshot);
     return Object.freeze({ json, bytes, profile: snapshot.profile, source: Object.freeze(snapshot.source) });

@@ -9,18 +9,35 @@ The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2
 one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
 burst, 512 MiB memory, no extra swap and 128 PIDs. The new configured candidate
 also explicitly selects `workerScheduling: 'linux-background'`: only the observer
-worker's native JavaScript-thread priority is lowered by up to ten nice points, capped at 19,
-with verified readback and unchanged owner priority. No GC/helper-thread priority
-change is claimed. Generic SDK/CLI defaults remain unchanged. This new +10
-candidate is unqualified at the 6 November checkpoint; earlier +5 results do not
-transfer to it. Lower observer CPU share may reduce burst interference, but that
-is a rationale to test, not an established historical cause or fix. Later results
-belong to their exact source on [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
-Three native runs and one ordinary full graph/admission run are declared before
-outcomes for +10, with all four required and no changed limits or retries.
-The +10 candidate passed the full local `npm run check`: **1,319/1,319 tests,
-zero skips, plus all installed-package consumers**. Hosted candidate checks and
-all four performance qualifications remain pending.
+worker's native JavaScript-thread priority is lowered by up to five nice points,
+capped at 19, with verified readback and unchanged owner priority. No GC/helper
+priority or real-time guarantee is claimed. Generic SDK/CLI defaults are unchanged.
+
+**6 November checkpoint:** the +10 `b4bf2ce` candidate is rejected after all three
+required native runs failed cold-poll cadence (two busy skips each, zero failed
+polls, all 1,200 effects). Numerical overhead was 7.356%, 5.527% and 11.890%; the
+third also exceeded the ratio limit. Ordinary full graph/admission passed at
+6.883%, but does not replace those failures. All six ordinary workflows and
+11 CI jobs passed, including 195 browser scans, 45 no-skip isolation checks and
+Python 1,022 unit/150 integration tests; platform skips remain recorded. Its local
+full check passed 1,319/1,319 with zero skips and installed consumers.
+
+The new candidate restores +5 and reduces own-field inspection only inside the
+sealed core observer's fresh authenticated JSON projection. Authority reads,
+mirror checks, host/MCP and descriptor validation of external metadata remain
+unchanged. No staged priority, synthetic prewarming or authority cache is adopted.
+Ten prototype checks passed; one local component experiment reduced CPU by
+7.95%/9.32% on repeated/unique fixtures, about 0.25 ms per repeated observation.
+The factored production implementation passed 306 inventory checks, including
+ten new sealed-path checks. Its one ABBA confirmation reduced component CPU
+7.65%/10.56%; repeated-fixture total wall time regressed 5.17%, while unique-fixture
+wall time improved 18.38%. Every sample is retained. This is not overall latency
+qualification or proof of the prior failures' cause. The changed implementation
+passed the full local `npm run check`: **1,329/1,329 tests, zero skips, plus all
+installed-package consumers**. Hosted verification and qualification remain pending. Three native
+runs and one ordinary full graph/admission run are declared before outcomes;
+all four must pass unchanged gates. Later source-bound results belong on
+[PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
 The controlled exact-source
 `e4e42f` run passed the unchanged 10% gate at 7.2766% overhead, with 1,200 effects,
 149 polls and no failed/skipped polls. Quota-only native runs failed at 13.31–14.89%;
@@ -48,8 +65,9 @@ effects and 431 polls completed with zero failures/skips; full graph, live recov
 controls and cleanup passed. The required `b18b749` native follow-up had identical
 runtime and all 94 staged inputs, but failed at **10.667%**: 1,200 effects and
 161 polls, zero failures/skips, verified controls and cleanup. The earlier passes
-did not establish repeatable margin. The new +10 candidate's qualification is
-pending; the Node security hold and fixed-runtime requalification remain open.
+did not establish repeatable margin. The later +10 failures and new +5 own-field
+candidate are recorded above. The Node security hold and fixed-runtime
+requalification remain open.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second

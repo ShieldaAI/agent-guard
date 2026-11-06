@@ -24,7 +24,7 @@ export function validateSchedulingReading(value, requested) {
   assert.equal(value.mode, 'linux-background'); assert.equal(value.verified, true);
   assert.ok(tid(value.workerTid) && tid(value.ownerTid) && value.workerTid !== value.ownerTid);
   for (const name of ['beforeNice', 'afterNice', 'currentNice', 'ownerBeforeNice', 'ownerCurrentNice']) assert.ok(nice(value[name]));
-  assert.equal(value.afterNice, Math.min(19, value.beforeNice + 10));
+  assert.equal(value.afterNice, Math.min(19, value.beforeNice + 5));
   assert.equal(value.currentNice, value.afterNice);
   assert.equal(value.ownerCurrentNice, value.ownerBeforeNice);
 }

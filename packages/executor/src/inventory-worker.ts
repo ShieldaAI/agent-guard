@@ -1,8 +1,8 @@
 /** Fixed private observer entrypoint. No database, network, host callbacks or inherited environment. */
 import { parentPort, workerData } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
-import { ExecutorError, decodeLedgerObservation, decodeCoreInventoryObservation } from './store.js';
-import { projectInventory, projectInventoryJson } from './inventory.js';
+import { ExecutorError, decodeLedgerObservation } from './store.js';
+import { projectInventory, projectCoreInventoryObservation } from './inventory.js';
 import { composeInventorySnapshot, type HostInventorySnapshot } from './inventory-manifest.js';
 import { projectCapturedMcp, finishCapturedMcp, type McpRecheck } from './inventory-mcp-capture.js';
 import type { McpInventorySnapshot } from './inventory-mcp.js';
@@ -46,20 +46,19 @@ port.on('message', (message: WorkerObservation | { type: 'mcp-after'; id: number
   try {
     if (pending) throw new Error();
     const { ledger, metadata } = message;
-    if (!(ledger.key instanceof Uint8Array) || ledger.key.byteLength !== 32 || typeof ledger.payload !== 'string' ||
-        ledger.payload.length > ledger.maxBytes * 2 + 512) throw new Error();
-    const decode = message.profile === 'core' ? decodeCoreInventoryObservation : decodeLedgerObservation;
-    const state = decode(ledger.payload, ledger.key, ledger.maxBytes, ledger.witnessed);
-    const mode = (state as typeof state & { recoveryMirror?: unknown }).recoveryMirror;
-    // The owner checked the exact current mirror bytes. A decrypted state may not
-    // introduce mirror semantics that were absent from that verified capture.
-    if ((mode !== undefined || state.schema === 3 || ledger.mirror) &&
-        (!ledger.witnessed || !ledger.mirror || mode !== 1 || state.schema !== 3)) throw new Error();
     if (message.profile === 'core') {
-      const core = projectInventoryJson(state, new Map(metadata.registrations), metadata.source, message.scope,
+      const core = projectCoreInventoryObservation(ledger, new Map(metadata.registrations), metadata.source, message.scope,
         message.generatedAt, metadata.referenceKey);
       publish(message, core, core);
     } else {
+      if (!(ledger.key instanceof Uint8Array) || ledger.key.byteLength !== 32 || typeof ledger.payload !== 'string' ||
+          ledger.payload.length > ledger.maxBytes * 2 + 512) throw new Error();
+      const state = decodeLedgerObservation(ledger.payload, ledger.key, ledger.maxBytes, ledger.witnessed);
+      const mode = (state as typeof state & { recoveryMirror?: unknown }).recoveryMirror;
+      // The owner checked the exact current mirror bytes. A decrypted state may not
+      // introduce mirror semantics that were absent from that verified capture.
+      if ((mode !== undefined || state.schema === 3 || ledger.mirror) &&
+          (!ledger.witnessed || !ledger.mirror || mode !== 1 || state.schema !== 3)) throw new Error();
       const core = projectInventory(state, new Map(metadata.registrations), metadata.source, message.scope,
         message.generatedAt, metadata.referenceKey);
       if (!message.manifest) throw new Error();

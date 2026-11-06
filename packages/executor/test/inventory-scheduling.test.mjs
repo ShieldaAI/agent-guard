@@ -40,7 +40,7 @@ test('worker scheduling is a private opt-in; default never reads or changes nati
 test('native priority selection is lower-only, bounded, and targets the validated native thread', async () => {
   for (const name of ['valid', 'negative', 'clamp', 'lowest', 'chunked']) {
     const result = await fixtureResult({ case: name });
-    const target = Math.min(19, result.initialNice + 10);
+    const target = Math.min(19, result.initialNice + 5);
     assert.equal(result.code, null, name);
     assert.deepEqual(result.evidence, { mode: 'linux-background', workerTid: result.tid, beforeNice: result.initialNice, afterNice: target });
     assert.ok(result.calls.every(id => id === result.tid));
@@ -51,14 +51,14 @@ test('native priority selection is lower-only, bounded, and targets the validate
 
 test('unavailable or ambiguous native scheduling fails closed with fixed errors and bounded descriptor reads', async () => {
   for (const name of ['nonlinux', 'empty', 'missing', 'duplicate', 'wrong-group', 'main-tid', 'zero', 'negative-id',
-    'leading-zero', 'overflow', 'oversize', 'open-failure', 'read-failure', 'bad-nice', 'nan-nice', 'changed-tid', 'set-failure', 'readback-failure', 'old-policy-readback']) {
+    'leading-zero', 'overflow', 'oversize', 'open-failure', 'read-failure', 'bad-nice', 'nan-nice', 'changed-tid', 'set-failure', 'readback-failure', 'wrong-policy-readback']) {
     const result = await fixtureResult({ case: name });
     assert.equal(result.code, 'INVENTORY_SCHEDULING_UNAVAILABLE', name);
     assert.equal(result.message, 'INVENTORY_SCHEDULING_UNAVAILABLE', name);
     assert.equal(result.evidence, null, name);
     assert.equal(result.closed, result.opened - (name === 'open-failure' ? 1 : 0), name);
     assert.ok(result.reads <= 4, name);
-    if (!['changed-tid', 'set-failure', 'readback-failure', 'old-policy-readback'].includes(name)) assert.deepEqual(result.setCalls, [], name);
+    if (!['changed-tid', 'set-failure', 'readback-failure', 'wrong-policy-readback'].includes(name)) assert.deepEqual(result.setCalls, [], name);
   }
   assert.throws(() => configureInventoryWorkerScheduling('linux-background'), { code: 'INVENTORY_SCHEDULING_UNAVAILABLE' });
   assert.throws(() => configureInventoryWorkerScheduling('private-invalid'), { code: 'INVENTORY_SCHEDULING_UNAVAILABLE' });
@@ -84,7 +84,7 @@ test('native Linux worker policy preserves owner and unrelated thread priority, 
   const owner = executor(t), session = await createInventoryObservationSession(owner, 'linux-background'); t.after(() => session.close());
   const first = readInventoryWorkerScheduling(owner);
   assert.equal(first.verified, true); assert.notEqual(first.workerTid, before.tid); assert.notEqual(first.workerTid, otherBefore.after.tid);
-  assert.equal(first.afterNice, Math.min(19, first.beforeNice + 10)); assert.equal(first.currentNice, first.afterNice);
+  assert.equal(first.afterNice, Math.min(19, first.beforeNice + 5)); assert.equal(first.currentNice, first.afterNice);
   assert.equal(first.ownerBeforeNice, before.nice); assert.equal(first.ownerCurrentNice, before.nice);
   const originalPriority = os.getPriority;
   const prioritySpy = t.mock.method(os, 'getPriority', tid => tid === before.tid ? (before.nice === 19 ? 18 : before.nice + 1) : originalPriority(tid));
@@ -102,7 +102,7 @@ test('native Linux worker policy preserves owner and unrelated thread priority, 
   });
   await assert.rejects(session.snapshot(request()), { code: 'INVENTORY_UNAVAILABLE' }); spy.mock.restore();
   await session.snapshot(request()); const replacement = readInventoryWorkerScheduling(owner);
-  assert.equal(replacement.mode, 'linux-background'); assert.equal(replacement.currentNice, Math.min(19, replacement.beforeNice + 10));
+  assert.equal(replacement.mode, 'linux-background'); assert.equal(replacement.currentNice, Math.min(19, replacement.beforeNice + 5));
   assert.equal(replacement.ownerCurrentNice, before.nice);
   const otherPending = once(unrelated, 'message'); unrelated.postMessage('read'); const [otherAfter] = await otherPending;
   assert.deepEqual(otherAfter, otherBefore.after); assert.deepEqual(currentLinuxThreadPriority(), before);
@@ -119,7 +119,7 @@ test('background readiness proof cannot open HTTP before its exact native policy
   let stopped = 0, listened = 0;
   const cleanup = t.mock.method(Worker.prototype, 'terminate', function () { return terminate.call(this).then(value => { stopped++; return value; }); });
   const listener = t.mock.method(Server.prototype, 'listen', function (...args) { listened++; return listen.apply(this, args); });
-  for (const change of [{ workerTid: process.pid }, { afterNice: -20 }, { mode: 'default' }, { beforeNice: 0, afterNice: 5 }]) {
+  for (const change of [{ workerTid: process.pid }, { afterNice: -20 }, { mode: 'default' }, { beforeNice: 0, afterNice: 10 }]) {
     const spy = t.mock.method(Worker.prototype, 'emit', function (event, ...args) {
       if (event === 'message' && args[0]?.type === 'ready') args[0] = { ...args[0], scheduling: { ...args[0].scheduling, ...change } };
       return emit.call(this, event, ...args);
@@ -145,10 +145,10 @@ test('background readiness proof cannot open HTTP before its exact native policy
   const ordinary = await createInventoryObservationSession(owner); await ordinary.close();
 });
 
-test('an actual old +5 native worker cannot satisfy the +10 startup contract before HTTP listens', async t => {
+test('an actual rejected +10 native worker cannot satisfy the restored +5 startup contract before HTTP listens', async t => {
   if (process.platform !== 'linux') {
-    const result = await fixtureResult({ case: 'old-policy-readback' });
-    assert.equal(result.initialNice, 0); assert.equal(result.nice, 5);
+    const result = await fixtureResult({ case: 'wrong-policy-readback' });
+    assert.equal(result.initialNice, 0); assert.equal(result.nice, 10);
     assert.equal(result.code, 'INVENTORY_SCHEDULING_UNAVAILABLE'); return;
   }
   const owner = executor(t), before = currentLinuxThreadPriority(), OriginalWorker = workerThreads.Worker;
@@ -163,7 +163,7 @@ test('an actual old +5 native worker cannot satisfy the +10 startup contract bef
   const cleanup = t.mock.method(Worker.prototype, 'terminate', function () { return terminate.call(this).then(value => { stopped++; return value; }); });
   const listener = t.mock.method(Server.prototype, 'listen', function (...args) { listened++; return listen.apply(this, args); });
   workerThreads.Worker = class extends OriginalWorker {
-    constructor(_url, options) { super(fixture, { ...options, workerData: { kind: 'legacy-five' } }); }
+    constructor(_url, options) { super(fixture, { ...options, workerData: { kind: 'wrong-ten' } }); }
   };
   try {
     syncBuiltinESMExports();
@@ -178,10 +178,10 @@ test('an actual old +5 native worker cannot satisfy the +10 startup contract bef
       const server = await start(); await server.close();
       assert.equal(listened, 1); assert.equal(stopped, 1);
     }
-    assert.equal(observed.beforeNice, before.nice); assert.equal(observed.afterNice, Math.min(19, before.nice + 5));
+    assert.equal(observed.beforeNice, before.nice); assert.equal(observed.afterNice, Math.min(19, before.nice + 10));
     assert.equal(nativeNice, observed.afterNice); assert.deepEqual(currentLinuxThreadPriority(), before);
-    t.diagnostic(JSON.stringify({ oldPolicyBeforeNice: observed.beforeNice, oldPolicyAfterNice: observed.afterNice,
-      currentPolicyAfterNice: Math.min(19, observed.beforeNice + 10), listened, terminated: stopped }));
+    t.diagnostic(JSON.stringify({ rejectedPolicyBeforeNice: observed.beforeNice, rejectedPolicyAfterNice: observed.afterNice,
+      currentPolicyAfterNice: Math.min(19, observed.beforeNice + 5), listened, terminated: stopped }));
   } finally {
     workerThreads.Worker = OriginalWorker; syncBuiltinESMExports(); ready.mock.restore(); cleanup.mock.restore(); listener.mock.restore();
   }

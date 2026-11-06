@@ -4,10 +4,10 @@ import os from 'node:os';
 import { syncBuiltinESMExports } from 'node:module';
 import { configureInventoryWorkerScheduling, currentLinuxThreadPriority } from '../../dist/inventory-scheduling.js';
 
-if (workerData.kind === 'legacy-five') {
-  // A genuine old-policy native worker, used only to challenge the owner's
+if (workerData.kind === 'wrong-ten') {
+  // A genuine rejected-policy native worker, used only to challenge the owner's
   // startup proof. No production scheduling helper or test injection API.
-  const before = currentLinuxThreadPriority(), afterNice = Math.min(19, before.nice + 5);
+  const before = currentLinuxThreadPriority(), afterNice = Math.min(19, before.nice + 10);
   if (afterNice !== before.nice) os.setPriority(before.tid, afterNice);
   parentPort.on('message', () => {});
   parentPort.postMessage({ type: 'ready', scheduling: { mode: 'linux-background', workerTid: before.tid,
@@ -53,7 +53,7 @@ if (workerData.kind === 'legacy-five') {
   os.setPriority = (id, value) => {
     setCalls.push({ id, value });
     if (name === 'set-failure') throw new Error('private-set-failure');
-    if (name === 'old-policy-readback') nice = Math.min(19, initialNice + 5);
+    if (name === 'wrong-policy-readback') nice = Math.min(19, initialNice + 10);
     else if (name !== 'readback-failure') nice = value;
   };
   syncBuiltinESMExports();

@@ -4,7 +4,7 @@ import { workerSchedulingMode, validateSchedulingReading, schedulingEvidenceVali
 import { main, runAdmissionPhase } from './benchmark-admission.mjs';
 
 const reading = (beforeNice = 0, ownerBeforeNice = 0) => ({ mode: 'linux-background', verified: true,
-  workerTid: 12, beforeNice, afterNice: Math.min(19, beforeNice + 10), currentNice: Math.min(19, beforeNice + 10),
+  workerTid: 12, beforeNice, afterNice: Math.min(19, beforeNice + 5), currentNice: Math.min(19, beforeNice + 5),
   ownerTid: 10, ownerBeforeNice, ownerCurrentNice: ownerBeforeNice });
 const phases = requested => ['baseline', 'polling', 'polling', 'baseline'].map(mode => {
   const value = requested === 'default' ? { mode: 'default', verified: false } : reading();
@@ -37,11 +37,11 @@ test('private scheduling evidence verifies lower-only clamp and unchanged owner 
   assert.throws(() => validateSchedulingReading(reading(), 'default'));
 });
 
-test('previous five-level readings cannot qualify the ten-level background policy', () => {
-  // Below the clamp, the old policy must fail even when its own readback and owner are consistent.
+test('rejected ten-level readings cannot qualify the restored five-level background policy', () => {
+  // When targets differ, the rejected policy fails even with consistent readback and owner.
   // At an initial nice >=14 both policies clamp to19; exact source binding distinguishes those runs.
   for (const beforeNice of [-20, 0, 8, 9, 10, 13]) {
-    const old = { ...reading(beforeNice), afterNice: beforeNice + 5, currentNice: beforeNice + 5 };
+    const old = { ...reading(beforeNice), afterNice: Math.min(19, beforeNice + 10), currentNice: Math.min(19, beforeNice + 10) };
     assert.throws(() => validateSchedulingReading(old, 'linux-background'));
     const previous = phases('linux-background');
     for (const phase of previous.filter(value => value.mode === 'polling')) {

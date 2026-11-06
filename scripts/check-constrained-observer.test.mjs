@@ -47,7 +47,7 @@ function admissionReport({ samples = 250, pollingCost = 1, workerScheduling = 'd
       cleanup: { worker: true, clientWorker: true, observer: true, taskServer: true, executor: true, directory: true }, polling: null };
     if (mode === 'polling') {
       const reading = workerScheduling === 'default' ? { mode: 'default', verified: false } : {
-        mode: 'linux-background', verified: true, workerTid: 12, beforeNice: 0, afterNice: 10, currentNice: 10,
+        mode: 'linux-background', verified: true, workerTid: 12, beforeNice: 0, afterNice: 5, currentNice: 5,
         ownerTid: 10, ownerBeforeNice: 0, ownerCurrentNice: 0,
       };
       phase.workerScheduling.before = { ...reading }; phase.workerScheduling.after = { ...reading };
@@ -156,11 +156,11 @@ test('explicit background policy requires exact before/after evidence without ch
   assert.throws(() => validateResources(resourceReport(false, null, 'linux-background'), {}));
   assert.equal(validateResources(resourceReport(false, null, 'linux-background'), selected).memoryPeakBytes, 2000);
 });
-test('a numerically passing report with old five-level worker evidence cannot qualify the ten-level policy', () => {
+test('a numerically passing report with rejected ten-level evidence cannot qualify the restored five-level policy', () => {
   const selected = { workerScheduling: 'linux-background' }, old = admissionReport(selected);
   for (const phase of old.phases.filter(value => value.mode === 'polling')) {
     for (const reading of [phase.workerScheduling.before, phase.workerScheduling.after]) {
-      reading.afterNice = 5; reading.currentNice = 5;
+      reading.afterNice = 10; reading.currentNice = 10;
     }
   }
   assert.equal(admissionGate(old.phases).passed, true);

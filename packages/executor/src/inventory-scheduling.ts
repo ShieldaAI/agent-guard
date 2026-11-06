@@ -60,7 +60,7 @@ export function configureInventoryWorkerScheduling(value: unknown): WorkerSchedu
     if (isMainThread) throw schedulingUnavailable();
     const before = currentLinuxThreadPriority();
     if (before.tid === process.pid) throw schedulingUnavailable();
-    const afterNice = Math.min(19, before.nice + 10);
+    const afterNice = Math.min(19, before.nice + 5);
     // This can only lower this native thread's scheduling priority. Nice 19 is already lowest.
     if (afterNice !== before.nice) setPriority(before.tid, afterNice);
     const after = currentLinuxThreadPriority();

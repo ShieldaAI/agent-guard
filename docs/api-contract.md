@@ -346,8 +346,8 @@ startup and cannot be changed by a request.
 
 The optional trusted-host `workerScheduling` setting is `'default'` (unchanged
 native priority) or `'linux-background'`. The latter requires Linux and verifies
-the worker's own native thread before lowering its priority by up to ten nice
-levels (`min(19, initial nice + 10)`); no raised priority or `CAP_SYS_NICE` is required. Exact native
+the worker's own native thread before lowering its priority by up to five nice
+levels (`min(19, initial nice + 5)`); no raised priority or `CAP_SYS_NICE` is required. Exact native
 identity and priority readback must succeed before the listener starts, otherwise
 startup fails with `INVENTORY_SCHEDULING_UNAVAILABLE`. Concurrent listeners sharing
 an executor must agree on the policy; conflicts fail with the same code, and

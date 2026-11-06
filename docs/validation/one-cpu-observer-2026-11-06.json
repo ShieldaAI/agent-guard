@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "required_native_qualification_failed_new_plus10_policy_pending_node_hold",
+  "status": "plus10_rejected_own_field_plus5_candidate_pending_node_hold",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -2511,6 +2511,285 @@
       "artifactSha256": "f0372811703f0663db454c505b6f705abd497f8403e5dec904a68eb94207667f",
       "admissionSha256": "0a5f7c9a5ea77e6e4d6e51d6416082ee75e36a647fd2cf06934bcc9a02768a8e",
       "interpretation": "Required additional native check failed overhead on byte-identical f28runtime. The prior+5pair passed but did not establish repeatable margin; no unchanged acceptance retry or result substitution."
+    },
+    {
+      "sourceCommit": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+      "sourceTree": "1d537c9589716a49e30a03d6b8304d23be4b8087",
+      "sourceFingerprint": "dec794dc81174666e7a773c63a171d391f5757f956a920434b05fd6489066181",
+      "runId": 42299461086,
+      "jobId": 128173155667,
+      "predeclaredRole": "auto",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 10,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 48.16118,
+        "pollingP95Ms": 51.703891,
+        "ratio": 1.0735594725876731,
+        "regressionPercent": 7.355947258767315
+      },
+      "ratioNumericallyWithinLimit": true,
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 169,
+      "failedPolls": 0,
+      "skippedPolls": 2,
+      "firstPollingDurationsMs": [
+        393.859405,
+        355.135714
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "2338b6074ca16ed306fd181240bb9aba4a6cef71330dc3e2a17d5659f1506928",
+      "admissionSha256": "d1afe947750e1fa7eeef3f1c85a8e89567e41217b3d7ff97f94babc7636a755b",
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/constrained-verification.json",
+        "sha256": "99c332dd8d9242191f23853b79cf90679673666eafb29d3b467579d6b8a677d1"
+      },
+      "interpretation": "Two cold busy-cadence skips fail the unchanged gate. Numerical ratio remains separate; the third run also exceeds 10 percent, although the gate lists cadence first. No retry or substitution."
+    },
+    {
+      "sourceCommit": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+      "sourceTree": "1d537c9589716a49e30a03d6b8304d23be4b8087",
+      "sourceFingerprint": "dec794dc81174666e7a773c63a171d391f5757f956a920434b05fd6489066181",
+      "runId": 42299469257,
+      "jobId": 128173191766,
+      "predeclaredRole": "manual",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 10,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 46.73674,
+        "pollingP95Ms": 49.320033,
+        "ratio": 1.0552732817907284,
+        "regressionPercent": 5.5273281790728435
+      },
+      "ratioNumericallyWithinLimit": true,
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 164,
+      "failedPolls": 0,
+      "skippedPolls": 2,
+      "firstPollingDurationsMs": [
+        363.994353,
+        350.909879
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "312340521cc681d8462bd2f5e9ed25698104de32f27cc89b0a99763105995524",
+      "admissionSha256": "8f7589c0484c252010dcee2c4f440818c65148d101bbf3a45505906fc1629a6a",
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/constrained-verification.json",
+        "sha256": "99c332dd8d9242191f23853b79cf90679673666eafb29d3b467579d6b8a677d1"
+      },
+      "interpretation": "Two cold busy-cadence skips fail the unchanged gate. Numerical ratio remains separate; the third run also exceeds 10 percent, although the gate lists cadence first. No retry or substitution."
+    },
+    {
+      "sourceCommit": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+      "sourceTree": "1d537c9589716a49e30a03d6b8304d23be4b8087",
+      "sourceFingerprint": "dec794dc81174666e7a773c63a171d391f5757f956a920434b05fd6489066181",
+      "runId": 42299473941,
+      "jobId": 128173958981,
+      "predeclaredRole": "manual2",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 10,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": false,
+        "effectAccountingPassed": true,
+        "stressProfileValid": false,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "phase": 2,
+            "code": "POLL_CADENCE_SKIPPED"
+          },
+          {
+            "phase": 3,
+            "code": "POLL_CADENCE_SKIPPED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 47.688518,
+        "pollingP95Ms": 53.358911,
+        "ratio": 1.1189047854244494,
+        "regressionPercent": 11.890478542444939
+      },
+      "ratioNumericallyWithinLimit": false,
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 170,
+      "failedPolls": 0,
+      "skippedPolls": 2,
+      "firstPollingDurationsMs": [
+        357.480069,
+        306.298129
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactSha256": "477afb3c309d23537072e03dd5fc6bc9142491ed1a055429a6261182bdae2513",
+      "admissionSha256": "bef3b4aa9d0380cf6d11021d4fe0ee2cf10f273d9e657d762cbe6b747fc61d6b",
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/constrained-verification.json",
+        "sha256": "99c332dd8d9242191f23853b79cf90679673666eafb29d3b467579d6b8a677d1"
+      },
+      "interpretation": "Two cold busy-cadence skips fail the unchanged gate. Numerical ratio remains separate; the third run also exceeds 10 percent, although the gate lists cadence first. No retry or substitution."
+    },
+    {
+      "sourceCommit": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+      "sourceTree": "1d537c9589716a49e30a03d6b8304d23be4b8087",
+      "runId": 42299477966,
+      "jobId": 128173219199,
+      "predeclaredRole": "ordinary-full-graph-admission",
+      "profile": "full",
+      "resourceProfile": "ordinary-hosted",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 10,
+      "passed": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 20.31213,
+        "pollingP95Ms": 21.710307,
+        "ratio": 1.0688345830791748,
+        "regressionPercent": 6.883458307917478
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 68,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "graphPassed": true,
+      "liveRecoveryPassed": true,
+      "cleanupVerified": true,
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/pilot-verification.json",
+        "sha256": "9d85649fc52a2f11fc084588cd012170c03856735b411d637be68d0366b510ed"
+      },
+      "artifactSha256": "0716504abbcd24eeed55bf74209ec8f477334443b3a76b56810085eebc4d0c8c",
+      "admissionSha256": "f4018c53861d67ab48b115c19c0445e21261e6af355b2f1ea638ba808d9824fe",
+      "interpretation": "Ordinary full passed; does not substitute for any of the three failed native constrained qualifications."
     }
   ],
   "decisions": [
@@ -2542,7 +2821,10 @@
     "Exact f28b8e2 passed its two declared constrained runs at6.8630%/8.0027% and ordinary full admission at0.2036%,with3600effects and431polls,zero failures/skips,full graph/recovery and verified caps/scheduling/cleanup. Allsixordinary workflows and11CIjobs also passed. Priorb82failures remain unchanged. This is a source-bound measured-profile checkpoint; documentation-only provenance and Nodefixed-runtime requalification remain separate, with release approval blocked.",
     "Requiredb18native check failed only overhead at10.666562% with1200effects and161polls,zero failed/skipped polls,identical94inputs/caps/policy to f28. Allsixordinary workflows/11CI passed,while smoke overhead11.533% was unenforced/ineligible. Current qualification is unmet despite priorf28+5passes.",
     "A new fixed trusted-host linux-background candidate changes only relative nice adjustment+5\u2192+10,clamped19,for the native JavaScript worker thread; default/owner behavior,deadlines,coldpoll/cadence/resources/allrawsamples/10percentgate remain unchanged. Three native and one ordinary full run are declared before results,allrequired. New localfull/hosted qualification pending; no prior+5pass transfers to+10 and no historical cause is proven.",
-    "The +10 candidate full local npm run check passed 1,319/1,319 with zero skips plus all installed-package consumers. All four predeclared hosted performance qualifications and changed-source ordinary checks remain pending; the Node security hold and every prior failure remain unchanged."
+    "The +10 candidate full local npm run check passed 1,319/1,319 with zero skips plus all installed-package consumers. All four predeclared hosted performance qualifications and changed-source ordinary checks remain pending; the Node security hold and every prior failure remain unchanged.",
+    "Reject the fixed+10 candidate after all three predeclared native runs failed cold cadence (two busy skips each, third also11.890percent numerical overhead), although ordinary full passed6.883percent and all ordinaryCI passed. Restore original+5 and evaluate only the private fresh authenticated core JSON own-field optimization; prototype10checks and7.95/9.32percent componentCPU gains do not establish whole-admission margin. Three native plus one full runs remain required for the new candidate; Nodehold and prior outcomes preserved.",
+    "The final factored own-field implementation passed306 inventory checks including10sealed cases, plus25helper checks. Its one ABBA confirmation improved all8CPUcycles, but repeated-fixture total wall time regressed5.17percent; unique-fixture wall improved18.38percent. No samples removed or overall latency/cold-poll cause claim. Full local and hosted qualification remain pending.",
+    "The final own-field candidate full local npm run check passed1,329/1,329 with zero skips plus all installed-package consumers. Hosted ordinary checks and three native plus one ordinary full qualification remain pending; prior failures and Nodehold unchanged."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -5548,6 +5830,416 @@
         "path": "artifacts/agent-cartography/background-ten-qualification/production-review.json",
         "sha256": "e8ec605aed8f84764db9d2bdb517159b8efe776a39f154922abf5c252863bdb7"
       }
+    }
+  },
+  "rejectedBackgroundPriorityHostedQualification": {
+    "checkpointDate": "2026-11-06",
+    "commit": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+    "tree": "1d537c9589716a49e30a03d6b8304d23be4b8087",
+    "sourceFingerprint": "dec794dc81174666e7a773c63a171d391f5757f956a920434b05fd6489066181",
+    "sourceFiles": 455,
+    "relativeWorkerNiceIncrease": 10,
+    "allRequiredRunsPassed": false,
+    "constrained": {
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/constrained-verification.json",
+        "sha256": "99c332dd8d9242191f23853b79cf90679673666eafb29d3b467579d6b8a677d1"
+      },
+      "runs": [
+        {
+          "runId": 42299461086,
+          "jobId": 128173155667,
+          "predeclaredRole": "auto",
+          "passed": false,
+          "gate": {
+            "passed": false,
+            "correctnessPassed": false,
+            "effectAccountingPassed": true,
+            "stressProfileValid": false,
+            "latencySamplesValid": true,
+            "failureReasons": [
+              {
+                "phase": 2,
+                "code": "POLL_CADENCE_SKIPPED"
+              },
+              {
+                "phase": 3,
+                "code": "POLL_CADENCE_SKIPPED"
+              }
+            ],
+            "performanceEnforced": true,
+            "performancePassed": false,
+            "maximumRatio": 1.1,
+            "baselineP95Ms": 48.16118,
+            "pollingP95Ms": 51.703891,
+            "ratio": 1.0735594725876731,
+            "regressionPercent": 7.355947258767315
+          },
+          "effects": 1200,
+          "completedPolls": 169,
+          "failedPolls": 0,
+          "skippedPolls": 2,
+          "firstPollingDurationsMs": [
+            393.859405,
+            355.135714
+          ]
+        },
+        {
+          "runId": 42299469257,
+          "jobId": 128173191766,
+          "predeclaredRole": "manual",
+          "passed": false,
+          "gate": {
+            "passed": false,
+            "correctnessPassed": false,
+            "effectAccountingPassed": true,
+            "stressProfileValid": false,
+            "latencySamplesValid": true,
+            "failureReasons": [
+              {
+                "phase": 2,
+                "code": "POLL_CADENCE_SKIPPED"
+              },
+              {
+                "phase": 3,
+                "code": "POLL_CADENCE_SKIPPED"
+              }
+            ],
+            "performanceEnforced": true,
+            "performancePassed": false,
+            "maximumRatio": 1.1,
+            "baselineP95Ms": 46.73674,
+            "pollingP95Ms": 49.320033,
+            "ratio": 1.0552732817907284,
+            "regressionPercent": 5.5273281790728435
+          },
+          "effects": 1200,
+          "completedPolls": 164,
+          "failedPolls": 0,
+          "skippedPolls": 2,
+          "firstPollingDurationsMs": [
+            363.994353,
+            350.909879
+          ]
+        },
+        {
+          "runId": 42299473941,
+          "jobId": 128173958981,
+          "predeclaredRole": "manual2",
+          "passed": false,
+          "gate": {
+            "passed": false,
+            "correctnessPassed": false,
+            "effectAccountingPassed": true,
+            "stressProfileValid": false,
+            "latencySamplesValid": true,
+            "failureReasons": [
+              {
+                "phase": 2,
+                "code": "POLL_CADENCE_SKIPPED"
+              },
+              {
+                "phase": 3,
+                "code": "POLL_CADENCE_SKIPPED"
+              }
+            ],
+            "performanceEnforced": true,
+            "performancePassed": false,
+            "maximumRatio": 1.1,
+            "baselineP95Ms": 47.688518,
+            "pollingP95Ms": 53.358911,
+            "ratio": 1.1189047854244494,
+            "regressionPercent": 11.890478542444939
+          },
+          "effects": 1200,
+          "completedPolls": 170,
+          "failedPolls": 0,
+          "skippedPolls": 2,
+          "firstPollingDurationsMs": [
+            357.480069,
+            306.298129
+          ]
+        }
+      ]
+    },
+    "ordinaryFull": {
+      "verification": {
+        "path": "artifacts/agent-cartography/background-ten-qualification/pilot-verification.json",
+        "sha256": "9d85649fc52a2f11fc084588cd012170c03856735b411d637be68d0366b510ed"
+      },
+      "runId": 42299477966,
+      "jobId": 128173219199,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 20.31213,
+        "pollingP95Ms": 21.710307,
+        "ratio": 1.0688345830791748,
+        "regressionPercent": 6.883458307917478
+      },
+      "effects": 1200,
+      "polls": 68,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "graph": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000,
+        "databaseNodes": 128201,
+        "databaseRelationships": 481100
+      },
+      "graphP95Seconds": {
+        "get_agent_access": 0.17210442599999987,
+        "explain_access": 0.21967068899999959
+      },
+      "liveRecoveryPassed": true
+    },
+    "aggregateVerification": {
+      "path": "artifacts/agent-cartography/background-ten-qualification/qualification-verification.json",
+      "sha256": "085ddd924ac30d6bbf53d6197c80be4abd9386e9906e660533b3eb4cbe6123e2"
+    },
+    "ordinaryCI": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-b4bf2ce/ci-b4bf2ce.json",
+        "sha256": "909ec4aafaf70bdd7f7cac7b03a102cec07febbddc95986d2453ebed3eb96ee3"
+      },
+      "sixWorkflowsPassed": true,
+      "elevenCIJobsPassed": true,
+      "browserScans": 195,
+      "noSkipIsolationChecks": 45,
+      "pythonUnit": 1022,
+      "pythonIntegration": 150,
+      "platformCounts": [
+        {
+          "name": "check (22)",
+          "tests": 1319,
+          "pass": 1311,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "name": "check (24)",
+          "tests": 1319,
+          "pass": 1311,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "name": "check (26)",
+          "tests": 1319,
+          "pass": 1311,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "name": "check (macos-latest, 24)",
+          "tests": 1319,
+          "pass": 1311,
+          "fail": 0,
+          "skipped": 8
+        },
+        {
+          "name": "check (windows-latest, 24)",
+          "tests": 1320,
+          "pass": 1172,
+          "fail": 0,
+          "skipped": 148
+        }
+      ],
+      "fivePackagePayloadsMatchPrepared": true,
+      "packageMembers": 145,
+      "codeqlCurrentPullRequestOpenAlerts": 0,
+      "alert23FixedNotDismissed": true,
+      "mainAlertsSeparate": 5
+    },
+    "priorResultsPreserved": true,
+    "decision": "Reject fixed+10 policy; restore original+5 and evaluate a separate own-field work-reduction candidate. No staged priority, prewarming or unchanged acceptance retry."
+  },
+  "ownFieldObserverFollowup": {
+    "checkpointDate": "2026-11-06",
+    "status": "local_functional_passed_hosted_qualification_pending",
+    "basedOn": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
+    "scheduling": {
+      "mode": "linux-background",
+      "relativeNiceIncrease": 5,
+      "maximumNice": 19,
+      "defaultUnchanged": true,
+      "stagedPriority": false
+    },
+    "scope": "Only the private core-worker ciphertext-to-canonical-JSON path uses shape+own-property field reads for freshly authenticated parsed state. Shared constructor, exact GCM/schema/mirror checks and serializer bounds remain; config/scope/live-registration/definition inputs retain descriptor checks. No raw-state/callback/fast-flag public API. Sync, authority and host/MCP paths remain unchanged.",
+    "syntheticPrewarming": false,
+    "authorityOrResponseCache": false,
+    "prototype": {
+      "review": {
+        "path": "artifacts/agent-cartography/observer-own-fields-prototype-1/review.json",
+        "sha256": "b743922280e25e45c72c8556413aafc63d70961a9ffac311eba6ae6a59ed760c"
+      },
+      "tests": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0,
+      "mirrorCombinations": 48,
+      "runs": 1,
+      "protocol": "sealed-own-fields-fixed-abba-result",
+      "measuredPerVariantPerFixture": 400,
+      "allSamplesRetained": true,
+      "retries": false,
+      "platform": "darwin",
+      "architecture": "arm64",
+      "node": "v26.12.0",
+      "componentCpuReductionPercent": [
+        7.947607471903351,
+        9.316351453097472
+      ],
+      "absoluteRepeatedCpuSavingsMsPerObservation": 0.250354999999999,
+      "wallCyclesRegressed": 2,
+      "wholeAdmissionQualified": false,
+      "coldPollCauseEstablished": false,
+      "finalSharedImplementationMeasured": false,
+      "limitations": [
+        "Local macOSarm64Node26 component experiment only, not constrained Linux/HTTP/admission qualification.",
+        "Each operation freshly authenticates/decrypts/parses the same ciphertext, performs original base+mirror validation, constructs and serializes the entire unchanged core inventory.",
+        "Candidate changes only state-owned record/field access; scope/configuration/live registration/definition reads retain the original descriptor reader. No cache, mutable brand, count/schema/byte limit change or callback-based rawstate API.",
+        "Actual deployment boundary is fixed trusted worker with structured-cloned metadata and a newly constructed builtin Map. Arbitrary caller code or monkeypatched intrinsics are outside that boundary.",
+        "All ABBA samples and cycles retained; no retries, outlier removal, forcedGC or changed workload/order.",
+        "Descriptor/prototype operation counts are a mechanism probe, not allocation bytes or GC time; process RSS/memory snapshots combine both alternating variants.",
+        "A measured gain cannot establish whole admission margin, coldpoll cadence or cause of earlier failures.",
+        "Prototype duplicates the constructor to isolate state field reads; a maintainable final shared constructor with private non-caller-selectable reader must preserve this boundary and be checked again. Do not assume a differently factored implementation has identical JIT/microcost."
+      ]
+    },
+    "qualificationPlan": {
+      "declaredBeforeOutcomes": true,
+      "nativeRuns": 3,
+      "ordinaryFullGraphAdmissionRuns": 1,
+      "allFourMustPass": true,
+      "retryAllowance": 0,
+      "directory": "artifacts/agent-cartography/observer-own-fields-qualification",
+      "sourceBindingPending": true,
+      "unchangedLimitsAndGates": true,
+      "declaration": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/declaration-precommit-checkpoint.json",
+        "sha256": "2021af27675048f6d0d76120fbd73e0ef1e7778378956272161d27a6da984b37",
+        "sourceBindingPending": true,
+        "scope": "Immutable precommit checkpoint with94 staged inputs; active declaration separately binds exact source before dispatch."
+      }
+    },
+    "localFullCheck": {
+      "command": "npm run check",
+      "exitCode": 0,
+      "tests": 1329,
+      "passed": 1329,
+      "failed": 0,
+      "skipped": 0,
+      "installedPackageConsumersPassed": true,
+      "log": {
+        "path": "artifacts/agent-cartography/observer-own-fields-full-check-1.log",
+        "sha256": "5aecb3d63c41949c663cfbc8b6305cb9d2af4cf9741abf1eb54d55163b1c1cb1"
+      },
+      "sourceFingerprint": {
+        "sha256": "9f4a75e3f9a001d0bc6e0ce465a62cd878c79f483b04f99a17337846b4d6133a",
+        "files": 457
+      },
+      "performanceQualification": false,
+      "hostedQualification": "pending"
+    },
+    "hostedQualification": "pending",
+    "latestResults": "https://github.com/ShieldaAI/agent-guard/pull/10/checks",
+    "nodeSecurityHoldUnchanged": true,
+    "fixedNodeRuntimeRequalificationRequired": true,
+    "published": false,
+    "releaseApprovalChanged": false,
+    "productionVerification": {
+      "review": {
+        "path": "artifacts/agent-cartography/observer-own-fields-production/review.json",
+        "sha256": "23baa899f6ffba89b56d48334ab957ca150d059c7c90a0c3b0f22fc2ca88e869"
+      },
+      "compileExitCode": 0,
+      "newSealedTests": 10,
+      "allInventoryTests": 306,
+      "failed": 0,
+      "skipped": 0,
+      "mirrorCombinations": 48,
+      "actualWorker": true,
+      "foreignDescriptorChecks": true,
+      "existingSyncAndHostMcpPaths": true,
+      "exactByteBoundary": true,
+      "storeAndCryptoModuleByteIdenticalToF28": true,
+      "countsNotAggregated": true,
+      "sealedTenIncludedInInventory306": true,
+      "sharedConstructorCount": 1,
+      "publicIndexExport": false,
+      "rawParsedStateEscape": false,
+      "cacheIntroduced": false,
+      "boundaryProof": {
+        "path": "artifacts/agent-cartography/observer-own-fields-production/boundary-comparison.json",
+        "sha256": "43a8d45781cb8fb174a4fdb37a522d802608cc3d0bdf14ae081fd19213481327"
+      },
+      "inventoryLog": {
+        "path": "artifacts/agent-cartography/observer-own-fields-production/inventory-focused.log",
+        "sha256": "c58b169f76ae8e07583e46edb393d67e0d1ef2924d236412f314297f040a8040"
+      },
+      "helperChecks": {
+        "tests": 25,
+        "passed": 25,
+        "failed": 0,
+        "skipped": 0,
+        "log": {
+          "path": "artifacts/agent-cartography/observer-own-fields-helper-focused.log",
+          "sha256": "3a07233c4c71ccba6e45ddae1807d0b5ca7b77e99aa18ad0136432a6afb22c48"
+        }
+      }
+    },
+    "actualFactoredMicroConfirmation": {
+      "result": {
+        "path": "artifacts/agent-cartography/observer-own-fields-production/result.json",
+        "sha256": "f78604d19063fc6e948ed668e9af389473a385ad8cb2afaa78bd0040915fad5a"
+      },
+      "runs": 1,
+      "iterations": 1600,
+      "warmupPerVariantPerFixture": 50,
+      "allSamplesRetained": true,
+      "cpuCyclesImproved": 8,
+      "wallCyclesRegressed": 1,
+      "results": [
+        {
+          "fixture": "repeated426660",
+          "cpuChangePercent": -7.647112893168472,
+          "wallChangePercent": 5.165951315203365,
+          "baselineCpuMs": 1207.593,
+          "candidateCpuMs": 1115.247,
+          "baselineWallMs": 1044.4413760000002,
+          "candidateWallMs": 1098.3967090000003
+        },
+        {
+          "fixture": "unique1100selectors",
+          "cpuChangePercent": -10.557945028207838,
+          "wallChangePercent": -18.38344610167252,
+          "baselineCpuMs": 2282.698,
+          "candidateCpuMs": 2041.6920000000002,
+          "baselineWallMs": 2412.948250000001,
+          "candidateWallMs": 1969.3652090000005
+        }
+      ],
+      "representativeCpuSavingsMsPerObservation": 0.23086500000000001,
+      "representativeTotalWallTimeImproved": false,
+      "wholeAdmissionQualified": false,
+      "coldPollCauseEstablished": false,
+      "limitations": [
+        "Local macOSarm64Node26 component experiment only, not constrained Linux/HTTP/admission qualification.",
+        "Each operation freshly authenticates/decrypts/parses the same ciphertext, performs original base+mirror validation, constructs and serializes the entire unchanged core inventory.",
+        "Actual factored production candidate changes only state-owned record/field access; scope/configuration/live registration/definition reads retain the original descriptor reader. No cache, mutable brand, count/schema/byte limit change or callback-based rawstate API.",
+        "Actual deployment boundary is fixed trusted worker with structured-cloned metadata and a newly constructed builtin Map. Arbitrary caller code or monkeypatched intrinsics are outside that boundary.",
+        "All ABBA samples and cycles retained; no retries, outlier removal, forcedGC or changed workload/order.",
+        "Descriptor/prototype operation counts are a mechanism probe, not allocation bytes or GC time; process RSS/memory snapshots combine both alternating variants.",
+        "A measured gain cannot establish whole admission margin, coldpoll cadence or cause of earlier failures."
+      ]
     }
   }
 }

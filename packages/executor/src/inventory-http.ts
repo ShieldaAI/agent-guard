@@ -23,7 +23,7 @@ export interface InventoryServerOptions {
   manifests?: readonly InventoryManifest[];
   /** Live host-owned readers, selected by tenant and manifest connection ID before capture. */
   mcpSources?: readonly InventoryMcpSourceBinding[];
-  /** Trusted host policy. Linux background mode lowers only the observer worker native thread by up to ten nice levels. */
+  /** Trusted host policy. Linux background mode lowers only the observer worker native thread by up to five nice levels. */
   workerScheduling?: InventoryWorkerScheduling;
   port?: number;
   maxRequestBytes?: number;

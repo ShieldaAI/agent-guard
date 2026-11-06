@@ -2,17 +2,23 @@
 
 **Current preparation: `0.1.0`, unpublished and blocked.** The
 [candidate notes](releases/0.1.0.md) and root [release state](../release-state.json)
-retain the required `b18b749` native failure and the new, unqualified +10 worker
-policy candidate. Historical `f28b8e2` used +5; its passes do not qualify +10.
+retain the required native failures, including all three +10 `b4bf2ce` runs,
+and the new, unqualified +5 own-field candidate. Prior passes do not qualify a
+changed implementation.
 Exact-candidate performance verification, Node HIGH review, matching qualification
 on future reviewed fixed Node images, and final merged-candidate checks remain
 open. The security hold follows the existing
 [production acceptance policy](production-readiness.md#remaining-acceptance-and-operational-limits).
 Do not publish or create a stable GitHub release while these gates remain open.
 Normal `npm run check` and `npm run pack` remain available for candidate work.
-At the 6 November checkpoint, the +10 candidate passed the full local check:
-**1,319/1,319 tests, zero skips, plus all installed-package consumers**. Hosted
-checks and the three native plus one ordinary full qualifications remain pending.
+At the 6 November checkpoint, `b4bf2ce` passed all six ordinary workflows/11 CI
+jobs and local **1,319/1,319 tests, zero skips, plus installed consumers**. Its
+three native qualifications failed cold cadence; ordinary full admission passed
+at 6.883%. The changed own-field candidate passed the full local check:
+**1,329/1,329 tests, zero skips, plus all installed consumers**. Hosted verification
+remains pending, with three native plus one ordinary full run required. Its 306 inventory
+checks passed. The factored component confirmation reduced CPU on both fixtures,
+but repeated-fixture total wall time regressed 5.17%; it is not acceptance.
 
 ## Node-update checklist for 0.1.0
 
@@ -57,7 +63,7 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    bandwidth quota, 512 MiB memory and no extra swap. Keep ABBA order, 100 tasks/1,000 grants,
    250 measured plus 50 warmup calls per phase, 250 ms serial polling, all 1,200
    effects, zero failed/skipped polls, cleanup and the 10% p95 bound unchanged.
-   For the +10 candidate, declare **three native runs (automatic plus two manual)
+   For the changed +5 own-field candidate, declare **three native runs (automatic plus two manual)
    and one ordinary full graph/admission run before execution; all four must pass**.
    This count is declared before results, not a retry allowance. Retain every outcome.
    Both admission qualifications must explicitly select `linux-background` worker
@@ -119,8 +125,9 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    all 11 CI jobs passed. Those runs used +5. The required `b18b749` native
    follow-up used identical runtime bytes but failed at 10.667%, with 1,200 effects,
    161 polls and no failed/skipped polls. Its six ordinary workflows passed; smoke
-   measured 11.533% with performance enforcement disabled. The new +10 policy is
-   pending qualification. The identifier-cache prototype was rejected and is not adopted.
+   measured 11.533% with performance enforcement disabled. The +10 `b4bf2ce` follow-up failed all three native cold-cadence gates, with
+   two busy skips each and numerical overheads 7.356%/5.527%/11.890%; ordinary
+   full passed at 6.883%. The new +5 own-field candidate is pending qualification. The identifier-cache prototype was rejected and is not adopted.
    Prototype measurements and owner profiling are
    ineligible diagnostics. These are source-bound checkpoint results, not a
    publication authorization. Follow [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks)
@@ -132,7 +139,7 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    command must explicitly include `--cpu-affinity 0 --worker-scheduling linux-background`.
    Generic worker scheduling remains `default`; manual historical comparisons
    select `default` and omit the new flag when checking older source. The new
-   policy lowers only the observer worker's native JavaScript-thread priority by up to ten
+   policy lowers only the observer worker's native JavaScript-thread priority by up to five
    nice points, capped at 19, with verified readback and unchanged owner priority.
    It makes no GC/helper-thread priority or latency guarantee. `--cpu-affinity SINGLE_INDEX`
    restricts execution to one selected
