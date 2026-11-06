@@ -256,14 +256,61 @@ try {
   await page.getByText('Company session', { exact: true }).waitFor();
   await page.evaluate(axe);
   await scan('company signed in');
-  gateway.invalidateSessions();
-  await button('Refresh evidence').click();
+  const companyQueryUrl = new URL('/v1/query', gateway.url).href;
+  let refreshRequest;
+  // Revoke after the user's click starts its health request. Revoking first can
+  // correctly clear the workspace through a pending background listing before
+  // Playwright has clicked the now-removed refresh control.
+  const revokeOnRefresh = async route => {
+    if (!refreshRequest && route.request().postDataJSON()?.operation === 'get_inventory_health') {
+      refreshRequest = route.request(); gateway.invalidateSessions();
+    }
+    await route.continue();
+  };
+  await page.route(companyQueryUrl, revokeOnRefresh);
+  try {
+    // Any first real 401 may close the session and cancel its peer requests.
+    // Require refresh to trigger revocation, without requiring health to win.
+    const [deniedRefresh] = await Promise.all([
+      page.waitForResponse(response => Boolean(refreshRequest) && response.url() === companyQueryUrl && response.status() === 401),
+      button('Refresh evidence').click(),
+    ]);
+    assert.ok(refreshRequest, 'the clicked refresh health request triggered gateway revocation');
+    assert.equal(deniedRefresh.status(), 401, 'refresh-triggered revocation reaches the real gateway');
+  } finally { await page.unroute(companyQueryUrl, revokeOnRefresh); }
   await button('Check sign-in').waitFor();
   assert.equal(await page.getByText(agentName, { exact: true }).count(), 0);
   await scan('company session revoked');
   await button('Check sign-in').focus();
   await page.keyboard.press('Enter');
   await button('Sign in with company account').waitFor();
+  await button('Sign in with company account').click();
+  await button(new RegExp(agentName)).waitFor();
+  // Also require revocation from an automatic filter read, with no subsequent
+  // refresh click. Hold that exact request so the race is deterministic.
+  let releaseBackground;
+  const backgroundHeld = new Promise(resolve => { releaseBackground = resolve; });
+  const pendingSearch = 'pending-company-revocation';
+  const isBackground = request => request.url() === companyQueryUrl &&
+    request.postDataJSON()?.operation === 'list_agents' && request.postDataJSON()?.args?.search === pendingSearch;
+  const holdBackground = async route => {
+    if (isBackground(route.request())) await backgroundHeld;
+    await route.continue();
+  };
+  await page.route(companyQueryUrl, holdBackground);
+  try {
+    const [request] = await Promise.all([
+      page.waitForRequest(isBackground),
+      page.getByLabel('Search visible agents').fill(pendingSearch),
+    ]);
+    const deniedBackground = page.waitForResponse(response => response.request() === request);
+    gateway.invalidateSessions(); releaseBackground();
+    assert.equal((await deniedBackground).status(), 401, 'background read reaches the real revoked gateway');
+    await button('Check sign-in').waitFor();
+    assert.equal(await button('Refresh evidence').count(), 0);
+    assert.equal(await page.getByText(agentName, { exact: true }).count(), 0);
+  } finally { releaseBackground(); await page.unroute(companyQueryUrl, holdBackground); }
+  await button('Check sign-in').click();
   await button('Sign in with company account').click();
   await button(new RegExp(agentName)).waitFor();
   await button('Sign out').click();
@@ -275,7 +322,8 @@ try {
   assert.ok(peakReads <= 2, `workspace reads exceed the two-slot query queue: ${peakReads}`);
   const report = { kind: 'synthetic-inventory-real-map-gateways', browserEngine, browserVersion: browser.version(), axe: await page.evaluate(() => window.axe.version),
     scanned: scans, mobileViews: 8, graphGeometry, queryQueue: { simulatedReadDelayMs: 100, peakReads, maximum: 2 }, inventoryV2: { owners: true, resources: true, exactChanges: true, pagedIndexes: true, largeGraphDoesNotBlockDetail: true, credentialReferencesOnly: true, legacyUnknownOwnership: true }, failedFilterHidesStaleResults: true, inventoryRetrySucceeded: true, bearerDenialClearedEvidence: true,
-    oidcExchange: 'local signed fixture', companyRevocationClearedEvidence: true, companySignoutClearedEvidence: true };
+    oidcExchange: 'local signed fixture', companyRevocationClearedEvidence: true, refreshTriggeredRevocationReturned401: true,
+    backgroundRevocationReturned401: true, backgroundRevocationClearedWithoutRefresh: true, companySignoutClearedEvidence: true };
   if (screenshotDirectory) await writeFile(join(screenshotDirectory, 'map-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));
 } catch (error) {

@@ -703,8 +703,8 @@
     "reason": "Supported Node lines have an unresolved HIGH security prealert; issue details and fixed releases are not yet available. This is an applicability-review hold, not a finding that Agent Guard is exploitable."
   },
   "pending": [
-    "Native Windows and other ordinary hosted workflows for the native-checkpoint candidate",
-    "Final native-checkpoint candidate committed source/artifact binding",
+    "Ordinary hosted workflows for the browser-harness candidate",
+    "Final committed source/artifact binding in PR #10",
     "Native Node HIGH disclosure and applicability review before publication"
   ],
   "limits": [
@@ -779,7 +779,7 @@
   },
   "nativeCheckpointCandidate": {
     "basedOn": "738fbbf9db9ff6ee3dfe86340a1bf8ecc7cd440b",
-    "commit": "Identified by the protected source fingerprint; hosted commit and run results are recorded in PR #10.",
+    "commit": "8cdefe04ea0b521962c4d4a8b281d9de3c1e171b",
     "sourceFingerprint": {
       "sha256": "81275d271fad753049d342c0c692ab770ea79b1284b62078a3f5b7ec47300c6a",
       "files": 433,
@@ -817,10 +817,76 @@
       "logSha256": "38efb831ca11861fa52e9807554bc8ad30130aee0dcf77c0da0517d138832a16"
     },
     "hostedVerification": {
-      "status": "pending at this local documentation checkpoint",
-      "tracking": "https://github.com/ShieldaAI/agent-guard/pull/10"
+      "status": "failed: WebKit revocation harness raced successful access clearing",
+      "ciRun": 42235540434,
+      "passedJobs": 10,
+      "failedJobs": 1,
+      "headTree": "781ec8dccc9bba92fc37fbde16d88a037ac6be23",
+      "testedMerge": "49f4b4315981e5509182ac0a3ba74b117358b228",
+      "windows": {
+        "passed": 1086,
+        "failed": 0,
+        "skipped": 143,
+        "record": "artifacts/agent-cartography/hosted-native-checkpoint/windows/verification.json",
+        "recordSha256": "9147bb418eee2da4082726629e9d6287aba57323aab6c96f26b871e02cd42834"
+      },
+      "python": {
+        "unitPassed": 1011,
+        "integrationPassed": 150,
+        "failed": 0,
+        "skipped": 0,
+        "run": 42235540604,
+        "record": "artifacts/agent-cartography/hosted-native-checkpoint/python-native-summary.json",
+        "recordSha256": "1c9b776b06d3626815a0acd6416aabe354a92da0043b883718420ad111ab4693"
+      },
+      "nativeRecoveryCheckpoint": "passed on Linux Node22/24/26 and macOS; original failed observation retained",
+      "otherWorkflows": "CodeQL, Dependency Review, Python audit and pilot smoke passed",
+      "failure": {
+        "job": 127952036786,
+        "step": "Verify agent inventory and policy explanations",
+        "assertion": "Refresh evidence click exceeded unchanged12000ms after the button detached",
+        "scenario": "Company session revocation",
+        "observedUI": "Your company session ended or its access changed. Check sign-in to continue.",
+        "interpretation": "A background read detected real revocation and cleared the workspace before the explicit click. The test required a control that correct access clearing had removed."
+      }
     },
     "priorFailure": "followupCandidate.localFullCheck retains the failed cd53 source, exact assertion and log digest.",
     "qualification": "The exact local candidate passed. The test now verifies a precise final pre-commit native crash checkpoint without changing production recovery behavior. Prior failures remain recorded; native Windows and Linux hook qualification require hosted evidence."
+  },
+  "browserHarnessCandidate": {
+    "basedOn": "8cdefe04ea0b521962c4d4a8b281d9de3c1e171b",
+    "commit": "Identified by source fingerprint; hosted results tracked in PR #10",
+    "sourceFingerprint": {
+      "sha256": "d195042f8d33e134a01f226cd45c4f183f8cacb374fd86d2fbec78b6724317cc",
+      "files": 433
+    },
+    "protectedSourceChange": "Only apps/agent-map/check-browser.mjs differs from8cdefe0; production code, Node/Python test suites, limits and dependency locks are unchanged.",
+    "change": "Revoke at refresh-triggered health dispatch and require a real gateway401, allowing the first denial to cancel peer requests. Separately hold a precise automatic filter request, revoke, and require real401 and evidence clearance without refresh.",
+    "unchanged": [
+      "12000ms browser action timeout",
+      "real signed OIDC fixture and gateway",
+      "all original data-clearing/signout/page-error/accessibility assertions",
+      "two active query slots",
+      "no force clicks or retries"
+    ],
+    "local": {
+      "status": "passed",
+      "engines": [
+        "chromium",
+        "firefox",
+        "webkit"
+      ],
+      "scansPerEngine": 26,
+      "totalScans": 78,
+      "refreshTriggeredRevocationReturned401": true,
+      "backgroundRevocationReturned401": true,
+      "backgroundRevocationClearedWithoutRefresh": true,
+      "peakReads": 2,
+      "directory": "artifacts/agent-cartography/map-revocation-harness/"
+    },
+    "hosted": {
+      "status": "pending at this local documentation checkpoint",
+      "tracking": "https://github.com/ShieldaAI/agent-guard/pull/10"
+    }
   }
 }
