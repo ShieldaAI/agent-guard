@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "reviewed-and-unit-tested-one-hosted-validation-pending",
+  "status": "reviewed-unit-tested-and-one-hosted-validation-passed",
   "parentCommit": "1a612c9c5be97add0eb33a28c1414e666f18273e",
   "sourceSha256": "4d390fb0c8bcded592c14364e99611d1fe3150a463ee2957cf40f00115b67314",
   "sourceFiles": 411,
@@ -38,7 +38,17 @@
       "logSha256": "39262dd4ff80935e76b54528bca71f956605f68c67cee8465338e8fb3f198a93"
     },
     "lintFormatDiff": "passed",
-    "hostedIntegration": "pending"
+    "hostedIntegration": {
+      "status": "passed",
+      "evidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+      "evidenceSha256": "e5517b5490c040db188290fcd2be820c76591bcf7d52fd4f9709b5d47555ed98",
+      "unitPassed": 950,
+      "integrationPassed": 143,
+      "failed": 0,
+      "skipped": 0,
+      "packagingAndInstalledConsumer": "passed",
+      "ownedCleanup": "confirmed"
+    }
   },
   "inputSha256": {
     "integrations/cartography/scripts/test-disposable-neo4j.py": "261c9d1c3bde8b435b270f024d3e98806bfddb9c8ae1aed1117975c437e7ac0a",
@@ -56,5 +66,6 @@
     "An uncatchable process kill can leave an owned fixture; cleanup is never reported confirmed without successful removal/absence verification.",
     "One successful new validation would not establish the cause of the earlier unobserved readiness timeout."
   ],
-  "productionAcceptance": "Still held for Node HIGH; current integration verification is pending."
+  "productionAcceptance": "Held for unpublished Node HIGH applicability. Current required candidate checks passed; the earlier fixture readiness timeout remains recorded with an unknown cause. No aggregate production score or new release is asserted.",
+  "implementationCommit": "a8c2d16413ce2b06518b791d18340a97a6d0e464"
 }

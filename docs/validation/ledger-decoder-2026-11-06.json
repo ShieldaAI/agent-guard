@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "prior-candidate-checks-passed-latest-integration-readiness-hold",
+  "status": "candidate-and-current-harness-checks-passed-Node-review-held",
   "parentCommit": "ee0d589057e3d367b8a0bd1f08f3e4cb5790f3f2",
   "purpose": "Reduce observed ledger decode/reviver work without caching authority or removing fresh authenticated reads.",
   "evidence": "admission-diagnostics-2026-11-06.json",
@@ -416,19 +416,37 @@
     "unchangedGate": "ABBA; 100 tasks/1000 grants; 250 measured+50 warmup per phase; 250ms serial polling; all effects/cleanup, no failed or skipped polls, coverage and p95 ratio at most1.10.",
     "previousFailuresPreserved": true
   },
-  "productionAcceptance": "Held for undisclosed Node HIGH applicability and reopened current integration verification after a nested disposable Neo4j readiness timeout. Prior candidate checks and all measured performance samples remain retained.",
+  "productionAcceptance": "Held for unpublished Node HIGH applicability. Current required candidate checks passed; the earlier fixture readiness timeout remains recorded with an unknown cause. No aggregate production score or new release is asserted.",
   "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
   "sourceFiles": 411,
   "implementationCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
   "categoryReview": "production-category-review-2026-11-06.json",
-  "latestVerificationHold": {
-    "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
-    "workflowRun": 42204781372,
-    "jobId": 127848569421,
-    "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
-    "status": "required-integration-verification-reopened",
-    "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
-    "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
-    "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+  "historicalVerificationHolds": [
+    {
+      "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+      "workflowRun": 42204781372,
+      "jobId": 127848569421,
+      "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
+      "status": "required-integration-verification-reopened",
+      "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
+      "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
+      "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+    }
+  ],
+  "currentVerification": {
+    "head": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+    "sourceSha256": "4d390fb0c8bcded592c14364e99611d1fe3150a463ee2957cf40f00115b67314",
+    "sourceFiles": 411,
+    "status": "current-required-verification-passed",
+    "ordinaryEvidence": "production-readiness-ci-2026-11-06-a8c2d16.json",
+    "integrationEvidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+    "runtimeAndAdmissionInputsUnchangedSince": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "previousTimeoutCause": "unknown; the passing follow-up does not establish a cause or a permanent fixture reliability fix",
+    "independentReview": "Core independently verified all eight artifact hashes/sizes, exact source/merge tree, integration log/assertion hashes and unchanged production boundary. R10 restored to9.7, retaining verification1.8/2 and the original unexplained timeout.",
+    "integrationEvidenceSha256": "e5517b5490c040db188290fcd2be820c76591bcf7d52fd4f9709b5d47555ed98",
+    "testedMergeCommit": "8df78f57e9d6443fb8e559fab07da0cf0f6f78bb",
+    "gitTree": "d0e11b08356ab50a7cae72d254d5021b66c8b2ad",
+    "headAndMergeSameTree": true,
+    "ordinaryEvidenceSha256": "0323ac9bee43517798b9060a105dd8f6d16dcbd369d2beb664cec2d1e39915f2"
   }
 }

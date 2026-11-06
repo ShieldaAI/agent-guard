@@ -1,0 +1,1024 @@
+{
+  "schema": 1,
+  "recordedAt": "2026-11-06T11:15:15.977357+00:00",
+  "scope": "Ordinary PR CI evidence for the Neo4j diagnostic-harness follow-up. Runtime equality carries prior fef2e37 application evidence; no new full admission benchmark is claimed.",
+  "repository": "ShieldaAI/agent-guard",
+  "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+  "source": {
+    "head": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+    "gitTree": "d0e11b08356ab50a7cae72d254d5021b66c8b2ad",
+    "sourceSha256": "4d390fb0c8bcded592c14364e99611d1fe3150a463ee2957cf40f00115b67314",
+    "files": 411,
+    "scopes": [
+      ".github",
+      "apps",
+      "deployment",
+      "evals",
+      "examples",
+      "integrations",
+      "packages",
+      "schemas",
+      "scripts",
+      "tools",
+      ".gitattributes",
+      ".npmrc",
+      "package.json",
+      "package-lock.json",
+      "tsconfig.base.json"
+    ],
+    "method": "Exact committed Git blobs, byte-sorted path + NUL + raw SHA256(bytes); no worktree inputs."
+  },
+  "testedMerge": {
+    "sha": "8df78f57e9d6443fb8e559fab07da0cf0f6f78bb",
+    "gitTree": "d0e11b08356ab50a7cae72d254d5021b66c8b2ad",
+    "treeVerifiedViaGitHubCommitApi": true,
+    "headAndMergeSameTree": true,
+    "compareChangedFiles": 0,
+    "checkoutEvidence": "node24-summary.log"
+  },
+  "workflowRuns": [
+    {
+      "id": 42207647126,
+      "name": "Python dependency audit",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 42207646802,
+      "name": "Dependency Review",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 42207647130,
+      "name": "Cartography pilot",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 42207647065,
+      "name": "CodeQL",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 42207647028,
+      "name": "CI",
+      "status": "completed",
+      "conclusion": "success"
+    },
+    {
+      "id": 42207646948,
+      "name": "Cartography integration",
+      "status": "completed",
+      "conclusion": "success"
+    }
+  ],
+  "ci": {
+    "runId": 42207647028,
+    "url": "https://github.com/ShieldaAI/agent-guard/actions/runs/42207647028",
+    "jobs": [
+      {
+        "id": 127858180322,
+        "name": "production-profile (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180569,
+        "name": "browser (webkit)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180636,
+        "name": "check (22)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180664,
+        "name": "check (24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180688,
+        "name": "check (macos-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180711,
+        "name": "check (26)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180731,
+        "name": "browser (chromium)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180760,
+        "name": "browser (firefox)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180858,
+        "name": "check (windows-latest, 24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858180949,
+        "name": "runtime-isolation (linux, node24)",
+        "status": "completed",
+        "conclusion": "success"
+      },
+      {
+        "id": 127858181005,
+        "name": "dependency-inventory",
+        "status": "completed",
+        "conclusion": "success"
+      }
+    ],
+    "matrix": [
+      {
+        "jobId": 127858180636,
+        "name": "check (22)",
+        "tests": 1116,
+        "pass": 1108,
+        "fail": 0,
+        "skipped": 8,
+        "logEvidence": "matrix-127858180636-summary.log"
+      },
+      {
+        "jobId": 127858180664,
+        "name": "check (24)",
+        "tests": 1116,
+        "pass": 1108,
+        "fail": 0,
+        "skipped": 8,
+        "logEvidence": "node24-summary.log"
+      },
+      {
+        "jobId": 127858180688,
+        "name": "check (macos-latest, 24)",
+        "tests": 1116,
+        "pass": 1108,
+        "fail": 0,
+        "skipped": 8,
+        "logEvidence": "matrix-127858180688-summary.log"
+      },
+      {
+        "jobId": 127858180711,
+        "name": "check (26)",
+        "tests": 1116,
+        "pass": 1108,
+        "fail": 0,
+        "skipped": 8,
+        "logEvidence": "matrix-127858180711-summary.log"
+      },
+      {
+        "jobId": 127858180858,
+        "name": "check (windows-latest, 24)",
+        "tests": 1117,
+        "pass": 975,
+        "fail": 0,
+        "skipped": 142,
+        "logEvidence": "matrix-127858180858-summary.log"
+      }
+    ],
+    "skipScope": "Ordinary matrix includes explicitly unsupported host/container cases; mandatory real Linux isolation is separately 44/44 with zero skips. Windows does not support the full Linux production profile.",
+    "installedPackageConsumers": {
+      "reportedNode24Suites": 2,
+      "eachPassed": 1,
+      "eachFailed": 0,
+      "eachSkipped": 0,
+      "logEvidence": "node24-summary.log"
+    }
+  },
+  "artifacts": [
+    {
+      "id": 13497965649,
+      "name": "browser-chromium",
+      "sha256": "cc8631ea2f0541fedac99690b65584e8de97acc5397f91a8b281c0f5c5d6a07b",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 8481119
+    },
+    {
+      "id": 13497591143,
+      "name": "dependency-inventory",
+      "sha256": "b5916967faf94a43510b6e47d7ce2bb18fc861c32fafc9f62b2ee3e0932a453d",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 5090
+    },
+    {
+      "id": 13497521222,
+      "name": "production-profile-linux-node24",
+      "sha256": "07b592bd6793e89d5c30395e9ce8dea975717a6fc1722390fcd0832cc7815501",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 191780
+    },
+    {
+      "id": 13497481240,
+      "name": "provider-outcome-evaluation",
+      "sha256": "86b22b476a6b7ac3146c733804d3538c673d89b9317fd41483ce4fa0244cc9b2",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 3932
+    },
+    {
+      "id": 13497396493,
+      "name": "browser-firefox",
+      "sha256": "853fb41bf99067f259429f987f9cbf265a36495ed37af9c88243e09fa96391c1",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 9484748
+    },
+    {
+      "id": 13497137484,
+      "name": "browser-webkit",
+      "sha256": "26f4f2a5c3bb588111e864107e523fad267648ae5770bc17f17ace81dc6a9ed4",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 10093286
+    },
+    {
+      "id": 13497067244,
+      "name": "npm-alpha-packages",
+      "sha256": "345297b61ce0ae7612ec509f74d4c562190491fe284a902014f6a61414189a8d",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 251684
+    },
+    {
+      "id": 13496658636,
+      "name": "runtime-isolation-linux-node24",
+      "sha256": "b8cc8d7710aa7b9bd64759467c0e8e61c6181f63503c9adc81d881cb9a97d405",
+      "digestVerified": true,
+      "headSha": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+      "bytes": 4754
+    }
+  ],
+  "browser": {
+    "engines": [
+      {
+        "engine": "chromium",
+        "suites": {
+          "map": {
+            "kind": "synthetic-inventory-real-map-gateways",
+            "browserEngine": "chromium",
+            "browserVersion": "153.0.8010.12",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "inventory",
+              "agent explanation",
+              "observed blocker",
+              "matching resource",
+              "unmatched resource",
+              "snapshot comparison",
+              "collection health",
+              "mobile health",
+              "inventory unavailable",
+              "company signed in",
+              "company session revoked",
+              "company signed out"
+            ],
+            "mobileViews": 4,
+            "graphGeometry": {
+              "viewportWidth": 660,
+              "minimumRenderedNodeFont": 10.02726131038074,
+              "overlappingNodeLabels": 0
+            },
+            "failedFilterHidesStaleResults": true,
+            "inventoryRetrySucceeded": true,
+            "bearerDenialClearedEvidence": true,
+            "oidcExchange": "local signed fixture",
+            "companyRevocationClearedEvidence": true,
+            "companySignoutClearedEvidence": true,
+            "scanCount": 13
+          },
+          "mock": {
+            "kind": "synthetic-operator-ui-contract",
+            "browserEngine": "chromium",
+            "browserVersion": "153.0.8010.12",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "exact-review",
+              "interrupted-response",
+              "confirmed-receipt",
+              "denied-request",
+              "unconfirmed-outcome",
+              "archive-blocked",
+              "maintenance",
+              "activity-snapshot",
+              "history-capacity-warning",
+              "history-capacity-critical",
+              "history-capacity-full",
+              "self-hosted-setup",
+              "legacy-recovery-setup",
+              "unverified-recovery-setup",
+              "empty-company-setup",
+              "later-ticket-page",
+              "later-request-page",
+              "configured-capacity-reached",
+              "mobile-setup",
+              "mobile-maintenance",
+              "expired-review",
+              "restart-requires-review",
+              "service-unavailable",
+              "permission-ended"
+            ],
+            "mobileViews": 4,
+            "pagedTickets": 505,
+            "pagedRequests": 506,
+            "preparations": 1,
+            "approvals": 1,
+            "denials": 1,
+            "reconciliations": 2,
+            "backendWrites": 1,
+            "archives": 1,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "scanCount": 25
+          },
+          "service": {
+            "kind": "disposable-real-operator-service",
+            "node": "v24.22.2",
+            "browserEngine": "chromium",
+            "browserVersion": "153.0.8010.12",
+            "axe": "4.14.0",
+            "scanned": [
+              "service-empty",
+              "service-setup",
+              "service-review",
+              "service-completed",
+              "service-unconfirmed",
+              "service-archive-review",
+              "service-activity-snapshot",
+              "service-mobile-setup",
+              "service-mobile-maintenance",
+              "service-empty-tickets",
+              "service-empty-onboarding",
+              "service-later-ticket-page",
+              "service-sign-in-failure",
+              "service-mobile-sign-in-failure"
+            ],
+            "mobileViews": 5,
+            "oidcExchange": "local fixture",
+            "storage": "real encrypted and witnessed SQLite",
+            "recoveryMirrors": "schema3 exact-current, verified after writes",
+            "approvals": 2,
+            "backendWrites": 2,
+            "denials": 1,
+            "receiptOnlyReconciliations": 1,
+            "archives": 1,
+            "pagedTenantTickets": 505,
+            "emptySeed": true,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "unchangedExpiryTickPreservesNavigation": true,
+            "expiryRemovesApprovalDuringNavigation": true,
+            "scanCount": 14
+          }
+        }
+      },
+      {
+        "engine": "firefox",
+        "suites": {
+          "map": {
+            "kind": "synthetic-inventory-real-map-gateways",
+            "browserEngine": "firefox",
+            "browserVersion": "155.0",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "inventory",
+              "agent explanation",
+              "observed blocker",
+              "matching resource",
+              "unmatched resource",
+              "snapshot comparison",
+              "collection health",
+              "mobile health",
+              "inventory unavailable",
+              "company signed in",
+              "company session revoked",
+              "company signed out"
+            ],
+            "mobileViews": 4,
+            "graphGeometry": {
+              "viewportWidth": 660,
+              "minimumRenderedNodeFont": 10.02726131038074,
+              "overlappingNodeLabels": 0
+            },
+            "failedFilterHidesStaleResults": true,
+            "inventoryRetrySucceeded": true,
+            "bearerDenialClearedEvidence": true,
+            "oidcExchange": "local signed fixture",
+            "companyRevocationClearedEvidence": true,
+            "companySignoutClearedEvidence": true,
+            "scanCount": 13
+          },
+          "mock": {
+            "kind": "synthetic-operator-ui-contract",
+            "browserEngine": "firefox",
+            "browserVersion": "155.0",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "exact-review",
+              "interrupted-response",
+              "confirmed-receipt",
+              "denied-request",
+              "unconfirmed-outcome",
+              "archive-blocked",
+              "maintenance",
+              "activity-snapshot",
+              "history-capacity-warning",
+              "history-capacity-critical",
+              "history-capacity-full",
+              "self-hosted-setup",
+              "legacy-recovery-setup",
+              "unverified-recovery-setup",
+              "empty-company-setup",
+              "later-ticket-page",
+              "later-request-page",
+              "configured-capacity-reached",
+              "mobile-setup",
+              "mobile-maintenance",
+              "expired-review",
+              "restart-requires-review",
+              "service-unavailable",
+              "permission-ended"
+            ],
+            "mobileViews": 4,
+            "pagedTickets": 505,
+            "pagedRequests": 506,
+            "preparations": 1,
+            "approvals": 1,
+            "denials": 1,
+            "reconciliations": 2,
+            "backendWrites": 1,
+            "archives": 1,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "scanCount": 25
+          },
+          "service": {
+            "kind": "disposable-real-operator-service",
+            "node": "v24.22.2",
+            "browserEngine": "firefox",
+            "browserVersion": "155.0",
+            "axe": "4.14.0",
+            "scanned": [
+              "service-empty",
+              "service-setup",
+              "service-review",
+              "service-completed",
+              "service-unconfirmed",
+              "service-archive-review",
+              "service-activity-snapshot",
+              "service-mobile-setup",
+              "service-mobile-maintenance",
+              "service-empty-tickets",
+              "service-empty-onboarding",
+              "service-later-ticket-page",
+              "service-sign-in-failure",
+              "service-mobile-sign-in-failure"
+            ],
+            "mobileViews": 5,
+            "oidcExchange": "local fixture",
+            "storage": "real encrypted and witnessed SQLite",
+            "recoveryMirrors": "schema3 exact-current, verified after writes",
+            "approvals": 2,
+            "backendWrites": 2,
+            "denials": 1,
+            "receiptOnlyReconciliations": 1,
+            "archives": 1,
+            "pagedTenantTickets": 505,
+            "emptySeed": true,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "unchangedExpiryTickPreservesNavigation": true,
+            "expiryRemovesApprovalDuringNavigation": true,
+            "scanCount": 14
+          }
+        }
+      },
+      {
+        "engine": "webkit",
+        "suites": {
+          "map": {
+            "kind": "synthetic-inventory-real-map-gateways",
+            "browserEngine": "webkit",
+            "browserVersion": "26.6",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "inventory",
+              "agent explanation",
+              "observed blocker",
+              "matching resource",
+              "unmatched resource",
+              "snapshot comparison",
+              "collection health",
+              "mobile health",
+              "inventory unavailable",
+              "company signed in",
+              "company session revoked",
+              "company signed out"
+            ],
+            "mobileViews": 4,
+            "graphGeometry": {
+              "viewportWidth": 660,
+              "minimumRenderedNodeFont": 10.02726131038074,
+              "overlappingNodeLabels": 0
+            },
+            "failedFilterHidesStaleResults": true,
+            "inventoryRetrySucceeded": true,
+            "bearerDenialClearedEvidence": true,
+            "oidcExchange": "local signed fixture",
+            "companyRevocationClearedEvidence": true,
+            "companySignoutClearedEvidence": true,
+            "scanCount": 13
+          },
+          "mock": {
+            "kind": "synthetic-operator-ui-contract",
+            "browserEngine": "webkit",
+            "browserVersion": "26.6",
+            "axe": "4.14.0",
+            "scanned": [
+              "sign-in",
+              "exact-review",
+              "interrupted-response",
+              "confirmed-receipt",
+              "denied-request",
+              "unconfirmed-outcome",
+              "archive-blocked",
+              "maintenance",
+              "activity-snapshot",
+              "history-capacity-warning",
+              "history-capacity-critical",
+              "history-capacity-full",
+              "self-hosted-setup",
+              "legacy-recovery-setup",
+              "unverified-recovery-setup",
+              "empty-company-setup",
+              "later-ticket-page",
+              "later-request-page",
+              "configured-capacity-reached",
+              "mobile-setup",
+              "mobile-maintenance",
+              "expired-review",
+              "restart-requires-review",
+              "service-unavailable",
+              "permission-ended"
+            ],
+            "mobileViews": 4,
+            "pagedTickets": 505,
+            "pagedRequests": 506,
+            "preparations": 1,
+            "approvals": 1,
+            "denials": 1,
+            "reconciliations": 2,
+            "backendWrites": 1,
+            "archives": 1,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "scanCount": 25
+          },
+          "service": {
+            "kind": "disposable-real-operator-service",
+            "node": "v24.22.2",
+            "browserEngine": "webkit",
+            "browserVersion": "26.6",
+            "axe": "4.14.0",
+            "scanned": [
+              "service-empty",
+              "service-setup",
+              "service-review",
+              "service-completed",
+              "service-unconfirmed",
+              "service-archive-review",
+              "service-activity-snapshot",
+              "service-mobile-setup",
+              "service-mobile-maintenance",
+              "service-empty-tickets",
+              "service-empty-onboarding",
+              "service-later-ticket-page",
+              "service-sign-in-failure",
+              "service-mobile-sign-in-failure"
+            ],
+            "mobileViews": 5,
+            "oidcExchange": "local fixture",
+            "storage": "real encrypted and witnessed SQLite",
+            "recoveryMirrors": "schema3 exact-current, verified after writes",
+            "approvals": 2,
+            "backendWrites": 2,
+            "denials": 1,
+            "receiptOnlyReconciliations": 1,
+            "archives": 1,
+            "pagedTenantTickets": 505,
+            "emptySeed": true,
+            "automaticResubmissions": 0,
+            "pageErrors": 0,
+            "unchangedExpiryTickPreservesNavigation": true,
+            "expiryRemovesApprovalDuringNavigation": true,
+            "scanCount": 14
+          }
+        }
+      }
+    ],
+    "suites": 9,
+    "axeScans": 156,
+    "violations": 0,
+    "pageErrors": 0,
+    "reportedMobileViews": 39,
+    "assertionBasis": "Each scan asserts an empty axe violations array; each completed harness asserts no page errors. Mobile views are included scenarios, not extra scans.",
+    "limits": [
+      "Synthetic fixtures and automated keyboard/mobile/accessibility checks; no representative human or assistive-technology study.",
+      "Real Ops uses disposable signed OIDC and encrypted witnessed SQLite; no customer deployment."
+    ]
+  },
+  "runtimeIsolation": {
+    "passed": true,
+    "platform": "linux",
+    "arch": "x64",
+    "node": "v24.22.2",
+    "counts": {
+      "tests": 44,
+      "passed": 44,
+      "skipped": 0,
+      "runtimeTests": [
+        "real Linux Docker runtime enforces isolation and copies only selected files",
+        "raw: content swapped as the broker starts staging cannot reach Docker under the old approval",
+        "attested: content swapped as the broker starts staging cannot reach Docker under the old approval",
+        "real Docker export rejects symlinks and host input symlinks",
+        "real Docker time and output limits terminate workloads and clean up containers",
+        "governed sandbox preserves sensitive encoded files and stdout across signed new-root imports",
+        "real governed sandbox tool uses durable approval budgets input versions and cancellation",
+        "real governed sandbox imports an attested build and rejects derivatives after policy rotation",
+        "real isolated MCP deployment enforces credential custody transport scope lifecycle and cleanup",
+        "real HTTPS MCP credentials enforce verified access token lifecycle and cleanup",
+        "additional CA trust is bounded and belongs only to its exact allowed HTTPS origin",
+        "trusted CA does not disable hostname validation or grant private network access",
+        "actual socket lookup rejects private and mixed answers and rechecks rebinding after a cancelled lookup",
+        "bounded input capture accepts the selected file and rejects a FIFO without blocking",
+        "a directory swap during capture cannot send an outside file to the guest"
+      ]
+    },
+    "mcp": {
+      "passed": true,
+      "checks": [
+        {
+          "name": "runtime-image",
+          "passed": true
+        },
+        {
+          "name": "guest-isolation",
+          "passed": true
+        },
+        {
+          "name": "host-secret-custody",
+          "passed": true
+        },
+        {
+          "name": "foreign-tenant-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "approval-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "approved-effect",
+          "passed": true
+        },
+        {
+          "name": "metadata-quarantine",
+          "passed": true
+        },
+        {
+          "name": "reviewed-refresh",
+          "passed": true
+        },
+        {
+          "name": "reconnect-invalidates-work",
+          "passed": true
+        },
+        {
+          "name": "revocation-before-dispatch",
+          "passed": true
+        },
+        {
+          "name": "inflight-unknown-no-replay",
+          "passed": true
+        },
+        {
+          "name": "unknown-reconciliation",
+          "passed": true
+        },
+        {
+          "name": "bounded-stdio",
+          "passed": true
+        },
+        {
+          "name": "remote-approved-dispatch",
+          "passed": true
+        },
+        {
+          "name": "remote-credential-custody",
+          "passed": true
+        },
+        {
+          "name": "remote-claim-binding",
+          "passed": true
+        },
+        {
+          "name": "remote-refresh-review",
+          "passed": true
+        },
+        {
+          "name": "remote-redirect-no-forward",
+          "passed": true
+        },
+        {
+          "name": "remote-private-address-denied",
+          "passed": true
+        },
+        {
+          "name": "trace-privacy",
+          "passed": true
+        },
+        {
+          "name": "cleanup",
+          "passed": true
+        }
+      ],
+      "cleanup": true,
+      "sourceSha256": "87ef99ffef9af8546989b92dfb4d7cd13ee5173c4b97debffffeed21f636b5cf",
+      "fixtureSha256": "731d6d74484731865e129253b6902168a50b72118b70d6f274f5ff9471b4f50e",
+      "limitations": [
+        "Synthetic disposable MCP fixture and loopback credential gateway, not a real identity provider or production MCP service.",
+        "Kernel isolation is the Linux Docker daemon/VM boundary. Native host ACL and separate Linux/Windows matrix evidence remain required.",
+        "Remote authorization proofs are verified with a synthetic Ed25519 fixture key and bind the gateway token fingerprint. Production OAuth discovery/JWKS/token renewal is outside this report.",
+        "Denied or cancelled admitted calls may be UNKNOWN; container disposal establishes termination before reconciliation."
+      ]
+    }
+  },
+  "production": {
+    "schema": 1,
+    "measuredAt": "2026-11-06T11:06:16.260Z",
+    "status": "passed",
+    "verificationImage": "sha256:483b75040dc3b6b3583607bf6984a9d4b15588ef2cfc721f29b898b7cc2c351d",
+    "imagePlatform": "linux/amd64",
+    "docker": {
+      "version": "29.4.2",
+      "os": "linux",
+      "arch": "amd64"
+    },
+    "composeControls": "passed",
+    "maintenance": {
+      "status": "passed",
+      "platform": "linux",
+      "node": "24.22.1",
+      "twoStoreRotation": true,
+      "interruptedReceiptReconciled": true,
+      "duplicateEffectPrevented": true,
+      "archivePersisted": true,
+      "rollbackRejected": true,
+      "unconfirmedReservationRecoveredAfterPrimaryLoss": true,
+      "repairLeavesWitnessesUnchanged": true
+    },
+    "storage": {
+      "driver": "local",
+      "separateDataWitnessConfigAndHistoryVolumes": true,
+      "freshContainerReopen": true
+    },
+    "cli": {
+      "status": "passed",
+      "platform": "linux",
+      "arch": "x64",
+      "node": "24.22.1",
+      "companyOnboarding": true,
+      "noAuthorityBeforeInit": true,
+      "preflight": true,
+      "startupTlsAndCustodyEnforced": true,
+      "unenrolledSeedRefused": true,
+      "rejectedStartupLeavesAuthorityUnchanged": true,
+      "configuredLimitsRaised": true,
+      "rotationBeyondLegacyFourKeyDefault": true,
+      "ticketImportPreviewAndApply": true,
+      "bulkImportedTickets": 2000,
+      "paginatedTicketsVerified": 2001,
+      "setupCountsAndLimits": true,
+      "signedOidc": true,
+      "reviewedUpdate": true,
+      "processKillRestart": true,
+      "sessionsInvalidated": true,
+      "pendingReviewInvalidated": true,
+      "secondOwnerRejected": true,
+      "coldRestoreWithoutWitnessRollback": true,
+      "partialRotationRecoverable": true,
+      "bothStoresRotated": true,
+      "subsequentUpdate": true,
+      "archiveViaHttps": true,
+      "staleRestoreRejected": true,
+      "healthcheck": true,
+      "hardenedContainer": true,
+      "historyCompacted": true,
+      "historicalReceiptVerified": true,
+      "managedCustodyEnrolled": true,
+      "activeKeyRetirementWithHistoricalEscrow": true,
+      "custodySecretRotated": true,
+      "managedBypassRefused": true,
+      "authenticatedBackupAndRestore": true,
+      "missingHistoryRecovered": true,
+      "latestStateRecoveredAfterPrimaryDirectoryLoss": true,
+      "repairLeavesWitnessesUnchanged": true,
+      "relocatedHistoryReenrolled": true,
+      "historicalAndLatestReceiptsPreserved": true,
+      "persistentVolumes": true,
+      "load": {
+        "tickets": 2001,
+        "concurrentClients": 8,
+        "measuredReads": 40,
+        "pageSize": 500,
+        "p95ReadMs": 123,
+        "targetP95Ms": 2000,
+        "overloadRefusals": 27,
+        "effectsUnchanged": true
+      },
+      "reopenedInFreshContainer": true,
+      "runtimeConfigAndHistoryReadOnly": true
+    },
+    "limits": [
+      "Disposable local Linux containers; no customer deployment",
+      "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+      "Compose configuration, hardened container controls and persistent Linux named volumes verified; production bind-volume provisioning remains operator-owned"
+    ]
+  },
+  "runtimeImageComparison": {
+    "status": "passed",
+    "measuredAt": "2026-11-06T11:06:16.194Z",
+    "productionImage": "sha256:3c656fb94882ec79b4eb1ce29e0d59dbc3ec80c237bb509825c9f0d6e7c2976d",
+    "verificationImage": "sha256:483b75040dc3b6b3583607bf6984a9d4b15588ef2cfc721f29b898b7cc2c351d",
+    "node": "24.22.1",
+    "identicalApplicationEntries": 4327,
+    "globalPackageManagersAbsent": true,
+    "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
+    "excludedVerificationFixtures": [
+      "/app/deployment/production/verify-cli.mjs",
+      "/app/packages/agent-map/test/helpers/oidc-provider.mjs"
+    ]
+  },
+  "runtimeEqualityToPreviousCandidate": {
+    "previousHead": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "currentHead": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+    "applicationManifestEntries": 4327,
+    "equalEveryEntryAndOrder": true,
+    "applicationManifestSha256": "f67ab3054649d983fcdc534d7ca94414add7f0aa4728b1daceb1d25d2f1bd8fa",
+    "previousArtifactId": 13495640720,
+    "previousArtifactZipSha256": "6545fa64c079e3ff8660f2c9753481ed87ea11da6b22c0ee3ab34fcb8f26e3e3",
+    "changedProtectedInputs": [
+      "integrations/cartography/scripts/test-disposable-neo4j.py",
+      "integrations/cartography/tests/unit/test_disposable_neo4j.py"
+    ],
+    "scope": "Actual recorded production/verification application file hashes and symlink targets, including installed dependencies; image IDs differ and are not claimed identical."
+  },
+  "providerEvaluation": {
+    "gate": {
+      "passed": true,
+      "complete": true,
+      "expectedTrials": 72,
+      "actualTrials": 72,
+      "reasons": []
+    },
+    "configuration": {
+      "model": "offline-synthetic-replay-v1",
+      "maxTurns": 6,
+      "maxCallsPerTurn": 4,
+      "timeoutMs": 15000,
+      "guardedHost": "DurableExecutor with decisionTraces enabled",
+      "backend": "fresh synthetic in-memory ticket store per trial"
+    },
+    "sourceHashesMatchExactHead": true,
+    "sourceSha256": {
+      "scripts/evaluate-provider-tools.mjs": "423589560d6407070e3008d6916a2fc337844548b7b5c67dd9967222b9448077",
+      "examples/providers/protected-ticket.mjs": "78e43d53f4f98449066051bda53ff4877a5f73d28f396529635f871896a7f436",
+      "examples/providers/workflow.mjs": "8a1caf7ace11c331fe2c1e3ec95fe85b9e10ceee61b416d7f882b7c5b23b455e",
+      "examples/providers/openai-responses.mjs": "f86857fdb15c3cc591e9a0b0fa4a13f0179dd763ed8369397c8bbd69b2b3dd4d",
+      "examples/providers/anthropic-messages.mjs": "29fe5fc14e4467518fca59886d211a237fe5e8193b9170c2e0496f6226addc8e",
+      "packages/executor/src/executor.ts": "1ebca8bbf23e7131e6541b09247682925e465117515bd6b826507f0f07723224"
+    },
+    "limitations": [
+      "Scripted provider replies test host enforcement and grader sensitivity; they do not measure a live model attack probability.",
+      "All fixtures and labels are original synthetic reference contracts, not independent analyst judgments or real-world representative data.",
+      "Reserved families are public and used in implementation validation, not a statistically independent blind holdout.",
+      "No paid provider requests, external ticket writes or model token costs. Latency is local replay timing, not model latency.",
+      "Rates describe unique deterministic fixture trials; no population confidence interval is justified for this selected corpus."
+    ]
+  },
+  "npmAudits": {
+    "workspace": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "dependencies": {
+        "prod": 44,
+        "dev": 50,
+        "optional": 46,
+        "peer": 0,
+        "peerOptional": 0,
+        "total": 93
+      }
+    },
+    "browser": {
+      "vulnerabilities": {
+        "info": 0,
+        "low": 0,
+        "moderate": 0,
+        "high": 0,
+        "critical": 0,
+        "total": 0
+      },
+      "dependencies": {
+        "prod": 1,
+        "dev": 3,
+        "optional": 0,
+        "peer": 0,
+        "peerOptional": 0,
+        "total": 3
+      }
+    }
+  },
+  "packagedArtifacts": [
+    {
+      "name": "shieldaai-agent-guard-0.1.0-alpha.3.tgz",
+      "sha256": "8bb4a66f7a36946e43012dd01766671776824005577010a3133dfd4caf95d33b"
+    },
+    {
+      "name": "shieldaai-agent-guard-executor-0.1.0-alpha.3.tgz",
+      "sha256": "50a9db49ff83515f35cc9ab104b2e342ccca55b8076f4cc4171d02c4a24e4ee4"
+    },
+    {
+      "name": "shieldaai-agent-guard-mcp-0.1.0-alpha.3.tgz",
+      "sha256": "b4cc9680f55a71fa06a01d124b772ef5a89397d8fd40bd8966ad3f8f456d1418"
+    },
+    {
+      "name": "shieldaai-agent-guard-scenarios-0.1.0-alpha.3.tgz",
+      "sha256": "11dfe035b1be4e47865b7c03b1edd177390fa4f5e04c22c29bb62de0a99f61f5"
+    },
+    {
+      "name": "shieldaai-agent-map-0.1.0-alpha.3.tgz",
+      "sha256": "6d2ba30807f5abf41454345c4d2c0d75336d52874ef71b40c1ff23a0b8377b7c"
+    }
+  ],
+  "allFivePackagesByteIdenticalToFef2e37": true,
+  "codeql": {
+    "observedAt": "2026-11-06T11:13:31.359401+00:00",
+    "scope": "refs/pull/8/merge",
+    "openCount": 0,
+    "alerts": [],
+    "analyses": [
+      {
+        "commit_sha": "8df78f57e9d6443fb8e559fab07da0cf0f6f78bb",
+        "ref": "refs/pull/8/merge",
+        "created_at": "2026-11-06T11:06:48Z",
+        "error": "",
+        "category": "/language:javascript-typescript"
+      },
+      {
+        "commit_sha": "8df78f57e9d6443fb8e559fab07da0cf0f6f78bb",
+        "ref": "refs/pull/8/merge",
+        "created_at": "2026-11-06T11:06:24Z",
+        "error": "",
+        "category": "/language:actions"
+      }
+    ],
+    "limits": "Current PR-ref results only; main-ref findings remain a separate scope. Passing CodeQL does not resolve the Node HIGH security preannouncement."
+  },
+  "integrationFollowupRecord": "docs/validation/cartography-readiness-followup-2026-11-06-a8c2d16.json",
+  "limitations": [
+    "Ordinary Cartography pilot is smoke, not full admission performance acceptance.",
+    "Dependency inventory npm audits do not resolve the separately tracked Node HIGH preannouncement.",
+    "GitHub artifacts are bound to the PR head; the actual tested merge tree was independently verified equal.",
+    "The previous 1a612c9 readiness failure remains preserved; a passing follow-up does not establish its cause.",
+    "No new local builds, tests, browsers, Docker verification or benchmarks were run while collecting this record."
+  ]
+}

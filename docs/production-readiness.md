@@ -1,19 +1,25 @@
 # Production readiness acceptance
 
-Status: **Latest integration verification pending; production acceptance held**.
+Status: **Candidate verification passed; production acceptance held for Node HIGH review**.
 The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert
-review described below. R5 remains withheld; current R10/integration verification
-is pending after the latest docs-only head failed a fixture-readiness step.
+review described below. R5 remains withheld. All six ordinary hosted workflows
+passed for the reviewed harness follow-up `a8c2d16`, including integration,
+packaging and the installed consumer. The
+[current CI record](validation/production-readiness-ci-2026-11-06-a8c2d16.json)
+and [integration follow-up](validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
+bind those results to the exact source. The production application and admission
+performance inputs are unchanged from `fef2e37`.
 The [retained failure record](validation/cartography-readiness-failure-2026-11-06-1a612c9.json)
 identifies `1a612c9`: five workflows passed, including all 11 CI jobs, while
 Cartography integration reported 142 passed and one failed. Its nested owned
 Neo4j runner did not become ready before its deadline; no connection/authentication
-or container diagnostic establishes the underlying cause. Protected runtime,
-test and deployment inputs are unchanged from `fef2e37`. The earlier passing
-results below remain valid historical evidence, not a claim that the latest head
-passed every gate.
+or container diagnostic establishes the underlying cause. The follow-up retains
+safe failure diagnostics, enforces the existing deadline after probes and requires
+verified cleanup. Resources, timeouts and recovery assertions were not relaxed.
+Its passing result closes current verification; it does not explain the earlier
+timeout or guarantee that fixture startup can never fail.
 The verified [ledger-decoder candidate](validation/ledger-decoder-2026-11-06.json),
 `fef2e37`,
 uses private normalization of a freshly parsed graph; authenticated reads,
@@ -99,8 +105,7 @@ for a deployment-specific assessment.
 The [reviewed five-dimension rubric](validation/production-category-review-2026-11-06.json)
 records subjective internal engineering judgments for the documented profile.
 These are not statistical confidence, external certification or a guarantee of
-safety. **The every-category target remains unmet: R5 is withheld and current
-R10 verification is pending**;
+safety. **The every-category target remains unmet: R5 is withheld**;
 there is no aggregate production score.
 
 | Category | Judgment / 10 |
@@ -114,11 +119,11 @@ there is no aggregate production score.
 | R7 · Governed memory and context | 9.8 |
 | R8 · Budgets, history and recovery | 9.6 |
 | R9 · UX and operations | 9.6 |
-| R10 · Evaluation and release controls | **Pending current integration verification**; prior judgment 9.7 |
+| R10 · Evaluation and release controls | 9.7 |
 
-The linked review gives each dimension's evidence and deductions. The later
-integration failure reopens current R10 verification without erasing that prior
-judgment. Company rollout,
+The linked review gives each dimension's evidence and deductions. The passing
+follow-up restores current R10 verification while retaining its 1.8/2 verification
+dimension and the earlier unexplained fixture timeout. Company rollout,
 representative human usability and paid provider trials remain separate deployment
 validation; they are not fabricated or counted as completed product evidence.
 
@@ -264,17 +269,20 @@ alone is not passing evidence.
   this attempt finished with 142 passes and one failure in 304.83 seconds.
   These timings do not identify a cause. Full-log hashes, the safe exact error
   excerpt and comparison are in the [failure record](validation/cartography-readiness-failure-2026-11-06-1a612c9.json).
-  Diagnostic-harness work is in progress; no passing follow-up is asserted.
+  The reviewed follow-up `a8c2d16` passed all six ordinary workflows. Its
+  [integration record](validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
+  retains exact counts, packaging/installed-consumer results and cleanup evidence.
+  The [runner change record](validation/neo4j-readiness-diagnostics-2026-11-06.json)
+  identifies the unchanged bounds and stronger failure reporting/cleanup checks.
 
 ## Remaining acceptance and operational limits
 
-**Current integration/R10 verification is pending.** The latest failure occurred
-before the nested recovery test's assertions. The available log only reports a
-generic readiness deadline, so neither host contention nor a product recovery
-defect is established. The follow-up adds bounded stage, readiness, container and
-cleanup observations and enforces the deadline after probes; it does not increase
-resources/timeouts or weaken assertions. The required integration, packaging and
-installed-consumer gates must complete on the follow-up before this hold closes.
+**Current integration/R10 verification passed.** The earlier timeout occurred
+before the nested recovery assertions, and its underlying cause remains unknown.
+The follow-up passed the required integration, packaging and installed-consumer
+gates with stricter cleanup and deadline checks. A recurrence must be investigated
+using the retained safe diagnostics; the historical failure is not erased or
+reclassified as a proven resource-contention issue.
 
 **R5 acceptance is pending; its production score is withheld.** The
 [official Node security prealert](https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md)
@@ -290,8 +298,8 @@ To close R5, review each published issue, adopt the applicable fixed immutable
 Node image or record evidence-backed non-applicability, and refresh exact-image
 inventories, advisories, installed-package checks, supported-platform checks and
 Linux recovery evidence for any changed source/image. The prior `fef2e37`
-candidate gates and internal review remain recorded. R5 is withheld and latest
-integration/R10 verification is pending, so the every-category target is unmet.
+candidate gates and current follow-up review remain recorded. R5 is withheld,
+so the every-category target is unmet.
 
 The supported operational boundary remains material:
 

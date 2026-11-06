@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "status": "internal-review-retained-R5-withheld-R10-verification-reopened",
+  "status": "internal-review-current-verification-passed-R5-withheld",
   "sourceCommit": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
   "sourceSha256": "2f53292086f43f07d060a962049d934237727480c12d4576aa35c9b997739db2",
   "sourceFiles": 411,
@@ -548,42 +548,39 @@
     }
   },
   "rootReview": {
-    "status": "prior-judgment-preserved-current-R10-reopened",
+    "status": "current-verification-restored-R5-withheld",
     "reviewedEveryCategoryAndRationale": true,
     "scoreTotalsChecked": true,
-    "ordinaryEvidence": "production-readiness-ci-2026-11-06-fef2e37.json",
+    "ordinaryEvidence": "production-readiness-ci-2026-11-06-a8c2d16.json",
     "performanceEvidence": "ledger-decoder-2026-11-06.json",
     "performanceGateIndependentlyRecomputed": true,
     "runtimeScopeClarification": "R6 refers to the documented Linux container isolation profile, including a VM host where Docker requires it; this does not add a separate generic VM product profile.",
     "evidenceReconciliation": "The independently verified ordinary CI artifacts and matching head/merge trees close the draft review's hosted binding condition. Dated hashes in the independent draft identify the documents as read; subsequent evidence-only reconciliation does not change reviewed runtime inputs.",
-    "remainingBlocker": "Published Node HIGH issue details and an applicable fixed runtime or evidence-backed non-applicability are required before R5 can be scored or production released."
-  },
-  "latestVerificationHold": {
-    "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
-    "workflowRun": 42204781372,
-    "jobId": 127848569421,
-    "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
-    "status": "required-integration-verification-reopened",
-    "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
-    "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
-    "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+    "remainingBlocker": "Published Node HIGH issue details and an applicable fixed runtime or evidence-backed non-applicability are required before R5 can be scored or production released.",
+    "currentVerification": {
+      "evidence": "production-readiness-ci-2026-11-06-a8c2d16.json",
+      "sha256": "0323ac9bee43517798b9060a105dd8f6d16dcbd369d2beb664cec2d1e39915f2",
+      "status": "independently-bound-and-reviewed",
+      "integrationEvidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+      "integrationEvidenceSha256": "e5517b5490c040db188290fcd2be820c76591bcf7d52fd4f9709b5d47555ed98"
+    }
   },
   "currentJudgments": {
     "R1": {
       "total": 9.7,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R2": {
       "total": 9.8,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R3": {
       "total": 9.8,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R4": {
       "total": 9.7,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R5": {
       "total": null,
@@ -591,23 +588,54 @@
     },
     "R6": {
       "total": 9.7,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R7": {
       "total": 9.8,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R8": {
       "total": 9.6,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R9": {
       "total": 9.6,
-      "status": "candidate-judgment-subject-to-final-evidence-binding"
+      "status": "internal-engineering-judgment-reviewed-and-evidence-bound"
     },
     "R10": {
-      "total": null,
-      "status": "withheld-pending-current-integration"
+      "total": 9.7,
+      "status": "internal-engineering-judgment-reviewed",
+      "verificationDimension": 1.8,
+      "evidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+      "limitation": "The earlier fixture readiness timeout is retained; its cause remains unproven."
     }
+  },
+  "historicalVerificationHolds": [
+    {
+      "head": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+      "workflowRun": 42204781372,
+      "jobId": 127848569421,
+      "evidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
+      "status": "required-integration-verification-reopened",
+      "cause": "Nested disposable Neo4j readiness timeout before recovery assertions; underlying cause remains unproven.",
+      "scope": "Same protected source as fef2e37. Five other workflows passed. Prior passing functional/Linux/performance results are retained; current integration verification is pending.",
+      "nextAction": "Bounded safe runner diagnostics, preserved exit-state evidence and strict post-probe deadline validation; no resource or deadline increases."
+    }
+  ],
+  "currentVerification": {
+    "head": "a8c2d16413ce2b06518b791d18340a97a6d0e464",
+    "sourceSha256": "4d390fb0c8bcded592c14364e99611d1fe3150a463ee2957cf40f00115b67314",
+    "sourceFiles": 411,
+    "status": "current-required-verification-passed",
+    "ordinaryEvidence": "production-readiness-ci-2026-11-06-a8c2d16.json",
+    "integrationEvidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+    "runtimeAndAdmissionInputsUnchangedSince": "fef2e37a4273f246536c1ddc1ffdcac10be5f96c",
+    "previousTimeoutCause": "unknown; the passing follow-up does not establish a cause or a permanent fixture reliability fix",
+    "independentReview": "Core independently verified all eight artifact hashes/sizes, exact source/merge tree, integration log/assertion hashes and unchanged production boundary. R10 restored to9.7, retaining verification1.8/2 and the original unexplained timeout.",
+    "integrationEvidenceSha256": "e5517b5490c040db188290fcd2be820c76591bcf7d52fd4f9709b5d47555ed98",
+    "testedMergeCommit": "8df78f57e9d6443fb8e559fab07da0cf0f6f78bb",
+    "gitTree": "d0e11b08356ab50a7cae72d254d5021b66c8b2ad",
+    "headAndMergeSameTree": true,
+    "ordinaryEvidenceSha256": "0323ac9bee43517798b9060a105dd8f6d16dcbd369d2beb664cec2d1e39915f2"
   }
 }
