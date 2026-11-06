@@ -24,6 +24,10 @@ Agent Ops service, which does not start an observer. It reserves neither an
 exclusive nor physical core and does not guarantee an unknown deployment's latency.
 Those prior runs used default worker scheduling and cannot qualify the new mode;
 the later `1ef859c` default-mode failures remain retained as well.
+Exact `ba7deb6` then passed both predeclared runs of the configured profile:
+**5.457% and 9.280% overhead**, all 1,200 effects in each, 135/152 polls, zero failed
+or skipped polls, verified controls and cleanup. These results do not replace
+the ordinary full graph/admission qualification, which remains incomplete.
 
 The current candidate adds one cooperative yield to the public task HTTP server's
 prepare/execute routes after bounded JSON parsing and before fresh second
@@ -35,13 +39,25 @@ scheduling, not a fairness or real-time guarantee for all SDK embeddings.
 On `1ef859c`, its 98 focused checks and full local check passed: **1,283/1,283 tests,
 zero skips, plus installed consumers**; all 11 hosted CI jobs also passed with
 platform skips recorded. Its CodeQL unresolved-alert gate failed on the temporary
-Windows experiment registration trigger; the manual-only correction still needs a
-new scan. The subsequent direct core serializer and explicit background-worker
-candidate still requires new hosted checks, hosted full and both declared native
-qualification runs. Its first combined local run passed 1,306 of 1,307 tests with
+Windows experiment registration trigger. The subsequent direct core serializer
+and explicit background-worker candidate's first combined local run passed 1,306 of 1,307 tests with
 zero skips; one copied CLI fixture lacked the new helper, and packaging was not
 reached. Its minimal copy-list correction passed the focused regression; the
 second full check passed **1,307/1,307 tests, zero skips, plus installed consumers**.
+On `ba7deb6`, all 11 hosted CI jobs passed, including 195 browser accessibility
+scans and the required 45 Linux isolation checks without skips. The ordinary full
+workflow failed at graph database readiness before graph measurements or admission;
+the PR pilot failed earlier with only `PILOT_FAILED` and no report. Current CodeQL
+alert 23 remained open despite successful analysis. The manual experiment now
+selects only the fixed reviewed historical commit; its new scan is pending.
+
+The startup follow-up fixes a separately reproduced Neo4j option-parser edge by
+prefixing the complete generated random password, preserving all 256 random bits.
+It also retains bounded, secret-free failure evidence before owned-resource
+cleanup. Historical failure causes remain unproven. Its full local Python sequence
+passed lint/formatting, **1,022 unit tests and 150 authenticated Neo4j integration
+tests**, verified cleanup, package builds and isolated installed-wheel checks.
+New hosted/full graph/admission verification and CodeQL remain pending.
 The controlled exact-`9709f70` Windows serial experiment
 passed the previously failing cases and installed consumers; the maintained
 Windows-only test launcher subsequently passed on `1ef859c`. Prior failures

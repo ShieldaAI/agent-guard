@@ -90,10 +90,13 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    and `verification.json` with the platform/image/source binding. Local and hosted
    qualifications are separate records. The exact `e4e42f` native Linux run passed
    at 7.2766% overhead, 1,200 effects and 149 polls without failures/skips under
-   default worker scheduling. It does not qualify the new serializer/background
-   candidate. That candidate's second local full check passed 1,307/1,307 tests
-   with zero skips plus installed consumers; the first copied-fixture omission
-   remains recorded. Hosted and performance qualification are pending. Prior quota-only,
+   default worker scheduling. Separate `ba7deb6` runs of the explicit background
+   profile passed at 5.457% and 9.280%, with 1,200 effects each and zero failed/skipped
+   polls. Its local 1,307-test check and all 11 hosted CI jobs passed. The ordinary
+   full workflow stopped at graph database readiness and never measured admission;
+   the startup correction passed local lint/formatting, 1,022 unit tests, 150
+   authenticated integration tests and package/installed-wheel checks. New
+   exact-source hosted verification remains pending. Prior quota-only,
    Colima-affined, diagnostic and 10 ms-period failures remain recorded. Do not add
    diagnostics, change limits, or retry away failures.
    The runner's generic default remains bandwidth-only; the configured acceptance

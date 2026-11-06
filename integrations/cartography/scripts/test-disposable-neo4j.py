@@ -35,6 +35,13 @@ LABEL = "com.shielda.agent-guard.disposable-test"
 CONFIG_ENV = "AGENT_GUARD_TEST_NEO4J_CONFIG"
 
 
+def neo4j_initial_password() -> str:
+    """Keep all 256 random bits while avoiding an option-like admin argument."""
+    # The pinned Docker entrypoint passes the password to neo4j-admin without
+    # an end-of-options marker. A URL-safe token can begin with a hyphen.
+    return "guard-" + secrets.token_urlsafe(32)
+
+
 def docker(*args: str, timeout: float = 30, env: dict[str, str] | None = None) -> str:
     result = subprocess.run(
         ["docker", *args],
@@ -268,7 +275,7 @@ def main() -> int:
         pytest_args = pytest_args[1:]
     run_id = uuid.uuid4().hex
     name = f"agent-guard-neo4j-test-{run_id}"
-    password = secrets.token_urlsafe(32)
+    password = neo4j_initial_password()
     env = os.environ.copy()
     env["NEO4J_AUTH"] = f"neo4j/{password}"
     tunnel = None

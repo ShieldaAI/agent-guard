@@ -37,6 +37,9 @@ def test_benchmark_readiness_failure_retains_safe_stage_state_and_cleanup(
 
     def docker(*args, **_kwargs):
         if args[0] == "run":
+            assert "--rm" not in args
+            assert args[args.index("--memory") + 1] == "4g"
+            assert args[args.index("--cpus") + 1] == "4"
             return "a" * 64
         if args[0] == "port":
             return "127.0.0.1:12345"

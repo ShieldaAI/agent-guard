@@ -184,16 +184,21 @@ volumes. Local measurements do not establish a completed hosted CI run.
 The configured acceptance profile measures the same uninstrumented full admission
 workload on native Linux/cgroup v2 with placement on one logical CPU, a one-CPU
 bandwidth quota, 512 MiB memory, no extra swap, 128 PIDs, the default 100 ms CPU
-period and zero burst. The new candidate additionally requires explicit
-`workerScheduling: 'linux-background'` and remains unqualified. The earlier
+period and zero burst. The configured candidate additionally requires explicit
+`workerScheduling: 'linux-background'`. Both declared `ba7deb6` native runs passed:
+5.457% and 9.280% overhead, all 1,200 effects each, 135/152 polls, zero failed/skipped
+polls and verified cleanup. Ordinary full graph/admission qualification remains
+incomplete: its graph database did not become ready, so neither graph measurements
+nor admission ran. The earlier
 default-worker profile **passed on exact source `e4e42f`** at 7.2766% admission
 overhead, with all 1,200 effects and 149 polls, zero failed/skipped polls and verified
 cleanup. The later `9709f70` run failed cadence and overhead; `a91028c` passed
 with unchanged runtime bytes. Both remain evidence, without a proven cause or fix.
-The subsequent `1ef859c` default-mode failures also remain evidence. None of these
-results qualifies the new mode; its two declared native runs remain pending.
+The subsequent `1ef859c` default-mode failures also remain evidence. Those earlier
+default-worker results do not qualify the new mode; the two `ba7deb6` passes are
+separate evidence.
 This profile does not replace the graph or ordinary hosted admission gate. Build
-first and run once per reviewed candidate without a competing local workload:
+first and execute each declared qualification once, without a competing local workload:
 
 ```sh
 export NODE_IMAGE='node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53'
@@ -258,8 +263,13 @@ validated route. A fixed `REQUEST_TIMEOUT` does not cause automatic retry. The
 98 focused checks and local 1,283-test full check passed on `1ef859c` with zero skips,
 plus installed consumers. The new serializer/background-policy candidate's second
 local full check passed 1,307/1,307 tests with zero skips plus installed consumers;
-the first copied-fixture omission remains recorded. Hosted and performance
-qualification are pending. This scheduling change
+the first copied-fixture omission remains recorded. All 11 hosted CI jobs passed
+on `ba7deb6`. The separate startup correction prefixes generated Neo4j passwords
+without losing random bits and retains safe failure diagnostics before cleanup;
+it does not prove the historical readiness failure's cause. Local validation passed
+lint/formatting, 1,022 unit tests, 150 authenticated integration tests, verified
+cleanup and package/installed-wheel checks. New hosted/full graph/admission
+verification remains pending. This scheduling change
 does not alter the immediate first poll, cadence, resource limits or acceptance
 gates, and is not a real-time guarantee or a change to every SDK embedding.
 

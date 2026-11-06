@@ -1,12 +1,6 @@
 name: Windows serial test experiment
 on:
   workflow_dispatch:
-    inputs:
-      source_commit:
-        description: Exact 40-hex source commit; changes only test-file scheduling
-        required: true
-        type: string
-        default: '9709f70e14062732917b1568238624c54b2771f4'
 permissions:
   contents: read
 concurrency:
@@ -18,20 +12,20 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 15
     env:
-      SOURCE_COMMIT: ${{ inputs.source_commit }}
+      SOURCE_COMMIT: '9709f70e14062732917b1568238624c54b2771f4'
       WORKFLOW_COMMIT: ${{ github.workflow_sha }}
       TRIGGER_COMMIT: ${{ github.sha }}
       WORKFLOW_RUN_ID: ${{ github.run_id }}
       WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
     steps:
-      - name: Validate the exact source input
+      - name: Validate the fixed historical source
         shell: pwsh
         run: |
           if ($env:SOURCE_COMMIT -cnotmatch '\A[0-9a-fA-F]{40}\z') { throw 'SOURCE_COMMIT_INVALID' }
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-          ref: ${{ inputs.source_commit }}
+          ref: '9709f70e14062732917b1568238624c54b2771f4'
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           # Match the failed 9709 Windows job exactly, rather than float Node 24.
