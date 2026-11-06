@@ -1,8 +1,9 @@
 // Optional synthetic-benchmark instrumentation. Never imported by production packages.
 import { performance, PerformanceObserver } from 'node:perf_hooks';
 import { threadId } from 'node:worker_threads';
+import { isPromise } from 'node:util/types';
 
-const STREAMS = ['polls', 'ticks', 'exports', 'requests', 'heartbeats', 'gc'];
+const STREAMS = ['polls', 'ticks', 'exports', 'requests', 'heartbeats', 'gc', 'prepare', 'execute', 'ledgerRead', 'ledgerTransaction'];
 const RESOURCE_COUNTERS = ['minorPageFault', 'majorPageFault', 'fsRead', 'fsWrite',
   'voluntaryContextSwitches', 'involuntaryContextSwitches'];
 const FIELDS = {
@@ -14,6 +15,8 @@ const FIELDS = {
     'eventLoopUtilization', 'processCpuUserUs', 'processCpuSystemUs', ...RESOURCE_COUNTERS],
   gc: ['startedNs', 'endedNs', 'deliveredNs', 'durationMs', 'kind', 'flags'],
 };
+for (const name of ['prepare', 'execute', 'ledgerRead', 'ledgerTransaction'])
+  FIELDS[name] = ['id', 'startedNs', 'returnedNs', 'endedNs', 'durationMs', 'ok', 'asynchronous'];
 const elapsed = (start, end) => Number(end - start) / 1e6;
 const finite = value => Number.isFinite(value) ? value : null;
 
@@ -163,4 +166,60 @@ export function instrumentObserverRequests(server, diagnostics) {
     if (pending.size) diagnostics.fail();
     for (const detach of pending) detach();
   };
+}
+
+/**
+ * Fixed hooks in the disposable benchmark process only. Ledger transaction spans
+ * include nested reads and commit work; overlapping durations must not be summed.
+ * Async spans end in a Promise reaction, not an invented synchronous completion.
+ */
+export function instrumentAdmissionMethods(executor, LedgerStore, diagnostics) {
+  const restores = []; let pending = 0, restored = false;
+  const fail = () => { try { diagnostics.fail(); } catch { /* never affect the original call */ } };
+  const install = (target, method, stream, asynchronous) => {
+    const own = Object.getOwnPropertyDescriptor(target, method), original = target[method];
+    if (typeof original !== 'function') throw new Error('ADMISSION_DIAGNOSTICS_HOOK_INVALID');
+    let sequence = 0;
+    Object.defineProperty(target, method, { configurable: true, writable: true,
+      value: function (...args) {
+        const startedNs = process.hrtime.bigint(), id = ++sequence;
+        let returnedNs = null, observing = false, finished = false;
+        const finish = ok => {
+          if (finished) return;
+          finished = true; if (observing) pending--;
+          try {
+            const endedNs = process.hrtime.bigint();
+            diagnostics.add(stream, { id, startedNs: startedNs.toString(), returnedNs: returnedNs?.toString() ?? null,
+              endedNs: endedNs.toString(), durationMs: elapsed(startedNs, endedNs), ok, asynchronous: observing });
+          } catch { fail(); }
+        };
+        let result;
+        try { result = Reflect.apply(original, this, args); }
+        catch (error) { finish(false); throw error; }
+        returnedNs = process.hrtime.bigint();
+        if (asynchronous) {
+          if (isPromise(result)) {
+            observing = true; pending++;
+            // Return the exact original Promise. These extra reactions perturb
+            // scheduling/handledness, which is why profiling is never acceptance.
+            try { Promise.prototype.then.call(result, () => finish(true), () => finish(false)); }
+            catch { fail(); finish(false); }
+          } else { fail(); finish(true); }
+        } else finish(true);
+        return result;
+      } });
+    restores.push(() => { if (own) Object.defineProperty(target, method, own); else delete target[method]; });
+  };
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    if (pending) fail();
+    for (const release of restores.reverse()) { try { release(); } catch { fail(); } }
+  };
+  try {
+    install(executor, 'prepare', 'prepare', true); install(executor, 'execute', 'execute', true);
+    install(LedgerStore.prototype, 'read', 'ledgerRead', false);
+    install(LedgerStore.prototype, 'transaction', 'ledgerTransaction', false);
+  } catch (error) { restore(); throw error; }
+  return restore;
 }

@@ -9,7 +9,9 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { isMainThread, parentPort, threadId, Worker, workerData } from 'node:worker_threads';
 import { DurableExecutor, createInventoryObserverToken, startExecutorServer, startInventoryServer } from '../packages/executor/dist/index.js';
-import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentObserverRequests } from './benchmark-admission-diagnostics.mjs';
+import { LedgerStore } from '../packages/executor/dist/store.js';
+import { createAdmissionDiagnostics, instrumentInventorySnapshot, instrumentObserverRequests, instrumentAdmissionMethods } from './benchmark-admission-diagnostics.mjs';
+import { startAdmissionCpuProfile } from './benchmark-admission-profile.mjs';
 
 export const PHASE_ORDER = Object.freeze(['baseline', 'polling', 'polling', 'baseline']);
 export function percentile95(values) {
@@ -184,13 +186,14 @@ function waitMessage(worker, predicate, timeout = 10_000) {
   });
 }
 
-export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false }) {
+export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, grants = 10, pollIntervalMs = 250, decisionTraces = false, diagnostics = false, cpuProfile = false }) {
   if (!['baseline', 'polling'].includes(mode) || !Number.isInteger(samples) || samples < 1 || samples > 1000 ||
       !Number.isInteger(warmup) || warmup < 1 || warmup > 100 || !Number.isInteger(tasks) || tasks < 1 || tasks > 100 ||
-      !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000 || typeof decisionTraces !== 'boolean' || typeof diagnostics !== 'boolean') throw new Error('ADMISSION_CONFIG_INVALID');
+      !Number.isInteger(grants) || grants < 1 || grants > 10 || !Number.isInteger(pollIntervalMs) || pollIntervalMs < 5 || pollIntervalMs > 1000 || typeof decisionTraces !== 'boolean' || typeof diagnostics !== 'boolean' ||
+      typeof cpuProfile !== 'boolean' || (cpuProfile && !diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
   const directory = await realpath(await mkdtemp(join(tmpdir(), 'agent-guard-admission-')));
   let executor, taskServer, observer, worker, clientWorker, credential;
-  let diagnostic, restoreExport, restoreRequests;
+  let diagnostic, restoreExport, restoreRequests, restoreMethods, profiler;
   let successfulEffects = 0;
   const phase = { mode, executorThreadId: threadId, clientThreadId: null, clockOriginNs: process.hrtime.bigint().toString(), warmupSamples: [], coldFirstCall: null, samples: [],
     measurementStartedNs: null, measurementEndedNs: null, measurementDurationMs: 0,
@@ -215,6 +218,10 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     if (diagnostics) {
       diagnostic = createAdmissionDiagnostics({ processMetrics: true });
       phase.diagnostics = { diagnosticOnly: true, acceptanceEvidenceEligible: false, main: null, workload: null };
+      if (cpuProfile) {
+        restoreMethods = instrumentAdmissionMethods(executor, LedgerStore, diagnostic);
+        profiler = await startAdmissionCpuProfile();
+      }
     }
     if (mode === 'polling') {
       if (diagnostic) restoreExport = instrumentInventorySnapshot(executor, diagnostic);
@@ -264,10 +271,15 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
     }
     } finally {
     if (diagnostic) {
-      for (const restore of [restoreRequests, restoreExport]) { try { restore?.(); } catch { diagnostic.fail(); } }
+      for (const restore of [restoreRequests, restoreExport, restoreMethods]) { try { restore?.(); } catch { diagnostic.fail(); } }
+      if (profiler) {
+        try { phase.diagnostics.cpuProfile = await profiler.stop(); }
+        catch { diagnostic.fail(); }
+      }
       phase.diagnostics.main = diagnostic.stop();
       phase.diagnostics.complete = phase.diagnostics.main.complete && phase.diagnostics.workload?.complete === true &&
-        (mode === 'baseline' || phase.polling?.diagnostics?.complete === true);
+        (mode === 'baseline' || phase.polling?.diagnostics?.complete === true) &&
+        (!cpuProfile || phase.diagnostics.cpuProfile?.complete === true);
     }
     }
   }
@@ -275,14 +287,14 @@ export async function runAdmissionPhase({ mode, samples, warmup, tasks = 100, gr
 }
 
 export async function main(argv = process.argv.slice(2)) {
-  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false } }, strict: true });
-  if (!['smoke', 'acceptance'].includes(values.profile) || !values.output) throw new Error('ADMISSION_CONFIG_INVALID');
+  const { values } = parseArgs({ args: argv, options: { profile: { type: 'string', default: 'acceptance' }, output: { type: 'string' }, diagnostics: { type: 'boolean', default: false }, 'cpu-profile': { type: 'boolean', default: false } }, strict: true });
+  if (!['smoke', 'acceptance'].includes(values.profile) || !values.output || (values['cpu-profile'] && !values.diagnostics)) throw new Error('ADMISSION_CONFIG_INVALID');
   const destination = resolve(values.output); await stat(resolve(destination, '..'));
   const output = await open(destination, 'wx', 0o600);
   const acceptance = values.profile === 'acceptance';
   const settings = { samples: acceptance ? 250 : 100, warmup: 50, tasks: 100, grants: 10, pollIntervalMs: 250 };
   const report = { schemaVersion: 2, kind: 'synthetic-admission-polling-benchmark', profile: values.profile,
-    diagnosticOnly: values.diagnostics, acceptanceEvidenceEligible: acceptance && !values.diagnostics,
+    diagnosticOnly: values.diagnostics, acceptanceEvidenceEligible: acceptance && !values.diagnostics, cpuProfileEnabled: values['cpu-profile'],
     startedAt: new Date().toISOString(), passed: false, phases: [], workload: settings, phaseOrder: PHASE_ORDER,
     hardware: { platform: platform(), release: release(), architecture: arch(), logicalCpus: cpus().length, memoryBytes: totalmem(), node: process.version },
     measurement: 'Independent workload-worker HTTP execute request initiation to executor-thread governed tool entry, using shared process.hrtime.bigint nanoseconds serialized as strings. Includes durable admission, server event-loop queueing and transport; excludes tool work/settlement. Prepare, complete execute and combined durations and all timestamp boundaries are retained. Successful poll completion membership uses the workload worker exact measured interval.',
@@ -299,10 +311,16 @@ export async function main(argv = process.argv.slice(2)) {
     attribution: 'Request→export includes network/body processing/scheduling, not pure queue delay. Process CPU/resource counters include all workers; event-loop/GC observations are thread-local. Missing GC or I/O counter changes cannot prove a host cause.',
     privacy: 'Only bounded timestamps, counters, booleans and fixed labels; no request headers, URLs, credentials, bodies, results or error messages.',
   };
+  if (values['cpu-profile']) report.diagnosticContract.cpuProfile = {
+    methods: 'Public prepare/execute and repo-private LedgerStore read/transaction are wrapped only in this disposable process. this, arguments, return, thrown values and original Promise identity are preserved; Promise reaction/handledness and profiling overhead are added.',
+    nesting: 'Spans are independent shared-hrtime intervals, not async parent attribution. Ledger transaction includes nested reads, serialization/encryption and commit; do not add nested/overlapping spans as separate CPU or I/O time. Async endedNs is observation in a settlement reaction.',
+    profiler: 'In-process inspector Session without a port;1ms sampling,120s soft deadline per phase,20000nodes,120000samples,16MiB sanitized output per phase. Deadline overrun, trimming, errors or lost topology make the capture incomplete. Startup/stop hrtime brackets bound V8 relative-clock alignment.',
+    privacy: 'Retains only sanitized repo-relative/Node module function labels, bounded call-tree and sampled relative timings. Unknown source paths/function labels are redacted; no arguments, state, source text, headers or credentials. Raw V8 profiles are never written.',
+  };
   try {
     for (const mode of PHASE_ORDER) {
       process.stderr.write(`Admission benchmark phase ${report.phases.length + 1}/4: ${mode}\n`);
-      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics }));
+      report.phases.push(await runAdmissionPhase({ mode, ...settings, diagnostics: values.diagnostics, cpuProfile: values['cpu-profile'] }));
       await sleep(100);
     }
     report.gate = admissionGate(report.phases, { enforcePerformance: acceptance });

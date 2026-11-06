@@ -25,9 +25,70 @@
     "run": 42194605365,
     "job": 127814605231,
     "source": "f6dec314d8f18f9d7858e3da8bb129b1e6b8013c",
-    "status": "running",
+    "status": "complete-diagnostic-performance-gate-failed",
     "fullBenchmark": true,
-    "admissionDiagnostics": true
+    "admissionDiagnostics": true,
+    "artifactId": 13492255207,
+    "artifactZipSha256": "ed70ebf803d192ac6d264cbf51923c7610d075399b9f67f4ce431e176d0077ec",
+    "artifactDigestVerified": true,
+    "diagnosticsComplete": true,
+    "acceptanceEvidenceEligible": false,
+    "gate": {
+      "passed": false,
+      "correctnessPassed": true,
+      "effectAccountingPassed": true,
+      "stressProfileValid": true,
+      "latencySamplesValid": true,
+      "failureReasons": [
+        {
+          "code": "ADMISSION_REGRESSION_EXCEEDED"
+        }
+      ],
+      "performanceEnforced": true,
+      "performancePassed": false,
+      "maximumRatio": 1.1,
+      "baselineP95Ms": 62.299452,
+      "pollingP95Ms": 69.370846,
+      "ratio": 1.1135065200894543,
+      "regressionPercent": 11.350652008945428
+    },
+    "retainedReport": {
+      "path": "admission-diagnostic-trace-2026-11-06-f6dec31.json.gz",
+      "sha256": "e8f526b314b48e26215e796b2639fe6bd8b21be5a669de2806956f55214b6f34",
+      "uncompressedSha256": "64ad8066cb7fa8f51ce46ba3df2c0b9a206fc9c38ee788442811d2db7ab3b532"
+    },
+    "phaseAnalysis": [
+      {
+        "phase": 2,
+        "polls": 120,
+        "exportP95Ms": 12.575317,
+        "maximumExportMs": 23.022807,
+        "preHandlerP95Ms": 94.181969,
+        "maximumClientParseMs": 4.031055,
+        "mainEventLoopUtilization": 0.9846502884489625,
+        "worstPoll": {
+          "durationMs": 123.810123,
+          "beforeHandlerMs": 108.034205,
+          "exportMs": 12.521176
+        }
+      },
+      {
+        "phase": 3,
+        "polls": 118,
+        "exportP95Ms": 13.916323,
+        "maximumExportMs": 19.656962,
+        "preHandlerP95Ms": 94.283002,
+        "maximumClientParseMs": 3.917312,
+        "mainEventLoopUtilization": 0.9844799421551196,
+        "worstPoll": {
+          "durationMs": 129.119542,
+          "beforeHandlerMs": 114.265811,
+          "exportMs": 12.046749
+        }
+      }
+    ],
+    "interpretation": "Ordinary shared-main-loop waiting dominates poll time in this observation; synchronous export adds roughly 10\u201314 ms. The earlier 371\u2013397 ms stalls did not recur, and their cause remains unproven. Instrumented overhead is not performance acceptance evidence.",
+    "nextAction": "One predeclared main-thread CPU profile with aligned prepare/execute and ledger read/transaction spans, retaining the workload and gates."
   },
   "productionRuntimeChanged": false,
   "cliFixtureCorrection": {
@@ -44,6 +105,73 @@
       "skip": "Optional real MCP container test; the separate required hosted Linux isolation gate passed.",
       "logSha256": "b65b734f24aded20814b8d542bce13a2f034cd955ee98e1885ff045aee5be7ac"
     },
-    "hostedCorrection": "pending"
+    "hostedCorrection": {
+      "head": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+      "ciRun": 42195606471,
+      "status": "all-platform-jobs-passed"
+    }
+  },
+  "secondDiagnosticProtocol": {
+    "status": "locally-verified-awaiting-one-hosted-capture",
+    "purpose": "Attribute busy-main-thread work using sampled stacks and aligned method spans; do not infer the cause of unreproduced rare stalls.",
+    "diagnosticOnly": true,
+    "acceptanceEvidenceEligible": false,
+    "plannedRuns": 1,
+    "inputs": {
+      "full_benchmark": true,
+      "admission_diagnostics": true,
+      "admission_cpu_profile": true
+    },
+    "unchangedWorkload": {
+      "phaseOrder": [
+        "baseline",
+        "polling",
+        "polling",
+        "baseline"
+      ],
+      "tasks": 100,
+      "grantsPerTask": 10,
+      "measuredPerPhase": 250,
+      "warmupPerPhase": 50,
+      "pollIntervalMs": 250
+    },
+    "unchangedGates": "All 1200 effects/calls and cleanup; no failed polls or busy skipped intervals; coverage in each polling phase; full p95 ratio at most 1.10. Instrumented reports remain ineligible regardless of gate result.",
+    "hooks": [
+      "executor.prepare",
+      "executor.execute",
+      "LedgerStore.prototype.read",
+      "LedgerStore.prototype.transaction"
+    ],
+    "profileBounds": {
+      "samplingIntervalUs": 1000,
+      "softDeadlineMsPerPhase": 120000,
+      "maximumNodesPerPhase": 20000,
+      "maximumSamplesPerPhase": 120000,
+      "maximumSanitizedBytesPerPhase": 16777216
+    },
+    "privacy": "Local inspector Session without a listening port; sanitized repository-relative or Node-internal frame labels, timestamps and counters only; no raw profiles, arguments, results, source text, credentials or error text.",
+    "interpretation": "Preserve native Promise identity but acknowledge added reactions and profiling overhead. Overlapping/nested spans are not additive; sampled stack presence is not exact CPU time or proof of a native wait. Align only through recorded hrtime activation brackets. Overrun, truncation, errors and drops are explicit incomplete evidence.",
+    "productionRuntimeChanged": false,
+    "admissionGateByteIdenticalTo": "4b2cdc9bc75a8634b7a9f109c168c1beabd66d40",
+    "inputSha256": {
+      "scripts/benchmark-admission.mjs": "98dda4975cf03096d952a5becaf5df39bce1159cdbf090bddef79c66eee97909",
+      "scripts/benchmark-admission-diagnostics.mjs": "be108a796df6aff8c6e611736f6db01dd01ce27970c1ec285e7be3101f8318c2",
+      "scripts/benchmark-admission-profile.mjs": "5adbf44076e6cb17a956ae8f7cd9edbafa989871fb6b3dd1a4a9411285be037e",
+      "scripts/benchmark-admission-profile.test.mjs": "402b71974aaca5fbb63e4c77d398a11c0ff6ecac48c2c322d1d8f0d491af0b8b",
+      "scripts/validation-cli.test.mjs": "aab9ad183d46660430c4ec75236d6f7d975461c24cd521fdcdb8b386da62cdc0",
+      ".github/workflows/cartography-pilot.yml": "9d2f7aaeab7f5e8d94bf3affaa1c0641423234da365e96f06bc97a6870f4472d"
+    },
+    "verification": {
+      "command": "node --test scripts/*.test.mjs",
+      "tests": 147,
+      "passed": 146,
+      "failed": 0,
+      "skipped": 1,
+      "skip": "Optional real MCP container case; the required hosted Linux isolation gate is recorded separately.",
+      "profileTests": 5,
+      "scope": "Functional/privacy/bounds/cleanup checks including a six-effect instrumented fixture; not performance evidence.",
+      "logSha256": "c27eafe4494961f9067253fe5b22187e1fcb48fd3469d888bd2ebbd0c7b0c401"
+    },
+    "independentSourceReview": "Approved after checking method behavior, Promise identity, bounded sanitized capture, exact gate preservation and all five new tests. No remaining source blocker; execution verification is the separately recorded complete script suite."
   }
 }

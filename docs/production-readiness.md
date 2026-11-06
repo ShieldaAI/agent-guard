@@ -5,17 +5,20 @@ The configurable self-hosted profile, durable approvals, archival, key custody
 and exact-current recovery are implemented. Final acceptance requires all
 recorded candidate gates to pass and the upstream Node HIGH security prealert
 review described below.
-The final history-capacity guard passed the full local suite, hosted platform
-matrix and Linux image verification. The evidence record retains pending and
-failed checks explicitly. No final
+The latest verified branch revision is `4b2cdc9`: all six hosted workflows passed,
+including CI, the Cartography smoke pilot and integration, CodeQL, Dependency
+Review and the Python dependency audit. These results replace `ab56766` as the
+current hosted verification pointer; its records remain historical evidence.
+The evidence record retains pending and failed checks explicitly. No final
 production score or new production release is asserted. Earlier construction
 scores and alpha release checks do not establish acceptance of this candidate.
 The subsequent inventory finalizer correction has passed 223 focused tests and
 the complete 1,099-test local suite with zero skips, plus installed-package checks.
 Its current Linux recovery verification passed. Full and smoke performance runs
 still missed isolated polling intervals, despite correct effects and cleanup.
-Opt-in timing diagnostics are being used to locate those stalls; their results
-cannot certify performance acceptance.
+Opt-in timing diagnostics are being used to locate those stalls. Manual run
+`42194605365` on `f6dec31` completed but measured **11.35%** overhead, above the
+10% target; instrumented results cannot certify performance acceptance.
 
 The target is at least **9.5/10 independently in every R1–R10 category**, with no
 open critical or high security defect, broken supported workflow, misleading
@@ -143,25 +146,32 @@ the runtime candidate from subsequent documentation or Python integration change
 It is the authoritative index for exact hosted run status; a workflow definition
 alone is not passing evidence.
 
-- The final local runtime check passed **1,093/1,093 tests, zero skips**, plus the
-  installed-package and public README/type consumers. Actual published alpha.3
-  state upgrades preserve spent authority; the old reader refuses new semantics.
+- The local inventory-finalizer check at `c38cf47` passed **1,099/1,099 tests,
+  zero skips**, plus installed-package checks. The earlier `53acbde` local
+  1,093-test result remains in the history. Actual published alpha.3 state
+  upgrades preserve spent authority; the old reader refuses new semantics.
 - Hosted Linux Node 22/24/26, macOS Node 24 and Windows Node 24 checks passed for
-  final implementation commit `ab56766`. The ordinary hosted Node 24 suite passed
-  1,085 tests and skipped eight optional container cases; the separate required
+  verified branch commit `4b2cdc9` in CI run `42195606471`. The ordinary hosted
+  Node 24 suite passed 1,097 of 1,105 tests and skipped eight optional container
+  cases; the separate required
   Linux isolation gate passed **44/44**, zero skips, including those cases and
-  every MCP lifecycle/cleanup observation.
+  every MCP lifecycle/cleanup observation. All eight current CI artifact ZIP
+  hashes were verified and bind to that head. Its PR merge tree is identical;
+  [the exact CI record](validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
+  retains job status, source binding and artifact digests.
 - Hardened persistent-volume Linux checks passed locally on ARM64 and hosted on
   AMD64. Production and verification images share **4,327 application entries**;
-  the two test-only fixtures are explicitly excluded from production. The current
-  AMD64 image contains the UI correction; its remaining **4,326 entries** are
-  unchanged from the earlier image also verified on ARM64. Runtime
+  the two test-only fixtures are explicitly excluded from production. Current
+  `4b2cdc9` AMD64 evidence and historical `c38cf47` ARM64 evidence report the same
+  application manifest hash. This does not equate their architecture-specific
+  base images or certify customer storage. Runtime
   package-manager files and shims are absent.
 - Both Linux runs imported 2,000 company records, verified 2,001 paginated tickets,
   recovered current state after primary-directory loss, retained historical and
   latest receipts, and reopened in a fresh container with read-only config/history.
-  At eight clients and 40 measured 500-row reads, p95 was **156 ms on local ARM64**
-  and **183 ms on current hosted AMD64**, within the 2,000 ms test target. Each overload
+  At eight clients and 40 measured 500-row reads, p95 was **163 ms on local ARM64**
+  and **201 ms on current hosted AMD64**, within the 2,000 ms test target. The older
+  156/183 ms observations remain in the history. Each overload
   run refused 27 reads through the documented rate/busy responses without effects.
 - Local Chromium, Firefox and WebKit runs covered 25 Ops contract states, 14 real
   HTTPS/OIDC service states and 13 Map states per engine: **156 accessibility
@@ -170,22 +180,24 @@ alone is not passing evidence.
   graph label fitting was corrected and checked in all three engines. The mock
   threshold alerts were subsequently aligned with the real server and all three
   contract engines rerun; runtime application code was unchanged. All three
-  hosted browser jobs also passed on final source `b677a74`. Its reviewed signed
+  hosted browser jobs also passed on earlier source `b677a74`. Its reviewed signed
   Ubuntu archive selection preserved all test gates and cut the observed package
   downloads from 8–18 minutes to 3–16 seconds.
   A later docs-only CI run exposed an intermittent expiry-timer navigation race.
   A deterministic real-service regression reproduced it; the correction preserves
   navigation nodes while expired decisions disappear on the existing expiry tick. All three
   engines passed both timer/click regressions and 117 focused accessibility scans
-  (Ops contract and real-service states). The current hosted run also passed all
+  (Ops contract and real-service states). The current `4b2cdc9` hosted run passed all
   nine suites and **156 accessibility scans**, including both regressions in every engine.
-- The Python integration passed **928 unit and 143 authenticated Neo4j tests**,
+- Historical Python integration evidence records **928 unit and 143 authenticated Neo4j tests**,
   package builds and the installed consumer. Four locked platform selections
   each audited 194 packages with zero known vulnerabilities. The archived
   dependency notice remains recorded in the
-  [Python evidence](validation/cartography-python-2026-11-06.json).
-- CodeQL analyzed the runtime candidate and its **Unresolved security alerts**
-  gate passed with zero open alerts for the PR merge ref. The
+  [Python evidence](validation/cartography-python-2026-11-06.json). The integration
+  and Python audit workflows also passed on `4b2cdc9` (`42195606434` and `42195606393`).
+- CodeQL analyzed `4b2cdc9` in run `42195606644`; its **Unresolved security alerts**
+  gate passed. A fresh query found zero open alerts for the PR merge ref and five
+  separately scoped open alerts on `main` (#15, #7, #6, #5 and #4). The
   [triage record](validation/codeql-triage-2026-11-06.md) documents the fixes and
   two reviewed loopback-healthcheck false positives. Default-branch alerts are
   not claimed closed before merge.
@@ -249,9 +261,13 @@ The supported operational boundary remains material:
   validation, authenticated reads, output equivalence and exact caps remain
   enforced. Differential and boundary tests pass. The optimized full run still
   missed one interval, and the checkout-only follow-up smoke missed two.
-  Bounded, opt-in request/export/GC/event-loop diagnostics preserve every gate and
-  are explicitly ineligible as acceptance evidence. A regular full run still
-  needs to establish the result under the same workload and gates.
+  Current `4b2cdc9` pilot run `42195606557` passed smoke; it does not waive the
+  `c38cf47` full-profile or `8cabb88` smoke cadence failures. Bounded, opt-in
+  request/export/GC/event-loop diagnostics preserve every gate and are explicitly
+  ineligible as acceptance evidence. The completed `f6dec31` diagnostic run
+  `42194605365` measured **11.35%** overhead and failed its numeric target.
+  A regular, uninstrumented full run still needs to establish the result under
+  the same workload and gates.
   This deliberate 250 ms observer stress profile is bounded evidence on the
   recorded runner, not a deployment-wide latency guarantee; the collector
   defaults to five minutes.
