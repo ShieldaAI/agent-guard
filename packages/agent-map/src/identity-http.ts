@@ -2,7 +2,7 @@ import { createServer, type Server } from 'node:https';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { isIP } from 'node:net';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
+import { createHash, createPrivateKey, X509Certificate, randomBytes, timingSafeEqual } from 'node:crypto';
 import { immutableJson } from '@shieldaai/agent-guard';
 import { MapService } from './service.js';
 import { mapIdentifier, validateReadScope, type ReadScope } from './types.js';
@@ -113,6 +113,14 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
   const tls = fields(config.tls, ['key', 'cert'], ['key', 'cert']);
   if (typeof tls.key !== 'string' || typeof tls.cert !== 'string' || !tls.key || !tls.cert ||
       Buffer.byteLength(tls.key) > 256 * 1024 || Buffer.byteLength(tls.cert) > 256 * 1024) fail('MAP_CONFIG_INVALID');
+  let tlsExpiresAt: number;
+  try {
+    const certificate = new X509Certificate(tls.cert), privateKey = createPrivateKey(tls.key);
+    const hostname = origin.hostname.replace(/^\[|\]$/g, ''), now = Date.now();
+    tlsExpiresAt = Date.parse(certificate.validTo);
+    if (!certificate.checkPrivateKey(privateKey) || !(isIP(hostname) ? certificate.checkIP(hostname) : certificate.checkHost(hostname)) ||
+        !Number.isFinite(tlsExpiresAt) || Date.parse(certificate.validFrom) > now || tlsExpiresAt <= now) fail('MAP_CONFIG_INVALID');
+  } catch { fail('MAP_CONFIG_INVALID'); }
   const oidc = fields(config.oidc, ['issuer', 'clientId', 'clientSecret', 'clientAuthMethod', 'endpointOrigins', 'ca', 'requestTimeoutMs', 'maxResponseBytes'], ['issuer', 'clientId', 'clientSecret']);
   const ttl = integer(config.sessionTtlMs, 900_000, 10, 900_000), loginTtl = integer(config.loginTtlMs, 300_000, 10, 300_000);
   const sessionLimit = integer(config.maxSessions, 1024, 1, 4096), flowLimit = integer(config.maxLoginTransactions, 128, 1, 1024);
@@ -168,6 +176,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
     const check = (): void => { if (closing || response.destroyed || abort.signal.aborted || performance.now() - started > timeout) fail('MAP_TIMEOUT'); };
     try {
       consume(globalBucket, rateMax, rateWindow);
+      if (Date.now() >= tlsExpiresAt) fail('MAP_UNAVAILABLE');
       if (closing || !client || active >= concurrency) fail('MAP_BUSY');
       active++; admitted = true; aborts.add(abort);
       timer = setTimeout(() => { abort.abort(); errorResponse(response, 'MAP_TIMEOUT'); }, timeout); timer.unref();
@@ -177,8 +186,13 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       const url = new URL(request.url, origin);
       if (url.origin !== origin.origin || url.hash) fail('MAP_REQUEST_INVALID');
       const callback = request.method === 'GET' && url.pathname === '/auth/callback';
+      // An IdP redirect to our public entry document keeps cross-site navigation
+      // metadata across the redirect chain. Only the shell may accept it; API
+      // requests and all POSTs still require the same-origin browser boundary.
+      const publicNavigation = request.method === 'GET' && url.pathname === '/' &&
+        request.headers['sec-fetch-mode'] === 'navigate' && request.headers['sec-fetch-dest'] === 'document';
       if (count(request, 'origin') > 1 || (request.headers.origin !== undefined && request.headers.origin !== origin.origin) ||
-          (!callback && request.headers['sec-fetch-site'] !== undefined && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) fail('MAP_REQUEST_DENIED');
+          (!callback && !publicNavigation && request.headers['sec-fetch-site'] !== undefined && !['same-origin', 'none'].includes(request.headers['sec-fetch-site']))) fail('MAP_REQUEST_DENIED');
       // The callback is the only cross-site navigation. All write-like browser routes require Origin and CSRF.
       if (request.method === 'POST' && request.headers.origin !== origin.origin) fail('MAP_REQUEST_DENIED');
       if (!callback && url.search && !(url.pathname === '/' && url.search === '?auth_error=1')) fail('MAP_REQUEST_INVALID');

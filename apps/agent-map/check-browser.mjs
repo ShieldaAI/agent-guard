@@ -1,14 +1,20 @@
 // Run against the built viewer with disposable tooling. See this app's README.
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
-import { resolve } from 'node:path';
+import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createMapToken, MapService, startMapServer } from '../../packages/agent-map/dist/index.js';
+import { startMapIdentityServer } from '../../packages/agent-map/dist/identity-http.js';
+import { createTestIdentityProvider } from '../../packages/agent-map/test/helpers/oidc-provider.mjs';
 
-if (!process.argv[2]) throw new Error('Usage: node check-browser.mjs <browser-tools-directory>');
+if (!process.argv[2]) throw new Error('Usage: node check-browser.mjs <browser-tools-directory> [screenshot-directory] [chromium|firefox|webkit]');
 const requireTools = createRequire(resolve(process.argv[2], 'package.json'));
-const { chromium } = requireTools('playwright');
+const browserEngine = process.argv[4] ?? 'chromium';
+if (!['chromium', 'firefox', 'webkit'].includes(browserEngine)) throw new Error('Unsupported browser engine');
+const browserType = requireTools('playwright')[browserEngine];
+const screenshotDirectory = process.argv[3] ? resolve(process.argv[3]) : null;
+if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true, mode: 0o700 });
 const axe = await readFile(requireTools.resolve('axe-core/axe.min.js'), 'utf8');
 const viewerDirectory = fileURLToPath(new URL('./dist', import.meta.url));
 const token = createMapToken();
@@ -20,10 +26,12 @@ const source = { id: 'fixture', tenantId: 'fixture', sourceId: 'observer', profi
       label: 'GuardAgent', properties: { name: agentName, agent_id: 'fixture-agent' } }] } };
 const server = await startMapServer({ service: new MapService({ read: async () => ({ sources: [source] }) }),
   credentials: [{ token, scope }], viewerDirectory });
-let browser;
+let browser, page;
+const cleanup = [];
 try {
-  browser = await chromium.launch();
-  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  browser = await browserType.launch();
+  page = await browser.newPage({ ignoreHTTPSErrors: true, locale: 'en-US', viewport: { width: 1280, height: 900 } });
+  page.setDefaultTimeout(12_000);
   const errors = [], scans = [];
   page.on('pageerror', error => errors.push(error.message));
   const button = name => page.getByRole('button', { name, exact: typeof name === 'string' });
@@ -35,6 +43,7 @@ try {
     });
     scans.push(name);
     assert.deepEqual(violations, [], name);
+    if (screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, `${name.replaceAll(' ', '-')}.png`), fullPage: true });
   };
   await page.goto(server.url);
   await page.getByLabel('Reference credential').waitFor();
@@ -109,9 +118,47 @@ try {
   await page.getByRole('alert').waitFor();
   assert.equal(await page.getByLabel('Reference credential').isVisible(), true);
   assert.equal(await page.getByText(agentName, { exact: true }).count(), 0);
+  await page.unroute('**/v1/query');
+  const provider = await createTestIdentityProvider({ after: callback => cleanup.push(callback) });
+  provider.controls.authorizeOverrides = { subject: 'company-reader' };
+  const gateway = await startMapIdentityServer({ service: new MapService({ read: async () => ({ sources: [source] }) }),
+    publicOrigin: 'https://127.0.0.1:0', port: 0, listenHost: '127.0.0.1', viewerDirectory,
+    companyId: 'fixture', bindings: [{ subject: 'company-reader', scope }], tls: { cert: provider.cert, key: provider.key },
+    oidc: { issuer: provider.issuer, clientId: provider.clientId, clientSecret: provider.clientSecret, ca: provider.ca } });
+  cleanup.push(() => gateway.close());
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.goto(gateway.url);
+  await button('Sign in with company account').focus();
+  await page.keyboard.press('Enter');
+  await button(new RegExp(agentName)).waitFor();
+  await page.getByText('Company session', { exact: true }).waitFor();
+  await page.evaluate(axe);
+  await scan('company signed in');
+  gateway.invalidateSessions();
+  await button('Refresh evidence').click();
+  await button('Check sign-in').waitFor();
+  assert.equal(await page.getByText(agentName, { exact: true }).count(), 0);
+  await scan('company session revoked');
+  await button('Check sign-in').focus();
+  await page.keyboard.press('Enter');
+  await button('Sign in with company account').waitFor();
+  await button('Sign in with company account').click();
+  await button(new RegExp(agentName)).waitFor();
+  await button('Sign out').click();
+  await button('Sign in with company account').waitFor();
+  assert.equal(await page.getByText(agentName, { exact: true }).count(), 0);
+  await page.evaluate(axe);
+  await scan('company signed out');
   assert.deepEqual(errors, []);
-  console.log(JSON.stringify({ chromium: browser.version(), axe: await page.evaluate(() => window.axe.version),
-    scanned: scans, mobileViews: 4, failedFilterHidesStaleResults: true, inventoryRetrySucceeded: true, bearerDenialClearedEvidence: true }));
+  const report = { kind: 'synthetic-inventory-real-map-gateways', browserEngine, browserVersion: browser.version(), axe: await page.evaluate(() => window.axe.version),
+    scanned: scans, mobileViews: 4, failedFilterHidesStaleResults: true, inventoryRetrySucceeded: true, bearerDenialClearedEvidence: true,
+    oidcExchange: 'local signed fixture', companyRevocationClearedEvidence: true, companySignoutClearedEvidence: true };
+  if (screenshotDirectory) await writeFile(join(screenshotDirectory, 'map-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
+  console.log(JSON.stringify(report));
+} catch (error) {
+  if (page && screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, 'map-check-failed.png'), fullPage: true }).catch(() => {});
+  if (page) console.error((await page.locator('body').innerText().catch(() => 'Document unavailable')).slice(0, 3000));
+  throw Error(String(error.message).replace(/https?:\/\/[^\s"]+/g, '[fixture URL]'));
 } finally {
-  try { await browser?.close(); } finally { await server.close(); }
+  try { await browser?.close(); } finally { for (const callback of cleanup.reverse()) await callback(); await server.close(); }
 }

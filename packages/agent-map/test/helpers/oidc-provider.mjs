@@ -7,11 +7,12 @@ import { execFileSync } from 'node:child_process';
 import { generateKeyPair, exportJWK, SignJWT } from 'jose';
 
 /** Private disposable CA, HTTPS issuer and real signed ID tokens; never changes global trust. */
-export async function createTestIdentityProvider(t) {
+export async function createTestIdentityProvider(t, { tls } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'agent-map-oidc-'));
   chmodSync(directory, 0o700);
   const openssl = (...args) => execFileSync('openssl', args, { cwd: directory, stdio: 'ignore' });
   try {
+    if (!tls) {
     openssl('req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
       '-keyout', 'ca.key', '-out', 'ca.pem', '-days', '2', '-subj', '/CN=Agent Map Disposable Test CA');
     openssl('req', '-new', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes',
@@ -19,10 +20,11 @@ export async function createTestIdentityProvider(t) {
     writeFileSync(join(directory, 'extensions.txt'), 'subjectAltName=DNS:localhost,IP:127.0.0.1\nbasicConstraints=CA:FALSE\nkeyUsage=digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n', { mode: 0o600 });
     openssl('x509', '-req', '-in', 'leaf.csr', '-CA', 'ca.pem', '-CAkey', 'ca.key', '-CAcreateserial',
       '-out', 'leaf.pem', '-days', '2', '-extfile', 'extensions.txt');
+    }
   } catch (error) { rmSync(directory, { recursive: true, force: true }); throw error; }
-  const ca = readFileSync(join(directory, 'ca.pem'), 'utf8');
-  const cert = readFileSync(join(directory, 'leaf.pem'), 'utf8');
-  const key = readFileSync(join(directory, 'leaf.key'), 'utf8');
+  const ca = tls?.ca ?? readFileSync(join(directory, 'ca.pem'), 'utf8');
+  const cert = tls?.cert ?? readFileSync(join(directory, 'leaf.pem'), 'utf8');
+  const key = tls?.key ?? readFileSync(join(directory, 'leaf.key'), 'utf8');
   const signing = await generateKeyPair('RS256');
   const wrongSigning = await generateKeyPair('RS256');
   const publicKey = { ...await exportJWK(signing.publicKey), kid: 'test-key', alg: 'RS256', use: 'sig' };

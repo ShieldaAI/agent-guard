@@ -29,11 +29,11 @@ function Graph({ graph, policyEvidence, onSelect }) {
     let elements;
     try { elements = graphElements(graph, policyEvidence); } catch { setError('This graph could not be displayed safely. Select another agent.'); return; }
     const cy = cytoscape({ container: container.current, elements, minZoom: .25, maxZoom: 2.5,
-      layout: { name: 'breadthfirst', directed: false, padding: 45, spacingFactor: 1.15, avoidOverlap: true },
+      layout: { name: 'breadthfirst', directed: false, padding: 45, spacingFactor: 1.25, avoidOverlap: true, nodeDimensionsIncludeLabels: true },
       style: [
         { selector: 'node', style: { 'background-color': '#e8edf4', 'border-width': 1.5, 'border-color': '#b6c5d7', 'width': 38, 'height': 38,
           'label': 'data(label)', 'font-size': 10, 'font-family': 'Inter, system-ui, sans-serif', 'color': '#314358', 'text-valign': 'bottom', 'text-margin-y': 9,
-          'text-wrap': 'ellipsis', 'text-max-width': 130, 'text-background-color': '#f9fbfd', 'text-background-opacity': .85, 'text-background-padding': 2 } },
+          'text-wrap': 'ellipsis', 'text-max-width': 110, 'text-background-color': '#f9fbfd', 'text-background-opacity': .85, 'text-background-padding': 2 } },
         { selector: 'node.agent', style: { 'background-color': '#274b77', 'border-color': '#183b65', 'width': 52, 'height': 52, 'color': '#173754', 'font-weight': 600 } },
         { selector: 'node.task', style: { 'background-color': '#dcecf7', 'border-color': '#78a6c8', 'shape': 'round-rectangle' } },
         { selector: 'node.resource', style: { 'background-color': '#e1ede6', 'border-color': '#86ab96', 'shape': 'round-rectangle' } },
@@ -62,7 +62,7 @@ function Graph({ graph, policyEvidence, onSelect }) {
       <button className="small-button" onClick={() => setLabels(!labels)} aria-pressed={labels}>Labels {labels ? 'on' : 'off'}</button>
       <button className="icon-button" title="Fit graph" aria-label="Fit graph" onClick={() => instance.current?.fit(undefined, 40)}><Icon name="fit" size={16}/></button>
     </div></div>
-    <div className="graph" ref={container} role="img" aria-label="Agent evidence network. Use the evidence list below for accessible node selection."/>
+    <div className="graph" ref={container} role="img" aria-label="Agent evidence network with shortened display labels. Use the evidence list below for full identifiers and accessible node selection."/>
     {error && <div className="graph-error"><Notice error>{error}</Notice></div>}
     <div className="graph-legend"><span><i className="legend-agent"/>Agent</span><span><i className="legend-task"/>Task</span><span><i className="legend-mcp"/>MCP</span><span><i className="legend-resource"/>Resource</span><span><i className="legend-unknown"/>Unknown / unavailable</span><span><i className="legend-conditional"/>Conditional</span><span><i className="legend-policy"/>Policy candidate · access unknown</span></div>
   </div>;

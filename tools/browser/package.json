@@ -1,0 +1,11 @@
+{
+  "name": "agent-guard-browser-verification",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Isolated browser verification tools; excluded from published packages and runtime images.",
+  "engines": { "node": ">=22" },
+  "devDependencies": {
+    "axe-core": "4.14.0",
+    "playwright": "1.63.0"
+  }
+}

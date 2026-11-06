@@ -8,6 +8,8 @@ Start the defensive-project review with the [protection requirements and design]
 and the [engineering scorecard](docs/protection-assessment.md). The
 [acceptance criteria](docs/protection-acceptance.md) define the 9.6/10 target
 for each risk category and identify the checks needed for an actual deployment.
+The [production readiness review](docs/production-readiness.md) tracks the
+current self-hosted candidate separately from those historical construction scores.
 
 Start with the [core tool-authorization example](packages/core/README.md), or use
 the [package selection guide](docs/package-guide.md) to choose between MCP
@@ -182,6 +184,14 @@ const result = await guard.execute(prepared, { approvalId });
 The model receives a dispatcher that selects the host-owned task, not the guard instance, task-creation APIs or approval APIs. An `approverId` string records a host-authenticated identity; it does not authenticate the person by itself. Resolve tenants and resources from trusted service data. Tool schemas are fingerprinted but are not automatically validated as JSON Schema: use a trusted `parse` function to validate/normalize arguments before resolution. Bind mutable resources with `resourceVersion` and compare the version again at the actual effect.
 
 ## Protections and boundaries
+
+The source-hosted [Agent Ops ticket workflow](apps/agent-ops/README.md) adds an OIDC
+operator interface, persistent conditional ticket updates, receipt-based recovery,
+safe task archival and offline key rotation. Its [Linux deployment runbook](deployment/production/README.md)
+defines the single-owner Docker Compose profile. The [production plan](docs/production-plan.md)
+tracks the broader agent and permissions inventory for Agent Map/Cartography.
+The [self-hosted onboarding review](docs/self-hosted-onboarding-review.md) covers
+company identity/data enrollment, reviewed imports and safely configurable capacity.
 
 The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation, budgets, normalized typed arguments and resource-version checks. Catalog 1.2.0 runs twenty-four paired malicious and benign cases. A trusted handler must compare the approved resource version atomically with the actual effect.
 

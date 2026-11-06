@@ -1,5 +1,8 @@
 export { DurableExecutor, type ExecutorOptions, type TaskCredential } from './executor.js';
 export type { LedgerWitness } from './store.js';
+export type { TaskFamilyScope, TaskFamilyDecision, TaskFamilyArchiveScope, TaskFamilyCounts,
+  TaskFamilyRetirementPreview, TaskFamilyRetirementResult, TaskFamilyArchiveReceipt,
+  ExecutionListScope, ExecutionList, MaintenanceStatistics } from './lifecycle.js';
 export { ExecutorError, type ExecutionReceipt, type ExecutionStatus } from './store.js';
 export type { DecisionTraceOptions, DecisionTraceScope, DecisionTraceEventName, DecisionTraceOutcome,
   DecisionTraceEvent, DecisionTraceSnapshot, DecisionTraceSink, DecisionTraceExportResult } from './traces.js';
@@ -28,3 +31,11 @@ export { createModelTool, createExecutorModelProvider, type ModelToolOptions, ty
 export { validateSandboxProfile, buildDockerCreateArgs, runDockerSandbox, readSandboxArchive, writeReviewedExports,
   type SandboxProfile, type ValidatedSandboxProfile, type SandboxExport, type SandboxResult } from './sandbox.js';
 export { verifyPilotReview, type PilotReviewPolicy, type PilotReviewBundle, type PilotReviewResult } from './pilot-review.js';
+export { createLedgerKeyring, readLedgerKeyring, readLedgerKeyringPolicy, configureLedgerKeyring, loadLedgerKey, rotateLedgerKey, rotateLedgerKeyring,
+  type LedgerKey, type LedgerKeyOptions, type LedgerKeyringPolicy, type LedgerRotationResult } from './ledger-maintenance.js';
+
+export { manageLedgerCustody } from './ledger-custody.js';
+export type { LedgerCustodyOptions, CustodyStore, CustodyHistoryAdapter, CustodyRequest, CustodyResult } from './ledger-custody.js';
+
+export { manageLedgerRecovery } from './ledger-recovery.js';
+export type { LedgerRecoveryOptions, LedgerRecoveryResult } from './ledger-recovery.js';

@@ -115,15 +115,66 @@ to open even with the correct encryption key. See the
 for setup, failure handling and the crucial requirement that the witness stay
 outside the data backup/restore domain.
 
-Storage is bounded to 16 MiB. Family-wide pending action/byte and delegated-task
+Live ledger state defaults to 16 MiB. The trusted host may set `maxLedgerBytes`
+to an integer from 1 MiB through 64 MiB. It bounds the decoded full snapshot,
+not SQLite file size; larger snapshots increase synchronous memory and I/O work.
+Opening existing state above the configured bound fails before recovery mutates it.
+Increasing this limit does not raise task, action, family or archive count limits.
+Family-wide pending action/byte and delegated-task
 caps prevent one task from filling shared storage through preparation/delegation.
 Expired or invalidated preparations and approvals are pruned. Terminal records have
 bounded retention; cumulative budgets and unresolved reservations are retained.
 The audit keeps the latest 1,000 metadata events, without arguments, results or raw
 reconciliation evidence. Task and action IDs are host-controlled audit metadata;
-avoid putting secrets in IDs. There is no automatic quota reset, key rotation or
-distributed-worker support. Plan an operator-controlled retention/archival policy
-before reaching capacity; never delete active authority state to recover quota.
+avoid putting secrets in IDs. There is no automatic quota reset or distributed-worker
+support. Use the host-only task-family lifecycle APIs below for bounded archival;
+never delete active authority state to recover quota.
+
+Offline Linux/macOS maintenance is available through `agent-guard-ledger` and
+`createLedgerKeyring`, `readLedgerKeyring`, `readLedgerKeyringPolicy`,
+`configureLedgerKeyring`, `loadLedgerKey`, `rotateLedgerKeyring` and `rotateLedgerKey`. The loader authenticates existing state and refuses missing
+or mismatched authority. Rotation preserves the complete plaintext ledger and
+atomically updates its witness. The private keyring stages a new key before rekeying,
+retains old keys for interruption recovery, and defaults to four retained keys.
+An explicit `maxKeys` at creation or `configureLedgerKeyring({ keyringFile, maxKeys })`
+persists a validated limit from 1 through 64. `agent-guard-ledger configure --keyring
+PATH --max-keys N` performs the same atomic offline update. Lowering below the retained
+key count fails; this policy command never removes keys. Legacy schema-1 keyrings keep their four-key
+default until configured. `readLedgerKeyringPolicy` and CLI `status` return only
+`keyCount` and `maxKeys` (plus the selected key ID when a database is specified). Stop
+the sole owner, rotate each store using the same next key ID, verify, then restart.
+Never use first enrollment as recovery. Returned key buffers belong to the trusted
+host caller and should be erased after creating the executor. Maintenance
+`LedgerKeyOptions.maxBytes` and `rotateLedgerKey({ ..., maxBytes })` accept the
+configured store byte cap (default 16 MiB, 1024-byte minimum, 64 MiB ceiling); the CLI
+uses `--max-bytes N`. Set it consistently when loading and rotating larger stores.
+A smaller cap refuses oversized existing state before mutation.
+
+Outer-key-derived inventory and trace references change during rotation; receipts
+report `observationReenrollmentRequired: true`. Use a new inventory
+`enrollmentGeneration` and a new trace collection epoch before resuming exports.
+The [Linux operations runbook](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/README.md)
+includes private key custody, two-store commands, backup/restore, supported bounds
+and interrupted-rotation handling. The CLI prints redacted JSON, never key material.
+
+`manageLedgerCustody` adds reviewed offline enrollment, cold snapshots, full verification,
+current-witness restore, managed rotation, active-ring retirement and interrupted-operation
+recovery. Retirement preserves all historical keys in independently encrypted escrow; it
+never destroys secrets or claims to enumerate off-host backups. Managed source ledgers
+carry a schema-2 custody binding, and runtime key loading rejects a rolled-back unmarked
+ring. Restore never rewrites witnesses or accepts an older snapshot after they advance.
+A host adapter must derive the complete encrypted external-history closure from authenticated
+store heads. See the [custody procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/custody.md)
+for exact preview/apply commands, offline key separation, capacity bounds and recovery limits.
+
+For exact-current primary-storage recovery, `LedgerWitness.recovery: 'mirror'` enables
+schema-3 witnessed state whose encrypted payload, archive/catalog mutations and rekeying
+are mirrored in the paired SQLite transaction. The witness is SQLite's physical main
+database so its super-journal survives primary-directory loss. `manageLedgerRecovery`
+provides exact preview/apply enrollment or repair; repair preserves current witnesses
+and source identities and requires surviving witnesses, keys and the complete external
+history mirror. Mirrored mode cannot be removed or written by schema-1/2 readers.
+See the [native recovery procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/custody.md#repair-the-latest-committed-state-after-primary-storage-loss).
 
 For optional diagnostics without raw task/action identifiers, enable
 `decisionTraces` on the executor. `decisionTraceSnapshot()` and
@@ -529,6 +580,79 @@ Deployments enroll their own trusted builders, credentials and endpoints and set
 their retention and recovery procedures. An independent security review can inform
 a deployment's assurance decision. Physical storage durability and backup custody
 need validation on the storage and backup system that deployment uses.
+
+## Task-family lifecycle
+
+For a completed workflow, the trusted host can retire and archive its entire task
+family. This includes delegates and roots linked with `sourceTaskId`. Authenticate
+the maintenance operator before choosing the tenant; these methods are not exposed
+through task/admin HTTP or `ExecutorClient`.
+
+```ts
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { randomBytes } from 'node:crypto';
+
+const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32) });
+executor.createTask({
+  id: 'completed-task', principalId: 'operator', tenantId: 'acme', grants: [],
+  budget: { maxCalls: 0, maxConcurrent: 0, maxCost: 0, deadline: Date.now() + 60_000 },
+});
+const scope = { tenantId: 'acme', taskId: 'completed-task' };
+const beforeRetirement = executor.previewTaskFamilyRetirement(scope);
+if (beforeRetirement.retirementBlockers.length) throw new Error('Resolve unfinished work first');
+executor.retireTaskFamily({ ...scope, expectedDigest: beforeRetirement.reviewDigest });
+const beforeArchive = executor.previewTaskFamilyRetirement(scope);
+if (beforeArchive.archiveBlockers.length) throw new Error('Resolve retained references first');
+const receipt = executor.archiveTaskFamily({ ...scope, expectedDigest: beforeArchive.reviewDigest });
+console.log(receipt.archiveId, executor.findTaskFamilyArchive(scope)?.archiveId);
+executor.close();
+```
+
+Use a private on-disk ledger and persistent protected key for actual retention.
+Previews contain bounded counts and blockers, never arguments or keys. An
+intervening ledger write or restart invalidates the digest; the host also owns
+review expiry and user binding. Retirement revokes the whole family and cancels
+preparations. Active or uncertain effects must first end and, when `UNKNOWN`, be
+reconciled using backend evidence. A timeout alone never permits archival.
+
+Archive writes and live-record removal are atomic. Each archive has a fresh
+encryption key held only in the main encrypted ledger, authenticated ciphertext
+and permanent task-ID non-reuse markers. Existing memory names are also retired
+within their tenant so they cannot be recreated with weaker labels. The archive
+retains budgets, counters, provenance and available evidence; it cannot recover
+history previously pruned by normal retention. `verifyTaskFamilyArchive()` returns
+only verified receipt metadata. If the application loses its archive response,
+`findTaskFamilyArchive({ tenantId, taskId })` recovers the receipt from any original
+family member, allowing its separate backend bookkeeping to finish idempotently.
+
+External task/memory references and mixed memory histories block archival. Retire
+and archive independent dependents first; cycles or shared histories remain
+blocked. Linked handoffs are preferable when work should share a lifecycle.
+Archived task APIs and inventory no longer expose those records, and signed
+artifacts referring to archived tasks cannot reopen authority.
+
+Live task/action capacity is reclaimed. Retention remains finite: at most 4,096
+archives, 65,536 combined task/memory markers, 256 MiB of archive ciphertext and
+16 MiB decoded state per archive. The configured main-ledger bound (16 MiB by default) also
+applies. Limits fail closed without evicting identities or resetting spent
+budgets. This is logical archival, not secure erasure or physical SQLite shrinking.
+
+Agent Ops adds a separate, reviewed offline
+[company-history protocol](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/company-history.md)
+for its single-root ticket profile. It exports authenticated evidence before
+reclaiming local archives and uses permanent namespace fences to prevent reuse.
+It does not compact delegated or memory-bearing SDK families. Legacy identities
+and unresolved sequence gaps retain individual markers. Lifecycle mutations
+upgrade authority to schema 2 so old schema-1-only readers cannot ignore these
+protections after a binary downgrade.
+
+For operator recovery, `listExecutions({ tenantId })` lists `UNKNOWN` work with
+bounded metadata and authenticated revision-bound pagination; `statuses` can
+select other states, and `limit` is 1–100 (default 25). A changed revision requires
+restarting pagination. `maintenanceStatistics({ tenantId })` reports scoped live,
+retired and archive counts, plus deployment-wide decoded `ledgerBytes` and
+`ledgerByteLimit`. See the [exact API](https://github.com/ShieldaAI/agent-guard/blob/main/docs/api-contract.md#task-family-retirement-and-archival)
+for shapes, errors and conservative reference rules.
 
 ## Concrete file and HTTP adapters
 

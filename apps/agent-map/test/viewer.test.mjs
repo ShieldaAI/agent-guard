@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import cytoscape from 'cytoscape';
-import { agentOptions, componentHealth, createQuerySession, displayTime, errorMessage, evidenceState, graphElements, initialExplanation, nodeName, queryReference } from '../src/view-model.mjs';
+import { agentOptions, componentHealth, createQuerySession, displayTime, errorMessage, evidenceState, graphElements, graphLabel, initialExplanation, nodeName, queryReference } from '../src/view-model.mjs';
 import { queryDemo } from '../src/demo.mjs';
 
 const token = `agm_v1.${'x'.repeat(43)}`;
@@ -116,17 +116,35 @@ test('focused graph has exact endpoints and inert labels with no out-of-view edg
     edges: [{ source: node.id, target: 'resource', kind: 'G_CLOUD_CONTAINER' }] };
   const elements = graphElements(graph);
   assert.equal(nodeName(node), '<script>alert(1)</script>');
-  assert.equal(elements[0].data.label, '<script>alert(1)</script>');
+  assert.equal(elements[0].data.label, graphLabel('<script>alert(1)</script>'));
+  assert.equal(elements[0].data.fullLabel, '<script>alert(1)</script>');
   assert.match(elements[1].classes, /unavailable/);
   assert.equal(elements[2].classes, 'association unavailable');
   const cy = cytoscape({ headless: true, elements });
   try {
     assert.equal(cy.nodes().length, 2);
     assert.equal(cy.edges().length, 1);
-    assert.equal(cy.getElementById(node.id).data('label'), '<script>alert(1)</script>');
+    assert.equal(cy.getElementById(node.id).data('label'), graphLabel('<script>alert(1)</script>'));
     assert.equal(cy.edges()[0].source().id(), node.id);
   } finally { cy.destroy(); }
   assert.throws(() => graphElements({ ...graph, edges: [{ source: node.id, target: 'hidden', kind: 'G_MAPS_TO' }] }), /VIEWER_GRAPH_INVALID/);
+});
+
+test('compact graph labels preserve full inert identifiers and distinguish suffixes', () => {
+  const names = ['research-assistant-task-for-quarterly-review', 'mcp:opaque-connection-1234567890:operation-a',
+    'mcp:opaque-connection-1234567890:operation-b', '🛡️'.repeat(30)];
+  const nodes = names.map((name, i) => ({ id: String(i), label: 'GuardTask', properties: { name } }));
+  const elements = graphElements({ nodes, edges: [] });
+  for (let i = 0; i < names.length; i++) {
+    assert.equal(Array.from(elements[i].data.label).length, 24);
+    assert.match(elements[i].data.label, /…/);
+    assert.equal(elements[i].data.fullLabel, names[i]);
+    assert.equal(nodeName(elements[i].data.source), names[i]);
+    assert.equal(elements[i].data.source, nodes[i]);
+    assert.equal(elements[i].data.label.includes('\uFFFD'), false);
+  }
+  assert.notEqual(elements[1].data.label, elements[2].data.label);
+  assert.equal(graphLabel('Short name'), 'Short name');
 });
 
 test('conditional and unavailable relationships retain textual state and distinct line-style classes', () => {

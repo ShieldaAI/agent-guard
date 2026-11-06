@@ -102,6 +102,13 @@ distributed session store or HA mode. A registered live company IdP and a
 trusted-browser end-to-end check remain rollout gates; see the guide for their
 status and the complete configuration/operational limits.
 
+Startup verifies that the served certificate matches its key, is currently valid
+and covers the public hostname. Once that certificate expires, HTTP operations
+are refused. Monitor expiry, renew the trusted files and restart before expiry;
+then verify company sign-in again. Only the public entry document accepts a
+cross-site top-level navigation from the IdP redirect chain. Authenticated APIs
+and all POSTs retain the same-origin and CSRF checks.
+
 ## Shared operations
 
 On the loopback service, POST `/v1/query` with `Authorization: Bearer <reference-token>`, content type

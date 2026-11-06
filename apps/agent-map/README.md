@@ -33,6 +33,12 @@ database credentials never enter viewer state. The only readable browser
 authentication value is the ephemeral CSRF token; the session cookie is managed
 by the host and is HttpOnly. No authentication values enter browser storage.
 
+The company listener validates that the served certificate is currently valid,
+matches its private key and covers the configured public hostname before startup.
+An expired served certificate stops HTTP operations. Renew it before expiry and
+restart the gateway; restart invalidates existing sessions. Use a verified HTTPS
+probe for certificate renewal monitoring, in addition to testing company sign-in.
+
 Known expiry, a 401/403 company query response, page hiding, or a back/forward
 cache restore aborts pending work and clears displayed evidence. Authentication
 denials take effect as soon as response headers arrive, even when the body is
@@ -82,7 +88,7 @@ The server's CSP must allow scripts from `self` and styles from `self` with inli
 style attributes for Cytoscape's canvas sizing. No external fonts, images, scripts
 or styles are fetched. The viewer is responsive and supports reduced motion.
 
-## Verify the operator workflow in Chromium
+## Verify the operator workflow across browsers
 
 From the repository root on a supported POSIX host, run the built viewer against
 a disposable loopback service. Browser tooling stays in a temporary directory.
@@ -91,8 +97,10 @@ a disposable loopback service. Browser tooling stays in a temporary directory.
 npm run build
 browser_tools=$(mktemp -d)
 npm install --prefix "$browser_tools" --ignore-scripts --no-audit --no-fund playwright@1.63.0 axe-core@4.14.0
-"$browser_tools/node_modules/.bin/playwright" install chromium
-node apps/agent-map/check-browser.mjs "$browser_tools"
+"$browser_tools/node_modules/.bin/playwright" install chromium firefox webkit
+node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/chromium chromium
+node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/firefox firefox
+node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/webkit webkit
 ```
 
 The check opens the demo from the keyboard, inspects one resource, distinguishes
@@ -102,5 +110,8 @@ real bearer session loads synthetic protected inventory, checks a failed filter
 request and successful retry, then receives a 401 response and verifies the
 inventory disappears. The command exits with
 an error on a failed assertion, an uncaught page error, or an axe WCAG 2/2.1 A/AA
-violation in any of the ten sampled states. Representative operators and
+violation in any sampled state. It also drives a real local signed-OIDC company
+gateway, verifies session-revocation clearing and signs out. The browser accepts
+the disposable fixture certificate only; the gateway verifies the configured
+fixture CA. Inventory remains synthetic. Representative operators and
 assistive-technology users still need to exercise the deployed workflow.

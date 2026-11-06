@@ -7,7 +7,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[2]
 paths = [
     ".github", "apps", "deployment", "evals", "examples", "integrations", "packages",
-    "schemas", "scripts", ".npmrc", "package.json", "package-lock.json", "tsconfig.base.json",
+    "schemas", "scripts", "tools", ".npmrc", "package.json", "package-lock.json", "tsconfig.base.json",
 ]
 files = subprocess.check_output(
     ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z", "--", *paths],

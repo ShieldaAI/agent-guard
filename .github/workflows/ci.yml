@@ -10,6 +10,35 @@ concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  dependency-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - run: npm ci --ignore-scripts
+      - run: npm ci --prefix tools/browser --ignore-scripts
+      - name: Record production dependency inventory
+        run: |
+          mkdir -p artifacts/dependencies
+          npm sbom --sbom-format cyclonedx --omit=dev > artifacts/dependencies/runtime.cdx.json
+      - name: Check current workspace advisories
+        run: npm audit --audit-level=moderate --json > artifacts/dependencies/workspace-audit.json
+      - name: Check current browser tooling advisories
+        if: always()
+        run: npm audit --prefix tools/browser --audit-level=moderate --json > artifacts/dependencies/browser-audit.json
+      - name: Retain dependency evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: dependency-inventory
+          path: artifacts/dependencies/
+          if-no-files-found: error
+          retention-days: 7
   check:
     name: ${{ matrix.os == 'ubuntu-latest' && format('check ({0})', matrix.node) || format('check ({0}, {1})', matrix.os, matrix.node) }}
     runs-on: ${{ matrix.os }}
@@ -53,5 +82,128 @@ jobs:
         with:
           name: npm-alpha-packages
           path: artifacts/*.tgz
+          if-no-files-found: error
+          retention-days: 7
+  runtime-isolation:
+    name: runtime-isolation (linux, node24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      AGENT_GUARD_EXPECTED_HOST: Linux
+      AGENT_GUARD_SANDBOX_IMAGE: alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30
+      AGENT_GUARD_MCP_ISOLATION_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+      - name: Pull reviewed disposable isolation fixtures
+        run: |
+          docker pull "$AGENT_GUARD_SANDBOX_IMAGE"
+          docker pull "$AGENT_GUARD_MCP_ISOLATION_IMAGE"
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - name: Require the Linux sandbox and MCP checks without skips
+        run: node scripts/verify-platform.mjs
+      - name: Verify isolated MCP deployment and credential lifecycle
+        run: node scripts/verify-mcp-isolation.mjs --output artifacts/mcp-isolation-evidence.json
+      - name: Retain isolation evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runtime-isolation-linux-node24
+          path: |
+            artifacts/platform-evidence.json
+            artifacts/mcp-isolation-evidence.json
+          if-no-files-found: error
+          retention-days: 7
+  production-profile:
+    name: production-profile (linux, node24)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Immutable Node 24.22.1 Alpine index; includes the native Linux amd64 manifest.
+      NODE_IMAGE: node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+      - name: Pull the immutable Linux base image
+        run: |
+          mkdir -p artifacts/production-profile
+          docker pull --platform linux/amd64 "$NODE_IMAGE"
+          docker image inspect "$NODE_IMAGE" > artifacts/production-profile/base-image.json
+      - name: Build the production verification image
+        id: production_image
+        run: |
+          docker build --pull=false --platform linux/amd64 --target verification \
+            --build-arg NODE_IMAGE="$NODE_IMAGE" -f deployment/production/Dockerfile \
+            -t agent-ops:verification .
+          image_id="$(docker image inspect agent-ops:verification --format '{{.Id}}')"
+          docker image inspect "$image_id" > artifacts/production-profile/verification-image.json
+          echo "image=$image_id" >> "$GITHUB_OUTPUT"
+      - name: Verify production image matches the tested application
+        run: |
+          docker build --pull=false --platform linux/amd64 --target production \
+            --build-arg NODE_IMAGE="$NODE_IMAGE" -f deployment/production/Dockerfile \
+            -t agent-ops:production .
+          production_id="$(docker image inspect agent-ops:production --format '{{.Id}}')"
+          node deployment/production/check-images.mjs --production "$production_id" \
+            --verification '${{ steps.production_image.outputs.image }}' \
+            --output artifacts/production-profile/runtime-comparison.json
+      - name: Verify hardened Linux maintenance and signed OIDC recovery
+        run: >-
+          node deployment/production/check-linux.mjs
+          --image '${{ steps.production_image.outputs.image }}'
+          --output artifacts/production-profile/evidence.json
+      - name: Retain production profile evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: production-profile-linux-node24
+          path: artifacts/production-profile/
+          if-no-files-found: error
+          retention-days: 7
+  browser:
+    name: browser (${{ matrix.browser }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/browser/package-lock.json
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm ci --prefix tools/browser --ignore-scripts
+      - run: tools/browser/node_modules/.bin/playwright install --with-deps ${{ matrix.browser }}
+      - name: Verify operator states and accessibility
+        run: node apps/agent-ops/check-browser.mjs tools/browser artifacts/browser/${{ matrix.browser }}/mock ${{ matrix.browser }}
+      - name: Verify signed OIDC, approvals and receipt recovery in the browser
+        run: node apps/agent-ops/check-browser-service.mjs tools/browser artifacts/browser/${{ matrix.browser }}/service ${{ matrix.browser }}
+      - name: Verify agent inventory and policy explanations
+        run: node apps/agent-map/check-browser.mjs tools/browser artifacts/browser/${{ matrix.browser }}/map ${{ matrix.browser }}
+      - name: Retain browser evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: browser-${{ matrix.browser }}
+          path: artifacts/browser/
           if-no-files-found: error
           retention-days: 7
