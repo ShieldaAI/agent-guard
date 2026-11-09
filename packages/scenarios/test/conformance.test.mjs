@@ -3,11 +3,11 @@ import test from 'node:test';
 import { AgentGuard, GuardError } from '@shieldaai/agent-guard';
 import { SCENARIO_CATALOG_VERSION, scenarioCatalog, runConformance } from '../dist/index.js';
 
-test('catalog contains twelve immutable, explicitly scoped protection scenarios', () => {
+test('catalog contains thirteen immutable, explicitly scoped protection scenarios', () => {
   assert.match(SCENARIO_CATALOG_VERSION, /^\d+\.\d+\.\d+$/);
   assert.deepEqual(
     scenarioCatalog.map(({ id }) => id),
-    Array.from({ length: 12 }, (_, i) => `S${String(i + 1).padStart(2, '0')}`),
+    Array.from({ length: 13 }, (_, i) => `S${String(i + 1).padStart(2, '0')}`),
   );
   assert.ok(Object.isFrozen(scenarioCatalog));
   for (const scenario of scenarioCatalog) {
@@ -19,13 +19,13 @@ test('catalog contains twelve immutable, explicitly scoped protection scenarios'
 });
 
 test(
-  'all twelve protection scenarios deny hostile effects and allow their benign pair',
+  'all thirteen protection scenarios deny hostile effects and allow their benign pair',
   { timeout: 15000 },
   async () => {
     const report = await runConformance();
     assert.equal(report.catalogVersion, SCENARIO_CATALOG_VERSION);
-    assert.equal(report.scenarioCount, 12);
-    assert.equal(report.caseCount, 24);
+    assert.equal(report.scenarioCount, 13);
+    assert.equal(report.caseCount, 26);
     assert.equal(
       report.passed,
       true,
@@ -35,7 +35,7 @@ test(
         2,
       ),
     );
-    assert.equal(report.passedCases, 24);
+    assert.equal(report.passedCases, 26);
     assert.equal(report.failedCases, 0);
     assert.ok(report.results.every(({ assertions }) => assertions > 0));
     assert.ok(Object.isFrozen(report) && Object.isFrozen(report.results));
@@ -109,7 +109,7 @@ test('conformance rejects a handler dispatched before the asynchronous policy ba
     },
   });
   assert.equal(report.passed, false);
-  assert.equal(report.passedCases, 22);
+  assert.equal(report.passedCases, 24); // two of the 26 cases fail for this broken adapter
   const failure = report.results.find(({ scenarioId, variant }) => scenarioId === 'S08' && variant === 'malicious');
   assert.equal(failure.passed, false);
   assert.equal(failure.handlerInvocations, 1);

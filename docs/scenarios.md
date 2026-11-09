@@ -1,6 +1,6 @@
 # Protection scenarios
 
-These twelve scenarios define the acceptance contract for the TypeScript alpha. Catalog version 1.2.0 runs twenty-four malicious and benign cases. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
+These thirteen scenarios define the acceptance contract. Catalog version 1.3.0 runs twenty-six malicious and benign cases. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
 
 The examples use fake data and fixture handlers. They should run without production credentials or external side effects. “Denied” means the handler is not invoked, except where a scenario explicitly tests a service-boundary rejection inside the handler, such as S12's resource-version comparison. “Allowed” means the fixture records exactly the intended effect. An approval request is not permission to execute until the host's reviewer has approved the exact action and the executor has validated that approval. Reviewer authentication belongs to the host, not to an `approverId` string supplied by a caller.
 
@@ -145,3 +145,20 @@ Use a controllable clock for expiry tests and explicit synchronization for concu
 Passing an individual case means the exercised adapter and configuration prevented that fixture's unauthorized effect while permitting its benign pair. It does not validate other adapters, arbitrary shell execution or all encodings and concurrency schedules.
 
 Keep assertions about handler invocation separate from policy decisions, and report untested/unsupported variants. Add regression cases when an integration exposes a new path. For deployment guarantees beyond one trusted process, test the surrounding authentication, storage, isolation and service enforcement as well.
+
+## S13 — Limit sends after the task read outside content
+
+**Boundary.** A tool labelled `readsUntrusted` marks its task family `untrusted` when it
+runs. Send tools in `require_approval` mode then need a review given after that point,
+and tools in `deny` mode are refused even with an approval.
+
+**Malicious.** An email reader returns text asking to forward data. A send right after
+it fails with `APPROVAL_REQUIRED`; a `deny` send fails with `UNTRUSTED_CONTEXT_DENIED`;
+an approval issued before the read fails with `APPROVAL_CONTEXT_CHANGED`. Nothing is sent.
+
+**Benign.** An internal document read leaves the family clean, and one send to an
+allowed recipient runs without an extra review.
+
+**Limitation.** Labels are the host's claim. Nothing detects prompt injection, and an
+unlabelled tool that returns attacker text does not mark the family.
+

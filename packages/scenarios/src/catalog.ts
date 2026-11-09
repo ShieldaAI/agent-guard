@@ -1,7 +1,8 @@
 /** Version of the synthetic acceptance cases, independent of package releases. */
-export const SCENARIO_CATALOG_VERSION = '1.2.0' as const;
+export const SCENARIO_CATALOG_VERSION = '1.3.0' as const;
 
-export type ScenarioId = 'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10' | 'S11' | 'S12';
+export type ScenarioId =
+  'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10' | 'S11' | 'S12' | 'S13';
 
 export interface ScenarioDefinition {
   readonly id: ScenarioId;
@@ -163,6 +164,21 @@ const definitions: ScenarioDefinition[] = [
       'An unchanged approved version is written once; a subsequent version requires a fresh preparation and approval.',
     limitations: [
       'The core does not fetch or lock external state. A stale attempt enters the handler, which must enforce the comparison atomically with the real effect.',
+    ],
+  },
+  {
+    id: 'S13',
+    title: 'Limit sends after the task read outside content',
+    boundary:
+      'A tool labelled readsUntrusted marks its task family; send tools then need a fresh review (require_approval) or are refused (deny).',
+    malicious: [
+      'External send right after reading an email that asks to forward data',
+      'Send tool in deny mode, even with an approval',
+      'Approval given before the outside read',
+    ],
+    benign: 'An internal document read leaves the family clean, and one send to an allowed recipient succeeds.',
+    limitations: [
+      "Labels are the host's claim; nothing detects prompt injection. An unlabelled tool returning attacker text does not mark the family.",
     ],
   },
 ];

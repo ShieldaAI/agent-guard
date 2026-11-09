@@ -7,6 +7,9 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (scenarios): catalog 1.3.0 adds S13, sends after reading outside content, for
+  thirteen scenarios and twenty-six cases. Adapters must support the outside-content
+  labels to pass it.
 - Add (core, executor, MCP; opt-in): an outside-content flag. Tools can declare
   `readsUntrusted`, `untrustedContext` (`allow` / `require_approval` / `deny`) and
   `sendsExternal` (`false` enforced); a resolver can add `untrusted: true` per call. A
