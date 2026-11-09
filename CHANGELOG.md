@@ -7,6 +7,15 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: a managed MCP connection no longer quarantines on a failure that belongs to
+  one call. An abort, deadline, timeout, JSON-RPC error reply, invalid or oversized
+  result, resource mismatch or throwing `measureCost` now fails only that call.
+  Connection-level failures still quarantine. The inbound message limit is now a
+  sliding window (`maxMessages` per `messageWindowMs`, default 10,000 per 10 s)
+  instead of a lifetime cap, and exceeding it quarantines instead of closing, so
+  `refresh()` recovers. An oversized or malformed message that answers no pending
+  call also quarantines instead of closing. A reflected protected value still
+  closes the connection.
 - Fix: in the durable executor, one tenant's traffic no longer evicts another
   tenant's receipts or audit events. Settled receipts are kept per task family
   (`maxReceiptsPerFamily`, default 64), and shared caps prune the busiest family

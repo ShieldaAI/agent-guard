@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { AgentGuard, containsLiteralSecret, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
-import { Client, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
+import { Client, SdkError, SdkErrorCode, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
 import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';
 import { mcpInventorySnapshot, opaqueTransportRef, type McpConnectionInventory, type McpConnectionState } from './inventory.js';
@@ -35,7 +35,11 @@ export interface ManagedMcpOptions {
   /** Exact, advertised resource URIs only; no templates or automatic link fetching. */
   resources?: readonly McpResourceBinding[];
   prompts?: readonly McpBinding[];
-  limits?: { requestTimeoutMs?: number; maxEntries?: number; maxMessages?: number; maxPages?: number };
+  /**
+   * maxMessages is a sliding-window rate: at most this many inbound messages per
+   * messageWindowMs (defaults 10,000 per 10 s). Exceeding it quarantines; refresh() recovers.
+   */
+  limits?: { requestTimeoutMs?: number; maxEntries?: number; maxMessages?: number; messageWindowMs?: number; maxPages?: number };
 }
 export interface ManagedMcpRegistration extends RegisteredMcpTool {
   readonly kind: 'tool' | 'resource' | 'prompt';
@@ -47,6 +51,29 @@ const SESSION_META = 'shielda/connection-session';
 const allowedControlMethods = new Set(['initialize', 'notifications/initialized', 'ping', 'notifications/cancelled']);
 const lists = new Set(['tools/list', 'resources/list', 'prompts/list']);
 const operations = new Set(['tools/call', 'resources/read', 'prompts/get']);
+const listChanged = ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'];
+/** Outbound request ids remembered for matching an oversized reply to its call. */
+const MAX_TRACKED_REQUESTS = 1024;
+/**
+ * Failures that say something about the connection or server, not one call. Everything
+ * else (abort, timeout, a JSON-RPC error reply, an invalid or oversized result, a resource
+ * mismatch, a throwing measureCost) fails only the call.
+ */
+const connectionFailures = new Set<string>([
+  'CONNECTION_CHANGED', 'CONNECTION_UNAVAILABLE', 'CAPABILITY_DENIED', 'ACTIVE_CONTENT_DENIED', 'AUTHORIZATION_DENIED',
+  SdkErrorCode.ConnectionClosed, SdkErrorCode.SendFailed, SdkErrorCode.NotConnected,
+]);
+function connectionFailure(error: unknown): boolean {
+  return (error instanceof McpBoundaryError || error instanceof SdkError) && connectionFailures.has(error.code);
+}
+/** Reads a response id from an unvalidated message without invoking accessors. */
+function responseId(message: unknown): string | number | undefined {
+  if (message === null || typeof message !== 'object' || Array.isArray(message)) return undefined;
+  const own = (key: string) => Object.getOwnPropertyDescriptor(message, key);
+  const id = own('id');
+  if (!id || !('value' in id) || (!own('result') && !own('error'))) return undefined;
+  return typeof id.value === 'string' || (typeof id.value === 'number' && Number.isSafeInteger(id.value)) ? id.value : undefined;
+}
 
 function identifier(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 1024) throw new McpBoundaryError('INVALID_CONFIGURATION');
@@ -87,9 +114,14 @@ export class ManagedMcpConnection {
   readonly #timeout: number;
   readonly #maxEntries: number;
   readonly #maxMessages: number;
+  readonly #messageWindow: number;
+  /** Ring of inbound message times; the oldest entry bounds the sliding window. */
+  readonly #messageTimes: Float64Array;
+  #messageHead = 0;
+  #messageCount = 0;
+  readonly #pendingRequests = new Set<string | number>();
   readonly #authorize: (() => void) | undefined;
   readonly #protectedValues: readonly string[];
-  #messages = 0;
   #epoch = 0;
   // Observation revision includes ready transitions without changing execution epochs.
   #inventoryRevision = 0;
@@ -117,6 +149,8 @@ export class ManagedMcpConnection {
     this.#timeout = limit(options.limits?.requestTimeoutMs, 10_000, 120_000);
     this.#maxEntries = limit(options.limits?.maxEntries, 64, 256);
     this.#maxMessages = limit(options.limits?.maxMessages, 10_000, 100_000);
+    this.#messageWindow = limit(options.limits?.messageWindowMs, 10_000, 600_000);
+    this.#messageTimes = new Float64Array(this.#maxMessages);
     if (this.#tools.length + this.#resources.length + this.#prompts.length > this.#maxEntries) throw new McpBoundaryError('REGISTRY_LIMIT');
     this.#client = new Client({ name: 'shielda-agent-guard', version: '0.1.0' }, {
       capabilities: {}, versionNegotiation: { mode: 'legacy' },
@@ -133,7 +167,7 @@ export class ManagedMcpConnection {
     this.#client.onclose = () => { if (this.#state !== 'closed') this.#invalidate('closed'); };
     // SDK request dispatch rejects unadvertised sampling/elicitation/roots capabilities.
     this.#client.fallbackRequestHandler = async () => { throw new McpBoundaryError('CAPABILITY_DENIED'); };
-    for (const method of ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'] as const) {
+    for (const method of listChanged as ('notifications/tools/list_changed' | 'notifications/resources/list_changed' | 'notifications/prompts/list_changed')[]) {
       this.#client.setNotificationHandler(method, () => { this.#invalidate('quarantined'); });
     }
   }
@@ -223,18 +257,36 @@ export class ManagedMcpConnection {
         inner.onclose = () => wrapper.onclose?.();
         inner.onerror = error => wrapper.onerror?.(error);
         inner.onmessage = (message, extra) => {
+          if (this.#state === 'closed') return;
+          if (!this.#admitMessage()) {
+            // A flood is a server problem, not a reason to lose the connection for good.
+            this.#invalidate('quarantined'); wrapper.onerror?.(new McpBoundaryError('MESSAGE_BUDGET'));
+            return;
+          }
+          let data: Json;
+          try { data = boundedJson(message); }
+          catch {
+            // An oversized or malformed reply fails only the call it answers.
+            const id = responseId(message);
+            if (id !== undefined && this.#pendingRequests.delete(id)) {
+              wrapper.onmessage?.({ jsonrpc: '2.0', id, error: { code: -32603, message: 'MESSAGE_REJECTED' } } as JSONRPCMessage, extra);
+            } else { this.#invalidate('quarantined'); wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED')); }
+            return;
+          }
           try {
-            if (++this.#messages > this.#maxMessages) throw new McpBoundaryError('MESSAGE_BUDGET');
-            const data = boundedJson(message);
             if (this.#protectedValues.length && containsLiteralSecret(data, this.#protectedValues)) throw new McpBoundaryError('CREDENTIAL_REFLECTED');
-            const safe = data as unknown as JSONRPCMessage;
-            // Quarantine synchronously before SDK async notification dispatch.
-            if ('method' in safe && ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'].includes(safe.method)) this.#invalidate('quarantined');
-            wrapper.onmessage?.(safe, extra);
           } catch {
+            // A reflected host secret is a hostile server: close, a new reviewed connection is required.
             this.#invalidate('closed'); wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
             void inner.close().catch(() => {});
+            return;
           }
+          const safe = data as unknown as JSONRPCMessage;
+          const id = responseId(safe);
+          if (id !== undefined) this.#pendingRequests.delete(id);
+          // Quarantine synchronously before SDK async notification dispatch.
+          if ('method' in safe && listChanged.includes(safe.method)) this.#invalidate('quarantined');
+          wrapper.onmessage?.(safe, extra);
         };
         await inner.start();
       },
@@ -252,10 +304,24 @@ export class ManagedMcpConnection {
             this.#checkAuthorization();
           } else if (!allowedControlMethods.has(safe.method)) throw new McpBoundaryError('CAPABILITY_DENIED');
         }
+        if ('method' in safe && 'id' in safe && (typeof safe.id === 'string' || typeof safe.id === 'number')) {
+          if (this.#pendingRequests.size >= MAX_TRACKED_REQUESTS) this.#pendingRequests.delete(this.#pendingRequests.values().next().value!);
+          this.#pendingRequests.add(safe.id);
+        }
         await inner.send(safe, options);
       },
     };
     return wrapper;
+  }
+
+  /** Sliding-window inbound rate: at most maxMessages per messageWindowMs. */
+  #admitMessage(): boolean {
+    const now = performance.now();
+    if (this.#messageCount === this.#maxMessages && now - this.#messageTimes[this.#messageHead]! < this.#messageWindow) return false;
+    this.#messageTimes[this.#messageHead] = now;
+    this.#messageHead = (this.#messageHead + 1) % this.#maxMessages;
+    if (this.#messageCount < this.#maxMessages) this.#messageCount++;
+    return true;
   }
 
   async #load(epoch: number): Promise<void> {
@@ -353,9 +419,10 @@ export class ManagedMcpConnection {
             if (!Array.isArray(contents) || contents.some(item => object(item).uri !== (binding as McpResourceBinding).uri)) throw new McpBoundaryError('RESOURCE_MISMATCH');
           }
           return binding.measureCost ? { value, actualCost: binding.measureCost(value) } : { value };
-        } catch {
-          // A failed/aborted request may still have had a remote effect. Never retry it.
-          this.#invalidate('quarantined');
+        } catch (error) {
+          // A failed/aborted request may still have had a remote effect; the guard records it
+          // as unknown and never retries it. Only connection-level failures quarantine.
+          if (epoch === this.#epoch && connectionFailure(error)) this.#invalidate('quarantined');
           throw new McpBoundaryError('MCP_OPERATION_FAILED');
         }
       },

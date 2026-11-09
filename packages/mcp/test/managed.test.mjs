@@ -159,12 +159,15 @@ test('active widget content is rejected and quarantines the connection', { timeo
   assert.equal(f.connection.status, 'quarantined');
 });
 
-test('registry and incoming-message budgets fail closed', { timeout: 5_000 }, async t => {
-  const f = await fixture(t, { connection: { limits: { maxMessages: 3 } } });
+test('an incoming-message flood quarantines, and refresh recovers once the window passes', { timeout: 5_000 }, async t => {
+  const f = await fixture(t, { connection: { limits: { maxMessages: 3, messageWindowMs: 300 } } });
   await f.serverTransport.send({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'first' } });
   await f.serverTransport.send({ jsonrpc: '2.0', method: 'notifications/message', params: { level: 'info', data: 'over budget' } });
-  assert.equal(f.connection.status, 'closed');
+  assert.equal(f.connection.status, 'quarantined');
   assert.equal(f.effects.length, 0);
+  await new Promise(resolve => setTimeout(resolve, 350));
+  await f.connection.refresh();
+  assert.equal(f.connection.status, 'ready');
 });
 
 test('a discovery response racing a metadata notification cannot publish a stale registry', { timeout: 5_000 }, async t => {
