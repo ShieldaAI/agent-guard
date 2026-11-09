@@ -230,7 +230,7 @@ def test_changed_provider_between_capture_and_publication_drops_links_but_publis
             "MATCH (b:AWSS3Bucket {id:$bucket}) SET b.lastupdated=0", bucket=cloud_snapshot[3]
         ).consume()
 
-    result = import_case(neo4j_session, cloud_snapshot, after_load=change)
+    result = import_case(neo4j_session, cloud_snapshot, _after_load=change)
     assert result.published
     resources = [
         node for node in cloud_nodes(neo4j_session, result.projection_id) if "kind" in node
@@ -286,7 +286,11 @@ def test_unexpected_cloud_edge_rejects_publication_and_cleanup_preserves_provide
 
     with pytest.raises(CloudJoinError, match="^CLOUD_RELATIONSHIP_CONFLICT$"):
         import_snapshot(
-            neo4j_session, value, value["source"], cloud_scope=cloud_snapshot[1], after_load=corrupt
+            neo4j_session,
+            value,
+            value["source"],
+            cloud_scope=cloud_snapshot[1],
+            _after_load=corrupt,
         )
     assert current(neo4j_session, first) == first.projection_id
     failed = neo4j_session.run(
@@ -370,7 +374,7 @@ def test_cloud_capture_cannot_publish_over_a_newer_source_pointer(neo4j_session,
 
     with pytest.raises(GraphImportError, match="^PUBLICATION_CONFLICT$"):
         import_snapshot(
-            neo4j_session, stale, stale["source"], cloud_scope=cloud_snapshot[1], after_load=newer
+            neo4j_session, stale, stale["source"], cloud_scope=cloud_snapshot[1], _after_load=newer
         )
     assert current(neo4j_session, first) == published[0].projection_id
     assert len(cloud_edges(neo4j_session, published[0].projection_id)) == 4

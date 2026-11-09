@@ -1,4 +1,4 @@
-"""File-backed compatibility spike: versioned projections and atomic publication.
+"""Versioned graph projections and atomic publication.
 
 The caller owns the Neo4j session and must serialize collection in deployment.
 CAS publication additionally prevents an older in-flight import from replacing
@@ -686,13 +686,14 @@ def import_snapshot(
     expected_source: Mapping[str, str],
     *,
     update_tag: int | None = None,
-    after_load: Callable[[], None] | None = None,
     cloud_scope: CloudScope | dict | None = None,
+    _after_load: Callable[[], None] | None = None,
 ) -> ImportResult:
     """Import one complete core, host or host-mcp snapshot with mandatory source scope.
 
-    ``after_load`` is a host-side fault-injection hook for this compatibility
-    spike. It runs before validation/publication and is never snapshot input.
+    ``_after_load`` is a private test seam, not part of the API: integration tests use
+    it to inject a fault between loading and publication to prove atomicity. It runs
+    before validation/publication and is never snapshot input.
     """
     snapshot = validate_snapshot(snapshot)
     if dict(expected_source) != snapshot["source"]:
@@ -761,8 +762,8 @@ def import_snapshot(
             if schema.other_relationships is not None:
                 load(session, schema, rows[label], lastupdated=tag, GuardSnapshotId=projection_id)
         cleanup_projection_rows(session, projection_id, tag)
-        if after_load is not None:
-            after_load()
+        if _after_load is not None:
+            _after_load()
         publication = (
             source_id,
             projection_id,

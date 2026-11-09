@@ -231,7 +231,11 @@ def test_late_manifest_import_cannot_replace_a_newer_assertion(neo4j_session, ho
         GraphImportError, match="^(PUBLICATION_CONFLICT|MANIFEST_REVISION_ROLLBACK)$"
     ):
         import_snapshot(
-            neo4j_session, candidate, candidate["source"], update_tag=1301, after_load=publish_newer
+            neo4j_session,
+            candidate,
+            candidate["source"],
+            update_tag=1301,
+            _after_load=publish_newer,
         )
     current = source_state(neo4j_session, original.source_id)
     assert current["current_snapshot_id"] == winners[0].projection_id
@@ -258,7 +262,7 @@ def test_missing_manifest_relationship_prevents_publication(neo4j_session, host_
             candidate,
             candidate["source"],
             update_tag=1401,
-            after_load=remove_identity,
+            _after_load=remove_identity,
         )
     assert (
         source_state(neo4j_session, original.source_id)["current_snapshot_id"]
@@ -320,7 +324,7 @@ def test_failed_host_staging_can_be_cleaned_without_current_manifest_loss(
 
     with pytest.raises(RuntimeError, match="synthetic host staging interruption"):
         import_snapshot(
-            neo4j_session, candidate, candidate["source"], update_tag=1601, after_load=fail
+            neo4j_session, candidate, candidate["source"], update_tag=1601, _after_load=fail
         )
     failed = neo4j_session.run(
         "MATCH (p:GuardSnapshot {source_id:$source,status:'failed'}) RETURN p.id AS id",

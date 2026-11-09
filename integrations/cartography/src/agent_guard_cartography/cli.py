@@ -530,7 +530,12 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(str(error), file=sys.stderr)
         return 2
     except KeyboardInterrupt:
-        return 0
+        # Ctrl-C is how an operator stops --watch: a clean stop. An interrupted one-shot
+        # collection is not a success; 130 is the conventional SIGINT status.
+        if args.watch:
+            return 0
+        print("INTERRUPTED", file=sys.stderr)
+        return 130
     except Exception:
         print("IMPORT_FAILED", file=sys.stderr)
         return 1

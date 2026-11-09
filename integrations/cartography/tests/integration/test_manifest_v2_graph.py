@@ -196,7 +196,7 @@ def test_new_relationship_validation_and_interruption_keep_previous_projection(
         ).consume()
 
     with pytest.raises(GraphImportError, match="^PROJECTION_RELATIONSHIP_MISMATCH$"):
-        publish(neo4j_session, candidate, after_load=corrupt_relation)
+        publish(neo4j_session, candidate, _after_load=corrupt_relation)
     assert (
         source_record(neo4j_session, first.source_id)["current_snapshot_id"] == first.projection_id
     )
