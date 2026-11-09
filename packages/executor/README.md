@@ -243,6 +243,15 @@ as `SUCCEEDED` and charged, but its result is withheld: `execute()` fails with
 `EXECUTION_ABORTED` and `detail: 'EFFECT_COMMITTED'`, and `execution()` shows the
 committed receipt. Do not retry it.
 
+## Numbered task IDs
+
+A host that allocates task IDs in sequence can use `numberedTaskId(namespace, n)`,
+which builds `ticket:<namespace UUID>-<n>`. After a task family is exported, the
+ledger keeps one fence per namespace (the highest exported sequence) instead of one
+tombstone per ID, so exported IDs can never be reused and the ledger does not grow
+with history. Agent Ops uses this scheme for its requests. The `ticket:` prefix
+(`NUMBERED_TASK_PREFIX`) is part of persisted fences, so it is fixed.
+
 ## Ledger format and compatibility
 
 A ledger carries two markers. `schema` (1, 2 or 3) is the authority mode that 0.1

@@ -1,3 +1,4 @@
+import { NUMBERED_TASK_PREFIX } from '@shieldaai/agent-guard-executor';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { lstatSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -321,7 +322,7 @@ function validatePayload(payload, guardInstanceId, company) {
     if (
       request.tenantId !== payload.tenantId ||
       !terminal.has(request.state) ||
-      request.taskId !== `ticket:${request.id}`
+      request.taskId !== `${NUMBERED_TASK_PREFIX}${request.id}`
     )
       fail('HISTORY_EVIDENCE_INVALID');
     if (

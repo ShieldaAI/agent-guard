@@ -7,6 +7,10 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Change (executor): the numbered task ID scheme that lifecycle export fences rely on is
+  now a documented executor feature, `numberedTaskId()` and `NUMBERED_TASK_PREFIX`,
+  instead of an Agent Ops convention string-built in two places. Persisted formats
+  are unchanged.
 - Add (Agent Ops): opt-in online retention. With `requests.autoArchiveAfterDays`, the
   service archives the executor task families of finished requests older than that,
   10 per minute, through the operator's retire-then-archive path; blocked requests are

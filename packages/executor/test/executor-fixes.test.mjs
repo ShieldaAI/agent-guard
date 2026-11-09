@@ -89,3 +89,18 @@ test('the executor and the /ops key tools accept the same minimum ledger size', 
     { code: 'STORE_CONFIG_INVALID' },
   );
 });
+
+test('numbered task IDs are an executor scheme any host can build and that fences recognize', async () => {
+  const { numberedTaskId, NUMBERED_TASK_PREFIX } = await import('../dist/index.js');
+  const namespace = '3f1c2b4a-5d6e-4f70-8a9b-0c1d2e3f4a5b';
+  assert.equal(numberedTaskId(namespace, 42), `${NUMBERED_TASK_PREFIX}${namespace}-42`);
+  assert.equal(NUMBERED_TASK_PREFIX, 'ticket:', 'fixed: persisted fences and digests depend on it');
+  for (const [ns, sequence] of [
+    ['not-a-uuid', 1],
+    [namespace, 0],
+    [namespace, 1.5],
+    [namespace, 1e16],
+  ]) {
+    assert.throws(() => numberedTaskId(ns, sequence), { code: 'INVALID_INPUT' });
+  }
+});

@@ -113,7 +113,7 @@ export function allocateRequestIdentity(data, tenantId) {
   const company = companyHistory(data, tenantId, true);
   if (company.nextSequence >= Number.MAX_SAFE_INTEGER) historyFailure('HISTORY_SEQUENCE_CAPACITY');
   const sequence = company.nextSequence++;
-  return { id: `${company.namespace}-${sequence}`, sequence };
+  return { id: `${company.namespace}-${sequence}`, namespace: company.namespace, sequence };
 }
 export function assertHistoryIdle(data) {
   if (historyState(data)?.pending) historyFailure('HISTORY_RECOVERY_REQUIRED');

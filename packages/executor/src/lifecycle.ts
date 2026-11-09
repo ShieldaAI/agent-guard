@@ -269,7 +269,7 @@ function lifecycle(state: Ledger, create = false): LifecycleState | undefined {
         head.namespace !== namespace ||
         !safeCount(Number(sequenceText)) ||
         Number(sequenceText) <= head.through ||
-        id !== taskDigest(`ticket:${namespace}-${sequenceText}`))
+        id !== taskDigest(`${NUMBERED_TASK_PREFIX}${namespace}-${sequenceText}`))
     )
       fail('LIFECYCLE_STATE_INVALID');
   }
@@ -292,6 +292,19 @@ export function archivedTaskIdUsed(state: Ledger, id: string): boolean {
   if (own(retained.archivedTaskIds, taskDigest(id)) !== undefined) return true;
   const numbered = numberedTask(id);
   return !!numbered && numbered.sequence <= (own(retained.namespaceFences ?? {}, numbered.namespace)?.through ?? 0);
+}
+/**
+ * Numbered task IDs: `ticket:<namespace UUID v4>-<sequence>`. Any host may use them. After a
+ * family export, the ledger keeps one fence per namespace (the highest exported sequence)
+ * instead of one tombstone per ID, so an exported ID can never be reused. The prefix is part
+ * of persisted fences and digests, so it is fixed for every ledger.
+ */
+export const NUMBERED_TASK_PREFIX = 'ticket:';
+/** Builds a numbered task ID; throws INVALID_INPUT for a malformed namespace or sequence. */
+export function numberedTaskId(namespace: string, sequence: number): string {
+  if (!namespaceValid(namespace) || !Number.isSafeInteger(sequence) || sequence < 1 || sequence >= 1e16)
+    throw new ExecutorError('INVALID_INPUT');
+  return `${NUMBERED_TASK_PREFIX}${namespace}-${sequence}`;
 }
 function namespaceValid(value: unknown): value is string {
   return (

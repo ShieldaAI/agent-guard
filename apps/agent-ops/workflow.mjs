@@ -1,3 +1,4 @@
+import { numberedTaskId } from '@shieldaai/agent-guard-executor';
 import { randomUUID, createHash } from 'node:crypto';
 import { normalizeLimits, assertCapacity, LIMIT_BOUNDS } from './limits.mjs';
 import { allocateRequestIdentity, assertHistoryIdle, historyState, historySegmentUsage } from './history-state.mjs';
@@ -343,7 +344,7 @@ export class TicketWorkflow {
       request = {
         id,
         sequence: identity.sequence,
-        taskId: `ticket:${id}`,
+        taskId: numberedTaskId(identity.namespace, identity.sequence),
         operationId: `operation-${id}`,
         tenantId: operator.tenantId,
         requesterId: operator.id,

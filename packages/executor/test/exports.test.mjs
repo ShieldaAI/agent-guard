@@ -14,6 +14,7 @@ const ROOT = [
   'ExecutorClient',
   'ExecutorError',
   'LEDGER_FORMAT_VERSION',
+  'NUMBERED_TASK_PREFIX',
   'createExecutorModelProvider',
   'createHttpGetTool',
   'createModelTool',
@@ -21,6 +22,7 @@ const ROOT = [
   'createPrivateFileTools',
   'createRestrictedFetch',
   'isPublicAddress',
+  'numberedTaskId',
   'publicToolDefinition',
   'startExecutorServer',
 ];
