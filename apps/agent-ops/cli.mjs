@@ -103,7 +103,8 @@ try {
         log(event, details);
       },
       keyringPolicy: () => readLedgerKeyringPolicy({ keyringFile: config.keyringFile }) });
-    const fingerprint = value => { const { bindings, agents, ...fixed } = value; return createHash('sha256').update(JSON.stringify(fixed)).digest('hex'); };
+    // Identities and TLS material reload in place; anything else needs a restart.
+    const fingerprint = value => { const { bindings, agents, tls, ...fixed } = value; return createHash('sha256').update(JSON.stringify(fixed)).digest('hex'); };
     let stopping = false;
     const stop = async (event, exitCode = 0) => {
       if (stopping) return; stopping = true; clearInterval(monitor);
@@ -115,6 +116,7 @@ try {
       try {
         const next = loadConfig(flags.config);
         if (fingerprint(next) !== fingerprint(config)) fail('RESTART_REQUIRED');
+        http.replaceTls(next.tls); log('TLS_RELOADED');
         http.replaceBindings(next.bindings, next.agents); log('IDENTITIES_RELOADED');
       } catch { void stop('CONFIG_RELOAD_FAILED', 1); }
     });

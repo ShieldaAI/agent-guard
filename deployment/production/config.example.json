@@ -3,6 +3,7 @@
   "publicOrigin": "https://ops.example.invalid:8443",
   "listenHost": "0.0.0.0",
   "port": 8443,
+  "requests": { "reviewExpiryMs": 300000, "forbidSelfApproval": false, "maxPendingPerRequester": 50, "maxPendingPerTenant": 1000 },
   "ledgerDatabase": "/var/lib/agent-ops/authority.sqlite",
   "backendDatabase": "/var/lib/agent-ops/tickets.sqlite",
   "ledgerWitness": "/var/lib/agent-ops-witness/authority.sqlite",

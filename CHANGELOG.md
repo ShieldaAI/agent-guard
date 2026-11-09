@@ -7,6 +7,14 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix (Agent Ops): anonymous `GET /api/session` no longer creates server-side
+  sessions, so cookieless traffic can't exhaust the session table and block sign-in.
+  Pre-login state is a signed five-minute cookie with a derived CSRF token, and each
+  client address may hold at most four pending sign-ins. The rate limiter keys IPv6
+  by /64 and drops the oldest window when full instead of refusing new clients.
+  New `requests` settings add per-requester (50) and per-tenant (1,000) pending
+  caps, configurable review expiry (default unchanged at 5 minutes) and opt-in
+  `forbidSelfApproval`. `SIGHUP` now also reloads TLS material without a restart.
 - Fix: the MCP schema profile accepts common real-world tool schemas. The 2019-09 and
   2020-12 dialect URIs are accepted, `format` is an annotation, `uniqueItems` uses
   linear canonical-JSON equality, and `pattern` is accepted when its backtracking is

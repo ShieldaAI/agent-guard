@@ -1,5 +1,5 @@
 import { createServer } from 'node:https';
-import { randomBytes, createHash, timingSafeEqual } from 'node:crypto';
+import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { createMapOidcClient } from '../../packages/agent-map/dist/oidc.js';
 import { parseEvidenceJson } from '../../packages/executor/dist/evidence-json.js';
@@ -12,6 +12,25 @@ const random = () => randomBytes(32).toString('base64url');
 const digest = value => createHash('sha256').update(value).digest();
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && timingSafeEqual(digest(a), digest(b));
 const roles = ['requester', 'reviewer', 'operator'];
+const ANONYMOUS_TTL_MS = 5 * 60_000;
+const FLOWS_PER_CLIENT = 4;
+/**
+ * Rate-limit key: an IPv4 address, or the /64 prefix of an IPv6 address (one host
+ * usually owns a whole /64). Behind an L4 passthrough every client shares the proxy's
+ * address; enforce a per-client limit at that layer as well.
+ */
+export function clientKey(address) {
+  const ip = String(address ?? 'unknown').split('%')[0];
+  const mapped = /^::ffff:(\d{1,3}(?:\.\d{1,3}){3})$/i.exec(ip);
+  if (mapped) return mapped[1];
+  if (!ip.includes(':')) return ip;
+  const width = part => part.includes('.') ? 2 : 1;
+  const [head, tail] = ip.split('::');
+  const left = head ? head.split(':') : [], right = tail ? tail.split(':') : [];
+  const used = [...left, ...right].reduce((sum, part) => sum + width(part), 0);
+  const groups = tail === undefined ? left : [...left, ...Array(Math.max(0, 8 - used)).fill('0'), ...right];
+  return `${groups.slice(0, 4).map(group => (parseInt(group, 16) || 0).toString(16)).join(':')}::/64`;
+}
 const messages = {
   UNAUTHENTICATED: 'Your session expired or was revoked. Sign in again.', FORBIDDEN: 'Your enrolled role does not permit this action.',
   CSRF_INVALID: 'The page is out of date. Refresh before trying again.', AUTH_FAILED: 'Sign-in could not be verified. Start a new sign-in.',
@@ -73,12 +92,17 @@ function pageScope(url) {
 export async function startOpsServer(options) {
   const origin = new URL(options.publicOrigin);
   if (origin.protocol !== 'https:' || origin.origin !== options.publicOrigin || origin.username || origin.password) fail('PUBLIC_ORIGIN_INVALID');
-  const { expiresAt: tlsExpiresAt } = validateTls(options.tls, options.publicOrigin);
+  let { expiresAt: tlsExpiresAt } = validateTls(options.tls, options.publicOrigin);
   let bindings = enroll(options.bindings), agents = agentEnroll(options.agents), generation = 0, draining = false, active = 0;
   const disjoint = (humans, machines) => { const ids = new Set([...humans.values()].map(value => value.id)); if (machines.some(value => ids.has(value.operator.id))) fail('IDENTITY_CONFIG_INVALID'); };
   disjoint(bindings, agents);
   const ttl = options.sessionTtlMs ?? 15 * 60_000;
   if (!Number.isSafeInteger(ttl) || ttl < 1000 || ttl > 15 * 60_000) fail('SESSION_CONFIG_INVALID');
+  const rateLimit = options.rateLimitPerMinute ?? 180;
+  if (!Number.isSafeInteger(rateLimit) || rateLimit < 60 || rateLimit > 100_000) fail('RATE_LIMIT_CONFIG_INVALID');
+  // Signs pre-login cookies; anonymous visitors create no server-side state.
+  const anonymousKey = randomBytes(32);
+  const sign = (purpose, value) => createHmac('sha256', anonymousKey).update(`${purpose}\0${value}`).digest('base64url');
   const workflow = options.workflow, sessions = new Map(), flows = new Map(), limits = new Map();
   const telemetry = createOpsTelemetry({ securityLoggingEnabled: typeof options.onSecurityEvent === 'function' });
   const oidc = await createMapOidcClient({ ...options.oidc, redirectUri: `${origin.origin}/auth/callback` });
@@ -102,18 +126,36 @@ export async function startOpsServer(options) {
     response.writeHead(status, { ...securityHeaders, 'Content-Type': 'application/json; charset=utf-8', ...extra });
     response.end(JSON.stringify(value));
   }
-  function valid(session) { return session && sessions.get(session.id) === session && session.generation === generation && Date.now() < session.expiresAt && performance.now() < session.deadline && !draining; }
+  function valid(session) {
+    return session && (session.anonymous || sessions.get(session.id) === session) && session.generation === generation &&
+      Date.now() < session.expiresAt && performance.now() < session.deadline && !draining;
+  }
   function cleanup() {
     for (const [id, session] of sessions) if (!valid(session)) sessions.delete(id);
-    for (const [id, flow] of flows) if (!valid(flow.session) || Date.now() >= flow.expiresAt) flows.delete(id);
+    for (const [id, flow] of flows) if (flow.generation !== generation || Date.now() >= flow.expiresAt) flows.delete(id);
     for (const [id, limit] of limits) if (Date.now() - limit.started > 60_000) limits.delete(id);
+  }
+  /** Stateless pre-login session: an HMAC-signed, short-lived cookie with a derived CSRF token. */
+  function anonymousSession(value) {
+    const match = /^a\.(\d{1,9})\.(\d{1,16})\.([A-Za-z0-9_-]{43})\.([A-Za-z0-9_-]{43})$/.exec(value ?? '');
+    if (!match) return undefined;
+    const body = value.slice(0, value.lastIndexOf('.'));
+    if (!equal(match[4], sign('anonymous', body))) return undefined;
+    const session = { id: value, anonymous: true, generation: Number(match[1]), expiresAt: Number(match[2]),
+      deadline: Number.POSITIVE_INFINITY, csrfToken: sign('csrf', body) };
+    return valid(session) ? session : undefined;
+  }
+  function newAnonymousSession(response) {
+    const body = `a.${generation}.${Date.now() + ANONYMOUS_TTL_MS}.${random()}`, value = `${body}.${sign('anonymous', body)}`;
+    response.setHeader('Set-Cookie', `${COOKIE}=${value}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${ANONYMOUS_TTL_MS / 1000}`);
+    return anonymousSession(value);
   }
   function newSession(response, identity) {
     cleanup(); if (sessions.size >= 512) fail('SESSION_CAPACITY_REACHED', 503);
-    const duration = identity ? Math.min(ttl, identity.expiresAt - Date.now()) : 5 * 60_000;
+    const duration = Math.min(ttl, identity.expiresAt - Date.now());
     if (duration <= 0) fail('AUTH_FAILED', 401);
     const session = { id: random(), csrfToken: random(), generation, expiresAt: Date.now() + duration, deadline: performance.now() + duration,
-      ...(identity ? { operator: identity.operator } : {}) };
+      operator: identity.operator };
     sessions.set(session.id, session);
     response.setHeader('Set-Cookie', `${COOKIE}=${session.id}; Path=/; Secure; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(duration / 1000)}`);
     return session;
@@ -121,7 +163,9 @@ export async function startOpsServer(options) {
   function cookieSession(request) {
     const values = (request.headers.cookie ?? '').split(';').map(value => value.trim()).filter(value => value.startsWith(`${COOKIE}=`));
     if (values.length > 1) fail('UNAUTHENTICATED', 401);
-    const session = sessions.get(values[0]?.slice(COOKIE.length + 1));
+    const value = values[0]?.slice(COOKIE.length + 1);
+    if (value?.startsWith('a.')) return anonymousSession(value);
+    const session = sessions.get(value);
     return valid(session) ? session : undefined;
   }
   function authorized(session, role) {
@@ -144,9 +188,13 @@ export async function startOpsServer(options) {
     } finally { clearTimeout(timer); }
   }
   function limit(request) {
-    cleanup(); const ip = request.socket.remoteAddress ?? 'unknown';
-    if (!limits.has(ip)) { if (limits.size >= 2048) fail('RATE_LIMITED', 429); limits.set(ip, { started: Date.now(), count: 0 }); }
-    if (++limits.get(ip).count > 180) fail('RATE_LIMITED', 429);
+    cleanup(); const key = clientKey(request.socket.remoteAddress);
+    if (!limits.has(key)) {
+      // A full table drops its oldest window instead of refusing every new client.
+      if (limits.size >= 2048) limits.delete(limits.keys().next().value);
+      limits.set(key, { started: Date.now(), count: 0 });
+    }
+    if (++limits.get(key).count > rateLimit) fail('RATE_LIMITED', 429);
   }
   const server = createServer({ ...options.tls, minVersion: 'TLSv1.2', maxHeaderSize: 16 * 1024, requestTimeout: 10_000, headersTimeout: 10_000, connectionsCheckingInterval: 1000 }, async (request, response) => {
     const started = performance.now();
@@ -190,13 +238,13 @@ export async function startOpsServer(options) {
       let session = cookieSession(request);
       requestSession = session;
       if (url.pathname === '/api/session' && request.method === 'GET') {
-        session ??= newSession(response);
+        session ??= newAnonymousSession(response);
         return send(response, 200, { authenticated: !!session.operator, csrfToken: session.csrfToken, authorizationOrigins, publicAuthIssuer: options.oidc.issuer,
           ...(session.operator ? { operator: session.operator, expiresAt: session.expiresAt } : {}) });
       }
       if (url.pathname === '/auth/callback' && request.method === 'GET') {
         const stateValues = url.searchParams.getAll('state'), flow = stateValues.length === 1 && flows.get(stateValues[0]);
-        if (!flow || !session || flow.session !== session || flow.expiresAt <= Date.now() || flow.busy) fail('AUTH_FAILED', 401);
+        if (!flow || !session || flow.sessionId !== session.id || flow.generation !== generation || flow.expiresAt <= Date.now() || flow.busy) fail('AUTH_FAILED', 401);
         flow.busy = true; flows.delete(stateValues[0]);
         let identity;
         try { const { state, nonce, codeVerifier } = flow.transaction; identity = await oidc.complete(url, { state, nonce, codeVerifier }); } catch { fail('AUTH_FAILED', 401); }
@@ -210,10 +258,13 @@ export async function startOpsServer(options) {
       }
       if (request.method === 'POST' && url.pathname === '/auth/login') {
         csrf(request, session); fields(await body(request), []); csrf(request, session);
+        cleanup();
+        const client = clientKey(request.socket.remoteAddress);
+        for (const [id, flow] of flows) if (flow.sessionId === session.id) flows.delete(id);
+        if ([...flows.values()].filter(flow => flow.client === client).length >= FLOWS_PER_CLIENT) fail('RATE_LIMITED', 429);
         if (flows.size >= 128) fail('LOGIN_CAPACITY_REACHED', 503);
         const transaction = await oidc.begin(); csrf(request, session);
-        for (const [id, flow] of flows) if (flow.session === session) flows.delete(id);
-        flows.set(transaction.state, { transaction, session, expiresAt: Date.now() + 3 * 60_000 });
+        flows.set(transaction.state, { transaction, sessionId: session.id, client, generation, expiresAt: Date.now() + 3 * 60_000 });
         return send(response, 200, { authorizationUrl: transaction.authorizationUrl });
       }
       if (request.method === 'POST' && url.pathname === '/auth/logout') {
@@ -307,6 +358,12 @@ export async function startOpsServer(options) {
     server, publicOrigin: origin.origin,
     monitoringSummary() { return monitoringSummary({ workflow, telemetry, keyring: options.keyringPolicy?.(), tlsExpiresAt,
       tenantIdForStatistics: bindings.values().next().value.tenantId }); },
+    /** Reload rotated TLS material without a restart; existing connections keep their context. */
+    replaceTls(tls) {
+      const { expiresAt } = validateTls(tls, options.publicOrigin);
+      server.setSecureContext({ ...tls, minVersion: 'TLSv1.2' });
+      tlsExpiresAt = expiresAt; securityEvent('TLS_RELOADED');
+    },
     replaceBindings(values, agentValues = []) { const next = enroll(values), nextAgents = agentEnroll(agentValues); disjoint(next, nextAgents); bindings = next; agents = nextAgents; generation++; sessions.clear(); flows.clear(); securityEvent('IDENTITY_BINDINGS_RELOADED'); },
     async close() { draining = true; generation++; sessions.clear(); flows.clear(); await new Promise(resolve => server.close(resolve)); },
   };

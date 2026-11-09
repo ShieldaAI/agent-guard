@@ -15,7 +15,7 @@ export function setup(t, options = {}) {
   for (const name of ['data', 'witness', 'config']) mkdirSync(join(directory, name), { mode: 0o700 });
   const config = { ledgerDatabase: join(directory, 'data/guard.sqlite'), backendDatabase: join(directory, 'data/tickets.sqlite'),
     ledgerWitness: join(directory, 'witness/guard.sqlite'), backendWitness: join(directory, 'witness/tickets.sqlite'), keyringFile: join(directory, 'config/keys.json'),
-    limits: normalizeLimits(options.limits) };
+    limits: normalizeLimits(options.limits), ...(options.requests ? { requests: options.requests } : {}) };
   if (options.mirror) {
     config.historyDirectory = join(directory, 'history');
     config.historyMirrorDirectory = join(directory, 'witness/history-mirror');

@@ -65,13 +65,30 @@ browser fields, proxy headers and model output do not create permissions.
 | `operator` | Look up an authoritative receipt, reconcile an uncertain outcome, preview/apply task archival, and inspect setup and deployment capacity. |
 
 All signed-in operators can read tickets and requests in their own tenant. One
-owner can hold all three roles. This is not a mandatory two-person approval
-policy. Each decision still records the actual enrolled reviewer's identity.
+owner can hold all three roles. By default this is not a mandatory two-person
+approval policy. Set `"requests": { "forbidSelfApproval": true }` once a second
+reviewer is enrolled, so no one approves their own request. Each decision still
+records the actual enrolled reviewer's identity.
 Session lifetime is at most 15 minutes and cannot exceed the ID token expiry.
+Before sign-in, the browser holds only a signed five-minute cookie with a derived
+CSRF token; anonymous visitors create no server-side state. Server state starts
+at `POST /auth/login`, with at most four pending sign-ins per client address.
 Expiry, logout, process restart or identity reload invalidates the session.
-`SIGHUP` reloads identities and proposal credentials, invalidates all sessions and
-rechecks authorization for in-flight requests before effects. A failed reload
-stops the service. Other configuration changes require restart. IdP-side revocation
+`SIGHUP` reloads identities, proposal credentials and the TLS key and certificate,
+invalidates all sessions and rechecks authorization for in-flight requests before
+effects. New connections use the reloaded certificate. A failed reload stops the
+service. Other configuration changes require restart.
+
+Each client address (IPv4, or IPv6 /64) gets 180 requests per minute. When the
+address table is full, the oldest window is dropped instead of refusing new
+clients. Behind an L4 passthrough every client shares the proxy's address, so
+enforce a per-client limit at that layer too.
+
+The optional `requests` configuration sets review and admission policy:
+`reviewExpiryMs` (default 5 minutes, 1 minute to 24 hours), `forbidSelfApproval`
+(default `false`), `maxPendingPerRequester` (default 50) and `maxPendingPerTenant`
+(default 1,000). A requester or agent at its cap gets `PENDING_LIMIT_REACHED` (429)
+without affecting anyone else. IdP-side revocation
 alone is bounded by session lifetime; use reload for immediate local revocation.
 
 The optional agent credential is a host-enrolled random bearer token with an agent

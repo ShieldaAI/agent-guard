@@ -4,7 +4,7 @@ import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 import { LedgerStore } from '../../packages/executor/dist/store.js';
 import { loadLedgerKey, readLedgerKeyring, readLedgerKeyringPolicy } from '../../packages/executor/dist/ledger-maintenance.js';
 import { parseEvidenceJson } from '../../packages/executor/dist/evidence-json.js';
-import { TicketWorkflow, initializeTickets, validateTicketSeed, fields, fail, identifier } from './workflow.mjs';
+import { TicketWorkflow, normalizeRequestPolicy, initializeTickets, validateTicketSeed, fields, fail, identifier } from './workflow.mjs';
 import { normalizeLimits, assertCapacity, LIMIT_BOUNDS } from './limits.mjs';
 import { validateIdentityEnrollment } from './server.mjs';
 import { historyState } from './history-state.mjs';
@@ -43,11 +43,12 @@ export function privateFile(path, maximum = 256 * 1024) {
   } finally { closeSync(fd); }
 }
 export function loadConfig(path) {
-  const config = fields(parseEvidenceJson(privateFile(path), 256 * 1024), ['version', 'company', 'limits', 'historyDirectory', 'historyMirrorDirectory', 'publicOrigin', 'listenHost', 'port', 'ledgerDatabase', 'backendDatabase', 'ledgerWitness', 'backendWitness', 'keyringFile', 'tls', 'oidc', 'bindings', 'agents']);
+  const config = fields(parseEvidenceJson(privateFile(path), 256 * 1024), ['version', 'company', 'limits', 'historyDirectory', 'historyMirrorDirectory', 'publicOrigin', 'listenHost', 'port', 'ledgerDatabase', 'backendDatabase', 'ledgerWitness', 'backendWitness', 'keyringFile', 'tls', 'oidc', 'bindings', 'agents', 'requests']);
   if (config.version !== 1 || !Array.isArray(config.bindings)) fail('CONFIG_INVALID');
   if (config.agents !== undefined && !Array.isArray(config.agents)) fail('CONFIG_INVALID');
   validateConfiguredPaths(config);
   const limits = normalizeLimits(config.limits);
+  if (config.requests !== undefined) normalizeRequestPolicy(config.requests);
   if (config.historyDirectory !== undefined && (typeof config.historyDirectory !== 'string' || !isAbsolute(config.historyDirectory))) fail('CONFIG_INVALID');
   if (config.historyMirrorDirectory !== undefined && (typeof config.historyMirrorDirectory !== 'string' || !isAbsolute(config.historyMirrorDirectory) || !config.historyDirectory)) fail('CONFIG_INVALID');
   if (config.company !== undefined) {
@@ -163,7 +164,7 @@ export function openRuntime(config, { checkOnly = false, afterCommit } = {}) {
     if (checkOnly) return { status: 'verified', guardKeyId: guardKey.keyId, backendKeyId: backendKey.keyId };
     guard.close(); guard = undefined;
     executor = new DurableExecutor({ database: config.ledgerDatabase, encryptionKey: guardKey.key, maxLedgerBytes: limits.maxLedgerBytes, rollbackWitness: { path: config.ledgerWitness, mode: 'resume' } });
-    const workflow = new TicketWorkflow({ executor, store: backend, guardInstanceId, afterCommit, limits });
+    const workflow = new TicketWorkflow({ executor, store: backend, guardInstanceId, afterCommit, limits, requestPolicy: config.requests });
     return { workflow, executor, backend, recovery, close() { executor.close(); backend.close(); } };
   } catch (error) { executor?.close(); backend?.close(); throw error; }
   finally { guard?.close(); if (checkOnly) backend?.close(); guardKey.key.fill(0); backendKey?.key.fill(0); }

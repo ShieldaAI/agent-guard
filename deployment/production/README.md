@@ -241,9 +241,10 @@ restart a running container.
 The process handles SIGTERM with draining and a 25-second shutdown deadline;
 Compose allows 30 seconds. Pending reviews are invalidated on restart. An effect
 with an uncertain outcome stays unresolved until its durable receipt is checked.
-Use SIGHUP only after atomically publishing changed identity bindings or agent
-credentials: it reloads them and invalidates existing sessions. Other config
-changes require restart; a failed reload stops the service.
+Use SIGHUP only after atomically publishing changed identity bindings, agent
+credentials or a renewed TLS key and certificate: it reloads them and invalidates
+existing sessions. Other config changes require restart; a failed reload stops the
+service.
 
 ```sh
 docker compose -f deployment/production/compose.yaml kill -s SIGHUP agent-ops

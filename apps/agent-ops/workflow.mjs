@@ -16,6 +16,17 @@ export function identifier(value) {
 }
 const statuses = ['open', 'resolved'];
 const terminal = new Set(['completed', 'denied', 'expired', 'changed', 'failed', 'review_required']);
+/** Review and admission policy. Defaults keep existing installations' behaviour. */
+export const DEFAULT_REQUEST_POLICY = Object.freeze({ reviewExpiryMs: 5 * 60_000, forbidSelfApproval: false,
+  maxPendingPerRequester: 50, maxPendingPerTenant: 1000 });
+export function normalizeRequestPolicy(value = {}) {
+  fields(value, Object.keys(DEFAULT_REQUEST_POLICY));
+  const policy = { ...DEFAULT_REQUEST_POLICY, ...Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) };
+  const integer = (item, min, max) => Number.isSafeInteger(item) && item >= min && item <= max;
+  if (!integer(policy.reviewExpiryMs, 60_000, 24 * 60 * 60_000) || typeof policy.forbidSelfApproval !== 'boolean' ||
+      !integer(policy.maxPendingPerRequester, 1, 20_000) || !integer(policy.maxPendingPerTenant, 1, 20_000)) fail('REQUEST_POLICY_INVALID');
+  return Object.freeze(policy);
+}
 const own = (object, key) => Object.hasOwn(object, key) ? object[key] : undefined;
 // A receipt pruned by executor retention keeps its settled outcome.
 const settledStatus = receipt => receipt.status === 'PRUNED' ? receipt.outcome : receipt.status;
@@ -63,9 +74,10 @@ export function initializeTickets(store, { guardInstanceId, tickets, limits }) {
 }
 
 export class TicketWorkflow {
-  constructor({ executor, store, guardInstanceId, limits, clock = Date.now, afterCommit }) {
+  constructor({ executor, store, guardInstanceId, limits, requestPolicy, clock = Date.now, afterCommit }) {
     this.executor = executor; this.store = store; this.clock = clock; this.afterCommit = afterCommit;
     this.limits = normalizeLimits(limits);
+    this.requestPolicy = normalizeRequestPolicy(requestPolicy);
     this.busy = new Set(); this.previews = new Map(); this.dispatchAuthorization = new Map();
     const state = this.data();
     assertHistoryIdle(state);
@@ -160,11 +172,18 @@ export class TicketWorkflow {
     const now = this.clock(); let request;
     this.write(data => {
       if (Object.keys(data.requests).length >= this.limits.maxRequests) fail('RECORD_CAPACITY_REACHED', 503);
+      // A looping requester or agent fills only its own share of open reviews.
+      let mine = 0, tenant = 0;
+      for (const open of Object.values(data.requests)) {
+        if (open.tenantId !== operator.tenantId || !(open.state === 'preparing' || (open.state === 'pending' && open.expiresAt > now))) continue;
+        tenant++; if (open.requesterId === operator.id) mine++;
+      }
+      if (mine >= this.requestPolicy.maxPendingPerRequester || tenant >= this.requestPolicy.maxPendingPerTenant) fail('PENDING_LIMIT_REACHED', 429);
       const identity = allocateRequestIdentity(data, operator.tenantId), id = identity.id;
       if (Object.hasOwn(data.requests, id)) fail('HISTORY_ID_COLLISION', 503);
       request = { id, sequence: identity.sequence, taskId: `ticket:${id}`, operationId: `operation-${id}`, tenantId: operator.tenantId, requesterId: operator.id,
         ticketId: ticket.id, title: ticket.title, beforeStatus: ticket.status, afterStatus: input.status,
-        resourceVersion: String(ticket.version), createdAt: now, expiresAt: now + 5 * 60_000, state: 'preparing' };
+        resourceVersion: String(ticket.version), createdAt: now, expiresAt: now + this.requestPolicy.reviewExpiryMs, state: 'preparing' };
       data.requests[id] = request;
     });
     const { id, taskId } = request;
@@ -191,6 +210,7 @@ export class TicketWorkflow {
     fields(input, ['digest']); assertAuthorized();
     let request = this.request(id, operator.tenantId);
     if (this.busy.has(id) || request.state !== 'pending' || request.digest !== input.digest) fail('REVIEW_STALE', 409);
+    if (approve && this.requestPolicy.forbidSelfApproval && request.requesterId === operator.id) fail('SELF_APPROVAL_FORBIDDEN', 403);
     if (request.expiresAt <= this.clock()) { this.write(data => { data.requests[id].state = 'expired'; }); fail('REVIEW_EXPIRED', 409); }
     const ticket = this.ticket(request.ticketId, operator.tenantId);
     if (String(ticket.version) !== request.resourceVersion) { this.write(data => { data.requests[id].state = 'changed'; }); fail('TICKET_CHANGED', 409); }
