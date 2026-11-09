@@ -16,7 +16,9 @@ export function containsLiteralSecret(value: Json, secrets: readonly string[]): 
   if (typeof value === 'string') return secrets.some(secret => value.includes(secret));
   if (value === null || typeof value !== 'object') return false;
   if (Array.isArray(value)) return value.some(item => containsLiteralSecret(item, secrets));
-  return Object.entries(value).some(([key, item]) => secrets.some(secret => key.includes(secret)) || containsLiteralSecret(item, secrets));
+  return Object.entries(value).some(
+    ([key, item]) => secrets.some(secret => key.includes(secret)) || containsLiteralSecret(item, secrets),
+  );
 }
 
 /**
@@ -30,11 +32,21 @@ export function containsLiteralSecret(value: Json, secrets: readonly string[]): 
 export type AuthorityPhase = 'prepare' | 'dispatch';
 
 /** The mandatory gates shared by embedded and durable executors; never an authentication API. */
-export function assertActionAuthority(action: Readonly<Action>, ancestors: readonly AuthorityState[], options: {
-  now: number; maxCost: number; controlPlane: boolean; sensitive: boolean; secretValues: readonly string[];
-  phase?: AuthorityPhase;
-}): void {
-  const deny = (code: ConstructorParameters<typeof GuardError>[0]): never => { throw new GuardError(code); };
+export function assertActionAuthority(
+  action: Readonly<Action>,
+  ancestors: readonly AuthorityState[],
+  options: {
+    now: number;
+    maxCost: number;
+    controlPlane: boolean;
+    sensitive: boolean;
+    secretValues: readonly string[];
+    phase?: AuthorityPhase;
+  },
+): void {
+  const deny = (code: ConstructorParameters<typeof GuardError>[0]): never => {
+    throw new GuardError(code);
+  };
   if (!ancestors.length || !Number.isFinite(options.now) || options.now < 0) deny('INVALID_INPUT');
   const phase = options.phase ?? 'dispatch';
   if (phase !== 'prepare' && phase !== 'dispatch') deny('INVALID_INPUT');
@@ -43,10 +55,16 @@ export function assertActionAuthority(action: Readonly<Action>, ancestors: reado
   for (const ancestor of ancestors) {
     if (ancestor.revoked) deny('TASK_REVOKED');
     if (options.now >= ancestor.budget.deadline) deny('TASK_EXPIRED');
-    if (!ancestor.grants.some(grant => grant.tool === action.tool &&
-      (grant.resources.includes(action.resourceId) || grant.resources.includes('*')))) deny('GRANT_DENIED');
+    if (
+      !ancestor.grants.some(
+        grant =>
+          grant.tool === action.tool && (grant.resources.includes(action.resourceId) || grant.resources.includes('*')),
+      )
+    )
+      deny('GRANT_DENIED');
     if (options.controlPlane && !ancestor.allowControlPlane) deny('CONTROL_PLANE_DENIED');
-    if (action.external && (!action.recipient || !ancestor.allowedRecipients.includes(action.recipient))) deny('RECIPIENT_DENIED');
+    if (action.external && (!action.recipient || !ancestor.allowedRecipients.includes(action.recipient)))
+      deny('RECIPIENT_DENIED');
     if (ancestor.snapshot.calls >= ancestor.budget.maxCalls) deny('CALL_BUDGET_EXCEEDED');
     // Preparation treats transient usage as zero: a budget that can never admit the call
     // (for example maxConcurrent 0) is still refused, but in-flight calls are not counted.

@@ -5,23 +5,34 @@ import { AgentGuard, GuardError, GuardErrorCode } from '../dist/index.js';
 const defaultBudget = () => ({ maxCalls: 20, maxConcurrent: 4, maxCost: 20, deadline: Date.now() + 60_000 });
 function deferred() {
   let resolve;
-  const promise = new Promise(done => { resolve = done; });
+  const promise = new Promise(done => {
+    resolve = done;
+  });
   return { promise, resolve };
 }
 function fixture({ options = {}, tool = {}, task = {}, approved = true } = {}) {
   const effects = [];
   const guard = new AgentGuard(options);
   const definition = {
-    name: 'record.write', description: 'Write a record', maxCost: 1,
+    name: 'record.write',
+    description: 'Write a record',
+    maxCost: 1,
     resolve: (_args, identity) => ({ resourceId: 'record:1', tenantId: identity.tenantId }),
-    execute: args => { effects.push(args); return { value: 'ok', actualCost: 1 }; },
+    execute: args => {
+      effects.push(args);
+      return { value: 'ok', actualCost: 1 };
+    },
     ...tool,
   };
   const fingerprint = guard.registerTool(definition);
   if (approved) guard.approveTool(definition.name, fingerprint);
   const handle = guard.createTask({
-    id: 'task:1', principalId: 'user:1', tenantId: 'tenant:1',
-    grants: [{ tool: definition.name, resources: ['record:1'] }], budget: defaultBudget(), ...task,
+    id: 'task:1',
+    principalId: 'user:1',
+    tenantId: 'tenant:1',
+    grants: [{ tool: definition.name, resources: ['record:1'] }],
+    budget: defaultBudget(),
+    ...task,
   });
   const prepare = (args = {}) => guard.prepare(handle, { tool: definition.name, args });
   return { guard, handle, definition, fingerprint, effects, prepare };
@@ -41,7 +52,15 @@ test('default-deny grants, tenant, control plane, recipients and tool approval p
     ['wrong resource', { task: { grants: [{ tool: 'record.write', resources: ['record:2'] }] } }, 'GRANT_DENIED'],
     ['wrong tenant', { tool: { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:2' }) } }, 'TENANT_DENIED'],
     ['control plane', { tool: { controlPlane: true } }, 'CONTROL_PLANE_DENIED'],
-    ['external without recipient permission', { tool: { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: true, recipient: 'service:a' }) } }, 'RECIPIENT_DENIED'],
+    [
+      'external without recipient permission',
+      {
+        tool: {
+          resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: true, recipient: 'service:a' }),
+        },
+      },
+      'RECIPIENT_DENIED',
+    ],
     ['unapproved metadata', { approved: false }, 'TOOL_UNAPPROVED'],
   ]) {
     await t.test(name, async () => {
@@ -51,7 +70,10 @@ test('default-deny grants, tenant, control plane, recipients and tool approval p
       assert.equal(f.guard.snapshot(f.handle).calls, 0);
     });
   }
-  const f = fixture({ task: { grants: [{ tool: 'record.write', resources: ['*'] }], allowControlPlane: true }, tool: { controlPlane: true } });
+  const f = fixture({
+    task: { grants: [{ tool: 'record.write', resources: ['*'] }], allowControlPlane: true },
+    tool: { controlPlane: true },
+  });
   assert.equal(await f.guard.execute(await f.prepare()), 'ok');
   assert.equal(f.effects.length, 1);
 });
@@ -66,7 +88,17 @@ test('opaque object identity rejects copied, serialized and cross-guard handles'
   assert.throws(() => f.guard.snapshot({ id: 'task:1' }), code('INVALID_TASK'));
   assert.ok(Object.isFrozen(f.handle));
   f.guard.revokeTask(f.handle);
-  assert.throws(() => f.guard.createTask({ id: 'task:1', principalId: 'user:1', tenantId: 'tenant:1', grants: [], budget: defaultBudget() }), code('DUPLICATE_TASK'));
+  assert.throws(
+    () =>
+      f.guard.createTask({
+        id: 'task:1',
+        principalId: 'user:1',
+        tenantId: 'tenant:1',
+        grants: [],
+        budget: defaultBudget(),
+      }),
+    code('DUPLICATE_TASK'),
+  );
   assert.deepEqual(f.effects, []);
 });
 
@@ -77,11 +109,20 @@ test('ungranted and control-plane tools cannot run parser or resource lookups', 
     [{}, true, 'CONTROL_PLANE_DENIED'],
   ]) {
     let callbacks = 0;
-    const f = fixture({ task, tool: {
-      controlPlane,
-      parse(input) { callbacks++; return input; },
-      resolve() { callbacks++; throw new Error('private lookup'); },
-    } });
+    const f = fixture({
+      task,
+      tool: {
+        controlPlane,
+        parse(input) {
+          callbacks++;
+          return input;
+        },
+        resolve() {
+          callbacks++;
+          throw new Error('private lookup');
+        },
+      },
+    });
     await assert.rejects(f.prepare(), code(expected));
     assert.equal(callbacks, 0);
     assert.equal(f.guard.snapshot(f.handle).calls, 0);
@@ -91,11 +132,16 @@ test('ungranted and control-plane tools cannot run parser or resource lookups', 
 
 test('the parser receives only arguments and cannot accidentally merge them into registration state', async () => {
   let receiver;
-  const f = fixture({ tool: { requiresApproval: true, parse(input) {
-    receiver = this;
-    const parsed = Object.assign(this ?? {}, input);
-    return parsed.requiresApproval;
-  } } });
+  const f = fixture({
+    tool: {
+      requiresApproval: true,
+      parse(input) {
+        receiver = this;
+        const parsed = Object.assign(this ?? {}, input);
+        return parsed.requiresApproval;
+      },
+    },
+  });
   const prepared = await f.prepare({ requiresApproval: false });
   assert.equal(receiver, undefined);
   assert.equal(prepared.action.args, false);
@@ -136,15 +182,30 @@ test('invocation is copied before async policy and deeply frozen through dispatc
   let resolved;
   let executed;
   const f = fixture({
-    options: { policy: async (action, snapshot) => {
-      assert.ok(Object.isFrozen(snapshot));
-      assert.ok(Object.isFrozen(action));
-      if (first) { first = false; entered.resolve(); await release.promise; }
-      return 'allow';
-    } },
+    options: {
+      policy: async (action, snapshot) => {
+        assert.ok(Object.isFrozen(snapshot));
+        assert.ok(Object.isFrozen(action));
+        if (first) {
+          first = false;
+          entered.resolve();
+          await release.promise;
+        }
+        return 'allow';
+      },
+    },
     tool: {
-      resolve(args, task) { assert.equal(this, undefined); resolved = args; return { resourceId: 'record:1', tenantId: task.tenantId }; },
-      execute(args, context) { assert.equal(this, undefined); executed = args; assert.equal(args, context.action.args); return { value: args }; },
+      resolve(args, task) {
+        assert.equal(this, undefined);
+        resolved = args;
+        return { resourceId: 'record:1', tenantId: task.tenantId };
+      },
+      execute(args, context) {
+        assert.equal(this, undefined);
+        executed = args;
+        assert.equal(args, context.action.args);
+        return { value: args };
+      },
     },
   });
   const args = { nested: [{ text: 'approved' }], other: { number: 2 } };
@@ -156,8 +217,12 @@ test('invocation is copied before async policy and deeply frozen through dispatc
   const prepared = await waiting;
   assert.ok(Object.isFrozen(prepared));
   assert.ok(Object.isFrozen(prepared.action.args.nested[0]));
-  assert.throws(() => { prepared.action.args.nested[0].text = 'attack'; }, TypeError);
-  assert.throws(() => { prepared.action.resourceId = 'record:2'; }, TypeError);
+  assert.throws(() => {
+    prepared.action.args.nested[0].text = 'attack';
+  }, TypeError);
+  assert.throws(() => {
+    prepared.action.resourceId = 'record:2';
+  }, TypeError);
   const returned = await f.guard.execute(prepared);
   assert.equal(executed, resolved);
   assert.equal(returned.nested[0].text, 'approved');
@@ -167,20 +232,52 @@ test('invocation is copied before async policy and deeply frozen through dispatc
 
 test('JSON rejects accessors without running them, exotic objects, cycles and lossy values', async t => {
   let reads = 0;
-  const accessor = Object.defineProperty({}, 'payload', { enumerable: true, get() { reads++; return 'secret'; } });
+  const accessor = Object.defineProperty({}, 'payload', {
+    enumerable: true,
+    get() {
+      reads++;
+      return 'secret';
+    },
+  });
   const hiddenArray = [1];
   Object.defineProperty(hiddenArray, 'hidden', { value: 1 });
   const arrayAccessor = [1];
-  Object.defineProperty(arrayAccessor, '0', { enumerable: true, get() { reads++; return 1; } });
-  const cycle = {}; cycle.self = cycle;
-  let deep = {}; for (let i = 0; i < 70; i++) deep = { child: deep };
+  Object.defineProperty(arrayAccessor, '0', {
+    enumerable: true,
+    get() {
+      reads++;
+      return 1;
+    },
+  });
+  const cycle = {};
+  cycle.self = cycle;
+  let deep = {};
+  for (let i = 0; i < 70; i++) deep = { child: deep };
   class FancyArray extends Array {}
-  const invalid = [accessor, hiddenArray, arrayAccessor, cycle, deep, new Date(), new Map(), new FancyArray(1),
-    { number: NaN }, { number: Infinity }, { missing: undefined }, { value: 1n }, { value: () => 1 },
-    { value: Symbol('x') }, { [Symbol('x')]: 1 }, new Array(2), 'x'.repeat(1_048_577)];
+  const invalid = [
+    accessor,
+    hiddenArray,
+    arrayAccessor,
+    cycle,
+    deep,
+    new Date(),
+    new Map(),
+    new FancyArray(1),
+    { number: NaN },
+    { number: Infinity },
+    { missing: undefined },
+    { value: 1n },
+    { value: () => 1 },
+    { value: Symbol('x') },
+    { [Symbol('x')]: 1 },
+    new Array(2),
+    'x'.repeat(1_048_577),
+  ];
   const f = fixture();
   for (const [i, args] of invalid.entries()) {
-    await t.test(`invalid shape ${i}`, async () => { await assert.rejects(f.prepare(args), code('INVALID_JSON')); });
+    await t.test(`invalid shape ${i}`, async () => {
+      await assert.rejects(f.prepare(args), code('INVALID_JSON'));
+    });
   }
   assert.equal(reads, 0);
   assert.deepEqual(f.effects, []);
@@ -194,15 +291,35 @@ test('JSON rejects accessors without running them, exotic objects, cycles and lo
 test('resolver failure, invalid metadata and invalid policy results fail closed without leaking text', async t => {
   const secret = 'SENSITIVE-ERROR-TEXT';
   for (const [name, tool] of [
-    ['exception', { resolve() { throw new Error(secret); } }],
+    [
+      'exception',
+      {
+        resolve() {
+          throw new Error(secret);
+        },
+      },
+    ],
     ['missing tenant', { resolve: () => ({ resourceId: 'record:1' }) }],
     ['async resolver', { resolve: async () => ({ resourceId: 'record:1', tenantId: 'tenant:1' }) }],
     ['truthy external', { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: 'false' }) }],
     ['unknown fields', { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', untrusted: true }) }],
-  ]) await t.test(name, async () => {
-    const f = fixture({ tool }); await assert.rejects(f.prepare(), code('RESOLUTION_FAILED')); assert.deepEqual(f.effects, []);
-  });
-  for (const policy of [() => undefined, () => true, () => 'ALLOW', () => { throw new Error(secret); }, async () => { throw new Error(secret); }]) {
+  ])
+    await t.test(name, async () => {
+      const f = fixture({ tool });
+      await assert.rejects(f.prepare(), code('RESOLUTION_FAILED'));
+      assert.deepEqual(f.effects, []);
+    });
+  for (const policy of [
+    () => undefined,
+    () => true,
+    () => 'ALLOW',
+    () => {
+      throw new Error(secret);
+    },
+    async () => {
+      throw new Error(secret);
+    },
+  ]) {
     const f = fixture({ options: { policy } });
     await assert.rejects(f.prepare(), code('POLICY_ERROR'));
     assert.deepEqual(f.effects, []);
@@ -213,7 +330,11 @@ test('resolver failure, invalid metadata and invalid policy results fail closed 
 
 test('approval binds an exact prepared action, expires, and concurrent replay dispatches once', async () => {
   let now = 1_000;
-  const f = fixture({ options: { clock: () => now }, tool: { requiresApproval: true }, task: { budget: { ...defaultBudget(), deadline: 10_000 } } });
+  const f = fixture({
+    options: { clock: () => now },
+    tool: { requiresApproval: true },
+    task: { budget: { ...defaultBudget(), deadline: 10_000 } },
+  });
   const a = await f.prepare({ operation: 'one' });
   const b = await f.prepare({ operation: 'two' });
   const approvalId = f.guard.approve(a, { approverId: 'reviewer:1', expiresAt: 5_000 });
@@ -232,7 +353,10 @@ test('approval binds an exact prepared action, expires, and concurrent replay di
 });
 
 test('rejected promises from synchronous hook positions fail closed without unhandled rejections', async () => {
-  for (const [field, expected] of [['parse', 'ARGUMENT_INVALID'], ['resolve', 'RESOLUTION_FAILED']]) {
+  for (const [field, expected] of [
+    ['parse', 'ARGUMENT_INVALID'],
+    ['resolve', 'RESOLUTION_FAILED'],
+  ]) {
     const f = fixture({ tool: { [field]: () => Promise.reject(new Error('private resolver diagnostic')) } });
     await assert.rejects(f.prepare(), code(expected));
     await new Promise(done => setImmediate(done)); // node:test detects unhandledRejection.
@@ -242,7 +366,7 @@ test('rejected promises from synchronous hook positions fail closed without unha
 
 test('policy can tighten approval at execution without changing version', async () => {
   let needsApproval = false;
-  const f = fixture({ options: { policy: () => needsApproval ? 'require_approval' : 'allow' } });
+  const f = fixture({ options: { policy: () => (needsApproval ? 'require_approval' : 'allow') } });
   const prepared = await f.prepare();
   assert.equal(prepared.requiresApproval, false);
   needsApproval = true;
@@ -253,10 +377,13 @@ test('policy can tighten approval at execution without changing version', async 
 
 test('live approval records are bounded per action and expired records free space', async () => {
   let now = 1000;
-  const f = fixture({ options: { clock: () => now }, tool: { requiresApproval: true },
-    task: { budget: { ...defaultBudget(), deadline: 4000 } } });
+  const f = fixture({
+    options: { clock: () => now },
+    tool: { requiresApproval: true },
+    task: { budget: { ...defaultBudget(), deadline: 4000 } },
+  });
   const prepared = await f.prepare();
-  const approve = (expiresAt) => f.guard.approve(prepared, { approverId: 'reviewer', expiresAt });
+  const approve = expiresAt => f.guard.approve(prepared, { approverId: 'reviewer', expiresAt });
   const first = approve(2000);
   for (let i = 0; i < 3; i++) approve(3000);
   assert.throws(() => approve(3000), code('ACTION_APPROVAL_LIMIT'));
@@ -269,8 +396,11 @@ test('live approval records are bounded per action and expired records free spac
 
 test('clock rollback cannot resurrect an expired approval or task', async () => {
   let now = 1000;
-  const f = fixture({ options: { clock: () => now }, tool: { requiresApproval: true },
-    task: { budget: { ...defaultBudget(), deadline: 5000 } } });
+  const f = fixture({
+    options: { clock: () => now },
+    tool: { requiresApproval: true },
+    task: { budget: { ...defaultBudget(), deadline: 5000 } },
+  });
   const prepared = await f.prepare();
   const approvalId = f.guard.approve(prepared, { approverId: 'reviewer', expiresAt: 3000 });
   now = 4000;
@@ -293,14 +423,27 @@ test('final checks reject state changes while execution policy is pending', asyn
     await t.test(change, async () => {
       let now = 1_000;
       let pause = false;
-      const entered = deferred(); const release = deferred();
+      const entered = deferred();
+      const release = deferred();
       const f = fixture({
-        options: { clock: () => now, policy: async () => { if (pause) { entered.resolve(); await release.promise; } return 'allow'; } },
+        options: {
+          clock: () => now,
+          policy: async () => {
+            if (pause) {
+              entered.resolve();
+              await release.promise;
+            }
+            return 'allow';
+          },
+        },
         tool: { requiresApproval: change === 'approval-expiry' },
         task: { budget: { ...defaultBudget(), deadline: 10_000 } },
       });
       const prepared = await f.prepare();
-      const approvalId = change === 'approval-expiry' ? f.guard.approve(prepared, { approverId: 'reviewer:1', expiresAt: 5_000 }) : undefined;
+      const approvalId =
+        change === 'approval-expiry'
+          ? f.guard.approve(prepared, { approverId: 'reviewer:1', expiresAt: 5_000 })
+          : undefined;
       pause = true;
       const pending = f.guard.execute(prepared, approvalId ? { approvalId } : {});
       await entered.promise;
@@ -310,7 +453,13 @@ test('final checks reject state changes while execution policy is pending', asyn
       if (change === 'deadline') now = 10_000;
       if (change === 'approval-expiry') now = 5_000;
       release.resolve();
-      const expected = { revoke: 'TASK_REVOKED', policy: 'POLICY_CHANGED', tool: 'TOOL_CHANGED', deadline: 'TASK_EXPIRED', 'approval-expiry': 'APPROVAL_EXPIRED' }[change];
+      const expected = {
+        revoke: 'TASK_REVOKED',
+        policy: 'POLICY_CHANGED',
+        tool: 'TOOL_CHANGED',
+        deadline: 'TASK_EXPIRED',
+        'approval-expiry': 'APPROVAL_EXPIRED',
+      }[change];
       await assert.rejects(pending, code(expected));
       assert.deepEqual(f.effects, []);
       assert.equal(f.guard.snapshot(f.handle).calls, 0);
@@ -319,8 +468,17 @@ test('final checks reject state changes while execution policy is pending', asyn
 });
 
 test('preparation also rechecks revocation after asynchronous policy', async () => {
-  const entered = deferred(); const release = deferred();
-  const f = fixture({ options: { policy: async () => { entered.resolve(); await release.promise; return 'allow'; } } });
+  const entered = deferred();
+  const release = deferred();
+  const f = fixture({
+    options: {
+      policy: async () => {
+        entered.resolve();
+        await release.promise;
+        return 'allow';
+      },
+    },
+  });
   const pending = f.prepare();
   await entered.promise;
   f.guard.revokeTask(f.handle);
@@ -337,9 +495,13 @@ test('delegation cannot widen resource, recipient, control plane or budget scope
     { grants: [{ tool: 'record.write', resources: ['*'] }] },
     { grants: [{ tool: 'record.write', resources: ['record:2'] }] },
     { grants: [{ tool: 'other', resources: ['record:1'] }] },
-    { allowedRecipients: ['service:b'] }, { allowControlPlane: true },
-    ...['maxCalls', 'maxConcurrent', 'maxCost', 'deadline'].map(key => ({ budget: { ...budget, [key]: budget[key] + 1 } })),
-  ]) assert.throws(() => f.guard.delegateTask(f.handle, { ...base, ...changes }), code('DELEGATION_DENIED'));
+    { allowedRecipients: ['service:b'] },
+    { allowControlPlane: true },
+    ...['maxCalls', 'maxConcurrent', 'maxCost', 'deadline'].map(key => ({
+      budget: { ...budget, [key]: budget[key] + 1 },
+    })),
+  ])
+    assert.throws(() => f.guard.delegateTask(f.handle, { ...base, ...changes }), code('DELEGATION_DENIED'));
   const child = f.guard.delegateTask(f.handle, { ...base, principalId: 'forged', tenantId: 'forged' });
   const snapshot = f.guard.snapshot(child);
   assert.equal(snapshot.principalId, 'user:1');
@@ -353,7 +515,8 @@ test('delegation cannot widen resource, recipient, control plane or budget scope
 
 test('literal canaries are scanned recursively in outbound strings and object keys', async () => {
   const f = fixture({
-    options: { secretValues: ['canary-123'] }, task: { allowedRecipients: ['service:a'] },
+    options: { secretValues: ['canary-123'] },
+    task: { allowedRecipients: ['service:a'] },
     tool: { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: true, recipient: 'service:a' }) },
   });
   for (const args of [{ nested: [{ message: 'prefix-canary-123-suffix' }] }, { 'canary-123': 'value' }]) {
@@ -368,14 +531,40 @@ test('sensitivity is family-wide, monotonic and visible before read handler star
   const guard = new AgentGuard();
   const budget = defaultBudget();
   for (const [name, resolved, execute] of [
-    ['send', { external: true, recipient: 'service:a' }, () => { effects.push('sent'); return { value: 'sent' }; }],
-    ['read', { sensitive: true }, () => { effects.push('read'); return { value: 'sensitive' }; }],
+    [
+      'send',
+      { external: true, recipient: 'service:a' },
+      () => {
+        effects.push('sent');
+        return { value: 'sent' };
+      },
+    ],
+    [
+      'read',
+      { sensitive: true },
+      () => {
+        effects.push('read');
+        return { value: 'sensitive' };
+      },
+    ],
   ]) {
-    const fp = guard.registerTool({ name, description: name, resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', ...resolved }), execute });
+    const fp = guard.registerTool({
+      name,
+      description: name,
+      resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', ...resolved }),
+      execute,
+    });
     guard.approveTool(name, fp);
   }
   const grants = ['send', 'read'].map(tool => ({ tool, resources: ['record:1'] }));
-  const parent = guard.createTask({ id: 'parent', principalId: 'user:1', tenantId: 'tenant:1', grants, budget, allowedRecipients: ['service:a'] });
+  const parent = guard.createTask({
+    id: 'parent',
+    principalId: 'user:1',
+    tenantId: 'tenant:1',
+    grants,
+    budget,
+    allowedRecipients: ['service:a'],
+  });
   const child = guard.delegateTask(parent, { id: 'child', grants, budget, allowedRecipients: ['service:a'] });
   const sibling = guard.delegateTask(parent, { id: 'sibling', grants, budget, allowedRecipients: ['service:a'] });
   const send = await guard.prepare(sibling, { tool: 'send', args: 'public' });
@@ -386,13 +575,34 @@ test('sensitivity is family-wide, monotonic and visible before read handler star
 });
 
 test('pending outbound policy is denied if another family action marks sensitivity', async () => {
-  let blockSend = false; const entered = deferred(); const release = deferred();
+  let blockSend = false;
+  const entered = deferred();
+  const release = deferred();
   const f = fixture({
-    options: { policy: async action => { if (blockSend && action.tool === 'record.write') { entered.resolve(); await release.promise; } return 'allow'; } },
-    task: { grants: [{ tool: 'record.write', resources: ['record:1'] }, { tool: 'read', resources: ['record:1'] }], allowedRecipients: ['service:a'] },
+    options: {
+      policy: async action => {
+        if (blockSend && action.tool === 'record.write') {
+          entered.resolve();
+          await release.promise;
+        }
+        return 'allow';
+      },
+    },
+    task: {
+      grants: [
+        { tool: 'record.write', resources: ['record:1'] },
+        { tool: 'read', resources: ['record:1'] },
+      ],
+      allowedRecipients: ['service:a'],
+    },
     tool: { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: true, recipient: 'service:a' }) },
   });
-  const fp = f.guard.registerTool({ name: 'read', description: 'read', resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', sensitive: true }), execute: () => ({ value: 'sensitive' }) });
+  const fp = f.guard.registerTool({
+    name: 'read',
+    description: 'read',
+    resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', sensitive: true }),
+    execute: () => ({ value: 'sensitive' }),
+  });
   f.guard.approveTool('read', fp);
   const send = await f.prepare();
   const read = await f.guard.prepare(f.handle, { tool: 'read', args: {} });
@@ -406,11 +616,24 @@ test('pending outbound policy is denied if another family action marks sensitivi
 });
 
 test('invalid trusted configuration rejects finite, integer and deadline violations', () => {
-  for (const clock of [() => NaN, () => -1, () => { throw new Error('clock secret'); }]) assert.throws(() => new AgentGuard({ clock }), code('CLOCK_INVALID'));
+  for (const clock of [
+    () => NaN,
+    () => -1,
+    () => {
+      throw new Error('clock secret');
+    },
+  ])
+    assert.throws(() => new AgentGuard({ clock }), code('CLOCK_INVALID'));
   for (const budget of [
-    { ...defaultBudget(), maxCalls: 0.5 }, { ...defaultBudget(), maxConcurrent: -1 },
-    { ...defaultBudget(), maxCost: Infinity }, { ...defaultBudget(), deadline: NaN },
-  ]) assert.throws(() => fixture({ task: { budget } }), error => error instanceof GuardError);
+    { ...defaultBudget(), maxCalls: 0.5 },
+    { ...defaultBudget(), maxConcurrent: -1 },
+    { ...defaultBudget(), maxCost: Infinity },
+    { ...defaultBudget(), deadline: NaN },
+  ])
+    assert.throws(
+      () => fixture({ task: { budget } }),
+      error => error instanceof GuardError,
+    );
   assert.throws(() => fixture({ task: { budget: { ...defaultBudget(), deadline: 1 } } }), code('TASK_EXPIRED'));
   assert.throws(() => fixture({ options: { secretValues: [''] } }), code('INVALID_INPUT'));
   assert.throws(() => fixture({ tool: { maxCost: -1 } }), code('INVALID_INPUT'));

@@ -5,8 +5,24 @@ import { GuardError, safeErrorDetail } from './types.js';
 import { assertActionAuthority, type AuthorityPhase } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
-  Action, Budget, Capability, ExecutionResult, GuardDecision, GuardOptions, Json, Policy, PolicyDecision,
-  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, TaskStatus, ToolDefinition, ToolResult,
+  Action,
+  Budget,
+  Capability,
+  ExecutionResult,
+  GuardDecision,
+  GuardOptions,
+  Json,
+  Policy,
+  PolicyDecision,
+  PreparedAction,
+  ResolvedAction,
+  TaskHandle,
+  TaskIdentity,
+  TaskOptions,
+  TaskSnapshot,
+  TaskStatus,
+  ToolDefinition,
+  ToolResult,
 } from './types.js';
 
 export { GuardError, GuardErrorCode, isGuardError } from './types.js';
@@ -16,8 +32,26 @@ export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
 // Deprecated root aliases for the internal SPI, kept for one minor release.
 export * from './deprecated.js';
 export type {
-  Action, Budget, Capability, ExecutionResult, GuardDecision, GuardLimits, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
-  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, TaskStatus, ToolDefinition, ToolResult,
+  Action,
+  Budget,
+  Capability,
+  ExecutionResult,
+  GuardDecision,
+  GuardLimits,
+  GuardOptions,
+  GuardErrorCodeValue,
+  Json,
+  Policy,
+  PolicyDecision,
+  PreparedAction,
+  ResolvedAction,
+  TaskHandle,
+  TaskIdentity,
+  TaskOptions,
+  TaskSnapshot,
+  TaskStatus,
+  ToolDefinition,
+  ToolResult,
 } from './types.js';
 
 /**
@@ -25,30 +59,52 @@ export type {
  * system clock is adjusted. Pass it as `clock` to avoid CLOCK_INVALID on a backward step.
  * The default clock remains `Date.now`, and all deadlines are clock milliseconds.
  */
-export function monotonicClock(): number { return Math.floor(performance.timeOrigin + performance.now()); }
+export function monotonicClock(): number {
+  return Math.floor(performance.timeOrigin + performance.now());
+}
 const FAILED_AFTER_DISPATCH = new Set(['TOOL_FAILED', 'EXECUTION_ABORTED', 'RESULT_INVALID', 'COST_REPORT_INVALID']);
 
 const MAX_TIMER_DELAY = 2_147_483_647;
 
 type ToolState = {
-  name: string; fingerprint: string; revision: number; approved: boolean;
-  requiresApproval: boolean; controlPlane: boolean; maxCost: number;
-  resolve: ToolDefinition['resolve']; execute: ToolDefinition['execute'];
+  name: string;
+  fingerprint: string;
+  revision: number;
+  approved: boolean;
+  requiresApproval: boolean;
+  controlPlane: boolean;
+  maxCost: number;
+  resolve: ToolDefinition['resolve'];
+  execute: ToolDefinition['execute'];
   parse: ToolDefinition['parse'];
 };
 type TaskState = {
-  handle: TaskHandle; identity: Readonly<TaskIdentity>; grants: Map<string, Set<string>>;
-  recipients: Set<string>; allowControlPlane: boolean; budget: Readonly<Budget>;
-  parent: TaskState | undefined; family: { id: string; sensitive: boolean }; revoked: boolean;
-  calls: number; concurrent: number; spent: number; reserved: number;
+  handle: TaskHandle;
+  identity: Readonly<TaskIdentity>;
+  grants: Map<string, Set<string>>;
+  recipients: Set<string>;
+  allowControlPlane: boolean;
+  budget: Readonly<Budget>;
+  parent: TaskState | undefined;
+  family: { id: string; sensitive: boolean };
+  revoked: boolean;
+  calls: number;
+  concurrent: number;
+  spent: number;
+  reserved: number;
   active: Set<AbortController>;
 };
 type PreparedState = {
-  handle: PreparedAction; task: TaskState; tool: ToolState; policyVersion: number;
-  dispatched: boolean; approvals: Map<string, ApprovalState>;
+  handle: PreparedAction;
+  task: TaskState;
+  tool: ToolState;
+  policyVersion: number;
+  dispatched: boolean;
+  approvals: Map<string, ApprovalState>;
 };
 type ApprovalState = {
-  expiresAt: number; approverId: string;
+  expiresAt: number;
+  approverId: string;
 };
 type PolicyEvaluation = { decision: PolicyDecision; snapshot?: Readonly<TaskSnapshot> };
 
@@ -58,7 +114,13 @@ function fail(code: ConstructorParameters<typeof GuardError>[0], cause?: unknown
 }
 
 function nonempty(value: unknown): value is string {
-  return typeof value === 'string' && value.length > 0 && value.length <= 4096 && value.trim().length > 0 && !value.includes('\0');
+  return (
+    typeof value === 'string' &&
+    value.length > 0 &&
+    value.length <= 4096 &&
+    value.trim().length > 0 &&
+    !value.includes('\0')
+  );
 }
 function identifier(value: unknown): string {
   if (!nonempty(value)) fail('INVALID_INPUT');
@@ -78,7 +140,9 @@ function optionalBoolean(value: unknown): boolean {
 function normalizeJson(value: unknown): Json {
   try {
     return immutableJson(value);
-  } catch { return fail('INVALID_JSON'); }
+  } catch {
+    return fail('INVALID_JSON');
+  }
 }
 function synchronousResult<T>(value: T): T {
   if (isPromise(value)) {
@@ -96,9 +160,15 @@ function asObject(value: Json): JsonObject {
 function budgetFrom(input: unknown): Readonly<Budget> {
   const data = asObject(normalizeJson(input));
   const { maxCalls, maxConcurrent, maxCost, deadline } = data;
-  if (!Number.isSafeInteger(maxCalls) || !nonnegative(maxCalls) ||
-      !Number.isSafeInteger(maxConcurrent) || !nonnegative(maxConcurrent) ||
-      !costUnits(maxCost) || !nonnegative(deadline)) fail('INVALID_INPUT');
+  if (
+    !Number.isSafeInteger(maxCalls) ||
+    !nonnegative(maxCalls) ||
+    !Number.isSafeInteger(maxConcurrent) ||
+    !nonnegative(maxConcurrent) ||
+    !costUnits(maxCost) ||
+    !nonnegative(deadline)
+  )
+    fail('INVALID_INPUT');
   return Object.freeze({ maxCalls, maxConcurrent, maxCost, deadline });
 }
 function stringSet(input: unknown): Set<string> {
@@ -126,7 +196,10 @@ function permits(grants: Map<string, Set<string>>, tool: string, resource: strin
 function lineage(task: TaskState): TaskState[] {
   const result: TaskState[] = [];
   let current: TaskState | undefined = task;
-  while (current) { result.push(current); current = current.parent; }
+  while (current) {
+    result.push(current);
+    current = current.parent;
+  }
   return result;
 }
 /** Executes registered tools in memory. The host must provide isolation and backend authorization. */
@@ -161,7 +234,8 @@ export class AgentGuard {
     if (limits === null || typeof limits !== 'object') fail('INVALID_INPUT');
     const bounded = (value: unknown, fallback: number, min: number, max: number): number => {
       const selected = value === undefined ? fallback : value;
-      if (typeof selected !== 'number' || !Number.isSafeInteger(selected) || selected < min || selected > max) fail('INVALID_INPUT');
+      if (typeof selected !== 'number' || !Number.isSafeInteger(selected) || selected < min || selected > max)
+        fail('INVALID_INPUT');
       return selected;
     };
     this.#maxApprovals = bounded(limits.maxApprovalsPerAction, 4, 1, 64);
@@ -180,22 +254,38 @@ export class AgentGuard {
     this.#now();
     if (!definition || typeof definition !== 'object') fail('INVALID_INPUT');
     const name = identifier(definition.name);
-    if (typeof definition.description !== 'string' || typeof definition.resolve !== 'function' ||
-        typeof definition.execute !== 'function') fail('INVALID_INPUT');
+    if (
+      typeof definition.description !== 'string' ||
+      typeof definition.resolve !== 'function' ||
+      typeof definition.execute !== 'function'
+    )
+      fail('INVALID_INPUT');
     if (definition.parse !== undefined && typeof definition.parse !== 'function') fail('INVALID_INPUT');
     const requiresApproval = optionalBoolean(definition.requiresApproval);
     const controlPlane = optionalBoolean(definition.controlPlane);
     const maxCost = definition.maxCost ?? 0;
     if (!costUnits(maxCost)) fail('INVALID_INPUT');
     const metadata = normalizeJson({
-      name, description: definition.description, inputSchema: definition.inputSchema ?? null,
-      metadata: definition.metadata ?? null, requiresApproval, controlPlane, maxCost,
+      name,
+      description: definition.description,
+      inputSchema: definition.inputSchema ?? null,
+      metadata: definition.metadata ?? null,
+      requiresApproval,
+      controlPlane,
+      maxCost,
       parsedArguments: definition.parse !== undefined,
     });
     const fingerprint = `sha256:${digestJson(metadata)}`;
     this.#tools.set(name, {
-      name, fingerprint, revision: ++this.#revision, approved: false,
-      requiresApproval, controlPlane, maxCost, resolve: definition.resolve, execute: definition.execute,
+      name,
+      fingerprint,
+      revision: ++this.#revision,
+      approved: false,
+      requiresApproval,
+      controlPlane,
+      maxCost,
+      resolve: definition.resolve,
+      execute: definition.execute,
       parse: definition.parse,
     });
     return fingerprint;
@@ -221,16 +311,23 @@ export class AgentGuard {
     if (!this.#tools.delete(name)) fail('TOOL_UNKNOWN');
   }
 
-  createTask(options: TaskOptions): TaskHandle { return this.#newTask(options, undefined); }
+  createTask(options: TaskOptions): TaskHandle {
+    return this.#newTask(options, undefined);
+  }
 
   delegateTask(parent: TaskHandle, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskHandle {
     const state = this.#task(parent);
     this.#live(state);
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
-    return this.#newTask({ ...options, principalId: state.identity.principalId, tenantId: state.identity.tenantId }, state);
+    return this.#newTask(
+      { ...options, principalId: state.identity.principalId, tenantId: state.identity.tenantId },
+      state,
+    );
   }
 
-  revokeTask(task: TaskHandle): void { this.#revoke(this.#task(task)); }
+  revokeTask(task: TaskHandle): void {
+    this.#revoke(this.#task(task));
+  }
 
   /**
    * Revokes the task and forgets it, freeing its ID and memory. Its handle becomes
@@ -254,10 +351,20 @@ export class AgentGuard {
   async prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction> {
     try {
       const prepared = await this.#prepare(task, request);
-      this.#decision('prepare', 'allowed', this.#tasks.get(task), { tool: prepared.action.tool, actionId: prepared.id, resourceId: prepared.action.resourceId });
+      this.#decision('prepare', 'allowed', this.#tasks.get(task), {
+        tool: prepared.action.tool,
+        actionId: prepared.id,
+        resourceId: prepared.action.resourceId,
+      });
       return prepared;
     } catch (error) {
-      const tool = request !== null && typeof request === 'object' && typeof request.tool === 'string' && this.#tools.has(request.tool) ? request.tool : undefined;
+      const tool =
+        request !== null &&
+        typeof request === 'object' &&
+        typeof request.tool === 'string' &&
+        this.#tools.has(request.tool)
+          ? request.tool
+          : undefined;
       this.#decision('prepare', 'denied', this.#tasks.get(task), { ...(tool === undefined ? {} : { tool }) }, error);
       throw error;
     }
@@ -268,7 +375,8 @@ export class AgentGuard {
     this.#live(state);
     if (this.#policy) this.#policyAdmission.assertCapacity(state.family.id);
     const input = asObject(normalizeJson(request));
-    if (Object.keys(input).some(key => key !== 'tool' && key !== 'args') || !Object.hasOwn(input, 'args')) fail('INVALID_INPUT');
+    if (Object.keys(input).some(key => key !== 'tool' && key !== 'args') || !Object.hasOwn(input, 'args'))
+      fail('INVALID_INPUT');
     const name = identifier(input.tool);
     const tool = this.#tools.get(name);
     if (!tool) fail('TOOL_UNKNOWN');
@@ -281,14 +389,25 @@ export class AgentGuard {
     let args: Json = input.args as Json;
     const parse = tool.parse;
     if (parse) {
-      try { args = normalizeJson(synchronousResult(parse(args))); } catch (error) { return fail('ARGUMENT_INVALID', error); }
+      try {
+        args = normalizeJson(synchronousResult(parse(args)));
+      } catch (error) {
+        return fail('ARGUMENT_INVALID', error);
+      }
     }
     let resolved: ResolvedAction;
     const resolve = tool.resolve;
-    try { resolved = this.#resolved(synchronousResult(resolve(args, state.identity))); }
-    catch (error) { return fail('RESOLUTION_FAILED', error); }
+    try {
+      resolved = this.#resolved(synchronousResult(resolve(args, state.identity)));
+    } catch (error) {
+      return fail('RESOLUTION_FAILED', error);
+    }
     const action: Readonly<Action> = Object.freeze({
-      ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
+      ...resolved,
+      tool: name,
+      args,
+      toolFingerprint: tool.fingerprint,
+      policyVersion,
     });
     this.#gates(state, tool, action, policyVersion, 'prepare');
     let evaluation: PolicyEvaluation;
@@ -302,13 +421,23 @@ export class AgentGuard {
         if (!this.#policySnapshotChanged(state, evaluation)) break;
         if (attempt >= this.#maxPolicyAttempts) fail('POLICY_STATE_CHANGED');
       }
-    } finally { endTurn?.(); }
+    } finally {
+      endTurn?.();
+    }
     const id = randomUUID();
-    const digest = `sha256:${digestJson(normalizeJson({
-      preparedId: id, task: state.identity, action, toolRevision: tool.revision,
-    }))}`;
+    const digest = `sha256:${digestJson(
+      normalizeJson({
+        preparedId: id,
+        task: state.identity,
+        action,
+        toolRevision: tool.revision,
+      }),
+    )}`;
     const handle: PreparedAction = Object.freeze({
-      id, digest, action, requiresApproval: tool.requiresApproval || evaluation.decision === 'require_approval',
+      id,
+      digest,
+      action,
+      requiresApproval: tool.requiresApproval || evaluation.decision === 'require_approval',
     });
     this.#prepared.set(handle, { handle, task: state, tool, policyVersion, dispatched: false, approvals: new Map() });
     return handle;
@@ -316,12 +445,17 @@ export class AgentGuard {
 
   approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string {
     const state = this.#prepared.get(prepared);
-    const detail = state ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId } : {};
+    const detail = state
+      ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId }
+      : {};
     try {
       const id = this.#approve(prepared, options);
       this.#decision('approve', 'allowed', state?.task, { ...detail, approverId: options.approverId });
       return id;
-    } catch (error) { this.#decision('approve', 'denied', state?.task, detail, error); throw error; }
+    } catch (error) {
+      this.#decision('approve', 'denied', state?.task, detail, error);
+      throw error;
+    }
   }
 
   #approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string {
@@ -331,8 +465,12 @@ export class AgentGuard {
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
     const approverId = identifier(options.approverId);
     const expiresAt = options.expiresAt;
-    if (!nonnegative(expiresAt) || expiresAt <= now ||
-        lineage(state.task).some(task => expiresAt > task.budget.deadline)) fail('APPROVAL_INVALID');
+    if (
+      !nonnegative(expiresAt) ||
+      expiresAt <= now ||
+      lineage(state.task).some(task => expiresAt > task.budget.deadline)
+    )
+      fail('APPROVAL_INVALID');
     for (const [id, approval] of state.approvals) if (now >= approval.expiresAt) state.approvals.delete(id);
     if (state.approvals.size >= this.#maxApprovals) fail('ACTION_APPROVAL_LIMIT');
     const id = randomUUID();
@@ -347,14 +485,22 @@ export class AgentGuard {
   /** Like execute(), but also returns the charged cost and the action ID for receipts. */
   async executeDetailed(prepared: PreparedAction, options: { approvalId?: string } = {}): Promise<ExecutionResult> {
     const state = this.#prepared.get(prepared);
-    const detail = state ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId } : {};
+    const detail = state
+      ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId }
+      : {};
     try {
       const result = await this.#execute(prepared, options);
       this.#decision('execute', 'succeeded', state?.task, detail);
       return result;
     } catch (error) {
       const code = error instanceof GuardError ? error.code : undefined;
-      this.#decision('execute', code !== undefined && FAILED_AFTER_DISPATCH.has(code) ? 'failed' : 'denied', state?.task, detail, error);
+      this.#decision(
+        'execute',
+        code !== undefined && FAILED_AFTER_DISPATCH.has(code) ? 'failed' : 'denied',
+        state?.task,
+        detail,
+        error,
+      );
       throw error;
     }
   }
@@ -383,8 +529,15 @@ export class AgentGuard {
         if (attempt >= this.#maxPolicyAttempts) fail('POLICY_STATE_CHANGED');
       }
       // Ending the turn only schedules the next waiter; it resumes after this synchronous dispatch.
-    } finally { endTurn?.(); }
-    this.#approval(state, approvalId, state.handle.requiresApproval || evaluation.decision === 'require_approval', dispatchTime);
+    } finally {
+      endTurn?.();
+    }
+    this.#approval(
+      state,
+      approvalId,
+      state.handle.requiresApproval || evaluation.decision === 'require_approval',
+      dispatchTime,
+    );
     const ancestors = lineage(state.task);
     const controller = new AbortController();
     const cancelTimer = this.#deadlineTimer(state.task.budget.deadline - dispatchTime, controller);
@@ -403,11 +556,19 @@ export class AgentGuard {
       let result: ToolResult;
       try {
         const execute = state.tool.execute;
-        result = await execute(state.handle.action.args, Object.freeze({
-          signal: controller.signal, action: state.handle.action, task: state.task.identity,
-        }));
+        result = await execute(
+          state.handle.action.args,
+          Object.freeze({
+            signal: controller.signal,
+            action: state.handle.action,
+            task: state.task.identity,
+          }),
+        );
       } catch (error) {
-        return fail(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED', controller.signal.aborted ? undefined : error);
+        return fail(
+          controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED',
+          controller.signal.aborted ? undefined : error,
+        );
       }
       let value: Json;
       try {
@@ -422,7 +583,11 @@ export class AgentGuard {
       } catch (error) {
         charge = state.tool.maxCost;
         this.#revoke(state.task);
-        return fail(error instanceof GuardError && error.code === 'COST_REPORT_INVALID' ? 'COST_REPORT_INVALID' : 'RESULT_INVALID');
+        return fail(
+          error instanceof GuardError && error.code === 'COST_REPORT_INVALID'
+            ? 'COST_REPORT_INVALID'
+            : 'RESULT_INVALID',
+        );
       }
       // A synchronous handler or a busy microtask queue can settle before the deadline timer runs.
       if (this.#now() >= state.task.budget.deadline) controller.abort(new GuardError('TASK_EXPIRED'));
@@ -442,28 +607,52 @@ export class AgentGuard {
   /** Counters, budget and revocation state for the task. */
   snapshot(task: TaskHandle): Readonly<TaskStatus> {
     const state = this.#task(task);
-    return Object.freeze({ ...this.#snapshot(state), budget: state.budget, revoked: lineage(state).some(ancestor => ancestor.revoked) });
+    return Object.freeze({
+      ...this.#snapshot(state),
+      budget: state.budget,
+      revoked: lineage(state).some(ancestor => ancestor.revoked),
+    });
   }
 
-  #decision(operation: GuardDecision['operation'], outcome: GuardDecision['outcome'], task: TaskState | undefined,
-    detail: { tool?: string; actionId?: string; resourceId?: string; approverId?: string }, error?: unknown): void {
+  #decision(
+    operation: GuardDecision['operation'],
+    outcome: GuardDecision['outcome'],
+    task: TaskState | undefined,
+    detail: { tool?: string; actionId?: string; resourceId?: string; approverId?: string },
+    error?: unknown,
+  ): void {
     const hook = this.#onDecision;
     if (!hook || !task) return;
     const code = error instanceof GuardError ? error.code : undefined;
-    const approverId = typeof detail.approverId === 'string' && detail.approverId.length <= 4096 ? detail.approverId : undefined;
+    const approverId =
+      typeof detail.approverId === 'string' && detail.approverId.length <= 4096 ? detail.approverId : undefined;
     try {
-      const event = Object.freeze({ operation, outcome, taskId: task.identity.id, tenantId: task.identity.tenantId, principalId: task.identity.principalId,
-        ...(detail.tool === undefined ? {} : { tool: detail.tool }), ...(detail.actionId === undefined ? {} : { actionId: detail.actionId }),
-        ...(detail.resourceId === undefined ? {} : { resourceId: detail.resourceId }), ...(approverId === undefined ? {} : { approverId }),
-        ...(code === undefined ? {} : { code }) });
+      const event = Object.freeze({
+        operation,
+        outcome,
+        taskId: task.identity.id,
+        tenantId: task.identity.tenantId,
+        principalId: task.identity.principalId,
+        ...(detail.tool === undefined ? {} : { tool: detail.tool }),
+        ...(detail.actionId === undefined ? {} : { actionId: detail.actionId }),
+        ...(detail.resourceId === undefined ? {} : { resourceId: detail.resourceId }),
+        ...(approverId === undefined ? {} : { approverId }),
+        ...(code === undefined ? {} : { code }),
+      });
       const returned: unknown = hook(event);
       if (isPromise(returned)) void (returned as Promise<unknown>).catch(() => {});
-    } catch { /* Observation never changes an authorization outcome. */ }
+    } catch {
+      /* Observation never changes an authorization outcome. */
+    }
   }
 
   #now(): number {
     let now: unknown;
-    try { now = this.#clock(); } catch { return fail('CLOCK_INVALID'); }
+    try {
+      now = this.#clock();
+    } catch {
+      return fail('CLOCK_INVALID');
+    }
     if (!nonnegative(now) || now < this.#observedClock) fail('CLOCK_INVALID');
     this.#observedClock = now;
     return now;
@@ -472,7 +661,9 @@ export class AgentGuard {
   #newTask(options: TaskOptions, parent: TaskState | undefined): TaskHandle {
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
     const identity = Object.freeze({
-      id: identifier(options.id), principalId: identifier(options.principalId), tenantId: identifier(options.tenantId),
+      id: identifier(options.id),
+      principalId: identifier(options.principalId),
+      tenantId: identifier(options.tenantId),
     });
     if (this.#taskIds.has(identity.id)) fail('DUPLICATE_TASK');
     const budget = budgetFrom(options.budget);
@@ -488,17 +679,33 @@ export class AgentGuard {
             if (!permits(ancestor.grants, tool, resource)) fail('DELEGATION_DENIED');
           }
         }
-        if ([...recipients].some(recipient => !ancestor.recipients.has(recipient)) ||
-            (allowControlPlane && !ancestor.allowControlPlane) ||
-            budget.maxCalls > ancestor.budget.maxCalls || budget.maxConcurrent > ancestor.budget.maxConcurrent ||
-            budget.maxCost > ancestor.budget.maxCost || budget.deadline > ancestor.budget.deadline) fail('DELEGATION_DENIED');
+        if (
+          [...recipients].some(recipient => !ancestor.recipients.has(recipient)) ||
+          (allowControlPlane && !ancestor.allowControlPlane) ||
+          budget.maxCalls > ancestor.budget.maxCalls ||
+          budget.maxConcurrent > ancestor.budget.maxConcurrent ||
+          budget.maxCost > ancestor.budget.maxCost ||
+          budget.deadline > ancestor.budget.deadline
+        )
+          fail('DELEGATION_DENIED');
       }
     }
     const handle = Object.freeze({ id: identity.id });
     const state: TaskState = {
-      handle, identity, grants, recipients, allowControlPlane, budget, parent,
-      family: parent?.family ?? { id: identity.id, sensitive: false }, revoked: false,
-      calls: 0, concurrent: 0, spent: 0, reserved: 0, active: new Set(),
+      handle,
+      identity,
+      grants,
+      recipients,
+      allowControlPlane,
+      budget,
+      parent,
+      family: parent?.family ?? { id: identity.id, sensitive: false },
+      revoked: false,
+      calls: 0,
+      concurrent: 0,
+      spent: 0,
+      reserved: 0,
+      active: new Set(),
     };
     this.#tasks.set(handle, state);
     this.#taskIds.add(identity.id);
@@ -519,7 +726,9 @@ export class AgentGuard {
     return state;
   }
 
-  #fresh(state: PreparedState): void { if (state.dispatched) fail('ACTION_USED'); }
+  #fresh(state: PreparedState): void {
+    if (state.dispatched) fail('ACTION_USED');
+  }
 
   #live(task: TaskState): number {
     const now = this.#now();
@@ -532,27 +741,54 @@ export class AgentGuard {
 
   #resolved(value: ResolvedAction): ResolvedAction {
     const data = asObject(normalizeJson(value));
-    if (Object.keys(data).some(key => !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive', 'resourceVersion'].includes(key))) fail('INVALID_INPUT');
+    if (
+      Object.keys(data).some(
+        key => !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive', 'resourceVersion'].includes(key),
+      )
+    )
+      fail('INVALID_INPUT');
     const result: ResolvedAction = {
-      resourceId: identifier(data.resourceId), tenantId: identifier(data.tenantId),
-      external: optionalBoolean(data.external), sensitive: optionalBoolean(data.sensitive),
+      resourceId: identifier(data.resourceId),
+      tenantId: identifier(data.tenantId),
+      external: optionalBoolean(data.external),
+      sensitive: optionalBoolean(data.sensitive),
     };
     if (Object.hasOwn(data, 'recipient')) result.recipient = identifier(data.recipient);
     if (Object.hasOwn(data, 'resourceVersion')) result.resourceVersion = identifier(data.resourceVersion);
     return Object.freeze(result);
   }
 
-  #gates(task: TaskState, tool: ToolState, action: Readonly<Action>, version: number, phase: AuthorityPhase = 'dispatch'): number {
+  #gates(
+    task: TaskState,
+    tool: ToolState,
+    action: Readonly<Action>,
+    version: number,
+    phase: AuthorityPhase = 'dispatch',
+  ): number {
     const now = this.#live(task);
     if (version !== this.#policyVersion) fail('POLICY_CHANGED');
     if (this.#tools.get(tool.name) !== tool) fail('TOOL_CHANGED');
     if (!tool.approved) fail('TOOL_UNAPPROVED');
-    assertActionAuthority(action, lineage(task).map(ancestor => ({
-      identity: ancestor.identity,
-      grants: [...ancestor.grants].map(([tool, resources]) => ({ tool, resources: [...resources] })),
-      allowedRecipients: [...ancestor.recipients], allowControlPlane: ancestor.allowControlPlane,
-      budget: ancestor.budget, snapshot: this.#snapshot(ancestor), revoked: ancestor.revoked,
-    })), { now, maxCost: tool.maxCost, controlPlane: tool.controlPlane, sensitive: task.family.sensitive, secretValues: this.#secrets, phase });
+    assertActionAuthority(
+      action,
+      lineage(task).map(ancestor => ({
+        identity: ancestor.identity,
+        grants: [...ancestor.grants].map(([tool, resources]) => ({ tool, resources: [...resources] })),
+        allowedRecipients: [...ancestor.recipients],
+        allowControlPlane: ancestor.allowControlPlane,
+        budget: ancestor.budget,
+        snapshot: this.#snapshot(ancestor),
+        revoked: ancestor.revoked,
+      })),
+      {
+        now,
+        maxCost: tool.maxCost,
+        controlPlane: tool.controlPlane,
+        sensitive: task.family.sensitive,
+        secretValues: this.#secrets,
+        phase,
+      },
+    );
     return now;
   }
 
@@ -563,7 +799,8 @@ export class AgentGuard {
     const ancestors = lineage(task);
     const decision = await this.#policyAdmission.evaluate(policy, action, snapshot, {
       familyId: task.family.id,
-      taskIds: ancestors.map(ancestor => ancestor.identity.id), remainingMs: task.budget.deadline - this.#now(),
+      taskIds: ancestors.map(ancestor => ancestor.identity.id),
+      remainingMs: task.budget.deadline - this.#now(),
     });
     return { decision, snapshot };
   }
@@ -572,17 +809,27 @@ export class AgentGuard {
   async #policyTurn(task: TaskState): Promise<() => void> {
     const previous = this.#policyTurns.get(task) ?? Promise.resolve();
     let end!: () => void;
-    const turn = new Promise<void>(resolve => { end = resolve; });
-    this.#policyTurns.set(task, previous.then(() => turn));
+    const turn = new Promise<void>(resolve => {
+      end = resolve;
+    });
+    this.#policyTurns.set(
+      task,
+      previous.then(() => turn),
+    );
     await previous;
     return end;
   }
 
   #policySnapshotChanged(task: TaskState, evaluation: PolicyEvaluation): boolean {
     const snapshot = evaluation.snapshot;
-    return !!snapshot && (snapshot.calls !== task.calls || snapshot.concurrent !== task.concurrent ||
-      snapshot.spent !== task.spent || snapshot.reserved !== task.reserved ||
-      snapshot.sensitive !== task.family.sensitive);
+    return (
+      !!snapshot &&
+      (snapshot.calls !== task.calls ||
+        snapshot.concurrent !== task.concurrent ||
+        snapshot.spent !== task.spent ||
+        snapshot.reserved !== task.reserved ||
+        snapshot.sensitive !== task.family.sensitive)
+    );
   }
 
   #approval(state: PreparedState, id: string | undefined, required: boolean, now: number): void {
@@ -593,13 +840,20 @@ export class AgentGuard {
     // Lookup is scoped to the exact issued action. #gates checked its policy and tool revision.
     const approval = state.approvals.get(id);
     if (!approval) fail('APPROVAL_INVALID');
-    if (now >= approval.expiresAt) { state.approvals.delete(id); fail('APPROVAL_EXPIRED'); }
+    if (now >= approval.expiresAt) {
+      state.approvals.delete(id);
+      fail('APPROVAL_EXPIRED');
+    }
   }
 
   #snapshot(task: TaskState): Readonly<TaskSnapshot> {
     return Object.freeze({
-      ...task.identity, sensitive: task.family.sensitive, calls: task.calls,
-      concurrent: task.concurrent, spent: task.spent, reserved: task.reserved,
+      ...task.identity,
+      sensitive: task.family.sensitive,
+      calls: task.calls,
+      concurrent: task.concurrent,
+      spent: task.spent,
+      reserved: task.reserved,
     });
   }
 
@@ -622,6 +876,9 @@ export class AgentGuard {
       }, chunk);
     };
     schedule(remaining);
-    return () => { canceled = true; if (timer) clearTimeout(timer); };
+    return () => {
+      canceled = true;
+      if (timer) clearTimeout(timer);
+    };
   }
 }

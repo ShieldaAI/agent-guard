@@ -30,7 +30,10 @@ export function immutableJson(value: unknown, maxDepth = 64, maxNodes = 100_000,
   function visit(input: unknown, depth: number): JsonValue {
     if (++nodes > maxNodes) throw new InvalidJsonError('JSON value exceeds the node limit');
     if (depth > maxDepth) throw new InvalidJsonError('JSON value exceeds the depth limit');
-    if (typeof input === 'string') { stringBytes(input); return input; }
+    if (typeof input === 'string') {
+      stringBytes(input);
+      return input;
+    }
     if (input === null || typeof input === 'boolean') {
       addBytes(input === false ? 5 : 4);
       return input;
@@ -44,8 +47,10 @@ export function immutableJson(value: unknown, maxDepth = 64, maxNodes = 100_000,
     if (isProxy(input)) throw new InvalidJsonError('JSON proxies are unsupported');
     if (ancestors.has(input)) throw new InvalidJsonError('Circular JSON value');
     const prototype = Object.getPrototypeOf(input);
-    if ((Array.isArray(input) && prototype !== Array.prototype) ||
-        (!Array.isArray(input) && prototype !== null && prototype !== Object.prototype)) {
+    if (
+      (Array.isArray(input) && prototype !== Array.prototype) ||
+      (!Array.isArray(input) && prototype !== null && prototype !== Object.prototype)
+    ) {
       throw new InvalidJsonError('JSON objects must have a plain or null prototype');
     }
     if (Object.getOwnPropertySymbols(input).length) throw new InvalidJsonError('JSON symbol keys are unsupported');
@@ -81,8 +86,10 @@ export function immutableJson(value: unknown, maxDepth = 64, maxNodes = 100_000,
           throw new InvalidJsonError('Non-enumerable fields and accessors are unsupported');
         }
         Object.defineProperty(result, key, {
-          value: visit(descriptor.value, depth + 1), enumerable: true,
-          writable: false, configurable: false,
+          value: visit(descriptor.value, depth + 1),
+          enumerable: true,
+          writable: false,
+          configurable: false,
         });
       }
       return Object.freeze(result);
@@ -98,7 +105,10 @@ export function canonicalJson(value: JsonValue): string {
   if (value === null || typeof value !== 'object') return JSON.stringify(value);
   if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`;
   const object = value as JsonObject;
-  return `{${Object.keys(object).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(object[key]!)}`).join(',')}}`;
+  return `{${Object.keys(object)
+    .sort()
+    .map(key => `${JSON.stringify(key)}:${canonicalJson(object[key]!)}`)
+    .join(',')}}`;
 }
 
 export function digestJson(value: JsonValue): string {

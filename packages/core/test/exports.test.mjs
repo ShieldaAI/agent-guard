@@ -5,8 +5,23 @@ import { join } from 'node:path';
 import * as root from '@shieldaai/agent-guard';
 import * as internal from '@shieldaai/agent-guard/internal';
 
-const STABLE = ['AgentGuard', 'GuardError', 'GuardErrorCatalog', 'GuardErrorCode', 'InvalidJsonError', 'isGuardError', 'monotonicClock'];
-const INTERNAL = ['PolicyAdmission', 'assertActionAuthority', 'canonicalJson', 'containsLiteralSecret', 'digestJson', 'immutableJson'];
+const STABLE = [
+  'AgentGuard',
+  'GuardError',
+  'GuardErrorCatalog',
+  'GuardErrorCode',
+  'InvalidJsonError',
+  'isGuardError',
+  'monotonicClock',
+];
+const INTERNAL = [
+  'PolicyAdmission',
+  'assertActionAuthority',
+  'canonicalJson',
+  'containsLiteralSecret',
+  'digestJson',
+  'immutableJson',
+];
 
 test('the root entry exports the stable API plus deprecated internal aliases', () => {
   assert.deepEqual(Object.keys(root).sort(), [...STABLE, ...INTERNAL].sort());
@@ -20,7 +35,11 @@ test('the internal entry exports exactly the internal SPI', () => {
 test('root aliases are marked @deprecated in the published declarations', () => {
   const declarations = readFileSync(new URL('../dist/deprecated.d.ts', import.meta.url), 'utf8');
   for (const name of [...INTERNAL, 'AuthorityPhase', 'AuthorityState']) {
-    assert.match(declarations, new RegExp(`@deprecated[^\\n]*\\n\\s*export (?:declare )?(?:const|type|class) ${name}\\b`), name);
+    assert.match(
+      declarations,
+      new RegExp(`@deprecated[^\\n]*\\n\\s*export (?:declare )?(?:const|type|class) ${name}\\b`),
+      name,
+    );
   }
 });
 
@@ -39,10 +58,29 @@ test('first-party packages import the internal SPI from /internal, not the root'
       else if (/\.(ts|mts|mjs)$/.test(name) && !name.endsWith('.d.ts')) sources.push(path);
     }
   };
-  for (const directory of ['packages/executor/src', 'packages/mcp/src', 'packages/scenarios/src', 'packages/agent-map/src', 'apps']) walk(join(repo, directory));
+  for (const directory of [
+    'packages/executor/src',
+    'packages/mcp/src',
+    'packages/scenarios/src',
+    'packages/agent-map/src',
+    'apps',
+  ])
+    walk(join(repo, directory));
   const offenders = sources.filter(path => {
-    for (const match of readFileSync(path, 'utf8').matchAll(/import(?:\s+type)?\s*\{([^}]*)\}\s*from\s*'@shieldaai\/agent-guard'/g)) {
-      if (match[1].split(',').some(item => [...INTERNAL, 'AuthorityPhase', 'AuthorityState'].includes(item.replace(/^\s*type\s+/, '').split(' as ')[0].trim()))) return true;
+    for (const match of readFileSync(path, 'utf8').matchAll(
+      /import(?:\s+type)?\s*\{([^}]*)\}\s*from\s*'@shieldaai\/agent-guard'/g,
+    )) {
+      if (
+        match[1].split(',').some(item =>
+          [...INTERNAL, 'AuthorityPhase', 'AuthorityState'].includes(
+            item
+              .replace(/^\s*type\s+/, '')
+              .split(' as ')[0]
+              .trim(),
+          ),
+        )
+      )
+        return true;
     }
     return false;
   });
