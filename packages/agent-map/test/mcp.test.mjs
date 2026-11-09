@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
@@ -336,4 +337,22 @@ test('HTTP and official MCP clients receive identical bounded policy evidence an
   assert.equal(mcp.content[0].text, '{"error":"MAP_UNAVAILABLE"}');
   assert.ok(scopes.length >= 14);
   for (const received of scopes) assert.deepEqual(JSON.parse(JSON.stringify(received)), scope);
+});
+
+test('MCP tools declare an output schema, return structured content and report the package version', async t => {
+  const service = new MapService({ read: async () => ({ sources: [] }) }, { clock: () => 1000 });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const server = createMapMcpServer(service, scope);
+  await server.connect(serverTransport);
+  const client = new Client({ name: 'map-test', version: '1' });
+  await client.connect(clientTransport);
+  t.after(async () => {
+    await client.close();
+    await server.close();
+  });
+  const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
+  assert.equal(client.getServerVersion().version, version);
+  for (const tool of (await client.listTools()).tools) assert.equal(tool.outputSchema.type, 'object', tool.name);
+  const result = await client.callTool({ name: 'list_agents', arguments: {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(result.structuredContent)), JSON.parse(result.content[0].text));
 });
