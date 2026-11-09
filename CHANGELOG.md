@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: the MCP schema profile accepts common real-world tool schemas. The 2019-09 and
+  2020-12 dialect URIs are accepted, `format` is an annotation, `uniqueItems` uses
+  linear canonical-JSON equality, and `pattern` is accepted when its backtracking is
+  bounded (with a per-value length cap and a per-validation work budget). A schema
+  outside the profile now skips only that operation, listed in `connection.skipped`
+  with its reason, instead of rejecting the server's whole registry.
 - Fix: a managed MCP connection no longer quarantines on a failure that belongs to
   one call. An abort, deadline, timeout, JSON-RPC error reply, invalid or oversized
   result, resource mismatch or throwing `measureCost` now fails only that call.

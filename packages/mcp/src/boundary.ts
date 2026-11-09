@@ -1,4 +1,4 @@
-import type { Json } from '@shieldaai/agent-guard';
+import { canonicalJson, type Json } from '@shieldaai/agent-guard';
 import { Ajv } from '@modelcontextprotocol/client/validators/ajv';
 import { isProxy } from 'node:util/types';
 
@@ -62,7 +62,106 @@ export function passiveJson(input: unknown): Json {
   visit(value); return value;
 }
 
-const annotations = new Set(['title', 'description', '$comment', 'default', 'examples', 'deprecated', 'readOnly', 'writeOnly']);
+// `format` and content keywords are annotations by default in JSON Schema; they never validate here.
+const annotations = new Set(['title', 'description', '$comment', 'default', 'examples', 'deprecated', 'readOnly', 'writeOnly',
+  'format', 'contentEncoding', 'contentMediaType']);
+const dialects = new Set([
+  'http://json-schema.org/draft-07/schema#', 'https://json-schema.org/draft-07/schema#',
+  'http://json-schema.org/draft-07/schema', 'https://json-schema.org/draft-07/schema',
+  'https://json-schema.org/draft/2019-09/schema', 'https://json-schema.org/draft/2019-09/schema#',
+  'https://json-schema.org/draft/2020-12/schema', 'https://json-schema.org/draft/2020-12/schema#',
+]);
+/** Strings longer than this never match a schema `pattern`; it bounds regex work per value. */
+export const PATTERN_INPUT_LIMIT = 4_096;
+const PATTERN_SOURCE_LIMIT = 512;
+/**
+ * Pattern work per validated value, charged as length squared (the worst case for an
+ * admitted pattern). Bounds the total regex time for one argument object.
+ */
+const PATTERN_WORK_LIMIT = 2 ** 26;
+let patternWork = Number.POSITIVE_INFINITY;
+
+/**
+ * Accepts only regexes whose backtracking stays bounded on PATTERN_INPUT_LIMIT input:
+ * no backreferences or lookaround, no quantified group containing a quantifier or
+ * alternation (star height 1), and few variable-length quantifiers (one, or two when
+ * the pattern is anchored at the start and has no top-level alternation).
+ */
+export function safePattern(source: unknown): string {
+  if (typeof source !== 'string' || !source.length || source.length > PATTERN_SOURCE_LIMIT) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+  try { new RegExp(source, 'u'); } catch { throw new McpBoundaryError('SCHEMA_INVALID'); }
+  type Group = { quantified: boolean; alternation: boolean };
+  const groups: Group[] = [{ quantified: false, alternation: false }];
+  let variable = 0; let topAlternation = false;
+  const quantifierAt = (index: number): { length: number; variable: boolean } | undefined => {
+    const char = source[index];
+    if (char === '*' || char === '+' || char === '?') return { length: source[index + 1] === '?' ? 2 : 1, variable: true };
+    const match = char === '{' ? /^\{(\d+)(,(\d*))?\}\??/.exec(source.slice(index)) : null;
+    if (!match) return undefined;
+    return { length: match[0].length, variable: match[2] !== undefined && match[3] !== match[1] };
+  };
+  // Marks every open group as containing a quantifier.
+  const nested = () => { for (const group of groups) group.quantified = true; };
+  let index = 0;
+  const atomEnd = (): void => {
+    const quantifier = quantifierAt(index);
+    if (!quantifier) return;
+    if (quantifier.variable) variable++;
+    nested(); index += quantifier.length;
+  };
+  while (index < source.length) {
+    const char = source[index]!;
+    if (char === '\\') {
+      const next = source[index + 1] ?? '';
+      if (/[1-9]/.test(next) || next === 'k') throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+      if ('upP'.includes(next) && next !== '' && source[index + 2] === '{') {
+        const end = source.indexOf('}', index);
+        index = end < 0 ? source.length : end + 1;
+      } else index += next === 'u' ? 6 : next === 'x' ? 4 : next === 'c' ? 3 : 2;
+      atomEnd();
+    } else if (char === '[') {
+      index++;
+      while (index < source.length && source[index] !== ']') index += source[index] === '\\' ? 2 : 1;
+      index++; atomEnd();
+    } else if (char === '(') {
+      if (source[index + 1] === '?') {
+        const kind = source.slice(index + 2, index + 4);
+        if (kind.startsWith('=') || kind.startsWith('!') || kind === '<=' || kind === '<!') throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+      }
+      groups.push({ quantified: false, alternation: false });
+      index += source[index + 1] === '?' ? (source[index + 2] === ':' ? 3 : source.indexOf('>', index) + 1 - index) : 1;
+    } else if (char === ')') {
+      const group = groups.pop();
+      if (!group || !groups.length) throw new McpBoundaryError('SCHEMA_INVALID');
+      index++;
+      const quantifier = quantifierAt(index);
+      if (quantifier) {
+        if (group.quantified || group.alternation) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+        if (quantifier.variable) variable++;
+        nested(); index += quantifier.length;
+      }
+      if (group.alternation) groups.at(-1)!.alternation = true;
+      if (group.quantified) groups.at(-1)!.quantified = true;
+    } else if (char === '|') {
+      groups.at(-1)!.alternation = true;
+      if (groups.length === 1) topAlternation = true;
+      index++;
+    } else { index++; atomEnd(); }
+  }
+  const anchored = source.startsWith('^') && !topAlternation;
+  if (variable > (anchored ? 2 : 1)) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+  return source;
+}
+function lengthCappedRegExp(pattern: string, flags: string): { test(value: string): boolean } {
+  const expression = new RegExp(pattern, flags);
+  return { test: value => {
+    if (value.length > PATTERN_INPUT_LIMIT) return false;
+    patternWork -= Math.max(1, value.length) ** 2;
+    return patternWork >= 0 && expression.test(value);
+  }, toString: () => `/${pattern}/${flags}` } as { test(value: string): boolean };
+}
+lengthCappedRegExp.code = 'lengthCappedRegExp';
+const UNIQUE_ITEMS = 'shieldaUniqueItems';
 const simple = new Set(['type', 'enum', 'const', 'required', 'minLength', 'maxLength', 'minimum', 'maximum', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf', 'minItems', 'maxItems', 'minProperties', 'maxProperties']);
 const schemas = new Set(['items', 'additionalProperties', 'not']);
 const schemaMaps = new Set(['properties', '$defs', 'definitions']);
@@ -71,7 +170,8 @@ const schemaArrays = new Set(['allOf', 'anyOf', 'oneOf']);
 /**
  * A deliberately bounded structural JSON Schema profile, evaluated by maintained AJV.
  * Local JSON-pointer references are expanded with cycle/expansion bounds. Network,
- * file, dynamic, recursive, regex and format processing are never enabled.
+ * file, dynamic and recursive processing are never enabled. `format` is an annotation;
+ * `pattern` is accepted only for regexes that safePattern() admits.
  */
 export function compileBoundedSchema(input: unknown): (value: unknown) => boolean {
   const root = boundedJson(input, SCHEMA_LIMITS); let expanded = 0;
@@ -83,7 +183,12 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
     const out: Record<string, Json> = Object.create(null);
     for (const [key, item] of Object.entries(value)) {
       if (key === '$schema') {
-        if (item !== 'http://json-schema.org/draft-07/schema#' && item !== 'https://json-schema.org/draft-07/schema#') throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+        if (typeof item !== 'string' || !dialects.has(item)) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+      } else if (key === 'pattern') out.pattern = safePattern(item);
+      else if (key === 'uniqueItems') {
+        if (typeof item !== 'boolean') throw new McpBoundaryError('SCHEMA_INVALID');
+        // Linear canonical-JSON comparison instead of a pairwise deep-equality scan.
+        if (item) out[UNIQUE_ITEMS] = true;
       } else if (key === '$ref') {
         if (typeof item !== 'string' || !item.startsWith('#/')) throw new McpBoundaryError('SCHEMA_REFERENCE_DENIED');
         let target: Json = root;
@@ -116,10 +221,14 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
   // a large enum or const many times in the source handed to the code generator.
   const schema = boundedJson(expand(root, new Set(), 0), SCHEMA_LIMITS);
   try {
-    const ajv = new Ajv({ strict: true, strictTypes: false, allErrors: false, validateFormats: false, coerceTypes: false, useDefaults: false, removeAdditional: false });
+    const ajv = new Ajv({ strict: true, strictTypes: false, allErrors: false, validateFormats: false, coerceTypes: false, useDefaults: false, removeAdditional: false,
+      code: { regExp: lengthCappedRegExp as never } });
+    ajv.addKeyword({ keyword: UNIQUE_ITEMS, type: 'array', schemaType: 'boolean', errors: false,
+      validate: (enabled: boolean, data: Json[]) => !enabled || new Set(data.map(item => canonicalJson(item))).size === data.length });
     const validate = ajv.compile(schema as boolean | Record<string, unknown>);
     return value => {
-      try { return validate(boundedJson(value)) === true; } catch { return false; }
+      patternWork = PATTERN_WORK_LIMIT;
+      try { return validate(boundedJson(value)) === true; } catch { return false; } finally { patternWork = Number.POSITIVE_INFINITY; }
     };
   } catch { throw new McpBoundaryError('SCHEMA_INVALID'); }
 }

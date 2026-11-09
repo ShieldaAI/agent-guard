@@ -1,0 +1,159 @@
+{
+ "source": "Modeled on the published reference/official server tool definitions and the shapes their schema generators emit; not captured from a live server.",
+ "tools": {
+  "read_text_file": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "tail": {
+     "type": "number",
+     "description": "If provided, returns only the last N lines"
+    },
+    "head": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "read_multiple_files": {
+   "type": "object",
+   "properties": {
+    "paths": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "minItems": 1
+    }
+   },
+   "required": [
+    "paths"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "write_file": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "content": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "path",
+    "content"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "edit_file": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "edits": {
+     "type": "array",
+     "items": {
+      "type": "object",
+      "properties": {
+       "oldText": {
+        "type": "string",
+        "description": "Text to search for - must match exactly"
+       },
+       "newText": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "oldText",
+       "newText"
+      ],
+      "additionalProperties": false
+     }
+    },
+    "dryRun": {
+     "type": "boolean",
+     "default": false
+    }
+   },
+   "required": [
+    "path",
+    "edits"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "list_directory_with_sizes": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "sortBy": {
+     "type": "string",
+     "enum": [
+      "name",
+      "size"
+     ],
+     "default": "name"
+    }
+   },
+   "required": [
+    "path"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "search_files": {
+   "type": "object",
+   "properties": {
+    "path": {
+     "type": "string"
+    },
+    "pattern": {
+     "type": "string"
+    },
+    "excludePatterns": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "default": []
+    }
+   },
+   "required": [
+    "path",
+    "pattern"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "move_file": {
+   "type": "object",
+   "properties": {
+    "source": {
+     "type": "string"
+    },
+    "destination": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "source",
+    "destination"
+   ],
+   "additionalProperties": false,
+   "$schema": "https://json-schema.org/draft/2020-12/schema"
+  }
+ }
+}

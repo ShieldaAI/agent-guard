@@ -1,5 +1,5 @@
 import { AgentGuard, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
-export { ManagedMcpConnection, type ManagedMcpOptions, type ManagedMcpRegistration, type McpConnectionIdentity, type McpBinding, type McpResourceBinding } from './managed.js';
+export { ManagedMcpConnection, type ManagedMcpOptions, type ManagedMcpRegistration, type McpConnectionIdentity, type McpBinding, type McpResourceBinding, type McpSkippedOperation } from './managed.js';
 export { McpBoundaryError, compileBoundedSchema } from './boundary.js';
 export { createRestrictedMcpHttpTransport, type RestrictedMcpHttpOptions } from './http.js';
 export { assertVerifiedMcpClaims, type VerifiedMcpClaims, type McpAuthorizationPolicy } from './authorization.js';

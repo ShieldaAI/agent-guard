@@ -144,13 +144,23 @@ test('resources and prompts need explicit bindings, exact resource identity, sch
   assert.deepEqual(reads, ['report://public']); assert.equal(prompts.length, 1);
 });
 
-test('unsafe schemas are rejected at discovery before any tool side effect', { timeout: 5_000 }, async t => {
+test('an unsafe schema skips only that tool at discovery, before any side effect', { timeout: 5_000 }, async t => {
   const server = new McpServer({ name: 'unsafe', version: '1' });
-  server.registerTool('read', { inputSchema: fromJsonSchema(schema) }, () => result);
-  server.server.setRequestHandler('tools/list', () => ({ tools: [{ name: 'read', inputSchema: { type: 'object' }, outputSchema: { $ref: 'file:///etc/passwd' } }] }));
+  let calls = 0;
+  server.registerTool('read', { inputSchema: fromJsonSchema(schema) }, () => { calls++; return result; });
+  server.server.setRequestHandler('tools/list', () => ({ tools: [
+    { name: 'read', inputSchema: { type: 'object' }, outputSchema: { $ref: 'file:///etc/passwd' } },
+    { name: 'list', inputSchema: { type: 'object', additionalProperties: false } },
+  ] }));
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); await server.connect(serverTransport);
   t.after(() => server.close());
-  await assert.rejects(ManagedMcpConnection.connect({ guard: new AgentGuard(), identity, transport: clientTransport, tools: [binding] }), { code: 'CONNECTION_FAILED' });
+  const connection = await ManagedMcpConnection.connect({ guard: new AgentGuard(), identity, transport: clientTransport,
+    tools: [binding, { name: 'list', resolve: () => ({ resourceId: 'report', tenantId: 'acme' }) }] });
+  t.after(() => connection.close());
+  assert.equal(connection.status, 'ready');
+  assert.deepEqual(connection.registrations.map(entry => entry.remoteName), ['list']);
+  assert.deepEqual(connection.skipped.map(entry => ({ ...entry })), [{ kind: 'tool', remoteName: 'read', reason: 'SCHEMA_REFERENCE_DENIED' }]);
+  assert.equal(calls, 0);
 });
 
 test('active widget content is rejected and quarantines the connection', { timeout: 5_000 }, async t => {

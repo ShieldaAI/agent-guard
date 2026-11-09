@@ -1,0 +1,97 @@
+{
+ "source": "Modeled on the published reference/official server tool definitions and the shapes their schema generators emit; not captured from a live server.",
+ "tools": {
+  "slack_list_channels": {
+   "type": "object",
+   "properties": {
+    "limit": {
+     "type": "number",
+     "default": 100,
+     "description": "Maximum number of channels to return (default 100, max 200)"
+    },
+    "cursor": {
+     "type": "string"
+    }
+   },
+   "required": [],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "slack_post_message": {
+   "type": "object",
+   "properties": {
+    "channel_id": {
+     "type": "string",
+     "pattern": "^[CGD][A-Z0-9]+$"
+    },
+    "text": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "channel_id",
+    "text"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "slack_reply_to_thread": {
+   "type": "object",
+   "properties": {
+    "channel_id": {
+     "type": "string"
+    },
+    "thread_ts": {
+     "type": "string",
+     "pattern": "^\\d+\\.\\d+$"
+    },
+    "text": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "channel_id",
+    "thread_ts",
+    "text"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "slack_add_reaction": {
+   "type": "object",
+   "properties": {
+    "channel_id": {
+     "type": "string"
+    },
+    "timestamp": {
+     "type": "string"
+    },
+    "reaction": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "channel_id",
+    "timestamp",
+    "reaction"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  },
+  "slack_get_users": {
+   "type": "object",
+   "properties": {
+    "cursor": {
+     "type": "string"
+    },
+    "limit": {
+     "type": "number",
+     "default": 100
+    }
+   },
+   "required": [],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ }
+}

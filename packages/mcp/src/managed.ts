@@ -41,6 +41,13 @@ export interface ManagedMcpOptions {
    */
   limits?: { requestTimeoutMs?: number; maxEntries?: number; maxMessages?: number; messageWindowMs?: number; maxPages?: number };
 }
+/** A configured binding the server advertised but this manager could not accept. */
+export interface McpSkippedOperation {
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  /** Stable code such as SCHEMA_UNSUPPORTED, SCHEMA_INVALID, SCHEMA_LIMIT or ACTIVE_CONTENT_DENIED. */
+  readonly reason: string;
+}
 export interface ManagedMcpRegistration extends RegisteredMcpTool {
   readonly kind: 'tool' | 'resource' | 'prompt';
   readonly remoteName: string;
@@ -129,6 +136,7 @@ export class ManagedMcpConnection {
   #metadataDigest: string | undefined;
   #state: McpConnectionState = 'connecting';
   #registrations: readonly ManagedMcpRegistration[] = Object.freeze([]);
+  #skipped: readonly McpSkippedOperation[] = Object.freeze([]);
   #known = new Set<string>();
   #refreshTail: Promise<void> = Promise.resolve();
 
@@ -192,6 +200,8 @@ export class ManagedMcpConnection {
   get revision(): number { return this.#epoch; }
   get inventoryRevision(): number { return this.#inventoryRevision; }
   get registrations(): readonly ManagedMcpRegistration[] { return this.#registrations; }
+  /** Advertised bindings skipped by the last successful refresh, with the reason. */
+  get skipped(): readonly McpSkippedOperation[] { return this.#skipped; }
 
   /** A pure observation: no authorization checks, discovery, resolvers or dispatch. */
   inventory(): McpConnectionInventory {
@@ -336,30 +346,44 @@ export class ManagedMcpConnection {
       void all;
       const tools = this.#unique(toolList, 'name'); const resources = this.#unique(resourceList, 'uri'); const prompts = this.#unique(promptList, 'name');
       const prepared: Array<() => ManagedMcpRegistration> = [];
+      const skipped: McpSkippedOperation[] = [];
+      // A descriptor this profile cannot accept removes only that operation.
+      const accept = (kind: McpSkippedOperation['kind'], remoteName: string, build: () => () => ManagedMcpRegistration): void => {
+        try { prepared.push(build()); }
+        catch (error) { skipped.push(Object.freeze({ kind, remoteName, reason: error instanceof McpBoundaryError ? error.code : 'SCHEMA_INVALID' })); }
+      };
       for (const binding of this.#tools) {
         const descriptor = tools.get(binding.name); if (!descriptor) continue;
-        const input = compileBoundedSchema(descriptor.inputSchema);
-        if (descriptor.outputSchema !== undefined) compileBoundedSchema(descriptor.outputSchema);
-        const safe = passiveJson(descriptor) as unknown as Tool;
-        prepared.push(() => this.#register('tool', binding, safe, descriptor.inputSchema as Json, input, epoch));
+        accept('tool', binding.name, () => {
+          const input = compileBoundedSchema(descriptor.inputSchema);
+          if (descriptor.outputSchema !== undefined) compileBoundedSchema(descriptor.outputSchema);
+          const safe = passiveJson(descriptor) as unknown as Tool;
+          return () => this.#register('tool', binding, safe, descriptor.inputSchema as Json, input, epoch);
+        });
       }
       for (const binding of this.#resources) {
         const descriptor = resources.get(binding.uri); if (!descriptor) continue;
-        const schema = { type: 'object', additionalProperties: false };
-        prepared.push(() => this.#register('resource', binding, descriptor, schema, compileBoundedSchema(schema), epoch));
+        accept('resource', binding.name, () => {
+          passiveJson(descriptor);
+          const schema = { type: 'object', additionalProperties: false };
+          return () => this.#register('resource', binding, descriptor, schema, compileBoundedSchema(schema), epoch);
+        });
       }
       for (const binding of this.#prompts) {
         const descriptor = prompts.get(binding.name); if (!descriptor) continue;
-        const args = descriptor.arguments ?? [];
-        if (!Array.isArray(args) || args.length > 64) throw new McpBoundaryError('SCHEMA_INVALID');
-        const properties: Record<string, Json> = Object.create(null); const required: string[] = [];
-        for (const argument of args) {
-          const name = identifier(argument.name); if (Object.hasOwn(properties, name)) throw new McpBoundaryError('SCHEMA_INVALID');
-          properties[name] = { type: 'string', maxLength: 16_384 };
-          if (argument.required === true) required.push(name);
-        }
-        const schema = { type: 'object', properties, required, additionalProperties: false };
-        prepared.push(() => this.#register('prompt', binding, descriptor, schema, compileBoundedSchema(schema), epoch));
+        accept('prompt', binding.name, () => {
+          passiveJson(descriptor);
+          const args = descriptor.arguments ?? [];
+          if (!Array.isArray(args) || args.length > 64) throw new McpBoundaryError('SCHEMA_INVALID');
+          const properties: Record<string, Json> = Object.create(null); const required: string[] = [];
+          for (const argument of args) {
+            const name = identifier(argument.name); if (Object.hasOwn(properties, name)) throw new McpBoundaryError('SCHEMA_INVALID');
+            properties[name] = { type: 'string', maxLength: 16_384 };
+            if (argument.required === true) required.push(name);
+          }
+          const schema = { type: 'object', properties, required, additionalProperties: false };
+          return () => this.#register('prompt', binding, descriptor, schema, compileBoundedSchema(schema), epoch);
+        });
       }
       if (epoch !== this.#epoch || this.#state !== 'refreshing') throw new McpBoundaryError('CONNECTION_CHANGED');
       const registrations = prepared.map(register => register());
@@ -371,6 +395,7 @@ export class ManagedMcpConnection {
       const metadataDigest = digestJson(metadata);
       if (metadataDigest !== this.#metadataDigest) { this.#metadataDigest = metadataDigest; this.#metadataRevision++; }
       this.#registrations = Object.freeze(registrations);
+      this.#skipped = Object.freeze(skipped);
       this.#state = 'ready';
       this.#inventoryRevision++;
     } catch {
