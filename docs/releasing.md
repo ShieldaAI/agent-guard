@@ -27,7 +27,11 @@ but repeated-fixture total wall time regressed 5.17%; it is not acceptance.
 **For 0.1.0, the admission-during-polling gate in step 4 is not a release gate.**
 The inventory observer is experimental in 0.1.0 (see the
 [scope decision](releases/0.1.0.md#scope-decision-inventory-observer-is-experimental)).
-The full workflow's graph workload and recovery checks still apply.
+The full workflow's graph workload and recovery checks still apply. Pull requests
+no longer run either timing signal (admission during polling, or the constrained
+observer). Both run nightly on the default branch and on manual dispatch. The
+job summary shows the p95 ratio, skipped polls and reasons; the reports are kept as
+artifacts and are never a required check.
 
 **For 0.1.0, steps 1 and 2 are a post-release follow-up** (maintainer decision of
 9 November). Run steps 3–5 on the currently pinned runtime and images. Once the
@@ -96,7 +100,7 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
 
    This graph/admission workflow does not impose the one-CPU/512 MiB/no-extra-swap
    limits. The separate [constrained workflow](../.github/workflows/constrained-observer.yml)
-   explicitly uses affinity `0` and `linux-background` for PR and default manual runs, with the original
+   runs nightly and on manual dispatch, never on pull requests. It explicitly uses affinity `0` and `linux-background` for scheduled and default manual runs, with the original
    100 ms CPU period and zero burst. Manual affinity `none` is retained only for
    historical quota-only comparison. To run the configured profile after
    building, cache the reviewed image, create only the output's parent, and use a

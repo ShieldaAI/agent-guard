@@ -249,8 +249,9 @@ requirements remain unchanged. Both the kernel effective CPU set and process
 allowed CPU list must match that singleton before and after the workload. Without
 the option the generic runner stays `bandwidth-only`; a pass under one placement
 cannot qualify the other. The [hosted workflow](../../.github/workflows/constrained-observer.yml)
-explicitly selects affinity `0` for PR/default manual acceptance and executes one
-full run without diagnostics or retries. Manual `none` remains available for
+runs nightly and on manual dispatch, never on pull requests. Scheduled and default
+manual runs explicitly select affinity `0` and execute one full run without
+diagnostics or retries. Manual `none` remains available for
 historical quota-only comparisons; no default resource cap or threshold changes.
 
 Select `--worker-scheduling linux-background` explicitly for configured admission
