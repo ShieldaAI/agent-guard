@@ -21,5 +21,13 @@ test('scenarios pass against a guard from a second installed copy of core', { ti
   assert.equal(isGuardError(foreign), true, 'the brand check does not');
   assert.equal(isGuardError(Object.assign(new Error('x'), { code: 'GRANT_DENIED' })), false);
   const report = await runConformance({ createGuard: options => new second.AgentGuard(options) });
-  assert.equal(report.passed, true, JSON.stringify(report.results.filter(({ passed }) => !passed), null, 2));
+  assert.equal(
+    report.passed,
+    true,
+    JSON.stringify(
+      report.results.filter(({ passed }) => !passed),
+      null,
+      2,
+    ),
+  );
 });
