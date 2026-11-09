@@ -247,7 +247,8 @@ test('two yielded executions retain one-use approval and at-most-once accounting
   const outcomes = await Promise.all([0, 1].map(() => completedRequest(f, 'task/execute', { actionId: action.id, approvalId })));
   assert.equal(outcomes.filter(x => x.response.status === 200).length, 1); assert.equal(f.effects(), 1);
   const failure = outcomes.find(x => x.response.status !== 200).response.payload.error;
-  assert.ok(['ACTION_USED', 'POLICY_STATE_CHANGED', 'APPROVAL_USED'].includes(failure));
+  // Without a custom policy no decision can go stale; the loser sees the action or approval already used.
+  assert.ok(['ACTION_USED', 'APPROVAL_USED'].includes(failure));
   const snapshot = f.executor.snapshot(f.credential.taskId);
   assert.equal(snapshot.calls, 1); assert.equal(snapshot.reserved, 0); assert.equal(snapshot.concurrent, 0);
 });

@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: in the durable executor, another task's or tenant's writes no longer make a
+  call fail with `POLICY_STATE_CHANGED` while its policy is awaited. The check now
+  compares the task's own policy inputs (counters, shared sensitivity), as the API
+  contract describes, instead of the global ledger revision. Same-task changes are
+  re-evaluated with the same bounded, turn-taking retry as core
+  (`ExecutorOptions.maxPolicyAttempts`). Without a custom policy, no check applies.
 - Fix: parallel calls on one task now work under a custom policy. A policy decision
   made on a snapshot that changed while it ran is re-evaluated on fresh state, not
   rejected outright. Re-evaluations on a task take turns, and the count is bounded by

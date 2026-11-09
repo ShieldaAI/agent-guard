@@ -22,6 +22,8 @@ function id(value: unknown): string {
 function hash(value: string): string { return createHash('sha256').update(value).digest('hex'); }
 function own<T>(record: Record<string, T>, key: string): T | undefined { return Object.hasOwn(record, key) ? record[key] : undefined; }
 function clone<T>(value: T): T { return immutableJson(value) as T; }
+/** Internal signal: a policy decision was made on a task snapshot that has since changed. */
+class StalePolicyDecision extends Error {}
 function audit(state: Ledger, time: number, event: string, taskId?: string, actionId?: string): void {
   state.audit.push({ time, event, ...(taskId === undefined ? {} : { taskId }), ...(actionId === undefined ? {} : { actionId }) });
   if (state.audit.length > 1000) state.audit.splice(0, state.audit.length - 1000);
@@ -38,6 +40,12 @@ export interface ExecutorOptions {
   policy?: Policy;
   secretValues?: readonly string[];
   maxRecords?: number;
+  /**
+   * How many times a custom policy may be evaluated for one prepare or execute when the task's own
+   * snapshot (counters or shared sensitivity) changes while it runs. Writes by other tasks or tenants
+   * never invalidate a decision. Integer 1-16, default 5; 1 keeps single-evaluation behaviour.
+   */
+  maxPolicyAttempts?: number;
   /** Maximum decoded ledger snapshot bytes: 1 MiB through 64 MiB; defaults to 16 MiB. */
   maxLedgerBytes?: number;
   /** Aggregate unresolved actions across a task family, including delegated children. */
@@ -59,6 +67,9 @@ export class DurableExecutor {
   readonly #clock: () => number;
   readonly #secrets: readonly string[];
   readonly #maxRecords: number;
+  readonly #maxPolicyAttempts: number;
+  /** Per-task queue for policy re-evaluations; first attempts stay parallel. */
+  readonly #policyTurns = new Map<string, Promise<void>>();
   readonly #maxPendingActionsPerFamily: number;
   readonly #maxPendingBytesPerFamily: number;
   readonly #maxTasksPerFamily: number;
@@ -86,6 +97,7 @@ export class DurableExecutor {
       if (!Number.isSafeInteger(selected) || selected < 1 || selected > maximum) throw new GuardError('INVALID_INPUT');
       return selected;
     };
+    this.#maxPolicyAttempts = bounded(options.maxPolicyAttempts, 5, 16);
     this.#maxPendingActionsPerFamily = bounded(options.maxPendingActionsPerFamily, Math.min(32, familyShare), familyShare);
     this.#maxPendingBytesPerFamily = bounded(options.maxPendingBytesPerFamily, 256 * 1024, 1024 * 1024);
     this.#maxTasksPerFamily = bounded(options.maxTasksPerFamily, Math.min(64, familyShare), familyShare);
@@ -293,6 +305,25 @@ export class DurableExecutor {
       sensitive: state.families[task.family]!.sensitive, secretValues: this.#secrets, phase,
     });
   }
+  /** The exact inputs a custom policy sees for this task: its own counters and shared sensitivity. */
+  #policyInputs(state: Ledger, taskId: string): string {
+    return canonicalJson(this.#snapshot(state, this.#task(state, taskId)) as unknown as Json);
+  }
+  /** Waits for this task's earlier re-evaluations; the returned function ends this turn (idempotent). */
+  async #policyTurn(taskId: string): Promise<() => void> {
+    const previous = this.#policyTurns.get(taskId) ?? Promise.resolve();
+    let end!: () => void;
+    const turn = new Promise<void>(resolve => { end = resolve; });
+    const tail = previous.then(() => turn);
+    this.#policyTurns.set(taskId, tail);
+    await previous;
+    let ended = false;
+    return () => {
+      if (ended) return;
+      ended = true; end();
+      if (this.#policyTurns.get(taskId) === tail) this.#policyTurns.delete(taskId);
+    };
+  }
   async #decision(state: Ledger, action: StoredAction): Promise<'allow' | 'require_approval'> {
     if (!this.#policy) return 'allow';
     const task = this.#task(state, action.taskId);
@@ -474,17 +505,38 @@ export class DurableExecutor {
     // Retain the action's revisions, not a registration replaced before the caller resumes.
     if (trace) { trace.toolRevision = stored.toolRevision; trace.policyRevision = stored.action.policyVersion; }
     this.#gates(state, stored, 'prepare');
-    const decision = await this.#decision(state, stored);
-    stored.requiresApproval ||= decision === 'require_approval';
-    this.#store.transaction(current => {
-      if (current.revision !== state.revision) throw new GuardError('POLICY_STATE_CHANGED');
-      this.#gates(current, stored, 'prepare');
-      this.#prune(current, this.#now(current));
-      this.#assertPendingCapacity(current, stored);
-      if (Object.keys(current.actions).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
-      current.actions[actionId] = stored;
-      audit(current, this.#now(current), 'ACTION_PREPARED', taskId, actionId);
-    });
+    const toolRequiresApproval = stored.requiresApproval;
+    let evaluated = state;
+    let endTurn: (() => void) | undefined;
+    try {
+      // A policy decision is only stale if this task's own snapshot changed while it ran; other
+      // tasks' writes never invalidate it. A stale decision is re-evaluated on fresh state.
+      for (let attempt = 1; ; attempt++) {
+        if (attempt > 1) {
+          endTurn ??= await this.#policyTurn(taskId);
+          evaluated = this.#store.read();
+          this.#gates(evaluated, stored, 'prepare');
+        }
+        const decision = await this.#decision(evaluated, stored);
+        stored.requiresApproval = toolRequiresApproval || decision === 'require_approval';
+        const expected = this.#policy ? this.#policyInputs(evaluated, taskId) : undefined;
+        try {
+          this.#store.transaction(current => {
+            if (expected !== undefined && this.#policyInputs(current, taskId) !== expected) throw new StalePolicyDecision();
+            this.#gates(current, stored, 'prepare');
+            this.#prune(current, this.#now(current));
+            this.#assertPendingCapacity(current, stored);
+            if (Object.keys(current.actions).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
+            current.actions[actionId] = stored;
+            audit(current, this.#now(current), 'ACTION_PREPARED', taskId, actionId);
+          });
+          break;
+        } catch (error) {
+          if (!(error instanceof StalePolicyDecision)) throw error;
+          if (attempt >= this.#maxPolicyAttempts) throw new GuardError('POLICY_STATE_CHANGED');
+        }
+      }
+    } finally { endTurn?.(); }
     return clone({ id: stored.id, digest: stored.digest, action: stored.action, requiresApproval: stored.requiresApproval });
   }
   approve(actionId: string, options: { approverId: string; expiresAt: number }): string {
@@ -522,14 +574,20 @@ export class DurableExecutor {
     catch (error) { this.#record(trace, trace?.admitted ? 'error' : 'deny', trace?.admitted ? 'ERROR' : 'DENIED', decisionTraceCode(error)); throw error; }
   }
   async #execute(taskId: string, actionId: string, options: { approvalId?: string }, trace: TraceContext | undefined, initial: Ledger): Promise<Json> {
-    const record = own(initial.actions, id(actionId));
-    if (!record || record.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
-    if (record.status !== 'PREPARED') throw new GuardError('ACTION_USED');
-    this.#gates(initial, record);
-    const decision = await this.#decision(initial, record);
+    const check = (state: Ledger): StoredAction => {
+      const found = own(state.actions, id(actionId));
+      if (!found || found.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
+      if (found.status !== 'PREPARED') throw new GuardError('ACTION_USED');
+      this.#gates(state, found);
+      return found;
+    };
+    let record = check(initial);
+    let decision: 'allow' | 'require_approval' = 'allow';
+    let expected: string | undefined;
     const controller = new AbortController();
-    const admitted = this.#store.transaction(state => {
-      if (state.revision !== initial.revision) throw new GuardError('POLICY_STATE_CHANGED');
+    const admit = () => this.#store.transaction(state => {
+      // Only this task's own policy inputs can make the decision stale; other tenants' writes cannot.
+      if (expected !== undefined && this.#policyInputs(state, taskId) !== expected) throw new StalePolicyDecision();
       const action = own(state.actions, actionId)!;
       if (action.status !== 'PREPARED') throw new GuardError('ACTION_USED');
       this.#gates(state, action);
@@ -553,6 +611,26 @@ export class DurableExecutor {
       return { action: clone(action), identity: clone({ id: taskId, principalId: task.options.principalId, tenantId: task.options.tenantId }),
         taskIds: this.#provenance(state, taskId).map(parent => parent.options.id), deadline: task.options.budget.deadline, approvalDeadline };
     });
+    let admitted!: ReturnType<typeof admit>;
+    let endTurn: (() => void) | undefined;
+    try {
+      for (let attempt = 1; ; attempt++) {
+        if (attempt > 1) {
+          endTurn ??= await this.#policyTurn(taskId);
+          initial = this.#store.read();
+          record = check(initial);
+        }
+        decision = await this.#decision(initial, record);
+        expected = this.#policy ? this.#policyInputs(initial, taskId) : undefined;
+        try {
+          admitted = admit();
+          break;
+        } catch (error) {
+          if (!(error instanceof StalePolicyDecision)) throw error;
+          if (attempt >= this.#maxPolicyAttempts) throw new GuardError('POLICY_STATE_CHANGED');
+        }
+      }
+    } finally { endTurn?.(); }
     if (trace) trace.admitted = true;
     this.#record(trace, 'admit', 'ADMITTED');
     this.#active.set(actionId, { taskIds: admitted.taskIds, controller });

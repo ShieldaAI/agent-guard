@@ -84,6 +84,11 @@ The executor accepts up to eight unresolved policy checks per task family and 64
 instance. A saturated scope returns `POLICY_BUSY`. Each caller waits up to 30 seconds
 or its task deadline, whichever comes first. Policy code receives an abort signal.
 A callback that keeps running after cancellation occupies its slot until it settles.
+A decision becomes stale only if the task's own snapshot (counters or shared
+sensitivity) changed while the policy ran; writes by other tasks or tenants never
+invalidate it. A stale decision is evaluated again on fresh state. Re-evaluations on
+one task take turns, up to `maxPolicyAttempts` (1–16, default 5); after that the call
+fails with `POLICY_STATE_CHANGED`. Without a custom policy, no decision can be stale.
 
 ## Durable admission and recovery
 
