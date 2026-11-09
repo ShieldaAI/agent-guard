@@ -601,9 +601,10 @@ const observer = await startInventoryServer({
 The default `workerScheduling: 'default'` leaves native priorities unchanged.
 
 An identical poll (same ledger ciphertext, registry, tenant scope, profile and
-manifest) within `reuseUnchangedMs` (default 1,000 ms, 0 disables, at most 60,000)
+manifest) within `reuseUnchangedMs` (off by default; at most 60,000 ms)
 returns the previous observation, including its `snapshotId` and `generatedAt`,
-without running the projection. `host-mcp` polls are never reused, because live MCP
+without running the projection. A collector sees that as no new snapshot, so turn it
+on only when the consumer polls faster than the ledger changes and accepts repeats. `host-mcp` polls are never reused, because live MCP
 connection state is outside the ledger. On an unchanged 500-task ledger this cut a
 poll from about 4.2 ms to 0.25 ms. It does not help a ledger that changes between
 polls, such as the admission stress benchmark.

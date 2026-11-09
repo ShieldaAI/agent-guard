@@ -28,7 +28,8 @@ export interface InventoryServerOptions {
   /**
    * Reuse the previous observation for an identical poll (same ledger ciphertext, registry,
    * tenant scope, profile and manifest) within this many milliseconds. 0 disables reuse.
-   * Never applies to host-mcp, whose live connection state is outside the ledger. Default 1000.
+   * Never applies to host-mcp, whose live connection state is outside the ledger. Default 0 (off):
+   * a reused poll repeats the previous snapshotId, which a collector treats as no new snapshot.
    */
   reuseUnchangedMs?: number;
   port?: number;
@@ -239,7 +240,7 @@ export async function startInventoryServer(
   )
     return fail(CONFIG);
   const workerScheduling = config.workerScheduling === 'linux-background' ? 'linux-background' : 'default';
-  const reuseUnchangedMs = integer(config.reuseUnchangedMs, 1000, 0, 60_000);
+  const reuseUnchangedMs = integer(config.reuseUnchangedMs, 0, 0, 60_000);
   const port = integer(config.port, 0, 0, 65535);
   const requestLimit = integer(config.maxRequestBytes, 16 * 1024, 1, 64 * 1024);
   const responseLimit = integer(config.maxResponseBytes, 8 * 1024 * 1024, 128, 8 * 1024 * 1024);

@@ -51,7 +51,7 @@ release is claimed by this entry.
   transaction error instead of replacing it, and closes so an unknown transaction
   state is never read.
 - Perf (inventory observer, experimental): an identical poll within
-  `reuseUnchangedMs` (default 1,000 ms; 0 disables) returns the previous observation
+  `reuseUnchangedMs` (opt-in; off by default) returns the previous observation
   instead of re-projecting, keyed by the ledger ciphertext, registry, scope, profile
   and manifest. `host-mcp` is never reused. Unchanged 500-task polls drop from about
   4.2 ms to 0.25 ms; continuously written ledgers see no change.
