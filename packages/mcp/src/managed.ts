@@ -1,9 +1,13 @@
 import { randomUUID } from 'node:crypto';
+import { createRequire } from 'node:module';
 import { AgentGuard, containsLiteralSecret, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
 import { Client, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
 import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';
 import { mcpInventorySnapshot, opaqueTransportRef, type McpConnectionInventory, type McpConnectionState } from './inventory.js';
+
+/** Reported MCP client version: the installed package's own version, never a hand-maintained copy. */
+const PACKAGE_VERSION = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
 
 /** Supplied by a trusted executor after transport/credential authorization, never by a model. */
 export interface McpConnectionIdentity {
@@ -118,7 +122,7 @@ export class ManagedMcpConnection {
     this.#maxEntries = limit(options.limits?.maxEntries, 64, 256);
     this.#maxMessages = limit(options.limits?.maxMessages, 10_000, 100_000);
     if (this.#tools.length + this.#resources.length + this.#prompts.length > this.#maxEntries) throw new McpBoundaryError('REGISTRY_LIMIT');
-    this.#client = new Client({ name: 'shielda-agent-guard', version: '0.1.0' }, {
+    this.#client = new Client({ name: 'shielda-agent-guard', version: PACKAGE_VERSION }, {
       capabilities: {}, versionNegotiation: { mode: 'legacy' },
       listMaxPages: limit(options.limits?.maxPages, 4, 16),
       cachePartition: this.#session,

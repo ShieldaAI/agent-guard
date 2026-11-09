@@ -1,12 +1,10 @@
 # Releasing the npm packages
 
-**Current preparation: `0.1.0`, unpublished and blocked.** The
-[candidate notes](releases/0.1.0.md) and root [release state](../release-state.json)
-retain the required native failures, including all three +10 `b4bf2ce` runs,
-and the new, unqualified +5 own-field candidate. Prior passes do not qualify a
-changed implementation.
-Exact-candidate performance verification and final merged-candidate checks remain
-open. After the [9 November maintainer decision](releases/0.1.0.md#scope-decision-node-security-releases),
+**Current preparation: `0.1.0`, approved and not yet published.** The root
+[release state](../release-state.json) approves it, with three recorded scope
+decisions in the [release notes](releases/0.1.0.md). The notes keep every
+failed run. Merging the release stack and the exact merged-commit checks
+remain open. After the [9 November maintainer decision](releases/0.1.0.md#scope-decision-node-security-releases),
 the Node HIGH review and the move to fixed Node images are a post-release
 follow-up for 0.1.0, not publication gates. R5 under the
 [production acceptance policy](production-readiness.md#remaining-acceptance-and-operational-limits)

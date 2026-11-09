@@ -20,6 +20,10 @@ function fixture(t, options = {}) {
     [options.dependencyField ?? 'dependencies']: { '@fixture/core': options.dependencyVersion ?? version },
   });
   if (options.releaseState !== undefined) write('release-state.json', options.releaseState);
+  for (const path of options.files ?? []) {
+    mkdirSync(join(root, path, '..'), { recursive: true });
+    writeFileSync(join(root, path), 'evidence fixture\n');
+  }
   writeFileSync(join(root, '.gitignore'), 'artifacts/\n');
   const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git(['init', '--quiet']);
@@ -111,6 +115,27 @@ for (const [name, releaseState] of [
 }
 
 test('stable release accepts a committed version-matched approval with evidence and no blockers', t => {
-  const { root } = fixture(t, { version: '0.1.0', releaseState: approvedState });
+  const { root } = fixture(t, { version: '0.1.0', releaseState: approvedState, files: ['docs/releases/0.1.0.md'] });
   assert.doesNotThrow(() => validateRelease(root));
 });
+
+test('stable release rejects evidence that names a missing file', t => {
+  const { root } = fixture(t, { version: '0.1.0', releaseState: approvedState });
+  assert.throws(() => validateRelease(root), /evidence file "docs\/releases\/0.1.0.md" is not committed/);
+});
+
+test('stable release rejects evidence that is present but not committed', t => {
+  const { root } = fixture(t, { version: '0.1.0', releaseState: approvedState });
+  mkdirSync(join(root, '.git', 'info'), { recursive: true });
+  writeFileSync(join(root, '.git', 'info', 'exclude'), 'docs/\n');
+  mkdirSync(join(root, 'docs', 'releases'), { recursive: true });
+  writeFileSync(join(root, 'docs', 'releases', '0.1.0.md'), 'ignored, never committed\n');
+  assert.throws(() => validateRelease(root), /is not committed/);
+});
+
+for (const reference of ['/etc/passwd', '../outside.md', 'docs/../release-state.json', './docs/releases/0.1.0.md', 'docs//x.md', 'docs\\x.md', ' docs/releases/0.1.0.md']) {
+  test(`stable release rejects non-repository evidence path ${JSON.stringify(reference)}`, t => {
+    const { root } = fixture(t, { version: '0.1.0', releaseState: { ...approvedState, evidence: [reference] }, files: ['docs/releases/0.1.0.md'] });
+    assert.throws(() => validateRelease(root), /Stable release is blocked/);
+  });
+}

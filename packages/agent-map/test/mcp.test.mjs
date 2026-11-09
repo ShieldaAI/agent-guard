@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { Client, InMemoryTransport, StreamableHTTPClientTransport } from '@modelcontextprotocol/client';
+import { readFileSync } from 'node:fs';
 import { MAP_OPERATIONS, MapService, createMapMcpServer, createMapToken, startMapServer } from '../dist/index.js';
+
+const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
 
 const scope = { subject: 'reference-client', companyId: 'acme', tenantIds: ['one'], teamIds: ['blue'], allTeams: false };
 test('official MCP client receives the same scoped evidence as HTTP', async t => {
@@ -41,6 +44,7 @@ test('read-only MCP factory binds a detached scope and sanitizes backend excepti
   const [a, b] = InMemoryTransport.createLinkedPair();
   t.after(async () => { await client.close(); await server.close(); });
   await server.connect(b); await client.connect(a);
+  assert.deepEqual(client.getServerVersion(), { name: 'agent-guard-reference', version: packageVersion });
   const result = await client.callTool({ name: 'get_inventory_health', arguments: {} });
   assert.equal(result.isError, true); assert.equal(result.content[0].text, '{"error":"MAP_UNAVAILABLE"}');
   assert.deepEqual(JSON.parse(JSON.stringify(received)), [scope]);
