@@ -12,25 +12,47 @@ import { validateCertificate, validateTls } from '../tls-policy.mjs';
 import { createTestIdentityProvider } from '../../../packages/agent-map/test/helpers/oidc-provider.mjs';
 
 test('served TLS binds the public hostname, matching private key and exact validity window', async t => {
-  const provider = await createTestIdentityProvider(t), cert = new X509Certificate(provider.cert);
-  const from = Date.parse(cert.validFrom), until = Date.parse(cert.validTo), tls = { key: provider.key, cert: provider.cert };
+  const provider = await createTestIdentityProvider(t),
+    cert = new X509Certificate(provider.cert);
+  const from = Date.parse(cert.validFrom),
+    until = Date.parse(cert.validTo),
+    tls = { key: provider.key, cert: provider.cert };
   assert.deepEqual(validateTls(tls, 'https://localhost:8443', from), { expiresAt: until });
   assert.equal(validateCertificate(provider.cert, 'https://127.0.0.1', until - 1).expiresAt, until);
-  for (const now of [from - 1, until, until + 1, Infinity, NaN]) assert.throws(() => validateTls(tls, 'https://localhost', now), { code: 'TLS_CERTIFICATE_INVALID' });
+  for (const now of [from - 1, until, until + 1, Infinity, NaN])
+    assert.throws(() => validateTls(tls, 'https://localhost', now), { code: 'TLS_CERTIFICATE_INVALID' });
   assert.throws(() => validateTls(tls, 'https://foreign-company.invalid'), { code: 'TLS_CERTIFICATE_INVALID' });
-  const wrongKey = generateKeyPairSync('ec', { namedCurve: 'prime256v1', privateKeyEncoding: { type: 'pkcs8', format: 'pem' }, publicKeyEncoding: { type: 'spki', format: 'pem' } }).privateKey;
+  const wrongKey = generateKeyPairSync('ec', {
+    namedCurve: 'prime256v1',
+    privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
+    publicKeyEncoding: { type: 'spki', format: 'pem' },
+  }).privateKey;
   assert.throws(() => validateTls({ ...tls, key: wrongKey }, 'https://localhost'), { code: 'TLS_CERTIFICATE_INVALID' });
-  for (const origin of ['http://localhost', 'https://localhost/path', 'https://user:secret@localhost', 'broken']) assert.throws(() => validateTls(tls, origin), { code: 'PUBLIC_ORIGIN_INVALID' });
+  for (const origin of ['http://localhost', 'https://localhost/path', 'https://user:secret@localhost', 'broken'])
+    assert.throws(() => validateTls(tls, origin), { code: 'PUBLIC_ORIGIN_INVALID' });
 });
 
 test('the actual local health probe verifies hostname in addition to the pinned certificate', async t => {
-  const provider = await createTestIdentityProvider(t), directory = mkdtempSync(join(tmpdir(), 'ops-health-'));
+  const provider = await createTestIdentityProvider(t),
+    directory = mkdtempSync(join(tmpdir(), 'ops-health-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   let probes = 0;
-  const server = createServer({ cert: provider.cert, key: provider.key }, (_req, res) => { probes++; res.writeHead(200); res.end('{"status":"ok"}'); });
+  const server = createServer({ cert: provider.cert, key: provider.key }, (_req, res) => {
+    probes++;
+    res.writeHead(200);
+    res.end('{"status":"ok"}');
+  });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve); }));
-  const port = server.address().port, certFile = join(directory, 'cert.pem'), configFile = join(directory, 'config.json');
+  t.after(
+    () =>
+      new Promise(resolve => {
+        server.closeAllConnections();
+        server.close(resolve);
+      }),
+  );
+  const port = server.address().port,
+    certFile = join(directory, 'cert.pem'),
+    configFile = join(directory, 'config.json');
   writeFileSync(certFile, provider.cert);
   const config = { port, publicOrigin: `https://localhost:${port}`, tls: { certFile } };
   const probe = fileURLToPath(new URL('../../../deployment/production/healthcheck.mjs', import.meta.url));

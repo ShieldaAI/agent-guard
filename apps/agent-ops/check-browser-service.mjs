@@ -7,7 +7,10 @@ import { join, resolve } from 'node:path';
 import { httpsSetup } from './test/helpers.mjs';
 import { openMaintenance } from './runtime.mjs';
 
-if (!process.argv[2]) throw new Error('Usage: node apps/agent-ops/check-browser-service.mjs <browser-tools-directory> [screenshot-directory] [chromium|firefox|webkit]');
+if (!process.argv[2])
+  throw new Error(
+    'Usage: node apps/agent-ops/check-browser-service.mjs <browser-tools-directory> [screenshot-directory] [chromium|firefox|webkit]',
+  );
 const requireTools = createRequire(resolve(process.argv[2], 'package.json'));
 const browserEngine = process.argv[4] ?? 'chromium';
 if (!['chromium', 'firefox', 'webkit'].includes(browserEngine)) throw new Error('Unsupported browser engine');
@@ -16,12 +19,19 @@ const axe = await readFile(requireTools.resolve('axe-core/axe.min.js'), 'utf8');
 const screenshotDirectory = process.argv[3] ? resolve(process.argv[3]) : null;
 if (screenshotDirectory) await mkdir(screenshotDirectory, { recursive: true, mode: 0o700 });
 const cleanup = [];
-let browser, page, loseCommitResponse = false;
+let browser,
+  page,
+  loseCommitResponse = false;
 try {
-  const fixture = await httpsSetup({ after: callback => cleanup.push(callback) }, {
-    afterCommit: () => { if (loseCommitResponse) throw new Error('Synthetic response loss after durable commit'); },
-    server: { company: { id: 'acme', name: 'Acme operations' } },
-  });
+  const fixture = await httpsSetup(
+    { after: callback => cleanup.push(callback) },
+    {
+      afterCommit: () => {
+        if (loseCommitResponse) throw new Error('Synthetic response loss after durable commit');
+      },
+      server: { company: { id: 'acme', name: 'Acme operations' } },
+    },
+  );
   fixture.provider.controls.authorizeOverrides = { subject: 'owner' };
   browser = await browserType.launch();
   // Browser-only exception for the disposable self-signed fixture certificate.
@@ -34,17 +44,24 @@ try {
     window.setInterval = (callback, delay, ...args) => {
       if (delay !== 1000) return original(callback, delay, ...args);
       window.runOperatorExpiryTick = () => callback(...args);
-      return original(() => { if (!window.holdOperatorExpiryTick) callback(...args); }, delay);
+      return original(() => {
+        if (!window.holdOperatorExpiryTick) callback(...args);
+      }, delay);
     };
   });
-  const pageErrors = [], scanned = [];
+  const pageErrors = [],
+    scanned = [];
   page.on('pageerror', error => pageErrors.push(error.message));
   const button = name => page.getByRole('button', { name, exact: true });
   const scan = async name => {
     await page.evaluate(axe);
-    const violations = await page.evaluate(async () => (await window.axe.run({
-      runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] },
-    })).violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) })));
+    const violations = await page.evaluate(async () =>
+      (
+        await window.axe.run({
+          runOnly: { type: 'tag', values: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'] },
+        })
+      ).violations.map(item => ({ id: item.id, targets: item.nodes.map(node => node.target) })),
+    );
     assert.deepEqual(violations, [], name);
     scanned.push(name);
     if (screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, `${name}.png`), fullPage: true });
@@ -63,8 +80,13 @@ try {
   await page.getByText(`${fixture.origin}/auth/callback`, { exact: true }).waitFor();
   const keyRow = page.getByRole('row', { name: 'Retained keys 1 4', exact: true });
   await keyRow.waitFor();
-  assert.equal((await page.getByRole('row', { name: /^Executor ledger / }).innerText()).includes('Not reported'), false);
-  await page.getByRole('row', { name: 'History segments (committed + reserved) 0 10,000 · fixed', exact: true }).waitFor();
+  assert.equal(
+    (await page.getByRole('row', { name: /^Executor ledger / }).innerText()).includes('Not reported'),
+    false,
+  );
+  await page
+    .getByRole('row', { name: 'History segments (committed + reserved) 0 10,000 · fixed', exact: true })
+    .waitFor();
   await page.getByRole('heading', { name: 'Company acceptance checks', exact: true }).waitFor();
   await page.getByText('Current-state recovery enrolled', { exact: true }).waitFor();
   await page.getByText('Enrollment checked at service startup', { exact: true }).waitFor();
@@ -79,9 +101,15 @@ try {
   await page.getByText(first.digest, { exact: true }).waitFor();
   await scan('service-review');
   // An actual browser-clock expiry must remove approval while preserving held navigation.
-  await page.evaluate(() => { window.holdOperatorExpiryTick = true; window.runOperatorExpiryTick(); });
+  await page.evaluate(() => {
+    window.holdOperatorExpiryTick = true;
+    window.runOperatorExpiryTick();
+  });
   const reviewSetupButton = await page.locator('#nav-setup').boundingBox();
-  await page.mouse.move(reviewSetupButton.x + reviewSetupButton.width / 2, reviewSetupButton.y + reviewSetupButton.height / 2);
+  await page.mouse.move(
+    reviewSetupButton.x + reviewSetupButton.width / 2,
+    reviewSetupButton.y + reviewSetupButton.height / 2,
+  );
   await page.mouse.down();
   await page.evaluate(expiresAt => {
     window.originalOperatorDateNow = Date.now;
@@ -92,7 +120,10 @@ try {
   await page.mouse.up();
   await page.getByRole('heading', { name: 'Setup', exact: true }).waitFor();
   assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 1);
-  await page.evaluate(() => { Date.now = window.originalOperatorDateNow; window.holdOperatorExpiryTick = false; });
+  await page.evaluate(() => {
+    Date.now = window.originalOperatorDateNow;
+    window.holdOperatorExpiryTick = false;
+  });
   await page.locator('#nav-requests').click();
   await button('Approve and submit once').waitFor();
   await button('Approve and submit once').focus();
@@ -122,7 +153,10 @@ try {
   await button('Check backend receipt').click();
   await page.getByRole('region', { name: 'Backend receipt' }).waitFor();
   assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 3);
-  assert.equal(fixture.workflow.requests('acme').requests.find(request => request.id === unknown.id).state, 'completed');
+  assert.equal(
+    fixture.workflow.requests('acme').requests.find(request => request.id === unknown.id).state,
+    'completed',
+  );
 
   await page.locator('#nav-maintenance').click();
   await button('Refresh').click();
@@ -143,8 +177,10 @@ try {
   await scan('service-activity-snapshot');
   const downloaded = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download activity JSON', exact: true }).click();
-  const activityText = await readFile(await (await downloaded).path(), 'utf8'), activity = JSON.parse(activityText);
-  assert.equal(activity.tenantId, 'acme'); assert.equal(activity.coverage.completeHistory, false);
+  const activityText = await readFile(await (await downloaded).path(), 'utf8'),
+    activity = JSON.parse(activityText);
+  assert.equal(activity.tenantId, 'acme');
+  assert.equal(activity.coverage.completeHistory, false);
   assert.ok(activity.events.some(event => event.event === 'DENIED'));
   assert.ok(activity.events.some(event => event.event === 'TICKET_COMMITTED'));
   assert.equal(activityText.includes('Customer delivery'), false);
@@ -159,8 +195,10 @@ try {
   await scan('service-mobile-maintenance');
   await button('Sign out').click();
   await button('Sign in with company account').waitFor();
-  const emptyFixture = await httpsSetup({ after: callback => cleanup.push(callback) }, { tickets: [],
-    server: { company: { id: 'acme', name: 'Empty company' } } });
+  const emptyFixture = await httpsSetup(
+    { after: callback => cleanup.push(callback) },
+    { tickets: [], server: { company: { id: 'acme', name: 'Empty company' } } },
+  );
   emptyFixture.provider.controls.authorizeOverrides = { subject: 'owner' };
   await page.setViewportSize({ width: 1365, height: 950 });
   await page.goto(emptyFixture.origin);
@@ -175,15 +213,27 @@ try {
   await scan('service-empty-onboarding');
   await button('Sign out').click();
   await button('Sign in with company account').waitFor();
-  const pagedFixture = await httpsSetup({ after: callback => cleanup.push(callback) }, {
-    limits: { maxTickets: 1000 }, tickets: [...Array.from({ length: 505 }, (_, index) => ({
-      id: `C-${String(index).padStart(3, '0')}`, tenantId: 'acme', title: `Company record ${index}`, status: 'open',
-    })), { id: 'foreign-only', tenantId: 'other', title: 'Foreign company record', status: 'open' }],
-    server: { company: { id: 'acme', name: 'Company with retained data' } },
-  });
+  const pagedFixture = await httpsSetup(
+    { after: callback => cleanup.push(callback) },
+    {
+      limits: { maxTickets: 1000 },
+      tickets: [
+        ...Array.from({ length: 505 }, (_, index) => ({
+          id: `C-${String(index).padStart(3, '0')}`,
+          tenantId: 'acme',
+          title: `Company record ${index}`,
+          status: 'open',
+        })),
+        { id: 'foreign-only', tenantId: 'other', title: 'Foreign company record', status: 'open' },
+      ],
+      server: { company: { id: 'acme', name: 'Company with retained data' } },
+    },
+  );
   pagedFixture.provider.controls.authorizeOverrides = { subject: 'owner' };
   // Hold the first tick in this fresh document so the unchanged-state race is deterministic.
-  await page.addInitScript(() => { window.holdOperatorExpiryTick = true; });
+  await page.addInitScript(() => {
+    window.holdOperatorExpiryTick = true;
+  });
   await page.goto(pagedFixture.origin);
   await button('Sign in with company account').click();
   await page.locator('#nav-tickets').click();
@@ -195,7 +245,10 @@ try {
   assert.equal(await page.getByText('Foreign company record', { exact: true }).count(), 0);
   await scan('service-later-ticket-page');
   const pagedSetupButton = await page.locator('#nav-setup').boundingBox();
-  await page.mouse.move(pagedSetupButton.x + pagedSetupButton.width / 2, pagedSetupButton.y + pagedSetupButton.height / 2);
+  await page.mouse.move(
+    pagedSetupButton.x + pagedSetupButton.width / 2,
+    pagedSetupButton.y + pagedSetupButton.height / 2,
+  );
   await page.mouse.down();
   await page.evaluate(() => window.runOperatorExpiryTick());
   await page.mouse.up();
@@ -225,19 +278,54 @@ try {
       assert.equal(store.read().schema, 3);
       assert.equal(store.recoveryMirrored(), true);
     }
-  } finally { checkedStores.close(); }
-  const report = { kind: 'disposable-real-operator-service', node: process.version, browserEngine, browserVersion: browser.version(),
-    axe: requireTools('axe-core').version, scanned, mobileViews: 5, oidcExchange: 'local fixture',
-    storage: 'real encrypted and witnessed SQLite', recoveryMirrors: 'schema3 exact-current, verified after writes', approvals: 2, backendWrites: 2, denials: 1,
-    receiptOnlyReconciliations: 1, archives: 1, pagedTenantTickets: 505, emptySeed: true, automaticResubmissions: 0, pageErrors: 0,
-    unchangedExpiryTickPreservesNavigation: true, expiryRemovesApprovalDuringNavigation: true };
-  if (screenshotDirectory) await writeFile(join(screenshotDirectory, 'service-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
+  } finally {
+    checkedStores.close();
+  }
+  const report = {
+    kind: 'disposable-real-operator-service',
+    node: process.version,
+    browserEngine,
+    browserVersion: browser.version(),
+    axe: requireTools('axe-core').version,
+    scanned,
+    mobileViews: 5,
+    oidcExchange: 'local fixture',
+    storage: 'real encrypted and witnessed SQLite',
+    recoveryMirrors: 'schema3 exact-current, verified after writes',
+    approvals: 2,
+    backendWrites: 2,
+    denials: 1,
+    receiptOnlyReconciliations: 1,
+    archives: 1,
+    pagedTenantTickets: 505,
+    emptySeed: true,
+    automaticResubmissions: 0,
+    pageErrors: 0,
+    unchangedExpiryTickPreservesNavigation: true,
+    expiryRemovesApprovalDuringNavigation: true,
+  };
+  if (screenshotDirectory)
+    await writeFile(join(screenshotDirectory, 'service-browser-results.json'), JSON.stringify(report, null, 2) + '\n');
   console.log(JSON.stringify(report));
 } catch (error) {
-  if (page && screenshotDirectory) await page.screenshot({ path: join(screenshotDirectory, 'service-check-failed.png'), fullPage: true }).catch(() => {});
-  if (page) console.error((await page.locator('body').innerText().catch(() => 'Browser document unavailable')).slice(0, 3000));
+  if (page && screenshotDirectory)
+    await page
+      .screenshot({ path: join(screenshotDirectory, 'service-check-failed.png'), fullPage: true })
+      .catch(() => {});
+  if (page)
+    console.error(
+      (
+        await page
+          .locator('body')
+          .innerText()
+          .catch(() => 'Browser document unavailable')
+      ).slice(0, 3000),
+    );
   throw Error(String(error.message).replace(/https?:\/\/[^\s"]+/g, '[fixture URL]'));
 } finally {
-  try { await browser?.close(); }
-  finally { for (const callback of cleanup.reverse()) await callback(); }
+  try {
+    await browser?.close();
+  } finally {
+    for (const callback of cleanup.reverse()) await callback();
+  }
 }
