@@ -84,6 +84,12 @@ export class DurableExecutor {
   readonly #tools = new Map<string, Registered>();
   readonly #active = new Map<string, { taskIds: string[]; controller: AbortController }>();
   readonly #policyAdmission = new PolicyAdmission();
+  /**
+   * Token hash -> task ID, maintained after each committed task creation. This process owns
+   * the ledger exclusively, so unknown tokens are refused without a ledger read. An entry can
+   * go stale (an archived task); authentication then re-verifies against the ledger.
+   */
+  readonly #tokenIndex = new Map<string, string>();
   #policy: Policy | undefined;
   #observedClock = 0;
 
@@ -155,6 +161,7 @@ export class DurableExecutor {
       return { source: this.#inventorySource, registrations: captureInventoryRegistrations(this.#tools, this.#store.maxBytes * 4),
         referenceKey: this.#inventoryReferenceKey ? new Uint8Array(this.#inventoryReferenceKey) : undefined };
     });
+    for (const task of Object.values(this.#store.read().tasks)) this.#tokenIndex.set(task.tokenHash, task.options.id);
     this.#lifecycle = new TaskFamilyLifecycle(this.#store, {
       now: state => this.#now(state),
       activeTaskIds: () => new Set([...this.#active.values()].flatMap(active => active.taskIds)),
@@ -434,14 +441,21 @@ export class DurableExecutor {
         ...(provenance.sourceTaskId === undefined ? {} : { sourceTaskId: provenance.sourceTaskId }) };
       this.#audit(state, now, 'TASK_CREATED', options.id);
     });
+    this.#tokenIndex.set(hash(token), options.id);
     return Object.freeze({ taskId: options.id, token });
   }
   authenticate(token: string): string {
-    if (typeof token !== 'string' || token.length > 256) throw new ExecutorError('UNAUTHENTICATED');
-    const candidate = Buffer.from(hash(token), 'hex');
+    // Issued tokens are exactly 32 random bytes in base64url; anything else never reaches the ledger.
+    if (typeof token !== 'string' || !/^[A-Za-z0-9_-]{43}$/.test(token)) throw new ExecutorError('UNAUTHENTICATED');
+    const tokenHash = hash(token);
+    const taskId = this.#tokenIndex.get(tokenHash);
+    if (taskId === undefined) throw new ExecutorError('UNAUTHENTICATED');
     const state = this.#store.read();
-    const task = Object.values(state.tasks).find(task => timingSafeEqual(candidate, Buffer.from(task.tokenHash, 'hex')));
-    if (!task) throw new ExecutorError('UNAUTHENTICATED');
+    const task = own(state.tasks, taskId);
+    if (!task || !timingSafeEqual(Buffer.from(tokenHash, 'hex'), Buffer.from(task.tokenHash, 'hex'))) {
+      if (!task) this.#tokenIndex.delete(tokenHash);
+      throw new ExecutorError('UNAUTHENTICATED');
+    }
     if (this.#provenance(state, task.options.id).some(task => task.revoked)) throw new ExecutorError('UNAUTHENTICATED');
     const now = this.#now(state);
     for (const ancestor of this.#lineage(state, task.options.id)) {

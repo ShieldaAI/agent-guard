@@ -75,6 +75,7 @@ The task server can also return these executor codes.
 | `MEMORY_VERSION_CHANGED` | no | 409 |
 | `RECONCILIATION_INVALID` | no | 409 |
 | `OPERATION_FAILED` | no | 503 |
+| `REQUEST_RATE_LIMITED` | yes | 429 |
 
 ## MCP boundary codes
 

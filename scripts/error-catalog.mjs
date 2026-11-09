@@ -39,7 +39,8 @@ export function renderErrorCatalog() {
     '| --- | --- | --- |',
     ...['UNAUTHENTICATED', 'REQUEST_DENIED', 'REQUEST_INVALID', 'REQUEST_TOO_LARGE', 'REQUEST_TIMEOUT', 'CAPACITY_EXCEEDED',
       'FAMILY_PENDING_LIMIT', 'FAMILY_PENDING_BYTES_LIMIT', 'FAMILY_TASK_LIMIT', 'FAMILY_TASK_BYTES_LIMIT', 'FAMILY_MEMORY_LIMIT',
-      'MEMORY_LIMIT', 'MEMORY_UNAVAILABLE', 'MEMORY_VERSION_CHANGED', 'RECONCILIATION_INVALID', 'OPERATION_FAILED']
+      'MEMORY_LIMIT', 'MEMORY_UNAVAILABLE', 'MEMORY_VERSION_CHANGED', 'RECONCILIATION_INVALID', 'OPERATION_FAILED',
+      'REQUEST_RATE_LIMITED']
       .map(code => `| \`${code}\` | ${executorResponseRetryable(code) ? 'yes' : 'no'} | ${executorResponseStatus(code)} |`),
     '',
     '## MCP boundary codes',

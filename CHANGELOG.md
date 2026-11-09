@@ -7,6 +7,11 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix (executor task server): bearer authentication uses an in-memory token index, so
+  malformed and unknown tokens are refused without decrypting the ledger, and a valid
+  one is found in O(1) instead of a scan over every task. The server adds
+  per-credential and server-wide request rates, an in-flight request cap and a
+  connection cap (`REQUEST_RATE_LIMITED`, 429).
 - Fix: scenarios recognize rejections with the new `isGuardError()` brand check
   instead of `instanceof GuardError`, so a guard from a second installed copy of core
   passes conformance. `ConformanceReport.catalogVersion` is typed as `string`.

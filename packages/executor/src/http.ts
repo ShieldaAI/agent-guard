@@ -17,7 +17,17 @@ export interface ExecutorServerOptions {
   port?: number;
   maxRequestBytes?: number;
   requestTimeoutMs?: number;
+  /** Open TCP connections. Integer 1-4096, default 64. */
+  maxConnections?: number;
+  /** Requests being handled at once; more get REQUEST_RATE_LIMITED. Integer 1-1024, default 32. */
+  maxActiveRequests?: number;
+  /** Requests per minute per bearer credential (valid or not). Integer 1-1,000,000, default 600. */
+  requestsPerMinutePerCredential?: number;
+  /** Requests per minute across the server. Integer 1-1,000,000, default 6,000. */
+  requestsPerMinute?: number;
 }
+const WINDOW_MS = 60_000;
+const MAX_TRACKED_CREDENTIALS = 4096;
 function object(value: unknown): Record<string, Json> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new ExecutorError('REQUEST_INVALID');
   return value as Record<string, Json>;
@@ -50,18 +60,48 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
   const limit = options.maxRequestBytes ?? 256 * 1024;
   const timeout = options.requestTimeoutMs ?? 10_000;
   if (!Number.isSafeInteger(limit) || limit < 1 || !Number.isSafeInteger(timeout) || timeout < 1) throw new ExecutorError('SERVER_CONFIG_INVALID');
+  const bounded = (value: number | undefined, fallback: number, max: number): number => {
+    const selected = value ?? fallback;
+    if (!Number.isSafeInteger(selected) || selected < 1 || selected > max) throw new ExecutorError('SERVER_CONFIG_INVALID');
+    return selected;
+  };
+  const maxConnections = bounded(options.maxConnections, 64, 4096);
+  const maxActive = bounded(options.maxActiveRequests, 32, 1024);
+  const perCredential = bounded(options.requestsPerMinutePerCredential, 600, 1_000_000);
+  const perServer = bounded(options.requestsPerMinute, 6000, 1_000_000);
+  // Fixed one-minute windows. A full credential table drops its oldest window rather than refusing everyone.
+  const windows = new Map<string, { started: number; count: number }>();
+  let global = { started: performance.now(), count: 0 };
+  let active = 0;
+  const admit = (credential: Buffer): void => {
+    const now = performance.now();
+    if (now - global.started >= WINDOW_MS) global = { started: now, count: 0 };
+    if (++global.count > perServer) throw new ExecutorError('REQUEST_RATE_LIMITED');
+    const key = credential.toString('hex');
+    let window = windows.get(key);
+    if (!window || now - window.started >= WINDOW_MS) {
+      windows.delete(key);
+      if (windows.size >= MAX_TRACKED_CREDENTIALS) windows.delete(windows.keys().next().value!);
+      windows.set(key, window = { started: now, count: 0 });
+    }
+    if (++window.count > perCredential) throw new ExecutorError('REQUEST_RATE_LIMITED');
+  };
   const executor = options.executor;
   const server = createServer({ maxHeaderSize: 8192, requestTimeout: timeout, headersTimeout: timeout }, async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
+    let counted = false;
     try {
+      if (active >= maxActive) throw new ExecutorError('REQUEST_RATE_LIMITED');
+      active++; counted = true;
       if (req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined || req.method !== 'POST') throw new ExecutorError('REQUEST_DENIED');
       const route = req.url;
       if (!route || !/^\/v1\/(?:task|admin)\/[a-z-]+$/.test(route)) throw new ExecutorError('REQUEST_DENIED');
       const auth = req.headers.authorization;
       if (!auth?.startsWith('Bearer ') || auth.length > 270 || req.headersDistinct.authorization?.length !== 1) throw new ExecutorError('UNAUTHENTICATED');
       const token = auth.slice(7);
+      admit(digest(token));
       const admin = route.startsWith('/v1/admin/');
       const taskId = admin ? undefined : executor.authenticate(token);
       if (admin && !timingSafeEqual(digest(token), adminHash)) throw new ExecutorError('UNAUTHENTICATED');
@@ -114,8 +154,9 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
     } catch (error) {
       const code = executorErrorResponse(error);
       res.writeHead(executorResponseStatus(code)); res.end(JSON.stringify({ error: code, retryable: executorResponseRetryable(code) }));
-    }
+    } finally { if (counted) active--; }
   });
+  server.maxConnections = maxConnections;
   server.on('upgrade', (_request, socket) => { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); });
   await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(options.port ?? 0, '127.0.0.1', () => { server.off('error', reject); resolve(); }); });
   const address = server.address();

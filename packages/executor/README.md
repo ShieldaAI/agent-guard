@@ -76,7 +76,13 @@ unauthenticated, 403 authority denial, 404 unknown action, 409 state change or u
 action, 429 capacity, 503 store, policy or tool failure, and 400 for malformed
 requests. The JSON body is `{ "error": code, "retryable": boolean }`; `retryable` is
 true only when repeating the same request later cannot repeat an effect.
-`ExecutorClient` errors carry the same `code` and `retryable`. See the
+`ExecutorClient` errors carry the same `code` and `retryable`.
+The task server refuses malformed or unknown bearer tokens from an in-memory index
+before reading the ledger. It limits requests per credential (default 600 a minute)
+and across the server (6,000 a minute), requests in flight (32) and open
+connections (64); over a limit it answers `REQUEST_RATE_LIMITED` (429, retryable).
+Configure these with `requestsPerMinutePerCredential`, `requestsPerMinute`,
+`maxActiveRequests` and `maxConnections`. See the
 [error catalog](../../docs/errors.md). Backend exception text stays on the executor side.
 When the reviewer refuses a prepared action, the trusted host calls
 `executor.cancel(taskId, action.id)` to retire it and prevent dispatch with an
