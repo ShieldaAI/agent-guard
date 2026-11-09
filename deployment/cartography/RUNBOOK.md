@@ -181,6 +181,11 @@ volumes. Local measurements do not establish a completed hosted CI run.
 
 ## Constrained observer qualification
 
+**Not a 0.1.0 gate.** On 9 November 2026 this profile was removed from the 0.1.0
+release gates. It remains unqualified with unchanged limits; see the
+[scope decision](../../docs/releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
+The procedure below is retained for a later release that requalifies it.
+
 The configured acceptance profile measures the uninstrumented full admission
 workload on native Linux/cgroup v2 with one logical CPU, a one-CPU bandwidth quota,
 512 MiB memory, no extra swap, 128 PIDs, a 100 ms CPU period and zero burst.
@@ -305,6 +310,14 @@ immediate first poll, cadence, resource limits and acceptance gates are unchange
 and no real-time guarantee or change to every SDK embedding is implied.
 
 ### Matching the observer-owning service
+
+**0.1.0 does not support this single-CPU configuration with 250 ms polling.**
+The profile below is unqualified. For 0.1.0, do not confine the observer-owning
+service to one logical CPU while polling at 250 ms; keep Cartography's default
+300-second collection interval. The 0.1.0 admission evidence comes from the
+ordinary full graph/admission run, which does not apply these CPU limits. Treat the
+fields below as the target for a later qualified release, not a supported 0.1.0
+configuration.
 
 To match this profile at company rollout, merge these **resource fields only**
 into the company's existing service that owns the executor and its inventory

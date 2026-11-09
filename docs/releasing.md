@@ -58,16 +58,18 @@ attempts and keep diagnostic/smoke evidence separate from acceptance.
    commands](../deployment/production/README.md#repeatable-deployment-gate).
    Record actual runner/runtime versions; a major-only `setup-node` selection is
    not an exact runtime identity. Preserve the real alpha.3 upgrade fixture.
-4. Require the uninstrumented full graph/admission acceptance and the additional
-   native Linux/cgroup v2 observer profile: one selected logical CPU, one-CPU
-   bandwidth quota, 512 MiB memory and no extra swap. Keep ABBA order, 100 tasks/1,000 grants,
-   250 measured plus 50 warmup calls per phase, 250 ms serial polling, all 1,200
-   effects, zero failed/skipped polls, cleanup and the 10% p95 bound unchanged.
-   For the changed +5 own-field candidate, declare **three native runs (automatic plus two manual)
-   and one ordinary full graph/admission run before execution; all four must pass**.
-   This count is declared before results, not a retry allowance. Retain every outcome.
-   Both admission qualifications must explicitly select `linux-background` worker
-   scheduling and verify the bounded before/after policy evidence. The separate
+4. Require the uninstrumented full graph/admission acceptance. Keep ABBA order,
+   100 tasks/1,000 grants, 250 measured plus 50 warmup calls per phase, 250 ms
+   serial polling, all 1,200 effects, zero failed/skipped polls, cleanup and the
+   10% p95 bound unchanged. Declare **one ordinary full graph/admission run on the
+   final candidate before execution; it must pass**. This is not a retry allowance.
+   Retain every outcome. The run must explicitly select `linux-background` worker
+   scheduling and verify the bounded before/after policy evidence.
+   **The native Linux/cgroup v2 single-logical-CPU observer profile is not a 0.1.0
+   gate** after the [9 November scope decision](releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
+   It remains unqualified with unchanged limits. Any run of it is retained as
+   evidence but neither blocks nor qualifies 0.1.0. The instructions below remain
+   for a later release that requalifies it. The separate
    graph-load/host-MCP fixture retains its default worker policy.
    Retain every measured sample and actual cgroup/resource settings. Instrumented
    diagnostics and smoke cannot qualify either profile. The existing full hosted

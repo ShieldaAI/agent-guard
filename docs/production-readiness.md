@@ -5,7 +5,12 @@ The subsequent [agent cartography expansion](agent-cartography-review.md) has it
 own contract and verification. Earlier source fingerprints and scores do not
 automatically certify that expansion or remove the release hold below.
 
-The subsequent 0.1.0 observer acceptance profile requires native Linux/cgroup v2,
+**Scope change, 9 November 2026:** the constrained observer profile described
+below is no longer a 0.1.0 release gate. It remains unqualified with unchanged
+limits, and 0.1.0 does not support a single-logical-CPU observer-owning service
+with 250 ms polling. See the [scope decision](releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
+
+The constrained observer acceptance profile requires native Linux/cgroup v2,
 one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
 burst, 512 MiB memory, no extra swap and 128 PIDs. The new configured candidate
 also explicitly selects `workerScheduling: 'linux-background'`: only the observer

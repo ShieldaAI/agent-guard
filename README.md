@@ -3,7 +3,9 @@
 Authorize AI agent tool calls in TypeScript with scoped resources, tenant checks, approvals and budgets. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
 
 **Status: unpublished 0.1.0 candidate; production release held.** The current
-Node HIGH security prealert and admission-performance acceptance remain open.
+Node HIGH security prealert remains open, and final admission acceptance must be
+repeated on fixed Node images. The single-CPU 250 ms observer stress profile is
+unqualified and outside 0.1.0 scope.
 The [candidate release notes](docs/releases/0.1.0.md) track these gates; changing
 the version does not clear them. The latest published version is the experimental
 `0.1.0-alpha.3` release. The packages use the npm scope `@shieldaai`. The core has
@@ -68,8 +70,9 @@ The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic
 observer-to-viewer deployment, private backups, fresh-graph recovery, operational
 difference reports and reproducible performance/rollback checks.
 The isolated pilot has retained recovery and graph-load evidence. The current
-cartography candidate's uninstrumented admission-performance gate failed; a later
-instrumented diagnostic is not acceptance evidence. The runbook and candidate
+cartography candidate passed the ordinary uninstrumented admission gate; its
+single-CPU observer stress profile failed, remains unqualified and is outside
+0.1.0 scope. Instrumented diagnostics are not acceptance evidence. The runbook and candidate
 release notes retain these results and the remaining company rollout gates.
 
 The [source lifecycle command](deployment/cartography/SOURCE-LIFECYCLE.md) explicitly

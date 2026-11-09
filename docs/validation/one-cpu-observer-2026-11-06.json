@@ -2,6 +2,7 @@
   "schemaVersion": 1,
   "date": "2026-11-06",
   "status": "bfe_declared_set_failed_unqualified_node_hold",
+  "releaseScope": "Maintainer decision 2026-11-09: this profile is not a 0.1.0 release gate. It remains unqualified; limits, gates and all retained results are unchanged. See docs/releases/0.1.0.md#scope-decision-single-cpu-observer-profile.",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
