@@ -1,7 +1,7 @@
-import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
-import { userInfo } from "node:os";
-import { win32 } from "node:path";
+import { spawnSync } from 'node:child_process';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { userInfo } from 'node:os';
+import { win32 } from 'node:path';
 
 // Win32 path inspection followed by a pathname open cannot fence junction or rename
 // races. Open every component by its parent's HANDLE, retain the entire chain and
@@ -181,19 +181,24 @@ exit 0
 } catch { exit 1 }
 `;
 
-const encodedProgram = Buffer.from(program, "utf16le").toString("base64");
+const encodedProgram = Buffer.from(program, 'utf16le').toString('base64');
 
-type Failure = "selection" | "startup" | "timeout" | "spawn" | "exit" | "protocol" | "cleanup";
-type Stage = "not-started" | "compiling" | "copying" | "complete";
+type Failure = 'selection' | 'startup' | 'timeout' | 'spawn' | 'exit' | 'protocol' | 'cleanup';
+type Stage = 'not-started' | 'compiling' | 'copying' | 'complete';
 
 class WorkspaceInputError extends Error {
-  readonly code = "WORKSPACE_INPUT_UNAVAILABLE";
-  constructor(readonly reason: Failure, readonly stage: Stage) {
-    super(`Workspace input unavailable or unsafe: symlinks, reparse points, hard links and oversized files are refused (${reason}; ${stage})`);
+  readonly code = 'WORKSPACE_INPUT_UNAVAILABLE';
+  constructor(
+    readonly reason: Failure,
+    readonly stage: Stage,
+  ) {
+    super(
+      `Workspace input unavailable or unsafe: symlinks, reparse points, hard links and oversized files are refused (${reason}; ${stage})`,
+    );
   }
 }
 
-function deny(reason: Failure = "selection", stage: Stage = "not-started"): never {
+function deny(reason: Failure = 'selection', stage: Stage = 'not-started'): never {
   throw new WorkspaceInputError(reason, stage);
 }
 
@@ -201,33 +206,47 @@ function helperStage(stdout: Buffer | null | undefined): Stage {
   // The first two bytes of the existing magic header also mark startup stages.
   // Keep the successful frame and aggregate maxBuffer unchanged. Never expose
   // compiler output, native errors, selected paths, or stderr to the caller.
-  if (!stdout || stdout[0] !== 0x41) return "not-started";
-  if (stdout[1] !== 0x47) return "compiling";
-  return stdout.length >= 8 && stdout.readUInt32LE(0) === 0x31444741 ? "complete" : "copying";
+  if (!stdout || stdout[0] !== 0x41) return 'not-started';
+  if (stdout[1] !== 0x47) return 'compiling';
+  return stdout.length >= 8 && stdout.readUInt32LE(0) === 0x31444741 ? 'complete' : 'copying';
 }
 
 function validComponent(part: string): boolean {
-  return part.length > 0 && part.length <= 255 && part !== "." && part !== ".." &&
-    part.normalize("NFC") === part && !/[\u0000-\u001f\u007f<>:"|?*]/u.test(part) &&
-    !/[. ]$/u.test(part) && !/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/iu.test(part);
+  return (
+    part.length > 0 &&
+    part.length <= 255 &&
+    part !== '.' &&
+    part !== '..' &&
+    part.normalize('NFC') === part &&
+    !/[\u0000-\u001f\u007f<>:"|?*]/u.test(part) &&
+    !/[. ]$/u.test(part) &&
+    !/^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³])(?:\.|$)/iu.test(part)
+  );
 }
 
 /** Copy one regular file through retained Windows handles. PowerShell and the OS installation are trusted host components. */
 export function readWindowsWorkspaceInput(root: string, name: string, maximum: number): Buffer {
-  if (process.platform !== "win32" || typeof root !== "string" || typeof name !== "string" ||
-      !Number.isSafeInteger(maximum) || maximum < 0 || maximum > 64 * 1024 * 1024) deny();
-  root = root.replaceAll("/", "\\");
-  name = name.replaceAll("/", "\\");
+  if (
+    process.platform !== 'win32' ||
+    typeof root !== 'string' ||
+    typeof name !== 'string' ||
+    !Number.isSafeInteger(maximum) ||
+    maximum < 0 ||
+    maximum > 64 * 1024 * 1024
+  )
+    deny();
+  root = root.replaceAll('/', '\\');
+  name = name.replaceAll('/', '\\');
   if (!/^[a-z]:\\/iu.test(root) || root.length > 8192 || name.length > 1024) deny();
-  if (root.length > 3 && root.endsWith("\\")) root = root.slice(0, -1);
-  const parents = root.length === 3 ? [] : root.slice(3).split("\\");
-  if (![...parents, ...name.split("\\")].every(validComponent)) deny();
+  if (root.length > 3 && root.endsWith('\\')) root = root.slice(0, -1);
+  const parents = root.length === 3 ? [] : root.slice(3).split('\\');
+  if (![...parents, ...name.split('\\')].every(validComponent)) deny();
 
   const systemRoot = process.env.SystemRoot;
   if (!systemRoot || !/^[a-z]:\\/iu.test(systemRoot) || win32.normalize(systemRoot) !== systemRoot) deny();
-  const system = win32.join(systemRoot, "System32");
-  const shell = win32.join(system, "WindowsPowerShell", "v1.0");
-  const fields = [root, name].map(value => Buffer.from(value, "utf16le"));
+  const system = win32.join(systemRoot, 'System32');
+  const shell = win32.join(system, 'WindowsPowerShell', 'v1.0');
+  const fields = [root, name].map(value => Buffer.from(value, 'utf16le'));
   const chunks = [Buffer.alloc(4)];
   chunks[0]!.writeUInt32LE(maximum);
   for (const value of fields) {
@@ -236,31 +255,53 @@ export function readWindowsWorkspaceInput(root: string, name: string, maximum: n
     chunks.push(length, value);
   }
   let scratch: string | undefined;
-  let observedStage: Stage = "not-started";
+  let observedStage: Stage = 'not-started';
   try {
     // Add-Type may compile to disk. Use the OS account's private profile, never the workspace or caller's TEMP.
-    scratch = mkdtempSync(win32.join(userInfo().homedir, "AppData", "Local", "Temp", "agent-guard-input-"));
-    const child = spawnSync(win32.join(shell, "powershell.exe"),
-      ["-NoLogo", "-NoProfile", "-NonInteractive", "-EncodedCommand", encodedProgram], {
-        cwd: system, windowsHide: true, timeout: 30_000, maxBuffer: Math.max(4096, maximum + 8),
+    scratch = mkdtempSync(win32.join(userInfo().homedir, 'AppData', 'Local', 'Temp', 'agent-guard-input-'));
+    const child = spawnSync(
+      win32.join(shell, 'powershell.exe'),
+      ['-NoLogo', '-NoProfile', '-NonInteractive', '-EncodedCommand', encodedProgram],
+      {
+        cwd: system,
+        windowsHide: true,
+        timeout: 30_000,
+        maxBuffer: Math.max(4096, maximum + 8),
         input: Buffer.concat(chunks),
         // Load Windows' own PowerShell modules and compiler, independent of the caller's search path and profile.
-        env: { SystemRoot: systemRoot, WINDIR: systemRoot, SystemDrive: systemRoot.slice(0, 2),
-          PATH: system, ComSpec: win32.join(system, "cmd.exe"), PSModulePath: win32.join(shell, "Modules"),
-          TEMP: scratch, TMP: scratch },
-      });
+        env: {
+          SystemRoot: systemRoot,
+          WINDIR: systemRoot,
+          SystemDrive: systemRoot.slice(0, 2),
+          PATH: system,
+          ComSpec: win32.join(system, 'cmd.exe'),
+          PSModulePath: win32.join(shell, 'Modules'),
+          TEMP: scratch,
+          TMP: scratch,
+        },
+      },
+    );
     const data = child.stdout;
-    const stage = observedStage = helperStage(data);
-    if (child.error) deny((child.error as NodeJS.ErrnoException).code === "ETIMEDOUT" ? "timeout" : "spawn", stage);
-    if (child.status !== 0) deny("exit", stage);
-    if (!data || data.length < 8 || data.readUInt32LE(0) !== 0x31444741 ||
-        data.readUInt32LE(4) > maximum || data.length !== data.readUInt32LE(4) + 8) deny("protocol", stage);
+    const stage = (observedStage = helperStage(data));
+    if (child.error) deny((child.error as NodeJS.ErrnoException).code === 'ETIMEDOUT' ? 'timeout' : 'spawn', stage);
+    if (child.status !== 0) deny('exit', stage);
+    if (
+      !data ||
+      data.length < 8 ||
+      data.readUInt32LE(0) !== 0x31444741 ||
+      data.readUInt32LE(4) > maximum ||
+      data.length !== data.readUInt32LE(4) + 8
+    )
+      deny('protocol', stage);
     return data.subarray(8);
   } catch (error) {
     if (error instanceof WorkspaceInputError) throw error;
-    return deny("startup");
+    return deny('startup');
   } finally {
-    try { if (scratch) rmSync(scratch, { recursive: true, force: true }); }
-    catch { deny("cleanup", observedStage); }
+    try {
+      if (scratch) rmSync(scratch, { recursive: true, force: true });
+    } catch {
+      deny('cleanup', observedStage);
+    }
   }
 }

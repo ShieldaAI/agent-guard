@@ -9,21 +9,56 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { DurableExecutor, ExecutorError } from '../dist/index.js';
 import { LedgerStore } from '../dist/store.js';
 
-const names = { tenant: 'PRIVATE_TENANT_CANARY', task: 'PRIVATE_TASK_CANARY', tool: 'PRIVATE_TOOL_CANARY', resource: 'PRIVATE_RESOURCE_CANARY', args: 'PRIVATE_ARGUMENT_CANARY', result: 'PRIVATE_RESULT_CANARY', reviewer: 'PRIVATE_REVIEWER_CANARY', reference: 'PRIVATE_RECEIPT_CANARY' };
+const names = {
+  tenant: 'PRIVATE_TENANT_CANARY',
+  task: 'PRIVATE_TASK_CANARY',
+  tool: 'PRIVATE_TOOL_CANARY',
+  resource: 'PRIVATE_RESOURCE_CANARY',
+  args: 'PRIVATE_ARGUMENT_CANARY',
+  result: 'PRIVATE_RESULT_CANARY',
+  reviewer: 'PRIVATE_REVIEWER_CANARY',
+  reference: 'PRIVATE_RECEIPT_CANARY',
+};
 function setup(t, options = {}) {
-  const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32), decisionTraces: {}, ...options });
+  const executor = new DurableExecutor({
+    database: ':memory:',
+    encryptionKey: randomBytes(32),
+    decisionTraces: {},
+    ...options,
+  });
   t.after(() => executor.close());
   let effects = 0;
-  const register = (execute = () => { effects++; return { value: names.result }; }, requiresApproval = true) => {
-    executor.approveTool(names.tool, executor.registerTool({ name: names.tool, description: names.tool,
-      requiresApproval, resolve: (_args, task) => ({ tenantId: task.tenantId, resourceId: names.resource }), execute }));
+  const register = (
+    execute = () => {
+      effects++;
+      return { value: names.result };
+    },
+    requiresApproval = true,
+  ) => {
+    executor.approveTool(
+      names.tool,
+      executor.registerTool({
+        name: names.tool,
+        description: names.tool,
+        requiresApproval,
+        resolve: (_args, task) => ({ tenantId: task.tenantId, resourceId: names.resource }),
+        execute,
+      }),
+    );
   };
-  const task = (id = names.task, tenantId = names.tenant) => executor.createTask({ id, tenantId, principalId: names.reviewer,
-    grants: [{ tool: names.tool, resources: [names.resource] }], budget: { maxCalls: 30, maxCost: 0, maxConcurrent: 4, deadline: Date.now() + 60_000 } });
+  const task = (id = names.task, tenantId = names.tenant) =>
+    executor.createTask({
+      id,
+      tenantId,
+      principalId: names.reviewer,
+      grants: [{ tool: names.tool, resources: [names.resource] }],
+      budget: { maxCalls: 30, maxCost: 0, maxConcurrent: 4, deadline: Date.now() + 60_000 },
+    });
   const prepare = (taskId = names.task) => executor.prepare(taskId, { tool: names.tool, args: { text: names.args } });
   const approve = action => executor.approve(action.id, { approverId: names.reviewer, expiresAt: Date.now() + 20_000 });
   const snapshot = (tenantId = names.tenant) => executor.decisionTraceSnapshot({ tenantId });
-  register(); task();
+  register();
+  task();
   return { executor, register, task, prepare, approve, snapshot, effects: () => effects };
 }
 
@@ -37,7 +72,10 @@ test('trace lifecycle reconstructs one approved effect and denials without paylo
   await assert.rejects(f.executor.execute(names.task, action.id, { approvalId }), { code: 'ACTION_USED' });
   const snapshot = f.snapshot();
   assert.equal(f.effects(), 1);
-  assert.deepEqual(snapshot.events.map(e => e.event), ['deny', 'prepare', 'deny', 'review', 'admit', 'settle', 'deny']);
+  assert.deepEqual(
+    snapshot.events.map(e => e.event),
+    ['deny', 'prepare', 'deny', 'review', 'admit', 'settle', 'deny'],
+  );
   const linked = snapshot.events.slice(1);
   assert.equal(new Set(linked.map(e => e.actionRef)).size, 1);
   assert.equal(new Set(snapshot.events.map(e => e.taskRef)).size, 1);
@@ -48,27 +86,42 @@ test('trace lifecycle reconstructs one approved effect and denials without paylo
     assert(Object.isFrozen(e));
   }
   const serialized = JSON.stringify(snapshot);
-  for (const value of [...Object.values(names), action.id, action.digest, approvalId]) assert(!serialized.includes(value), value);
+  for (const value of [...Object.values(names), action.id, action.digest, approvalId])
+    assert(!serialized.includes(value), value);
   assert(Object.isFrozen(snapshot.events));
 });
 
 test('traced admission reuses the authority snapshot without extra ledger reads or changed effects', async t => {
   const original = LedgerStore.prototype.read;
   let reads = 0;
-  LedgerStore.prototype.read = function (...args) { reads++; return original.apply(this, args); };
-  t.after(() => { LedgerStore.prototype.read = original; });
+  LedgerStore.prototype.read = function (...args) {
+    reads++;
+    return original.apply(this, args);
+  };
+  t.after(() => {
+    LedgerStore.prototype.read = original;
+  });
   const observed = [];
   for (const enabled of [false, true]) {
     const f = setup(t, { decisionTraces: enabled ? {} : undefined });
-    let effects = 0, admissionReads = 0;
-    f.register(() => { effects++; admissionReads = reads; return { value: true }; });
+    let effects = 0,
+      admissionReads = 0;
+    f.register(() => {
+      effects++;
+      admissionReads = reads;
+      return { value: true };
+    });
     const action = await f.prepare();
     const approvalId = f.approve(action);
     reads = 0;
     assert.equal(await f.executor.execute(names.task, action.id, { approvalId }), true);
     assert.equal(effects, 1);
     observed.push(admissionReads);
-    if (enabled) assert.deepEqual(f.snapshot().events.map(event => event.event), ['prepare', 'review', 'admit', 'settle']);
+    if (enabled)
+      assert.deepEqual(
+        f.snapshot().events.map(event => event.event),
+        ['prepare', 'review', 'admit', 'settle'],
+      );
   }
   assert(observed[0] > 0);
   assert.equal(observed[1], observed[0], 'Observation must reuse the already-read admission state');
@@ -87,8 +140,14 @@ test('tenant reads, task filters and sequence counters stay scoped, including fo
   assert.equal(foreign.events.length, 1);
   assert.equal(foreign.events[0].sequence, 1);
   assert.notEqual(foreign.events[0].actionRef, f.snapshot().events.at(-1).actionRef);
-  assert.throws(() => f.executor.decisionTraceSnapshot({ tenantId: names.tenant, taskId: 'foreign-task' }), { code: 'TRACE_SCOPE_DENIED' });
-  assert.equal(f.executor.decisionTraceSnapshot({ tenantId: names.tenant, taskId: names.task, afterSequence: 1, limit: 1 }).events.length, 1);
+  assert.throws(() => f.executor.decisionTraceSnapshot({ tenantId: names.tenant, taskId: 'foreign-task' }), {
+    code: 'TRACE_SCOPE_DENIED',
+  });
+  assert.equal(
+    f.executor.decisionTraceSnapshot({ tenantId: names.tenant, taskId: names.task, afterSequence: 1, limit: 1 }).events
+      .length,
+    1,
+  );
   assert.equal(f.snapshot('unobserved-tenant').accepting, false);
   assert.equal(f.snapshot('unobserved-tenant').events.length, 0);
   assert.notEqual(a.id, b.id);
@@ -165,10 +224,17 @@ test('failed export retries only immutable trace events and successful export ac
   const pending = f.executor.exportDecisionTraces({ tenantId: names.tenant }, async batch => {
     calls++;
     assert.deepEqual(batch.events, original.events);
-    await new Promise(resolve => { finish = resolve; });
+    await new Promise(resolve => {
+      finish = resolve;
+    });
   });
   await new Promise(resolve => setImmediate(resolve));
-  assert.deepEqual(await f.executor.exportDecisionTraces({ tenantId: names.tenant }, () => { calls++; }), { status: 'busy', count: 0 });
+  assert.deepEqual(
+    await f.executor.exportDecisionTraces({ tenantId: names.tenant }, () => {
+      calls++;
+    }),
+    { status: 'busy', count: 0 },
+  );
   await f.prepare(); // Recording remains available while the exporter waits.
   finish();
   assert.deepEqual(await pending, { status: 'exported', count: 4 });
@@ -182,10 +248,16 @@ test('hung exporter is bounded, signalled and cannot accumulate retries or ackno
   const f = setup(t);
   await f.prepare();
   let finish, signal;
-  const result = await f.executor.exportDecisionTraces({ tenantId: names.tenant }, (_batch, options) => {
-    signal = options.signal;
-    return new Promise(resolve => { finish = resolve; });
-  }, { timeoutMs: 10 });
+  const result = await f.executor.exportDecisionTraces(
+    { tenantId: names.tenant },
+    (_batch, options) => {
+      signal = options.signal;
+      return new Promise(resolve => {
+        finish = resolve;
+      });
+    },
+    { timeoutMs: 10 },
+  );
   assert.deepEqual(result, { status: 'timeout', count: 0 });
   assert.equal(signal.aborted, true);
   assert.equal((await f.executor.exportDecisionTraces({ tenantId: names.tenant }, () => assert.fail())).status, 'busy');
@@ -202,8 +274,13 @@ test('parallel approvals, refusal and cancellation do not manufacture authority'
   f.executor.recordReviewDecision(a.id, 'denied');
   assert.equal(f.snapshot().events.at(-1).code, 'REVIEW_DENIED');
   await assert.rejects(f.executor.execute(names.task, a.id), { code: 'APPROVAL_REQUIRED' });
-  const approvals = await Promise.all([Promise.resolve().then(() => f.approve(a)), Promise.resolve().then(() => f.approve(a))]);
-  const results = await Promise.allSettled(approvals.map(approvalId => f.executor.execute(names.task, a.id, { approvalId })));
+  const approvals = await Promise.all([
+    Promise.resolve().then(() => f.approve(a)),
+    Promise.resolve().then(() => f.approve(a)),
+  ]);
+  const results = await Promise.allSettled(
+    approvals.map(approvalId => f.executor.execute(names.task, a.id, { approvalId })),
+  );
   assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
   assert.equal(f.effects(), 1);
   assert.equal(f.snapshot().events.filter(e => e.event === 'admit').length, 1);
@@ -216,22 +293,42 @@ test('parallel approvals, refusal and cancellation do not manufacture authority'
 test('unknown effects and success followed by abort remain distinct from a prevented action', async t => {
   const f = setup(t);
   const forged = new ExecutorError('PRIVATE_FORGED_ERROR_CANARY');
-  f.register(() => { throw forged; });
+  f.register(() => {
+    throw forged;
+  });
   const a = await f.prepare();
   await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), error => error === forged);
   let events = f.snapshot().events;
-  assert.deepEqual(events.slice(-2).map(e => [e.event, e.outcome, e.code]), [['unknown', 'UNKNOWN', 'OUTCOME_UNKNOWN'], ['error', 'ERROR', 'OPERATION_FAILED']]);
+  assert.deepEqual(
+    events.slice(-2).map(e => [e.event, e.outcome, e.code]),
+    [
+      ['unknown', 'UNKNOWN', 'OUTCOME_UNKNOWN'],
+      ['error', 'ERROR', 'OPERATION_FAILED'],
+    ],
+  );
   assert(!JSON.stringify(events).includes(forged.code));
   f.executor.reconcile(a.id, { outcome: 'FAILED', actualCost: 0, reference: names.reference });
   assert.equal(f.snapshot().events.at(-1).event, 'reconcile');
   // A tool can observe cancellation after its actual result exists.
   let actionId;
-  f.register(() => { f.executor.cancel(names.task, actionId); return { value: true }; });
-  const b = await f.prepare(); actionId = b.id;
-  await assert.rejects(f.executor.execute(names.task, b.id, { approvalId: f.approve(b) }), { code: 'EXECUTION_ABORTED' });
+  f.register(() => {
+    f.executor.cancel(names.task, actionId);
+    return { value: true };
+  });
+  const b = await f.prepare();
+  actionId = b.id;
+  await assert.rejects(f.executor.execute(names.task, b.id, { approvalId: f.approve(b) }), {
+    code: 'EXECUTION_ABORTED',
+  });
   events = f.snapshot().events.filter(e => e.actionRef === f.snapshot().events.at(-1).actionRef);
   assert.equal(f.executor.execution(names.task, b.id).status, 'SUCCEEDED');
-  assert.deepEqual(events.slice(-2).map(e => [e.event, e.outcome]), [['settle', 'SUCCEEDED'], ['error', 'ERROR']]);
+  assert.deepEqual(
+    events.slice(-2).map(e => [e.event, e.outcome]),
+    [
+      ['settle', 'SUCCEEDED'],
+      ['error', 'ERROR'],
+    ],
+  );
   assert.equal(events.filter(e => e.outcome === 'DENIED').length, 0);
 });
 
@@ -239,14 +336,27 @@ test('error-code accessors and reconciliation accessors never execute in trace o
   const f = setup(t);
   let getters = 0;
   const error = new ExecutorError('ignored');
-  Object.defineProperty(error, 'code', { get() { getters++; throw new Error(names.args); } });
-  f.register(() => { throw error; });
+  Object.defineProperty(error, 'code', {
+    get() {
+      getters++;
+      throw new Error(names.args);
+    },
+  });
+  f.register(() => {
+    throw error;
+  });
   const a = await f.prepare();
   await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), caught => caught === error);
   assert.equal(getters, 0);
   assert.equal(f.snapshot().events.at(-1).code, 'OPERATION_FAILED');
   const evidence = { actualCost: 0, reference: names.reference };
-  Object.defineProperty(evidence, 'outcome', { enumerable: true, get() { getters++; return 'FAILED'; } });
+  Object.defineProperty(evidence, 'outcome', {
+    enumerable: true,
+    get() {
+      getters++;
+      return 'FAILED';
+    },
+  });
   assert.throws(() => f.executor.reconcile(a.id, evidence));
   assert.equal(getters, 0);
   assert.equal(f.executor.execution(names.task, a.id).status, 'UNKNOWN');
@@ -256,8 +366,16 @@ test('error-code accessors and reconciliation accessors never execute in trace o
 test('disabled trace and invalid options leave the existing executor contract explicit', t => {
   const f = setup(t, { decisionTraces: undefined });
   assert.throws(() => f.snapshot(), { code: 'TRACE_DISABLED' });
-  for (const decisionTraces of [null, { maxTenants: 0 }, { maxEventsPerTenant: 5000 }, { retentionMs: -1 }, { sink: () => {} }]) {
-    assert.throws(() => new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32), decisionTraces }), { code: 'TRACE_CONFIG_INVALID' });
+  for (const decisionTraces of [
+    null,
+    { maxTenants: 0 },
+    { maxEventsPerTenant: 5000 },
+    { retentionMs: -1 },
+    { sink: () => {} },
+  ]) {
+    assert.throws(() => new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32), decisionTraces }), {
+      code: 'TRACE_CONFIG_INVALID',
+    });
   }
 });
 
@@ -265,8 +383,11 @@ test('restart reports unknown durable work with stable opaque correlation and a 
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'trace-recovery-')));
   let e;
   t.after(() => {
-    try { e?.close(); }
-    finally { rmSync(directory, { recursive: true, force: true }); }
+    try {
+      e?.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
   });
   const database = join(directory, 'state.sqlite');
   const module = new URL('../dist/index.js', import.meta.url).href;
@@ -277,7 +398,10 @@ test('restart reports unknown durable work with stable opaque correlation and a 
     const a=await e.prepare('task',{tool:'run',args:null});
     console.log(JSON.stringify({id:a.id,event:e.decisionTraceSnapshot({tenantId:'tenant'}).events[0]}));
     await e.execute('task',a.id);`;
-  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, database], { encoding: 'utf8', timeout: 10_000 });
+  const child = spawnSync(process.execPath, ['--input-type=module', '-e', script, database], {
+    encoding: 'utf8',
+    timeout: 10_000,
+  });
   assert.equal(child.status, 17, child.stderr);
   const before = JSON.parse(child.stdout);
   e = new DurableExecutor({ database, encryptionKey: Buffer.alloc(32, 7), clock: () => 1000, decisionTraces: {} });

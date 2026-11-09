@@ -5,10 +5,17 @@ import { isMainThread } from 'node:worker_threads';
 import { ExecutorError } from './store.js';
 
 export type InventoryWorkerScheduling = 'default' | 'linux-background';
-export type WorkerSchedulingEvidence = { readonly mode: 'default' } | {
-  readonly mode: 'linux-background'; readonly workerTid: number; readonly beforeNice: number; readonly afterNice: number;
-};
-export function schedulingUnavailable(): ExecutorError { return new ExecutorError('INVENTORY_SCHEDULING_UNAVAILABLE'); }
+export type WorkerSchedulingEvidence =
+  | { readonly mode: 'default' }
+  | {
+      readonly mode: 'linux-background';
+      readonly workerTid: number;
+      readonly beforeNice: number;
+      readonly afterNice: number;
+    };
+export function schedulingUnavailable(): ExecutorError {
+  return new ExecutorError('INVENTORY_SCHEDULING_UNAVAILABLE');
+}
 export function schedulingMode(value: unknown): InventoryWorkerScheduling {
   if (value === undefined || value === 'default') return 'default';
   if (value === 'linux-background') return value;
@@ -24,13 +31,17 @@ export function currentLinuxThreadPriority(): { readonly tid: number; readonly n
   try {
     if (process.platform !== 'linux') throw schedulingUnavailable();
     const fd = openSync('/proc/thread-self/status', constants.O_RDONLY | constants.O_NOFOLLOW);
-    const buffer = Buffer.alloc(16 * 1024 + 1); let length = 0;
+    const buffer = Buffer.alloc(16 * 1024 + 1);
+    let length = 0;
     try {
       while (length < buffer.length) {
         const count = readSync(fd, buffer, length, buffer.length - length, null);
-        if (!count) break; length += count;
+        if (!count) break;
+        length += count;
       }
-    } finally { closeSync(fd); }
+    } finally {
+      closeSync(fd);
+    }
     if (length === 0 || length > 16 * 1024) throw schedulingUnavailable();
     const lines = buffer.subarray(0, length).toString('utf8').split('\n');
     const field = (key: string): number => {
@@ -45,13 +56,18 @@ export function currentLinuxThreadPriority(): { readonly tid: number; readonly n
     const tid = field('Pid');
     if (field('Tgid') !== process.pid) throw schedulingUnavailable();
     return { tid, nice: priority(tid) };
-  } catch { throw schedulingUnavailable(); }
+  } catch {
+    throw schedulingUnavailable();
+  }
 }
 export function readLinuxThreadPriority(tid: number): number {
   try {
-    if (process.platform !== 'linux' || !Number.isSafeInteger(tid) || tid < 1 || tid > 2_147_483_647) throw schedulingUnavailable();
+    if (process.platform !== 'linux' || !Number.isSafeInteger(tid) || tid < 1 || tid > 2_147_483_647)
+      throw schedulingUnavailable();
     return priority(tid);
-  } catch { throw schedulingUnavailable(); }
+  } catch {
+    throw schedulingUnavailable();
+  }
 }
 export function configureInventoryWorkerScheduling(value: unknown): WorkerSchedulingEvidence {
   const mode = schedulingMode(value);
@@ -66,5 +82,7 @@ export function configureInventoryWorkerScheduling(value: unknown): WorkerSchedu
     const after = currentLinuxThreadPriority();
     if (after.tid !== before.tid || after.nice !== afterNice) throw schedulingUnavailable();
     return Object.freeze({ mode, workerTid: before.tid, beforeNice: before.nice, afterNice });
-  } catch { throw schedulingUnavailable(); }
+  } catch {
+    throw schedulingUnavailable();
+  }
 }

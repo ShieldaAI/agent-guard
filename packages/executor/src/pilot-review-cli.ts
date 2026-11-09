@@ -41,12 +41,24 @@ function readFile(path: string, kind: Input): Buffer {
   try {
     const opened = fstatSync(fd, { bigint: true });
     const named = lstatSync(path, { bigint: true });
-    if (!opened.isFile() || opened.nlink !== 1n || opened.size > BigInt(limits[kind]) ||
-        !named.isFile() || named.nlink !== 1n || opened.dev !== named.dev || opened.ino !== named.ino ||
-        opened.size !== named.size || opened.ctimeNs !== named.ctimeNs) throw new Error();
+    if (
+      !opened.isFile() ||
+      opened.nlink !== 1n ||
+      opened.size > BigInt(limits[kind]) ||
+      !named.isFile() ||
+      named.nlink !== 1n ||
+      opened.dev !== named.dev ||
+      opened.ino !== named.ino ||
+      opened.size !== named.size ||
+      opened.ctimeNs !== named.ctimeNs
+    )
+      throw new Error();
     if (process.platform !== 'win32') {
-      if (kind === 'policy' && ((opened.mode & 0o022n) !== 0n ||
-          (opened.uid !== 0n && opened.uid !== BigInt(process.geteuid!())))) throw new Error();
+      if (
+        kind === 'policy' &&
+        ((opened.mode & 0o022n) !== 0n || (opened.uid !== 0n && opened.uid !== BigInt(process.geteuid!())))
+      )
+        throw new Error();
       if (kind === 'bundle' && (opened.mode & 0o077n) !== 0n) throw new Error();
     }
     const bytes = Buffer.alloc(Number(opened.size));
@@ -58,9 +70,17 @@ function readFile(path: string, kind: Input): Buffer {
     }
     const end = fstatSync(fd, { bigint: true });
     const finalName = lstatSync(path, { bigint: true });
-    if (end.size !== opened.size || end.ctimeNs !== opened.ctimeNs || end.mtimeNs !== opened.mtimeNs ||
-        !finalName.isFile() || finalName.nlink !== 1n || finalName.dev !== opened.dev ||
-        finalName.ino !== opened.ino || finalName.ctimeNs !== opened.ctimeNs) throw new Error();
+    if (
+      end.size !== opened.size ||
+      end.ctimeNs !== opened.ctimeNs ||
+      end.mtimeNs !== opened.mtimeNs ||
+      !finalName.isFile() ||
+      finalName.nlink !== 1n ||
+      finalName.dev !== opened.dev ||
+      finalName.ino !== opened.ino ||
+      finalName.ctimeNs !== opened.ctimeNs
+    )
+      throw new Error();
     return bytes;
   } finally {
     closeSync(fd);
@@ -68,10 +88,17 @@ function readFile(path: string, kind: Input): Buffer {
 }
 
 function inputs(args: string[]) {
-  const { values, tokens } = parseArgs({ args, tokens: true, allowPositionals: false, options: {
-    policy: { type: 'string' }, candidate: { type: 'string' }, bundle: { type: 'string' },
-    rehearsal: { type: 'boolean' },
-  } });
+  const { values, tokens } = parseArgs({
+    args,
+    tokens: true,
+    allowPositionals: false,
+    options: {
+      policy: { type: 'string' },
+      candidate: { type: 'string' },
+      bundle: { type: 'string' },
+      rehearsal: { type: 'boolean' },
+    },
+  });
   const seen = new Set<string>();
   for (const token of tokens) {
     if (token.kind !== 'option' || seen.has(token.name)) throw new Error();

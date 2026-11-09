@@ -7,19 +7,41 @@ import { DurableExecutor } from '../dist/index.js';
 
 function setup(t, budget = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'executor-capacity-')));
-  const executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: Buffer.alloc(32, 9), clock: () => 1000 });
+  const executor = new DurableExecutor({
+    database: join(directory, 'ledger.sqlite'),
+    encryptionKey: Buffer.alloc(32, 9),
+    clock: () => 1000,
+  });
   let release;
-  const blocked = new Promise(resolve => { release = resolve; });
+  const blocked = new Promise(resolve => {
+    release = resolve;
+  });
   let calls = 0;
   const fingerprint = executor.registerTool({
-    name: 'write', description: 'Write a record', requiresApproval: true, maxCost: 5,
+    name: 'write',
+    description: 'Write a record',
+    requiresApproval: true,
+    maxCost: 5,
     resolve: () => ({ resourceId: 'record', tenantId: 'tenant' }),
-    execute: async () => { calls++; if (calls === 1) await blocked; return { value: calls, actualCost: 5 }; },
+    execute: async () => {
+      calls++;
+      if (calls === 1) await blocked;
+      return { value: calls, actualCost: 5 };
+    },
   });
   executor.approveTool('write', fingerprint);
-  executor.createTask({ id: 'task', principalId: 'operator', tenantId: 'tenant', grants: [{ tool: 'write', resources: ['record'] }],
-    budget: { maxCalls: 5, maxConcurrent: 1, maxCost: 20, deadline: 100_000, ...budget } });
-  t.after(() => { release(); executor.close(); rmSync(directory, { recursive: true, force: true }); });
+  executor.createTask({
+    id: 'task',
+    principalId: 'operator',
+    tenantId: 'tenant',
+    grants: [{ tool: 'write', resources: ['record'] }],
+    budget: { maxCalls: 5, maxConcurrent: 1, maxCost: 20, deadline: 100_000, ...budget },
+  });
+  t.after(() => {
+    release();
+    executor.close();
+    rmSync(directory, { recursive: true, force: true });
+  });
   return { executor, release: () => release() };
 }
 const approve = (executor, id) => executor.approve(id, { approverId: 'reviewer', expiresAt: 2000 });
@@ -38,7 +60,11 @@ test('durable preparation and approval are not refused by a call in flight', asy
 
   release();
   assert.equal(await running, 1);
-  assert.equal(await executor.execute('task', second.id, { approvalId }), 2, 'the durable approval survives the refused dispatch');
+  assert.equal(
+    await executor.execute('task', second.id, { approvalId }),
+    2,
+    'the durable approval survives the refused dispatch',
+  );
 });
 
 test('durable dispatch still enforces reserved cost; permanent capacity refuses preparation', async t => {
@@ -49,6 +75,7 @@ test('durable dispatch still enforces reserved cost; permanent capacity refuses 
   const second = await executor.prepare('task', { tool: 'write', args: {} });
   const approvalId = approve(executor, second.id);
   await assert.rejects(executor.execute('task', second.id, { approvalId }), { code: 'COST_BUDGET_EXCEEDED' });
-  release(); await running;
+  release();
+  await running;
   await assert.rejects(executor.prepare('task', { tool: 'write', args: {} }), { code: 'COST_BUDGET_EXCEEDED' });
 });

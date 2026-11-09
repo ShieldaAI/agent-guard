@@ -47,15 +47,11 @@ function record(value: Json | undefined): RecordValue {
   return value as RecordValue;
 }
 
-function fields(
-  value: Json | undefined,
-  required: readonly string[],
-  optional: readonly string[] = [],
-): RecordValue {
+function fields(value: Json | undefined, required: readonly string[], optional: readonly string[] = []): RecordValue {
   const object = record(value);
   if (
-    required.some((key) => !Object.hasOwn(object, key)) ||
-    Object.keys(object).some((key) => !required.includes(key) && !optional.includes(key))
+    required.some(key => !Object.hasOwn(object, key)) ||
+    Object.keys(object).some(key => !required.includes(key) && !optional.includes(key))
   )
     invalid();
   return object;
@@ -82,7 +78,7 @@ function portablePath(value: Json | undefined): string {
     name
       .split('/')
       .some(
-        (part) =>
+        part =>
           !part ||
           part === '.' ||
           part === '..' ||
@@ -104,10 +100,7 @@ function uri(value: Json | undefined): string {
 }
 
 function hexDigest(value: Json | undefined, algorithm: 'sha1' | 'sha256'): string {
-  if (
-    typeof value !== 'string' ||
-    !(algorithm === 'sha256' ? /^[a-f0-9]{64}$/u : /^[a-f0-9]{40}$/u).test(value)
-  )
+  if (typeof value !== 'string' || !(algorithm === 'sha256' ? /^[a-f0-9]{64}$/u : /^[a-f0-9]{40}$/u).test(value))
     invalid();
   return value;
 }
@@ -119,14 +112,10 @@ function onlyItem(value: Json | undefined): Json {
 
 function checkStatement(statement: Json, rule: Enrolled): void {
   const root = fields(statement, ['_type', 'subject', 'predicateType', 'predicate']);
-  if (
-    root._type !== 'https://in-toto.io/Statement/v1' ||
-    root.predicateType !== 'https://slsa.dev/provenance/v1'
-  )
+  if (root._type !== 'https://in-toto.io/Statement/v1' || root.predicateType !== 'https://slsa.dev/provenance/v1')
     invalid();
   const subject = fields(onlyItem(root.subject), ['name', 'digest']);
-  if (subject.name !== rule.subjectName || fields(subject.digest, ['sha256']).sha256 !== rule.sha256)
-    invalid();
+  if (subject.name !== rule.subjectName || fields(subject.digest, ['sha256']).sha256 !== rule.sha256) invalid();
 
   const predicate = fields(root.predicate, ['buildDefinition', 'runDetails']);
   const definition = fields(
@@ -169,8 +158,7 @@ export class BuildProvenancePolicy {
   constructor(input: BuildArtifactPolicy) {
     try {
       const policy = fields(immutableJson(input, 8, 8192, 1024 * 1024), ['artifacts']);
-      if (!Array.isArray(policy.artifacts) || !policy.artifacts.length || policy.artifacts.length > 128)
-        invalid();
+      if (!Array.isArray(policy.artifacts) || !policy.artifacts.length || policy.artifacts.length > 128) invalid();
       const occupied = new Set<string>();
       for (const item of policy.artifacts) {
         const entry = fields(item, [
@@ -204,7 +192,7 @@ export class BuildProvenancePolicy {
         occupied.add(location);
         this.#rules.set(JSON.stringify([rule.tenantId, rule.path]), { rule, key });
       }
-      const artifacts = [...this.#rules.keys()].sort().map((key) => this.#rules.get(key)!.rule);
+      const artifacts = [...this.#rules.keys()].sort().map(key => this.#rules.get(key)!.rule);
       this.digest = digestJson(
         immutableJson({ profile: 'agent-guard-build-provenance-v1', artifacts }, 8, 8192, 1024 * 1024),
       );
@@ -221,18 +209,15 @@ export class BuildProvenancePolicy {
     attestation: BuildAttestationEnvelope;
   }): BuildProvenanceEvidence {
     try {
-      const supplied = fields(immutableJson(input, 8, 64, 192 * 1024), [
-        'tenantId',
-        'path',
-        'sha256',
-        'attestation',
-      ]);
-      const enrolled = this.#rules.get(
-        JSON.stringify([text(supplied.tenantId, 512), portablePath(supplied.path)]),
-      );
+      const supplied = fields(immutableJson(input, 8, 64, 192 * 1024), ['tenantId', 'path', 'sha256', 'attestation']);
+      const enrolled = this.#rules.get(JSON.stringify([text(supplied.tenantId, 512), portablePath(supplied.path)]));
       if (!enrolled || supplied.sha256 !== enrolled.rule.sha256) invalid();
-      const bytes = verifyEnvelopeBytes(supplied.attestation, MEDIA_TYPE,
-        { key: enrolled.key, signerSha256: enrolled.rule.signerSha256 }, MAX_STATEMENT_BYTES);
+      const bytes = verifyEnvelopeBytes(
+        supplied.attestation,
+        MEDIA_TYPE,
+        { key: enrolled.key, signerSha256: enrolled.rule.signerSha256 },
+        MAX_STATEMENT_BYTES,
+      );
       checkStatement(parseEvidenceJson(bytes, MAX_STATEMENT_BYTES), enrolled.rule);
       return Object.freeze({
         policySha256: this.digest,

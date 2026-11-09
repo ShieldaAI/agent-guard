@@ -4,11 +4,11 @@ import test from 'node:test';
 import { BuildProvenancePolicy } from '../dist/build-provenance.js';
 
 const mediaType = 'application/vnd.in-toto+json';
-const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
 const pair = generateKeyPairSync('ed25519');
 const otherPair = generateKeyPairSync('ed25519');
-const pem = (key) => key.export({ type: 'spki', format: 'pem' });
-const keyId = (key) => digest(key.export({ type: 'spki', format: 'der' }));
+const pem = key => key.export({ type: 'spki', format: 'pem' });
+const keyId = key => digest(key.export({ type: 'spki', format: 'der' }));
 const failure = { name: 'Error', message: 'Build provenance validation failed' };
 
 function rule() {
@@ -34,9 +34,7 @@ function statement(r) {
       buildDefinition: {
         buildType: r.buildType,
         externalParameters: {},
-        resolvedDependencies: [
-          { uri: r.sourceUri, digest: { [r.sourceDigest.algorithm]: r.sourceDigest.value } },
-        ],
+        resolvedDependencies: [{ uri: r.sourceUri, digest: { [r.sourceDigest.algorithm]: r.sourceDigest.value } }],
       },
       runDetails: { builder: { id: r.builderId } },
     },
@@ -66,7 +64,7 @@ function envelope(bytes, signingPair = pair, options = {}) {
   };
 }
 
-const encode = (data) => Buffer.from(JSON.stringify(data));
+const encode = data => Buffer.from(JSON.stringify(data));
 const policy = (...rules) => new BuildProvenancePolicy({ artifacts: rules });
 const request = (r, attestation) => ({ tenantId: r.tenantId, path: r.path, sha256: r.sha256, attestation });
 
@@ -135,29 +133,28 @@ test('genuinely signed claims cannot change an enrolled subject, builder, build 
   const r = rule(),
     v = policy(r);
   const mutations = {
-    statementType: (s) => (s._type = 'https://in-toto.io/Statement/v0.1'),
-    predicateType: (s) => (s.predicateType = 'https://slsa.dev/provenance/v0.2'),
-    subjectName: (s) => (s.subject[0].name += '-other'),
-    subjectHash: (s) => (s.subject[0].digest.sha256 = digest('wrong')),
-    extraSubject: (s) => s.subject.push(structuredClone(s.subject[0])),
-    emptySubject: (s) => (s.subject = []),
-    extraSubjectDigest: (s) => (s.subject[0].digest.md5 = 'bad'),
-    builder: (s) => (s.predicate.runDetails.builder.id += '/other'),
-    type: (s) => (s.predicate.buildDefinition.buildType += '/other'),
-    source: (s) => (s.predicate.buildDefinition.resolvedDependencies[0].uri += '#other'),
-    sourceHash: (s) => (s.predicate.buildDefinition.resolvedDependencies[0].digest.sha256 = digest('wrong')),
-    sourceAlgorithm: (s) =>
+    statementType: s => (s._type = 'https://in-toto.io/Statement/v0.1'),
+    predicateType: s => (s.predicateType = 'https://slsa.dev/provenance/v0.2'),
+    subjectName: s => (s.subject[0].name += '-other'),
+    subjectHash: s => (s.subject[0].digest.sha256 = digest('wrong')),
+    extraSubject: s => s.subject.push(structuredClone(s.subject[0])),
+    emptySubject: s => (s.subject = []),
+    extraSubjectDigest: s => (s.subject[0].digest.md5 = 'bad'),
+    builder: s => (s.predicate.runDetails.builder.id += '/other'),
+    type: s => (s.predicate.buildDefinition.buildType += '/other'),
+    source: s => (s.predicate.buildDefinition.resolvedDependencies[0].uri += '#other'),
+    sourceHash: s => (s.predicate.buildDefinition.resolvedDependencies[0].digest.sha256 = digest('wrong')),
+    sourceAlgorithm: s =>
       (s.predicate.buildDefinition.resolvedDependencies[0].digest = { gitCommit: r.sourceDigest.value }),
-    extraSource: (s) =>
+    extraSource: s =>
       s.predicate.buildDefinition.resolvedDependencies.push(
         structuredClone(s.predicate.buildDefinition.resolvedDependencies[0]),
       ),
-    sourceAlias: (s) =>
-      (s.predicate.buildDefinition.resolvedDependencies[0].downloadLocation = 'https://other.test'),
-    externalParams: (s) => (s.predicate.buildDefinition.externalParameters = { command: 'untrusted' }),
-    internalParams: (s) => (s.predicate.buildDefinition.internalParameters = { build: true }),
-    badMetadata: (s) => (s.predicate.runDetails.metadata = { unauthorized: 'data' }),
-    badVersion: (s) => (s.predicate.runDetails.builder.version = { compiler: 17 }),
+    sourceAlias: s => (s.predicate.buildDefinition.resolvedDependencies[0].downloadLocation = 'https://other.test'),
+    externalParams: s => (s.predicate.buildDefinition.externalParameters = { command: 'untrusted' }),
+    internalParams: s => (s.predicate.buildDefinition.internalParameters = { build: true }),
+    badMetadata: s => (s.predicate.runDetails.metadata = { unauthorized: 'data' }),
+    badVersion: s => (s.predicate.runDetails.builder.version = { compiler: 17 }),
   };
   for (const [reason, mutate] of Object.entries(mutations)) {
     const s = statement(r);
@@ -205,7 +202,7 @@ test('rejects signed malformed JSON, escaped duplicate object keys, invalid UTF-
     '[' + Array(8193).fill('0').join(',') + ']',
     json + ' '.repeat(128 * 1024),
   ];
-  for (const bytes of [...texts.map((t) => Buffer.from(t)), Buffer.from([0xc0, 0x80])]) {
+  for (const bytes of [...texts.map(t => Buffer.from(t)), Buffer.from([0xc0, 0x80])]) {
     assert.throws(() => v.verify(request(r, envelope(bytes))), failure);
   }
 });
@@ -238,10 +235,7 @@ test('requires bounded public-only Ed25519 SPKI keys, safe paths, stable URIs an
   ])
     assert.throws(() => policy({ ...r, ...change }), failure);
   assert.throws(() => policy(), failure);
-  assert.throws(
-    () => policy(...Array.from({ length: 129 }, (_, i) => ({ ...r, tenantId: 't' + i }))),
-    failure,
-  );
+  assert.throws(() => policy(...Array.from({ length: 129 }, (_, i) => ({ ...r, tenantId: 't' + i }))), failure);
 });
 
 test('rejects accessor input without invoking caller code', () => {

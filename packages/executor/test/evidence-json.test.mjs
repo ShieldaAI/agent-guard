@@ -17,8 +17,11 @@ test('evidence token walk rejects duplicate decoded members in their own object 
   for (const text of ['{"key":1,"\\u006bey":2}', '{"outer":[{"key":1,"key":2}]}', '{"":1,"":2}']) {
     assert.throws(() => read(text), /Duplicate JSON member/);
   }
-  assert.deepEqual(JSON.parse(JSON.stringify(read('{"key":1,"nested":{"key":2},"list":[{"key":3},{"key":4}]}'))),
-    { key: 1, nested: { key: 2 }, list: [{ key: 3 }, { key: 4 }] });
+  assert.deepEqual(JSON.parse(JSON.stringify(read('{"key":1,"nested":{"key":2},"list":[{"key":3},{"key":4}]}'))), {
+    key: 1,
+    nested: { key: 2 },
+    list: [{ key: 3 }, { key: 4 }],
+  });
 });
 
 test('evidence token walk retains exact integer and fractional-measurement checks', () => {

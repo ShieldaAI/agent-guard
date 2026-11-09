@@ -11,26 +11,46 @@ import { createInventoryObserverToken, startInventoryServer } from '../dist/inve
 const route = '/v1/inventory/snapshot';
 const requestBody = '{"tenantId":"tenant"}';
 async function setup(t, options = {}, credentials) {
-  const executor = new DurableExecutor({ database: ':memory:', encryptionKey: Buffer.alloc(32, 7), clock: () => 1000,
-    inventory: { companyId: 'company', sourceId: 'observer-test', enrollmentGeneration: 'one' } });
+  const executor = new DurableExecutor({
+    database: ':memory:',
+    encryptionKey: Buffer.alloc(32, 7),
+    clock: () => 1000,
+    inventory: { companyId: 'company', sourceId: 'observer-test', enrollmentGeneration: 'one' },
+  });
   const token = createInventoryObserverToken();
   const observers = credentials ?? [{ token, tenantIds: ['tenant'] }];
   let service;
-  try { service = await startInventoryServer({ executor, observers, ...options }); }
-  catch (error) { executor.close(); throw error; }
-  t.after(async () => { await service.close(); executor.close(); });
+  try {
+    service = await startInventoryServer({ executor, observers, ...options });
+  } catch (error) {
+    executor.close();
+    throw error;
+  }
+  t.after(async () => {
+    await service.close();
+    executor.close();
+  });
   let exports = 0;
   const original = InventoryObservationSession.prototype.snapshot;
-  t.mock.method(InventoryObservationSession.prototype, 'snapshot', function (...args) { exports++; return Reflect.apply(original, this, args); });
+  t.mock.method(InventoryObservationSession.prototype, 'snapshot', function (...args) {
+    exports++;
+    return Reflect.apply(original, this, args);
+  });
   return { ...service, executor, token: observers[0].token, exports: () => exports };
 }
 function parseResponse(bytes) {
   const text = Buffer.concat(bytes).toString('utf8');
   const boundary = text.indexOf('\r\n\r\n');
   const head = boundary === -1 ? text : text.slice(0, boundary);
-  const headers = Object.fromEntries(head.split('\r\n').slice(1).map(line => {
-    const colon = line.indexOf(':'); return [line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim()];
-  }));
+  const headers = Object.fromEntries(
+    head
+      .split('\r\n')
+      .slice(1)
+      .map(line => {
+        const colon = line.indexOf(':');
+        return [line.slice(0, colon).toLowerCase(), line.slice(colon + 1).trim()];
+      }),
+  );
   const body = boundary === -1 ? '' : text.slice(boundary + 4);
   return { status: Number(/^HTTP\/1\.[01] (\d+)/.exec(head)?.[1] ?? 0), headers, body, text };
 }
@@ -43,17 +63,30 @@ function socketSession(t, url) {
     socket.on('data', bytes => chunks.push(bytes));
     socket.on('error', () => {}); // Parser rejection and deliberate disconnect may reset the socket.
     socket.once('close', () => resolve(parseResponse(chunks)));
-    socket.setTimeout(3000, () => { reject(new Error('Observer failed to bound socket lifetime')); socket.destroy(); });
+    socket.setTimeout(3000, () => {
+      reject(new Error('Observer failed to bound socket lifetime'));
+      socket.destroy();
+    });
   });
   t.after(() => socket.destroy());
   return { socket, connected, completed };
 }
 function request(service, { method = 'POST', path = route, body = requestBody, headers = [], omit = [] } = {}) {
   const bytes = Buffer.isBuffer(body) ? body : Buffer.from(body);
-  const defaults = [['Host', new URL(service.url).host], ['Authorization', `Bearer ${service.token}`],
-    ['Content-Type', 'application/json'], ['Content-Length', String(bytes.length)], ['Connection', 'close']];
+  const defaults = [
+    ['Host', new URL(service.url).host],
+    ['Authorization', `Bearer ${service.token}`],
+    ['Content-Type', 'application/json'],
+    ['Content-Length', String(bytes.length)],
+    ['Connection', 'close'],
+  ];
   const lines = defaults.filter(([key]) => !omit.includes(key.toLowerCase())).concat(headers);
-  return Buffer.concat([Buffer.from(`${method} ${path} HTTP/1.1\r\n${lines.map(([key, value]) => `${key}: ${value}`).join('\r\n')}\r\n\r\n`), bytes]);
+  return Buffer.concat([
+    Buffer.from(
+      `${method} ${path} HTTP/1.1\r\n${lines.map(([key, value]) => `${key}: ${value}`).join('\r\n')}\r\n\r\n`,
+    ),
+    bytes,
+  ]);
 }
 async function raw(t, service, options) {
   const session = socketSession(t, service.url);
@@ -66,17 +99,33 @@ async function raw(t, service, options) {
 async function post(service, token = service.token, body = { tenantId: 'tenant' }) {
   const bytes = Buffer.from(JSON.stringify(body));
   return new Promise((resolve, reject) => {
-    const outgoing = httpRequest(`${service.url}${route}`, { method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json', 'content-length': bytes.length } }, response => {
-      const chunks = [];
-      response.on('data', chunk => chunks.push(chunk));
-      response.once('error', reject);
-      response.once('end', () => {
-        try { resolve({ status: response.statusCode, headers: new Map(Object.entries(response.headers)),
-          body: JSON.parse(Buffer.concat(chunks).toString('utf8')) }); }
-        catch (error) { reject(error); }
-      });
-    });
+    const outgoing = httpRequest(
+      `${service.url}${route}`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+          'content-length': bytes.length,
+        },
+      },
+      response => {
+        const chunks = [];
+        response.on('data', chunk => chunks.push(chunk));
+        response.once('error', reject);
+        response.once('end', () => {
+          try {
+            resolve({
+              status: response.statusCode,
+              headers: new Map(Object.entries(response.headers)),
+              body: JSON.parse(Buffer.concat(chunks).toString('utf8')),
+            });
+          } catch (error) {
+            reject(error);
+          }
+        });
+      },
+    );
     outgoing.once('error', reject);
     outgoing.setTimeout(3000, () => outgoing.destroy(new Error('Observer request stalled')));
     outgoing.end(bytes);
@@ -85,8 +134,12 @@ async function post(service, token = service.token, body = { tenantId: 'tenant' 
 
 test('observer rejects duplicate credentials and singleton headers before snapshot generation', async t => {
   const service = await setup(t);
-  for (const [name, value] of [['aUtHoRiZaTiOn', `Bearer ${service.token}`], ['Content-Type', 'application/json'],
-    ['Host', new URL(service.url).host], ['Content-Length', String(Buffer.byteLength(requestBody))]]) {
+  for (const [name, value] of [
+    ['aUtHoRiZaTiOn', `Bearer ${service.token}`],
+    ['Content-Type', 'application/json'],
+    ['Host', new URL(service.url).host],
+    ['Content-Length', String(Buffer.byteLength(requestBody))],
+  ]) {
     const response = await raw(t, service, { headers: [[name, value]] });
     assert.ok(response.status === 0 || (response.status >= 400 && response.status < 500), response.text);
     assert.equal(service.exports(), 0);
@@ -136,8 +189,11 @@ test('observer enforces declared and streamed request byte limits before exporti
   const declared = await raw(t, service, { body: '', omit: ['content-length'], headers: [['Content-Length', '4096']] });
   assert.equal(declared.status, 413, declared.text);
   assert.equal(JSON.parse(declared.body).error, 'REQUEST_TOO_LARGE');
-  const streamed = await raw(t, service, { omit: ['content-length'], headers: [['Transfer-Encoding', 'chunked']],
-    body: `40\r\n${'x'.repeat(64)}\r\n0\r\n\r\n` });
+  const streamed = await raw(t, service, {
+    omit: ['content-length'],
+    headers: [['Transfer-Encoding', 'chunked']],
+    body: `40\r\n${'x'.repeat(64)}\r\n0\r\n\r\n`,
+  });
   assert.equal(streamed.status, 413, streamed.text);
   assert.equal(JSON.parse(streamed.body).error, 'REQUEST_TOO_LARGE');
   assert.equal(service.exports(), 0);
@@ -147,10 +203,16 @@ test('observer enforces declared and streamed request byte limits before exporti
 test('observer refuses alternate routing, browser context, encodings and media types', async t => {
   const service = await setup(t);
   const denied = [
-    { method: 'GET' }, { method: 'OPTIONS' }, { path: `${route}?tenantId=tenant` }, { path: `${route}/` },
-    { path: '/v1/admin/audit' }, { path: '/v1/task/snapshot' },
-    { headers: [['Origin', 'http://attacker.invalid']] }, { headers: [['Sec-Fetch-Site', 'same-origin']] },
-    { headers: [['Sec-Fetch-Mode', 'navigate']] }, { headers: [['Content-Encoding', 'gzip']] },
+    { method: 'GET' },
+    { method: 'OPTIONS' },
+    { path: `${route}?tenantId=tenant` },
+    { path: `${route}/` },
+    { path: '/v1/admin/audit' },
+    { path: '/v1/task/snapshot' },
+    { headers: [['Origin', 'http://attacker.invalid']] },
+    { headers: [['Sec-Fetch-Site', 'same-origin']] },
+    { headers: [['Sec-Fetch-Mode', 'navigate']] },
+    { headers: [['Content-Encoding', 'gzip']] },
     { omit: ['content-type'], headers: [['Content-Type', 'text/plain']] },
     { omit: ['host'], headers: [['Host', 'attacker.invalid']] },
   ];
@@ -167,7 +229,12 @@ test('observer permits standalone native-fetch cors mode while rejecting browser
   const service = await setup(t);
   const native = await raw(t, service, { headers: [['Sec-Fetch-Mode', 'cors']] });
   assert.equal(native.status, 200, native.text);
-  const browser = await raw(t, service, { headers: [['Sec-Fetch-Mode', 'cors'], ['Sec-Fetch-Site', 'same-origin']] });
+  const browser = await raw(t, service, {
+    headers: [
+      ['Sec-Fetch-Mode', 'cors'],
+      ['Sec-Fetch-Site', 'same-origin'],
+    ],
+  });
   assert.equal(browser.status, 403, browser.text);
   assert.equal(service.exports(), 1);
 });
@@ -175,7 +242,13 @@ test('observer permits standalone native-fetch cors mode while rejecting browser
 test('observer refuses upgrades, expectations, CONNECT and oversized headers', async t => {
   const service = await setup(t);
   const requests = [
-    { omit: ['connection'], headers: [['Connection', 'Upgrade'], ['Upgrade', 'websocket']] },
+    {
+      omit: ['connection'],
+      headers: [
+        ['Connection', 'Upgrade'],
+        ['Upgrade', 'websocket'],
+      ],
+    },
     { headers: [['Expect', '100-continue']] },
     { method: 'CONNECT', path: new URL(service.url).host },
     { headers: [['X-Oversized', 'x'.repeat(9000)]] },
@@ -234,9 +307,12 @@ test('observer bounds incomplete-header socket lifetime and connections', async 
 });
 
 test('observer rate limits each credential independently while counting denied scope attempts', async t => {
-  const first = createInventoryObserverToken(), second = createInventoryObserverToken();
-  const service = await setup(t, { rateLimit: { maxRequests: 1, windowMs: 1000 } },
-    [{ token: first, tenantIds: ['tenant'] }, { token: second, tenantIds: ['tenant'] }]);
+  const first = createInventoryObserverToken(),
+    second = createInventoryObserverToken();
+  const service = await setup(t, { rateLimit: { maxRequests: 1, windowMs: 1000 } }, [
+    { token: first, tenantIds: ['tenant'] },
+    { token: second, tenantIds: ['tenant'] },
+  ]);
   assert.equal((await post(service, first, { tenantId: 'foreign' })).status, 403);
   const denied = await post(service, first);
   assert.equal(denied.status, 429);
@@ -262,7 +338,16 @@ test('observer globally bounds unknown credential attempts and resets its fixed 
 });
 
 for (const [name, special] of [
-  ['upgrade', service => ({ omit: ['connection'], headers: [['Connection', 'Upgrade'], ['Upgrade', 'websocket']] })],
+  [
+    'upgrade',
+    service => ({
+      omit: ['connection'],
+      headers: [
+        ['Connection', 'Upgrade'],
+        ['Upgrade', 'websocket'],
+      ],
+    }),
+  ],
   ['CONNECT', service => ({ method: 'CONNECT', path: new URL(service.url).host })],
   ['parser rejection', service => ({ headers: [['X-Oversized', 'x'.repeat(9000)]] })],
 ]) {
@@ -270,7 +355,8 @@ for (const [name, special] of [
     const service = await setup(t, { rateLimit: { maxRequests: 2, windowMs: 1000 } });
     const first = await raw(t, service, special(service));
     const second = await raw(t, service, special(service));
-    assert.notEqual(first.status, 200); assert.notEqual(second.status, 200);
+    assert.notEqual(first.status, 200);
+    assert.notEqual(second.status, 200);
     const denied = await post(service);
     assert.equal(denied.status, 429);
     assert.equal(denied.body.error, 'INVENTORY_RATE_LIMITED');

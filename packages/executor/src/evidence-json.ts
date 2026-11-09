@@ -26,13 +26,18 @@ export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number, maxNodes 
   // expression on long escaped strings supplied by providers or evidence files.
   for (let offset = 0; offset < source.length;) {
     const char = source[offset]!;
-    if (char === '{') { objects.push(new Set()); offset++; }
-    else if (char === '}') { objects.pop(); offset++; }
-    else if (char === '"') {
+    if (char === '{') {
+      objects.push(new Set());
+      offset++;
+    } else if (char === '}') {
+      objects.pop();
+      offset++;
+    } else if (char === '"') {
       const start = offset++;
       while (offset < source.length) {
         const current = source[offset++];
-        if (current === '\\') offset++; // JSON.parse already checked the escape grammar.
+        if (current === '\\')
+          offset++; // JSON.parse already checked the escape grammar.
         else if (current === '"') break;
       }
       let next = offset;
@@ -46,8 +51,15 @@ export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number, maxNodes 
       const start = offset++;
       while (offset < source.length) {
         const current = source[offset]!;
-        if ((current >= '0' && current <= '9') || current === '.' || current === 'e' ||
-            current === 'E' || current === '+' || current === '-') offset++;
+        if (
+          (current >= '0' && current <= '9') ||
+          current === '.' ||
+          current === 'e' ||
+          current === 'E' ||
+          current === '+' ||
+          current === '-'
+        )
+          offset++;
         else break;
       }
       checkNumber(source.slice(start, offset));
