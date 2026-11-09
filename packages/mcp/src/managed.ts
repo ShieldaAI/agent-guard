@@ -34,6 +34,10 @@ export interface McpBinding {
   controlPlane?: boolean;
   maxCost?: number;
   measureCost?: (result: Json) => number;
+  /** Outside-content labels passed to the guard (see ToolDefinition). */
+  readsUntrusted?: boolean;
+  untrustedContext?: 'allow' | 'require_approval' | 'deny';
+  sendsExternal?: boolean;
 }
 export interface McpResourceBinding extends McpBinding {
   uri: string;
@@ -51,6 +55,12 @@ export interface ManagedMcpOptions {
   /** Exact, advertised resource URIs only; no templates or automatic link fetching. */
   resources?: readonly McpResourceBinding[];
   prompts?: readonly McpBinding[];
+  /**
+   * Mark every operation on this connection as reading outside content, for a server whose
+   * results people outside the trust boundary can write. A binding's own readsUntrusted wins.
+   * Default false.
+   */
+  readsUntrusted?: boolean;
   /**
    * maxMessages is a sliding-window rate: at most this many inbound messages per
    * messageWindowMs (defaults 10,000 per 10 s). Exceeding it quarantines; refresh() recovers.
@@ -169,6 +179,7 @@ export class ManagedMcpConnection {
   readonly #pendingRequests = new Set<string | number>();
   readonly #authorize: (() => void) | undefined;
   readonly #protectedValues: readonly string[];
+  readonly #readsUntrusted: boolean;
   #epoch = 0;
   // Observation revision includes ready transitions without changing execution epochs.
   #inventoryRevision = 0;
@@ -193,6 +204,9 @@ export class ManagedMcpConnection {
     )
       throw new McpBoundaryError('INVALID_CONFIGURATION');
     this.#protectedValues = Object.freeze([...protectedValues]);
+    if (options.readsUntrusted !== undefined && typeof options.readsUntrusted !== 'boolean')
+      throw new McpBoundaryError('INVALID_CONFIGURATION');
+    this.#readsUntrusted = options.readsUntrusted === true;
     this.#identity = Object.freeze({
       serverId: identifier(options.identity.serverId),
       transportIdentity: identifier(options.identity.transportIdentity),
@@ -576,6 +590,9 @@ export class ManagedMcpConnection {
       ...(binding.requiresApproval === undefined ? {} : { requiresApproval: binding.requiresApproval }),
       ...(binding.controlPlane === undefined ? {} : { controlPlane: binding.controlPlane }),
       ...(binding.maxCost === undefined ? {} : { maxCost: binding.maxCost }),
+      ...((binding.readsUntrusted ?? this.#readsUntrusted) ? { readsUntrusted: true } : {}),
+      ...(binding.untrustedContext === undefined ? {} : { untrustedContext: binding.untrustedContext }),
+      ...(binding.sendsExternal === undefined ? {} : { sendsExternal: binding.sendsExternal }),
       resolve: (args, task) => {
         this.#assertEpoch(epoch);
         if (task.principalId !== this.#identity.principalId || task.tenantId !== this.#identity.tenantId)

@@ -10,6 +10,7 @@ import {
   type TaskOptions,
   type TaskSnapshot,
   type ToolDefinition,
+  type UntrustedContextMode,
 } from '@shieldaai/agent-guard';
 import {
   PolicyAdmission,
@@ -118,6 +119,8 @@ export interface ExecutorOptions {
    * never invalidate a decision. Integer 1-16, default 5; 1 keeps single-evaluation behaviour.
    */
   maxPolicyAttempts?: number;
+  /** untrustedContext for tools that do not set it. Default 'allow' in 0.x. */
+  untrustedContextDefault?: UntrustedContextMode;
   /**
    * Operator override for a backward system-clock step, in milliseconds (up to 24 hours).
    * At startup only, if the clock is behind the last recorded time by no more than this,
@@ -152,6 +155,7 @@ export class DurableExecutor {
   readonly #maxReceiptsPerFamily: number;
   readonly #maxRecentEventsPerTenant: number;
   readonly #maxPolicyAttempts: number;
+  readonly #untrustedDefault: UntrustedContextMode;
   /** Per-task queue for policy re-evaluations; first attempts stay parallel. */
   readonly #policyTurns = new Map<string, Promise<void>>();
   readonly #maxPendingActionsPerFamily: number;
@@ -189,6 +193,9 @@ export class DurableExecutor {
       return selected;
     };
     this.#maxPolicyAttempts = bounded(options.maxPolicyAttempts, 5, 16);
+    const untrustedDefault = options.untrustedContextDefault ?? 'allow';
+    if (!['allow', 'require_approval', 'deny'].includes(untrustedDefault)) throw new GuardError('INVALID_INPUT');
+    this.#untrustedDefault = untrustedDefault;
     this.#maxReceiptsPerFamily = bounded(options.maxReceiptsPerFamily, 64, 4096);
     this.#maxRecentEventsPerTenant = bounded(
       options.maxRecentEventsPerTenant,
@@ -442,6 +449,7 @@ export class DurableExecutor {
       principalId: task.options.principalId,
       tenantId: task.options.tenantId,
       sensitive: state.families[task.family]!.sensitive,
+      untrusted: state.families[task.family]!.untrusted === true,
       calls: task.calls,
       concurrent: task.concurrent,
       spent: task.spent,
@@ -576,7 +584,21 @@ export class DurableExecutor {
       sensitive: state.families[task.family]!.sensitive,
       secretValues: this.#secrets,
       phase,
+      untrusted: state.families[task.family]!.untrusted === true,
+      untrustedContext: this.#untrustedModeOf(registration.definition),
     });
+  }
+  #untrustedModeOf(definition: ToolDefinition): UntrustedContextMode {
+    return definition.untrustedContext ?? this.#untrustedDefault;
+  }
+  /** The family has read outside content and this tool requires a review after that. */
+  #untrustedApproval(state: Ledger, action: StoredAction): boolean {
+    const registration = this.#tools.get(action.action.tool);
+    return (
+      state.families[this.#task(state, action.taskId).family]!.untrusted === true &&
+      !!registration &&
+      this.#untrustedModeOf(registration.definition) === 'require_approval'
+    );
   }
   /** The exact inputs a custom policy sees for this task: its own counters and shared sensitivity. */
   #policyInputs(state: Ledger, taskId: string): string {
@@ -871,7 +893,8 @@ export class DurableExecutor {
           this.#gates(evaluated, stored, 'prepare');
         }
         const decision = await this.#decision(evaluated, stored);
-        stored.requiresApproval = toolRequiresApproval || decision === 'require_approval';
+        stored.requiresApproval =
+          toolRequiresApproval || decision === 'require_approval' || this.#untrustedApproval(evaluated, stored);
         const expected = this.#policy ? this.#policyInputs(evaluated, taskId) : undefined;
         try {
           this.#store.transaction(current => {
@@ -934,6 +957,7 @@ export class DurableExecutor {
         expiresAt: options.expiresAt,
         approverId: id(options.approverId),
         used: false,
+        untrusted: state.families[this.#task(state, action.taskId).family]!.untrusted === true,
       };
       this.#audit(state, now, 'ACTION_APPROVED', action.taskId, actionId);
     });
@@ -982,13 +1006,28 @@ export class DurableExecutor {
         this.#gates(state, action);
         const now = this.#now(state);
         let approvalDeadline: number | undefined;
-        if (options.approvalId !== undefined || action.requiresApproval || decision === 'require_approval') {
+        if (
+          options.approvalId !== undefined ||
+          action.requiresApproval ||
+          decision === 'require_approval' ||
+          this.#untrustedApproval(state, action)
+        ) {
           if (!options.approvalId) throw new GuardError('APPROVAL_REQUIRED');
           const approval = own(state.approvals, options.approvalId);
           if (!approval || approval.actionId !== actionId || approval.digest !== action.digest)
             throw new GuardError('APPROVAL_INVALID');
           if (approval.used) throw new GuardError('APPROVAL_USED');
           if (now >= approval.expiresAt) throw new GuardError('APPROVAL_EXPIRED');
+          const family = state.families[this.#task(state, taskId).family]!;
+          const registration = this.#tools.get(action.action.tool);
+          // Approved while the family was clean (or before 0.2 recorded it); it has since read outside content.
+          if (
+            approval.untrusted !== true &&
+            family.untrusted === true &&
+            registration &&
+            this.#untrustedModeOf(registration.definition) !== 'allow'
+          )
+            throw new GuardError('APPROVAL_CONTEXT_CHANGED');
           approval.used = true;
           approvalDeadline = approval.expiresAt;
         }
@@ -1000,6 +1039,9 @@ export class DurableExecutor {
         }
         const task = this.#task(state, taskId);
         if (action.action.sensitive) state.families[task.family]!.sensitive = true;
+        // Persisted at admission, before the handler runs, and never cleared; it survives restart.
+        if (this.#tools.get(action.action.tool)?.definition.readsUntrusted || action.action.untrusted)
+          state.families[task.family]!.untrusted = true;
         action.status = 'ADMITTED';
         this.#audit(state, now, 'ACTION_ADMITTED', taskId, actionId);
         return {

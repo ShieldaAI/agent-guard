@@ -6,6 +6,7 @@ import { assertActionAuthority, type AuthorityPhase } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
   Action,
+  UntrustedContextMode,
   Budget,
   Capability,
   ExecutionResult,
@@ -33,6 +34,7 @@ export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
 export * from './deprecated.js';
 export type {
   Action,
+  UntrustedContextMode,
   Budget,
   Capability,
   ExecutionResult,
@@ -74,6 +76,9 @@ type ToolState = {
   requiresApproval: boolean;
   controlPlane: boolean;
   maxCost: number;
+  readsUntrusted: boolean;
+  untrustedContext: UntrustedContextMode | undefined;
+  sendsExternal: boolean | undefined;
   resolve: ToolDefinition['resolve'];
   execute: ToolDefinition['execute'];
   parse: ToolDefinition['parse'];
@@ -86,7 +91,7 @@ type TaskState = {
   allowControlPlane: boolean;
   budget: Readonly<Budget>;
   parent: TaskState | undefined;
-  family: { id: string; sensitive: boolean };
+  family: { id: string; sensitive: boolean; untrusted: boolean };
   revoked: boolean;
   calls: number;
   concurrent: number;
@@ -105,7 +110,15 @@ type PreparedState = {
 type ApprovalState = {
   expiresAt: number;
   approverId: string;
+  /** Whether the family had read outside content when the approval was issued. */
+  untrusted: boolean;
 };
+const UNTRUSTED_MODES: readonly string[] = ['allow', 'require_approval', 'deny'];
+function untrustedMode(value: unknown): UntrustedContextMode | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !UNTRUSTED_MODES.includes(value)) fail('INVALID_INPUT');
+  return value as UntrustedContextMode;
+}
 type PolicyEvaluation = { decision: PolicyDecision; snapshot?: Readonly<TaskSnapshot> };
 
 function fail(code: ConstructorParameters<typeof GuardError>[0], cause?: unknown): never {
@@ -209,6 +222,7 @@ export class AgentGuard {
   #prepared = new WeakMap<PreparedAction, PreparedState>();
   #policyAdmission: PolicyAdmission;
   #maxApprovals: number;
+  #untrustedDefault: UntrustedContextMode;
   #onDecision: ((event: Readonly<GuardDecision>) => void) | undefined;
   #taskIds = new Set<string>();
   #revision = 0;
@@ -239,6 +253,7 @@ export class AgentGuard {
       return selected;
     };
     this.#maxApprovals = bounded(limits.maxApprovalsPerAction, 4, 1, 64);
+    this.#untrustedDefault = untrustedMode(options.untrustedContextDefault) ?? 'allow';
     this.#policyAdmission = new PolicyAdmission({
       maxPending: bounded(limits.maxPolicyEvaluations, 64, 1, 1024),
       maxPendingPerFamily: bounded(limits.maxPolicyEvaluationsPerFamily, 8, 1, 1024),
@@ -265,6 +280,10 @@ export class AgentGuard {
     const controlPlane = optionalBoolean(definition.controlPlane);
     const maxCost = definition.maxCost ?? 0;
     if (!costUnits(maxCost)) fail('INVALID_INPUT');
+    const readsUntrusted = optionalBoolean(definition.readsUntrusted);
+    const untrustedContext = untrustedMode(definition.untrustedContext);
+    const sendsExternal =
+      definition.sendsExternal === undefined ? undefined : optionalBoolean(definition.sendsExternal);
     const metadata = normalizeJson({
       name,
       description: definition.description,
@@ -274,6 +293,10 @@ export class AgentGuard {
       controlPlane,
       maxCost,
       parsedArguments: definition.parse !== undefined,
+      // Added only when set, so tools that use none of them keep their 0.1 fingerprint.
+      ...(definition.readsUntrusted === undefined ? {} : { readsUntrusted }),
+      ...(untrustedContext === undefined ? {} : { untrustedContext }),
+      ...(sendsExternal === undefined ? {} : { sendsExternal }),
     });
     const fingerprint = `sha256:${digestJson(metadata)}`;
     this.#tools.set(name, {
@@ -284,6 +307,9 @@ export class AgentGuard {
       requiresApproval,
       controlPlane,
       maxCost,
+      readsUntrusted,
+      untrustedContext,
+      sendsExternal,
       resolve: definition.resolve,
       execute: definition.execute,
       parse: definition.parse,
@@ -399,6 +425,8 @@ export class AgentGuard {
     const resolve = tool.resolve;
     try {
       resolved = this.#resolved(synchronousResult(resolve(args, state.identity)));
+      // sendsExternal: false is a promise about every call; an external resolution breaks it.
+      if (tool.sendsExternal === false && resolved.external) fail('INVALID_INPUT');
     } catch (error) {
       return fail('RESOLUTION_FAILED', error);
     }
@@ -437,7 +465,8 @@ export class AgentGuard {
       id,
       digest,
       action,
-      requiresApproval: tool.requiresApproval || evaluation.decision === 'require_approval',
+      requiresApproval:
+        tool.requiresApproval || evaluation.decision === 'require_approval' || this.#untrustedApproval(state, tool),
     });
     this.#prepared.set(handle, { handle, task: state, tool, policyVersion, dispatched: false, approvals: new Map() });
     return handle;
@@ -474,7 +503,7 @@ export class AgentGuard {
     for (const [id, approval] of state.approvals) if (now >= approval.expiresAt) state.approvals.delete(id);
     if (state.approvals.size >= this.#maxApprovals) fail('ACTION_APPROVAL_LIMIT');
     const id = randomUUID();
-    state.approvals.set(id, { expiresAt, approverId });
+    state.approvals.set(id, { expiresAt, approverId, untrusted: state.task.family.untrusted });
     return id;
   }
 
@@ -535,7 +564,9 @@ export class AgentGuard {
     this.#approval(
       state,
       approvalId,
-      state.handle.requiresApproval || evaluation.decision === 'require_approval',
+      state.handle.requiresApproval ||
+        evaluation.decision === 'require_approval' ||
+        this.#untrustedApproval(state.task, state.tool),
       dispatchTime,
     );
     const ancestors = lineage(state.task);
@@ -550,6 +581,8 @@ export class AgentGuard {
       task.active.add(controller);
     }
     if (state.handle.action.sensitive) state.task.family.sensitive = true;
+    // Set at dispatch, before the handler runs: a read that fails partway may already have content.
+    if (state.tool.readsUntrusted || state.handle.action.untrusted) state.task.family.untrusted = true;
 
     let charge = state.tool.maxCost;
     try {
@@ -631,6 +664,7 @@ export class AgentGuard {
         operation,
         outcome,
         taskId: task.identity.id,
+        untrusted: task.family.untrusted,
         tenantId: task.identity.tenantId,
         principalId: task.identity.principalId,
         ...(detail.tool === undefined ? {} : { tool: detail.tool }),
@@ -699,7 +733,7 @@ export class AgentGuard {
       allowControlPlane,
       budget,
       parent,
-      family: parent?.family ?? { id: identity.id, sensitive: false },
+      family: parent?.family ?? { id: identity.id, sensitive: false, untrusted: false },
       revoked: false,
       calls: 0,
       concurrent: 0,
@@ -743,7 +777,10 @@ export class AgentGuard {
     const data = asObject(normalizeJson(value));
     if (
       Object.keys(data).some(
-        key => !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive', 'resourceVersion'].includes(key),
+        key =>
+          !['resourceId', 'tenantId', 'external', 'recipient', 'sensitive', 'resourceVersion', 'untrusted'].includes(
+            key,
+          ),
       )
     )
       fail('INVALID_INPUT');
@@ -755,6 +792,11 @@ export class AgentGuard {
     };
     if (Object.hasOwn(data, 'recipient')) result.recipient = identifier(data.recipient);
     if (Object.hasOwn(data, 'resourceVersion')) result.resourceVersion = identifier(data.resourceVersion);
+    // A resolver may only add the outside-content mark; false cannot clear it.
+    if (Object.hasOwn(data, 'untrusted')) {
+      if (data.untrusted !== true) fail('INVALID_INPUT');
+      result.untrusted = true;
+    }
     return Object.freeze(result);
   }
 
@@ -787,6 +829,8 @@ export class AgentGuard {
         sensitive: task.family.sensitive,
         secretValues: this.#secrets,
         phase,
+        untrusted: task.family.untrusted,
+        untrustedContext: this.#untrustedModeOf(tool),
       },
     );
     return now;
@@ -828,7 +872,8 @@ export class AgentGuard {
         snapshot.concurrent !== task.concurrent ||
         snapshot.spent !== task.spent ||
         snapshot.reserved !== task.reserved ||
-        snapshot.sensitive !== task.family.sensitive)
+        snapshot.sensitive !== task.family.sensitive ||
+        snapshot.untrusted !== task.family.untrusted)
     );
   }
 
@@ -844,12 +889,23 @@ export class AgentGuard {
       state.approvals.delete(id);
       fail('APPROVAL_EXPIRED');
     }
+    // The reviewer approved a clean family; it has since read outside content.
+    if (!approval.untrusted && state.task.family.untrusted && this.#untrustedModeOf(state.tool) !== 'allow')
+      fail('APPROVAL_CONTEXT_CHANGED');
+  }
+
+  #untrustedModeOf(tool: ToolState): UntrustedContextMode {
+    return tool.untrustedContext ?? this.#untrustedDefault;
+  }
+  #untrustedApproval(task: TaskState, tool: ToolState): boolean {
+    return task.family.untrusted && this.#untrustedModeOf(tool) === 'require_approval';
   }
 
   #snapshot(task: TaskState): Readonly<TaskSnapshot> {
     return Object.freeze({
       ...task.identity,
       sensitive: task.family.sensitive,
+      untrusted: task.family.untrusted,
       calls: task.calls,
       concurrent: task.concurrent,
       spent: task.spent,

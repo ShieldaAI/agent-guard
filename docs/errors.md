@@ -51,6 +51,8 @@ the adapter error has a safe uppercase `code`, the `GuardError` keeps it as `det
 | `RESULT_INVALID` | The tool returned a malformed result. | no | 503 | The result was not bounded JSON; the effect may already have happened. |
 | `TOOL_FAILED` | The tool handler failed; the outcome is unknown. | no | 503 | The handler threw. Do not retry blindly: the effect may have happened. |
 | `EXECUTION_ABORTED` | The call was aborted; the outcome is unknown. | no | 503 | Deadline, revocation or cancellation during dispatch. Check the backend before retrying. |
+| `UNTRUSTED_CONTEXT_DENIED` | This tool can't run after the task family read outside content. | no | 403 | The tool sets untrustedContext deny (or inherits it) and an earlier call read outside content. |
+| `APPROVAL_CONTEXT_CHANGED` | The task family read outside content after this approval was given. | no | 409 | A call that reads outside content ran after approval; ask the reviewer to approve the current state. |
 | `CLOCK_INVALID` | The guard clock returned an invalid or backward time. | no | 503 | A broken clock option, or a large backward wall-clock step. |
 
 ## Durable executor codes

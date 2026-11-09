@@ -54,6 +54,12 @@ by a printed ID. Tenant identity comes from the host. A child task's authority i
 the intersection of the applicable grants, and revocation follows ancestry.
 Delegation is local to one executor and its shared context.
 
+**Outside content (opt-in).** Tools labelled `readsUntrusted` mark their task
+family `untrusted` once they run. After that, tools in `require_approval` need a review
+and tools in `deny` are refused, and approvals given before the read are invalid. The
+labels are the host's claim; this limits what a fooled agent can do but does not detect
+prompt injection. See the [threat model](threat-model.md#outside-content).
+
 **Exact approval.** An approval binds the tenant, arguments, resource version,
 expiry and, for isolated workloads, the exact staged bytes. It is single use, and
 expiry is checked before dispatch. A policy change invalidates existing prepared

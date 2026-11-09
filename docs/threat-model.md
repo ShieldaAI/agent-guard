@@ -88,6 +88,22 @@ For hostile code or untrusted tool servers, add an operating-system or service b
 
 For MCP, the registered handler is the client bridge promise. The SDK can reject that promise on cancellation before a remote server has stopped. Local concurrency and cost reservations settle with the bridge, so enforce remote concurrency, cost ceilings and cancellation at the server or provider as well. A passing linked-transport SDK test does not establish HTTP/stdio transport security, authentication or remote-server isolation.
 
+## Outside content
+
+Tools can be labelled `readsUntrusted` (they return content people outside the trust
+boundary can write), `untrustedContext` (`allow`, `require_approval` or `deny` once the
+task family has read such content) and `sendsExternal` (`false` is enforced against the
+resolver). Once a family dispatches a call that reads outside content, it is marked
+`untrusted` for good, in core and in the durable ledger. A tool in `require_approval`
+then needs a review even if it normally doesn't, an approval given before the read
+fails with `APPROVAL_CONTEXT_CHANGED`, and a tool in `deny` fails with
+`UNTRUSTED_CONTEXT_DENIED` even with an approval.
+
+These labels are the host's claim. Nothing detects prompt injection: an unlabelled tool
+that returns attacker text does not mark the family, and an injected instruction can
+still steer calls that remain allowed. The default mode is `allow`, so nothing changes
+until a host opts in.
+
 ## Agent Ops (reference app)
 
 [Agent Ops](../apps/agent-ops/README.md) is a reference service for one Linux owner. It adds a browser and agent HTTP boundary in front of the durable executor.

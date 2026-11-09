@@ -302,7 +302,7 @@ test('resolver failure, invalid metadata and invalid policy results fail closed 
     ['missing tenant', { resolve: () => ({ resourceId: 'record:1' }) }],
     ['async resolver', { resolve: async () => ({ resourceId: 'record:1', tenantId: 'tenant:1' }) }],
     ['truthy external', { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', external: 'false' }) }],
-    ['unknown fields', { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', untrusted: true }) }],
+    ['unknown fields', { resolve: () => ({ resourceId: 'record:1', tenantId: 'tenant:1', trusted: true }) }],
   ])
     await t.test(name, async () => {
       const f = fixture({ tool });

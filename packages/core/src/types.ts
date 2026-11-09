@@ -38,7 +38,11 @@ export interface ResolvedAction {
   sensitive?: boolean;
   /** Version bound into approval; the handler must enforce it at the actual resource. */
   resourceVersion?: string;
+  /** Per-call mark that this call returns outside content; it can only add the flag, never clear it. */
+  untrusted?: true;
 }
+/** What a tool does once its task family has read outside content. */
+export type UntrustedContextMode = 'allow' | 'require_approval' | 'deny';
 export interface ToolDefinition {
   name: string;
   description: string;
@@ -48,6 +52,16 @@ export interface ToolDefinition {
   controlPlane?: boolean;
   /** Maximum cost reserved before dispatch, as a nonnegative safe integer. Defaults to zero. */
   maxCost?: number;
+  /**
+   * The tool returns content that people outside the trust boundary can write (email, web
+   * pages, customer tickets, third-party MCP results). Dispatching it marks the whole task
+   * family `untrusted` for good. Labels are the host's claim; nothing here detects injection.
+   */
+  readsUntrusted?: boolean;
+  /** What happens to this tool once the family is untrusted. Defaults to GuardOptions.untrustedContextDefault. */
+  untrustedContext?: UntrustedContextMode;
+  /** false is enforced: a resolver returning external: true fails INVALID_INPUT. Omitted means unknown. */
+  sendsExternal?: boolean;
   /** Trusted synchronous schema parser. Its normalized result is frozen before resolution. */
   parse?(input: Json): Json;
   resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
@@ -73,6 +87,8 @@ export interface Action extends ResolvedAction {
 }
 export interface TaskSnapshot extends TaskIdentity {
   sensitive: boolean;
+  /** The task family has dispatched a call that reads outside content. */
+  untrusted: boolean;
   calls: number;
   concurrent: number;
   spent: number;
@@ -107,6 +123,8 @@ export interface GuardOptions {
   onDecision?: (event: Readonly<GuardDecision>) => void;
   /** Bounds that were fixed before 0.2. Every value defaults to the previous constant. */
   limits?: GuardLimits;
+  /** untrustedContext for tools that do not set it. Default 'allow' in 0.x. */
+  untrustedContextDefault?: UntrustedContextMode;
 }
 export interface GuardLimits {
   /** Outstanding approvals per prepared action. Integer 1-64, default 4. */
@@ -133,6 +151,8 @@ export interface GuardDecision {
   resourceId?: string;
   approverId?: string;
   code?: GuardErrorCodeValue;
+  /** Whether the task family had read outside content at this decision. */
+  untrusted: boolean;
 }
 /** Result of `executeDetailed()`. */
 export interface ExecutionResult {
@@ -188,6 +208,8 @@ export const GuardErrorCode = Object.freeze({
   TOOL_FAILED: 'TOOL_FAILED',
   EXECUTION_ABORTED: 'EXECUTION_ABORTED',
   CLOCK_INVALID: 'CLOCK_INVALID',
+  UNTRUSTED_CONTEXT_DENIED: 'UNTRUSTED_CONTEXT_DENIED',
+  APPROVAL_CONTEXT_CHANGED: 'APPROVAL_CONTEXT_CHANGED',
 } as const);
 
 export type GuardErrorCodeValue = (typeof GuardErrorCode)[keyof typeof GuardErrorCode];

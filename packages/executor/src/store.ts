@@ -103,10 +103,15 @@ export interface Ledger {
   /** Stable for the lifetime of this ledger, including restarts and additive schema-1 upgrades. */
   inventoryInstanceId: string;
   tasks: Record<string, StoredTask>;
-  families: Record<string, { sensitive: boolean; memorySources?: string[] }>;
+  /** untrusted: a family call read outside content (set at admission, never cleared). */
+  families: Record<string, { sensitive: boolean; untrusted?: boolean; memorySources?: string[] }>;
   tools: Record<string, { fingerprint: string; revision: number; approved: boolean }>;
   actions: Record<string, StoredAction>;
-  approvals: Record<string, { actionId: string; digest: string; expiresAt: number; approverId: string; used: boolean }>;
+  /** untrusted: the family state when the approval was issued; absent on approvals older than 0.2. */
+  approvals: Record<
+    string,
+    { actionId: string; digest: string; expiresAt: number; approverId: string; used: boolean; untrusted?: boolean }
+  >;
   memory: Record<string, MemoryRecord[]>;
   /** Recent metadata events: bounded per tenant, not a complete history. */
   audit: { time: number; event: string; sequence?: number; tenantId?: string; taskId?: string; actionId?: string }[];

@@ -49,6 +49,7 @@ interface GuardOptions {
   clock?: () => number; // milliseconds; default Date.now. monotonicClock() never steps backward.
   maxPolicyAttempts?: number; // 1-16, default 5
   onDecision?: (event: Readonly<GuardDecision>) => void; // observes only; a throwing hook is ignored
+  untrustedContextDefault?: 'allow' | 'require_approval' | 'deny'; // default 'allow'
   limits?: { maxApprovalsPerAction?: number; maxPolicyEvaluations?: number;
     maxPolicyEvaluationsPerFamily?: number; policyTimeoutMs?: number }; // defaults 4, 64, 8, 30,000
 }

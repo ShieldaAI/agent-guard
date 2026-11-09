@@ -179,6 +179,16 @@ export const GuardErrorCatalog: Readonly<Record<GuardErrorCodeValue, GuardErrorI
     false,
     'Deadline, revocation or cancellation during dispatch. Check the backend before retrying.',
   ),
+  UNTRUSTED_CONTEXT_DENIED: entry(
+    "This tool can't run after the task family read outside content.",
+    false,
+    'The tool sets untrustedContext deny (or inherits it) and an earlier call read outside content.',
+  ),
+  APPROVAL_CONTEXT_CHANGED: entry(
+    'The task family read outside content after this approval was given.',
+    false,
+    'A call that reads outside content ran after approval; ask the reviewer to approve the current state.',
+  ),
   CLOCK_INVALID: entry(
     'The guard clock returned an invalid or backward time.',
     false,

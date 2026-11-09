@@ -7,6 +7,15 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (core, executor, MCP; opt-in): an outside-content flag. Tools can declare
+  `readsUntrusted`, `untrustedContext` (`allow` / `require_approval` / `deny`) and
+  `sendsExternal` (`false` enforced); a resolver can add `untrusted: true` per call. A
+  family that dispatches such a call is marked `untrusted` for good (persisted in the
+  ledger). Then `require_approval` tools need a review, a pre-read approval fails with
+  `APPROVAL_CONTEXT_CHANGED`, and `deny` tools fail with `UNTRUSTED_CONTEXT_DENIED`.
+  `snapshot()`, policies and `onDecision` see the flag; MCP connections can be marked
+  `readsUntrusted`. Defaults are unchanged (`allow`), and tools that set none of the
+  labels keep their fingerprints.
 - Change (executor): the numbered task ID scheme that lifecycle export fences rely on is
   now a documented executor feature, `numberedTaskId()` and `NUMBERED_TASK_PREFIX`,
   instead of an Agent Ops convention string-built in two places. Persisted formats

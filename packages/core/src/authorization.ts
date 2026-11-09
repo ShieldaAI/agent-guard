@@ -42,6 +42,10 @@ export function assertActionAuthority(
     sensitive: boolean;
     secretValues: readonly string[];
     phase?: AuthorityPhase;
+    /** The task family has read outside content. */
+    untrusted?: boolean;
+    /** This tool's mode once the family is untrusted; `deny` refuses even with an approval. */
+    untrustedContext?: 'allow' | 'require_approval' | 'deny';
   },
 ): void {
   const deny = (code: ConstructorParameters<typeof GuardError>[0]): never => {
@@ -77,4 +81,6 @@ export function assertActionAuthority(
     if (options.sensitive || action.sensitive) deny('SENSITIVE_EGRESS_DENIED');
     if (containsLiteralSecret(action.args, options.secretValues)) deny('SECRET_EGRESS_DENIED');
   }
+  // require_approval is enforced by the caller's approval check; deny cannot be approved.
+  if (options.untrusted && options.untrustedContext === 'deny') deny('UNTRUSTED_CONTEXT_DENIED');
 }
