@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { performance } from 'node:perf_hooks';
 import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } from 'jose';
 import type { FetchLike } from '@modelcontextprotocol/client';
-import { boundedJson, McpBoundaryError } from './boundary.js';
+import { boundedJson, McpBoundaryError, type McpBoundaryErrorCode } from './boundary.js';
 import { assertVerifiedMcpClaims, type VerifiedMcpClaims } from './authorization.js';
 import { ManagedMcpConnection, type ManagedMcpOptions, type McpConnectionIdentity } from './managed.js';
 import { createRestrictedMcpHttpTransport } from './http.js';
@@ -28,7 +28,7 @@ export interface VerifiedMcpHttpOptions extends Pick<ManagedMcpOptions, 'guard' 
   readonly maxResponseBytes?: number;
   readonly maxTokenLifetimeSeconds?: number;
 }
-function deny(code = 'AUTHORIZATION_DENIED'): never { throw new McpBoundaryError(code); }
+function deny(code: McpBoundaryErrorCode = 'AUTHORIZATION_DENIED'): never { throw new McpBoundaryError(code); }
 function text(value: unknown, maximum = 4096): string {
   if (typeof value !== 'string' || !value.trim() || value.length > maximum) deny('INVALID_CONFIGURATION');
   return value;

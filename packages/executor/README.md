@@ -71,7 +71,13 @@ reviewer. On a dispatch error or lost response, call `client.execution(action.id
 inspect the task's retained status. If it is `UNKNOWN`, stop and give the action ID to
 the operator for backend reconciliation. A `PRUNED` receipt carries the settled
 `outcome`. Starting a new action can repeat an effect.
-Task responses carry fixed denial codes. Backend exception text stays on the executor side.
+Task responses carry fixed denial codes and an HTTP status by kind: 401
+unauthenticated, 403 authority denial, 404 unknown action, 409 state change or used
+action, 429 capacity, 503 store, policy or tool failure, and 400 for malformed
+requests. The JSON body is `{ "error": code, "retryable": boolean }`; `retryable` is
+true only when repeating the same request later cannot repeat an effect.
+`ExecutorClient` errors carry the same `code` and `retryable`. See the
+[error catalog](../../docs/errors.md). Backend exception text stays on the executor side.
 When the reviewer refuses a prepared action, the trusted host calls
 `executor.cancel(taskId, action.id)` to retire it and prevent dispatch with an
 earlier approval. `recordReviewDecision(action.id, 'denied')` only records the review.

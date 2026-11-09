@@ -76,7 +76,7 @@ for (const route of ['prepare', 'execute']) {
       const action = await f.executor.prepare(f.credential.taskId, { tool: 'work', args: null });
       const input = route === 'prepare' ? { tool: 'work', args: null } : { actionId: action.id };
       const { response } = await completedRequest(f, 'task/' + route, input, { during: () => f.executor.revokeTask(f.parent.taskId) });
-      assert.equal(response.status, 401); assert.deepEqual(response.payload, { error: 'UNAUTHENTICATED' });
+      assert.equal(response.status, 401); assert.deepEqual(response.payload, { error: 'UNAUTHENTICATED', retryable: false });
       assert.deepEqual(f.events.slice(0, 3), ['authenticate', 'other-callback', 'authenticate']);
       assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
       assert.equal(f.executor.snapshot(f.credential.taskId).reserved, 0);
@@ -87,7 +87,7 @@ for (const route of ['prepare', 'execute']) {
     const action = await f.executor.prepare(f.credential.taskId, { tool: 'work', args: null });
     const input = route === 'prepare' ? { tool: 'work', args: null } : { actionId: action.id };
     const { response } = await completedRequest(f, 'task/' + route, input, { during: () => f.setTime(10000) });
-    assert.equal(response.status, 401); assert.deepEqual(response.payload, { error: 'UNAUTHENTICATED' });
+    assert.equal(response.status, 401); assert.deepEqual(response.payload, { error: 'UNAUTHENTICATED', retryable: false });
     assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
   });
   test(`task ${route} observes policy replacement during the fairness yield`, async t => {
@@ -95,7 +95,7 @@ for (const route of ['prepare', 'execute']) {
     const action = await f.executor.prepare(f.credential.taskId, { tool: 'work', args: null });
     const input = route === 'prepare' ? { tool: 'work', args: null } : { actionId: action.id };
     const { response } = await completedRequest(f, 'task/' + route, input, { during: () => f.executor.setPolicy(() => 'deny') });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, route === 'prepare' ? 403 : 409);
     assert.equal(response.payload.error, route === 'prepare' ? 'POLICY_DENIED' : 'POLICY_CHANGED');
     assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
   });
@@ -110,7 +110,7 @@ test('execute preserves fresh approval expiry and tool revision checks across th
       if (change === 'approval-expiry') f.setTime(2000);
       else f.executor.approveTool('work', f.executor.registerTool({ ...f.definition, description: 'changed registration' }));
     } });
-    assert.equal(response.status, 400);
+    assert.equal(response.status, change === 'approval-expiry' ? 403 : 409);
     assert.equal(response.payload.error, change === 'approval-expiry' ? 'APPROVAL_EXPIRED' : 'TOOL_CHANGED');
     assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
   }
@@ -123,7 +123,7 @@ test('a mutable request URL cannot change task authentication into an administra
   const { response } = await completedRequest(f, 'task/prepare', { taskId: victim.taskId }, {
     during: ({ req }) => { req.url = '/v1/admin/revoke'; },
   });
-  assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: 'REQUEST_INVALID' });
+  assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: 'REQUEST_INVALID', retryable: false });
   assert.equal(f.executor.authenticate(victim.token), victim.taskId);
   assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(victim.taskId).calls, 0);
 });
@@ -157,7 +157,7 @@ test('yield cannot dispatch after the original monotonic body deadline even befo
     // the awaiting immediate resumes before the overdue timeout callback.
     while (performance.now() < bodyStartedAt + 50) { /* deterministic deadline fault */ }
   } });
-  assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: 'REQUEST_TIMEOUT' });
+  assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: 'REQUEST_TIMEOUT', retryable: true });
   assert.equal(destroyCalls, 0); assert.equal(f.effects(), 0);
   assert.equal(f.events.filter(value => value === 'authenticate').length, 1);
   assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
@@ -171,7 +171,7 @@ test('the original body timeout remains armed through the real immediate', async
     afterLastChunk: () => t.mock.timers.tick(20), during: () => t.mock.timers.tick(10),
   });
   assert.equal(destroyCalls, 1); assert.equal(response.status, 400);
-  assert.deepEqual(response.payload, { error: 'REQUEST_TIMEOUT' });
+  assert.deepEqual(response.payload, { error: 'REQUEST_TIMEOUT', retryable: true });
   assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
 });
 
@@ -179,7 +179,7 @@ test('malformed and oversized bodies fail before a fairness yield', async t => {
   for (const [bytes, expected] of [[Buffer.from('{'), 'REQUEST_INVALID'], [Buffer.alloc(65, 32), 'REQUEST_TOO_LARGE']]) {
     const f = await fixture(t, { maxRequestBytes: 64 });
     const { response } = await completedRequest(f, 'task/prepare', null, { bytes });
-    assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: expected });
+    assert.equal(response.status, 400); assert.deepEqual(response.payload, { error: expected, retryable: false });
     assert.deepEqual(f.events, ['authenticate', 'response', 'other-callback']);
     assert.equal(f.effects(), 0); assert.equal(f.executor.snapshot(f.credential.taskId).calls, 0);
   }
@@ -257,7 +257,7 @@ test('executor closed during the yield cannot dispatch and the handler completes
   const f = await fixture(t);
   const action = await f.executor.prepare(f.credential.taskId, { tool: 'work', args: null });
   const { response } = await completedRequest(f, 'task/execute', { actionId: action.id }, { during: () => f.executor.close() });
-  assert.equal(response.status, 400); assert.equal(f.effects(), 0);
-  assert.deepEqual(response.payload, { error: 'OPERATION_FAILED' });
+  assert.equal(response.status, 503); assert.equal(f.effects(), 0);
+  assert.deepEqual(response.payload, { error: 'OPERATION_FAILED', retryable: false });
   await nextTurn();
 });

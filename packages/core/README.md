@@ -11,8 +11,13 @@ Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
+Every `GuardError.code` is documented in the [error catalog](https://github.com/ShieldaAI/agent-guard/blob/main/docs/errors.md)
+and in the exported `GuardErrorCatalog` (meaning, whether a retry is safe, typical cause).
+When core flattens an adapter error into `RESOLUTION_FAILED`, `ARGUMENT_INVALID` or
+`TOOL_FAILED`, a safe uppercase adapter code is kept as `error.detail` (and `cause.code`).
+
 The stable API is the root entry: `AgentGuard`, `GuardError`, `GuardErrorCode`,
-`InvalidJsonError` and the exported types. Building blocks for executor and adapter
+`GuardErrorCatalog`, `InvalidJsonError` and the exported types. Building blocks for executor and adapter
 authors (`PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
 `canonicalJson`, `digestJson`, `immutableJson`) live in
 `@shieldaai/agent-guard/internal`, which has no semver guarantees. Their root

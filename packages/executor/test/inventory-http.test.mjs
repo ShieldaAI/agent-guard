@@ -106,7 +106,7 @@ test('observer listener cannot administer or execute; task/admin listener cannot
     assert.equal(result.body.error, 'REQUEST_DENIED');
   }
   assert.equal((await post(service, adminToken)).response.status, 401);
-  assert.equal((await post(admin, credentials.get('alpha').token)).response.status, 400);
+  assert.equal((await post(admin, credentials.get('alpha').token)).response.status, 403);
   assert.equal((await post(admin, service.token, {}, '/v1/admin/audit')).response.status, 401);
   assert.equal((await post(admin, service.token, {}, '/v1/task/snapshot')).response.status, 401);
   await assert.rejects(startExecutorServer({ executor: value, adminToken: service.token, operatorId: 'operator' }), { code: 'SERVER_CONFIG_INVALID' });

@@ -19,7 +19,7 @@ const FILE_LIMIT = 2 * 1024 * 1024, STAGE_LIMIT = 16 * 1024 * 1024, REPORT_LIMIT
 // This diagnostic-only allowance never changes acceptance or runtime resource caps.
 export const admissionReportLimit = cpuProfile => cpuProfile === true ? REPORT_LIMIT + 4 * 16 * 1024 * 1024 : REPORT_LIMIT;
 const modules = {
-  core: 'authorization deprecated index internal json policy-admission types'.split(' '),
+  core: 'authorization deprecated errors index internal json policy-admission types'.split(' '),
   executor: 'adapters artifacts build-provenance client custody-cli custody-files custody-snapshot evidence-json executor http index inventory-http inventory-manifest inventory-mcp-capture inventory-mcp inventory-observer inventory-scheduling inventory-worker inventory ledger-custody ledger-maintenance-cli ledger-maintenance ledger-recovery lifecycle model network pilot-review-cli pilot-review response-code retention sandbox signed-evidence store traces workspace-input-windows workspace-input'.split(' '),
 };
 const scripts = ['benchmark-admission.mjs', 'benchmark-admission-client.mjs', 'benchmark-admission-diagnostics.mjs', 'benchmark-admission-profile.mjs', 'benchmark-admission-scheduling.mjs',

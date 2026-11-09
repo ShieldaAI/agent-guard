@@ -7,6 +7,16 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add: an error catalog. `GuardErrorCatalog` documents every `GuardErrorCode` with its
+  meaning, whether a retry is safe and the typical cause, and `docs/errors.md` is
+  generated from it (a test fails on drift). Flattened adapter errors keep a safe
+  uppercase adapter code as `GuardError.detail` and `cause.code`.
+  `McpBoundaryError.code` is now typed as `McpBoundaryErrorCode`.
+- Change: the durable executor task server returns HTTP statuses by kind (401, 403,
+  404, 409, 429, 503, otherwise 400) instead of 400 for every denial, and the error
+  body adds `retryable`. `ExecutorClient` accepts these statuses and exposes
+  `retryable` on its errors. Older clients see the new statuses as
+  `EXECUTOR_REQUEST_DENIED`; upgrade client and server together.
 - Change: the internal SPI moves to `@shieldaai/agent-guard/internal` (no semver
   guarantees): `PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
   `AuthorityPhase`, `AuthorityState`, `canonicalJson`, `digestJson` and

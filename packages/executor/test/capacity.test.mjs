@@ -44,11 +44,11 @@ test('an HTTP task family cannot flood a stalled policy or block unrelated work'
   try {
     const pending = Promise.all(Array.from({ length: 8 }, (_, i) => post(i % 2 ? parent.token : handoff.token)));
     await saturated;
-    assert.deepEqual(await post(handoff.token), { error: 'POLICY_BUSY' });
+    assert.deepEqual(await post(handoff.token), { error: 'POLICY_BUSY', retryable: true });
     const action = await prepare(executor, 'other');
     assert.equal(await executor.execute('other', action.id), 'ok');
     executor.revokeTask('parent');
-    assert.deepEqual(await pending, Array(8).fill({ error: 'TASK_REVOKED' }));
+    assert.deepEqual(await pending, Array(8).fill({ error: 'TASK_REVOKED', retryable: false }));
     assert(signals.every(signal => signal.aborted));
     assert.equal(signals.length, 8); assert.equal(effects(), 1); assert.equal(executor.snapshot('parent').calls, 0);
   } finally { unblock(); }

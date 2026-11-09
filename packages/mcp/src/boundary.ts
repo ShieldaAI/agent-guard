@@ -3,8 +3,40 @@ import { canonicalJson } from '@shieldaai/agent-guard/internal';
 import { Ajv } from '@modelcontextprotocol/client/validators/ajv';
 import { isProxy } from 'node:util/types';
 
+/** Every code the MCP boundary can throw. Codes never carry request or server data. */
+export type McpBoundaryErrorCode =
+  | 'ACTIVE_CONTENT_DENIED'
+  | 'ARGUMENTS_INVALID'
+  | 'AUTHORIZATION_DENIED'
+  | 'CAPABILITY_DENIED'
+  | 'CONNECTION_CHANGED'
+  | 'CONNECTION_FAILED'
+  | 'CONNECTION_UNAVAILABLE'
+  | 'CREDENTIAL_REFLECTED'
+  | 'CREDENTIAL_REPLACEMENT_PENDING'
+  | 'ENDPOINT_DENIED'
+  | 'IDENTITY_DENIED'
+  | 'INVALID_ARGUMENTS'
+  | 'INVALID_CONFIGURATION'
+  | 'INVALID_JSON'
+  | 'JSON_LIMIT'
+  | 'MCP_INVENTORY_CLOCK_INVALID'
+  | 'MCP_INVENTORY_INVALID'
+  | 'MCP_INVENTORY_LIMIT_EXCEEDED'
+  | 'MCP_OPERATION_FAILED'
+  | 'MESSAGE_BUDGET'
+  | 'MESSAGE_REJECTED'
+  | 'REDIRECT_DENIED'
+  | 'REGISTRY_LIMIT'
+  | 'REGISTRY_REJECTED'
+  | 'RESOURCE_MISMATCH'
+  | 'RESPONSE_LIMIT'
+  | 'SCHEMA_INVALID'
+  | 'SCHEMA_LIMIT'
+  | 'SCHEMA_REFERENCE_DENIED'
+  | 'SCHEMA_UNSUPPORTED';
 export class McpBoundaryError extends Error {
-  constructor(readonly code: string) { super(code); this.name = 'McpBoundaryError'; }
+  constructor(readonly code: McpBoundaryErrorCode) { super(code); this.name = 'McpBoundaryError'; }
 }
 
 export interface JsonLimits { maxBytes: number; maxNodes: number; maxDepth: number }

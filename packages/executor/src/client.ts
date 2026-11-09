@@ -1,6 +1,6 @@
 import type { Json, PreparedAction, TaskSnapshot } from '@shieldaai/agent-guard';
 import { ExecutorError, executionStatuses, type ExecutionReceipt, type ExecutionStatus } from './store.js';
-import { isExecutorResponseCode } from './response-code.js';
+import { executorErrorStatuses, isExecutorResponseCode } from './response-code.js';
 
 /** Task-only client. It has no administration or approval API and never follows redirects with credentials. */
 export class ExecutorClient {
@@ -21,7 +21,7 @@ export class ExecutorClient {
       body: JSON.stringify(input), redirect: 'error', ...(signal === undefined ? {} : { signal }),
     });
     const denied = !response.ok;
-    if (response.redirected || (denied && (![400, 401].includes(response.status) ||
+    if (response.redirected || (denied && (!executorErrorStatuses.has(response.status) ||
         response.headers.get('content-type')?.split(';')[0]?.trim() !== 'application/json'))) {
       void response.body?.cancel().catch(() => {}); throw new ExecutorError('EXECUTOR_REQUEST_DENIED');
     }
@@ -40,7 +40,12 @@ export class ExecutorClient {
       let value;
       try { value = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
       catch { throw new ExecutorError(denied ? 'EXECUTOR_REQUEST_DENIED' : 'EXECUTOR_RESPONSE_INVALID'); }
-      if (denied) throw new ExecutorError(isExecutorResponseCode(value?.error) ? value.error : 'EXECUTOR_REQUEST_DENIED');
+      if (denied) {
+        const error = new ExecutorError(isExecutorResponseCode(value?.error) ? value.error : 'EXECUTOR_REQUEST_DENIED');
+        // Only a server-confirmed boolean is trusted; anything else means "do not retry".
+        Object.defineProperty(error, 'retryable', { value: isExecutorResponseCode(value?.error) && value?.retryable === true, enumerable: true });
+        throw error;
+      }
       return value as T;
     } finally { if (timer) clearTimeout(timer); reader?.releaseLock(); }
   }

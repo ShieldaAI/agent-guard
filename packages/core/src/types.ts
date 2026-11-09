@@ -83,9 +83,26 @@ export type GuardErrorCodeValue = typeof GuardErrorCode[keyof typeof GuardErrorC
 /** Errors emitted by the guard omit request values, policy exceptions and tool output. */
 export class GuardError extends Error {
   readonly code: GuardErrorCodeValue;
-  constructor(code: GuardErrorCodeValue, message: string = code) {
-    super(message);
+  /**
+   * Safe adapter code behind a flattened RESOLUTION_FAILED, ARGUMENT_INVALID or TOOL_FAILED
+   * (for example IDENTITY_DENIED). Only an uppercase identifier; never request data.
+   */
+  readonly detail?: string;
+  constructor(code: GuardErrorCodeValue, message: string = code, options: { detail?: string } = {}) {
+    const detail = options.detail;
+    super(message, detail === undefined ? undefined : { cause: Object.freeze({ code: detail }) });
     this.name = 'GuardError';
     this.code = code;
+    if (detail !== undefined) this.detail = detail;
   }
+}
+
+/** Reads an adapter error's `code` without running accessors; returns it only if it is a safe identifier. */
+export function safeErrorDetail(error: unknown): string | undefined {
+  try {
+    if (error === null || typeof error !== 'object') return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+    const code = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : undefined;
+  } catch { return undefined; }
 }

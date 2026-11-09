@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isPromise } from 'node:util/types';
 import { digestJson, immutableJson, type JsonObject } from './json.js';
-import { GuardError } from './types.js';
+import { GuardError, safeErrorDetail } from './types.js';
 import { assertActionAuthority, type AuthorityPhase } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
@@ -11,6 +11,7 @@ import type {
 
 export { GuardError, GuardErrorCode } from './types.js';
 export { InvalidJsonError } from './json.js';
+export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
 
 // Deprecated root aliases for the internal SPI, kept for one minor release.
 export * from './deprecated.js';
@@ -43,7 +44,10 @@ type ApprovalState = {
 };
 type PolicyEvaluation = { decision: PolicyDecision; snapshot?: Readonly<TaskSnapshot> };
 
-function fail(code: ConstructorParameters<typeof GuardError>[0]): never { throw new GuardError(code); }
+function fail(code: ConstructorParameters<typeof GuardError>[0], cause?: unknown): never {
+  const detail = cause === undefined ? undefined : safeErrorDetail(cause);
+  throw new GuardError(code, code, detail === undefined ? {} : { detail });
+}
 
 function nonempty(value: unknown): value is string {
   return typeof value === 'string' && value.length > 0 && value.length <= 4096 && value.trim().length > 0 && !value.includes('\0');
@@ -216,12 +220,12 @@ export class AgentGuard {
     let args: Json = input.args as Json;
     const parse = tool.parse;
     if (parse) {
-      try { args = normalizeJson(synchronousResult(parse(args))); } catch { return fail('ARGUMENT_INVALID'); }
+      try { args = normalizeJson(synchronousResult(parse(args))); } catch (error) { return fail('ARGUMENT_INVALID', error); }
     }
     let resolved: ResolvedAction;
     const resolve = tool.resolve;
     try { resolved = this.#resolved(synchronousResult(resolve(args, state.identity))); }
-    catch { return fail('RESOLUTION_FAILED'); }
+    catch (error) { return fail('RESOLUTION_FAILED', error); }
     const action: Readonly<Action> = Object.freeze({
       ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
     });
@@ -312,8 +316,8 @@ export class AgentGuard {
         result = await execute(state.handle.action.args, Object.freeze({
           signal: controller.signal, action: state.handle.action, task: state.task.identity,
         }));
-      } catch {
-        return fail(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED');
+      } catch (error) {
+        return fail(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED', controller.signal.aborted ? undefined : error);
       }
       let value: Json;
       try {

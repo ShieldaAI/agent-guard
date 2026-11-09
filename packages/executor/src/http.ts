@@ -6,7 +6,7 @@ import { type Json, type TaskOptions } from '@shieldaai/agent-guard';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { DurableExecutor } from './executor.js';
 import { ExecutorError } from './store.js';
-import { executorErrorResponse } from './response-code.js';
+import { executorErrorResponse, executorResponseRetryable, executorResponseStatus } from './response-code.js';
 
 export interface ExecutorServerOptions {
   executor: DurableExecutor;
@@ -113,7 +113,7 @@ export async function startExecutorServer(options: ExecutorServerOptions): Promi
       res.writeHead(200); res.end(JSON.stringify(output));
     } catch (error) {
       const code = executorErrorResponse(error);
-      res.writeHead(code === 'UNAUTHENTICATED' ? 401 : 400); res.end(JSON.stringify({ error: code }));
+      res.writeHead(executorResponseStatus(code)); res.end(JSON.stringify({ error: code, retryable: executorResponseRetryable(code) }));
     }
   });
   server.on('upgrade', (_request, socket) => { socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n'); });

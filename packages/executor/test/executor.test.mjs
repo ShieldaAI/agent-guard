@@ -177,7 +177,7 @@ test('revocation between HTTP authentication and the last body byte blocks a tas
   });
   pending.write('{'); await receivingBody;
   executor.revokeTask('task'); pending.end('}');
-  assert.deepEqual(await response, { status: 401, body: { error: 'UNAUTHENTICATED' } });
+  assert.deepEqual(await response, { status: 401, body: { error: 'UNAUTHENTICATED', retryable: false } });
 });
 test('HTTP binds task and approver identities and rejects browser/unauthenticated/admin forgery', async t => {
   const { executor } = setup(t); let effects = 0;
@@ -192,7 +192,7 @@ test('HTTP binds task and approver identities and rejects browser/unauthenticate
     return { status: response.status, body: await response.json() };
   };
   assert.equal((await post('task/snapshot', 'unknown', {})).status, 401);
-  assert.equal((await post('task/snapshot', credential.token, {}, { origin: 'http://evil.invalid' })).status, 400);
+  assert.equal((await post('task/snapshot', credential.token, {}, { origin: 'http://evil.invalid' })).status, 403);
   assert.equal((await post('admin/audit', credential.token, {})).status, 401);
   const prepared = (await post('task/prepare', credential.token, { tool: 'test', args: null })).body;
   assert.equal((await post('task/execute', other.token, { actionId: prepared.id })).body.error, 'INVALID_PREPARED');
@@ -217,7 +217,7 @@ test('task clients distinguish an approval request from an unknown effect withou
   // Verify the server's wire response too. Filtering only in the client would still disclose the secret.
   const response = await fetch(service.url + '/v1/task/execute', { method: 'POST',
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ actionId: id, approvalId }) });
-  assert.deepEqual(await response.json(), { error: 'OPERATION_FAILED' });
+  assert.deepEqual(await response.json(), { error: 'OPERATION_FAILED', retryable: false });
   assert.equal((await client.execution(id)).status, 'UNKNOWN'); assert.equal(effects, 1);
   await assert.rejects(client.execute(id), { code: 'ACTION_USED' }); assert.equal(effects, 1);
   const untrusted = new ExecutorClient({ endpoint: service.url, token,
