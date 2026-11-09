@@ -4,6 +4,9 @@ import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpa
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Action, TaskOptions } from '@shieldaai/agent-guard';
 import { bindLedgerObservation, closeLedgerObservation } from './inventory-observer.js';
+import type { LifecycleState } from './lifecycle.js';
+import type { RetentionState } from './retention.js';
+import { ledgerFeatures, type LedgerFeature } from './ledger-format.js';
 
 export class ExecutorError extends Error {
   constructor(readonly code: string) {
@@ -99,6 +102,18 @@ export interface Ledger {
   memory: Record<string, MemoryRecord[]>;
   /** Recent metadata events: bounded per tenant, not a complete history. */
   audit: { time: number; event: string; sequence?: number; tenantId?: string; taskId?: string; actionId?: string }[];
+  /** Data layout version (ledger-format.ts); absent before 0.2. Migrated at executor open. */
+  formatVersion?: number;
+  /** Optional state present in this ledger, recomputed at each commit once formatVersion is set. */
+  features?: LedgerFeature[];
+  /** 1 once a recovery mirror is enrolled (with schema 3). */
+  recoveryMirror?: number;
+  /** ID of the enrolled key-custody record. */
+  keyCustody?: string;
+  /** Custody catalog metadata; validated by ledger-custody.ts. */
+  custody?: unknown;
+  lifecycle?: LifecycleState;
+  retention?: RetentionState;
 }
 
 function decode(text: string): Ledger {
@@ -497,7 +512,7 @@ export class LedgerStore {
         }
         this.#mirror = true;
         state.schema = 3;
-        (state as Ledger & { recoveryMirror?: number }).recoveryMirror = 1;
+        state.recoveryMirror = 1;
       });
     } catch (error) {
       this.#mirror = false;
@@ -546,7 +561,7 @@ export class LedgerStore {
       const payload = this.#payload();
       const cached = this.#cache?.payload === payload ? this.#cache.state : undefined;
       const state = cached ?? decodeLedgerObservation(payload, this.#key, this.maxBytes, this.#witnessed);
-      const mode = (state as Ledger & { recoveryMirror?: unknown }).recoveryMirror;
+      const mode = state.recoveryMirror;
       if (mode !== undefined || state.schema === 3 || this.#mirror) {
         if (
           !this.#witnessed ||
@@ -711,9 +726,11 @@ export class LedgerStore {
       acceptingWrites = false;
       if (result && typeof (result as { then?: unknown }).then === 'function')
         throw new ExecutorError('ASYNC_TRANSACTION_FORBIDDEN');
-      if (this.#mirror && (state.schema !== 3 || (state as Ledger & { recoveryMirror?: unknown }).recoveryMirror !== 1))
+      if (this.#mirror && (state.schema !== 3 || state.recoveryMirror !== 1))
         throw new ExecutorError('STORE_RECOVERY_MODE_CHANGED');
       state.revision++;
+      // Executor ledgers declare their optional state; other stores (no formatVersion) do not.
+      if (state.formatVersion !== undefined) state.features = ledgerFeatures(state);
       const payload = this.#seal(JSON.stringify(state));
       this.#prepare('UPDATE main.ledger SET payload=? WHERE id=1').run(payload);
       if (

@@ -215,6 +215,27 @@ tool effect. Buffers are volatile and can lose events through expiry, capacity o
 process loss. The [decision trace guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/decision-traces.md)
 describes the pseudonymous fields, access boundary, counters and export guarantees.
 
+## Ledger format and compatibility
+
+A ledger carries two markers. `schema` (1, 2 or 3) is the authority mode that 0.1
+readers already check: 2 means lifecycle or history state may be present, 3 means a
+recovery mirror is enrolled. `formatVersion` versions the data layout. The executor
+migrates an older layout forward when it opens the ledger, step by step, inside its
+exclusive startup transaction, so the witness and mirror move in the same commit.
+`executor.ledgerFormat()` reports `{ formatVersion, schema, features }`, where
+`features` lists optional state such as `lifecycle`, `retention` or
+`recovery-mirror`. Agent Ops `check` reports the on-disk format without migrating it.
+
+Policy: every 1.x executor opens every ledger written by `0.1.0-alpha.3` or later and
+migrates it. Downgrade is not supported. A ledger whose `formatVersion` is newer than
+the running build is refused with `STORE_FORMAT_UNSUPPORTED` and left unchanged. A
+0.1 build does not know `formatVersion`, so it is the `schema` marker, not the
+format version, that stops it from opening newer authority modes.
+
+Compatibility tests open committed ledgers written by `0.1.0-alpha.3`, `0.1.0` and
+the pre-format 0.2 build, plain and with a rollback witness. Regenerate one with
+`node scripts/generate-ledger-fixture.mjs <dist/index.js of that build> <out> <label>`.
+
 ## Adapters and integrations
 
 ### Inventory for the trusted host

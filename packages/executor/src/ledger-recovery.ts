@@ -84,7 +84,7 @@ function validate(options: LedgerRecoveryOptions): void {
   }
 }
 function scope(ring: ParsedKeyring, source: CustodyStore, state: Ledger): void {
-  const custody = (state as Ledger & { keyCustody?: string }).keyCustody;
+  const custody = state.keyCustody;
   if (ring.managed) {
     const member = ring.managed.stores.find(
       m => m.database === source.database && m.witnessPath === source.witnessPath,
@@ -354,9 +354,7 @@ export function manageLedgerRecovery(
         }
       }
       const files = closure(options, readers),
-        alreadyMirrored = [...readers.values()].filter(
-          r => (r.read() as Ledger & { recoveryMirror?: unknown }).recoveryMirror === 1,
-        ).length;
+        alreadyMirrored = [...readers.values()].filter(r => r.read().recoveryMirror === 1).length;
       const digest = sha(
         stable({
           operation: request.operation,

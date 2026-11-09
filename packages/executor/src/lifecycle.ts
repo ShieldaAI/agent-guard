@@ -150,7 +150,7 @@ interface ArchiveEntry {
   counts: TaskFamilyCounts;
   rootUsage: { calls: string; spent: string };
 }
-interface LifecycleState {
+export interface LifecycleState {
   version: 1;
   retiredFamilies: Record<string, { tenantDigest: string; retiredAt: number }>;
   archivedTaskIds: Record<string, string>;
@@ -159,7 +159,7 @@ interface LifecycleState {
   externalHeads?: Record<string, { hash: string; namespace: string; through: number }>;
   namespaceFences?: Record<string, { tenantDigest: string; through: number }>;
 }
-type LifecycleLedger = Ledger & { lifecycle?: LifecycleState };
+type LifecycleLedger = Ledger;
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }

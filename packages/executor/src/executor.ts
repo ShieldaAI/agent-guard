@@ -74,6 +74,7 @@ import {
   RECENT_EVENTS_TOTAL,
   type EventScope,
 } from './retention.js';
+import { migrateLedger, describeLedgerFormat, type LedgerFormat } from './ledger-format.js';
 
 function id(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 4096 || value.includes('\0'))
@@ -240,6 +241,8 @@ export class DurableExecutor {
         );
       const recovered = this.#store.transaction(state => {
         const now = this.#now(state);
+        // Bring an older ledger layout forward first; a newer one is refused unchanged.
+        migrateLedger(state);
         state.epoch++; // Process/code changes invalidate every outstanding preparation.
         for (const tool of Object.values(state.tools)) tool.approved = false;
         const recovered: TraceContext[] = [];
@@ -1179,6 +1182,10 @@ export class DurableExecutor {
    * Recent metadata events, oldest first. Bounded per tenant: this is not a complete history.
    * Export durably by polling and comparing `sequence`; a gap means events were evicted.
    */
+  /** The ledger's data layout version, authority-mode schema and optional features. */
+  ledgerFormat(): LedgerFormat {
+    return describeLedgerFormat(this.#store.read());
+  }
   audit(scope: { tenantId?: string } = {}): readonly Readonly<Ledger['audit'][number]>[] {
     const tenantId = scope.tenantId === undefined ? undefined : id(scope.tenantId);
     const events = this.#store.read().audit;

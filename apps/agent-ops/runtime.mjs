@@ -2,6 +2,7 @@ import { closeSync, constants, existsSync, fstatSync, lstatSync, openSync, readF
 import { dirname, isAbsolute } from 'node:path';
 import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 import { LedgerStore } from '../../packages/executor/dist/store.js';
+import { describeLedgerFormat } from '../../packages/executor/dist/ledger-format.js';
 import {
   loadLedgerKey,
   readLedgerKeyring,
@@ -338,7 +339,13 @@ export function openRuntime(config, { checkOnly = false, afterCommit } = {}) {
     preflight = openMaintenance(config);
   try {
     if (checkOnly)
-      return { status: 'verified', guardKeyId: preflight.guardKeyId, backendKeyId: preflight.backendKeyId };
+      return {
+        status: 'verified',
+        guardKeyId: preflight.guardKeyId,
+        backendKeyId: preflight.backendKeyId,
+        // On-disk layout of the authority ledger; the executor migrates it at the next start.
+        ledgerFormat: describeLedgerFormat(preflight.guard.read()),
+      };
   } finally {
     preflight.close();
   }

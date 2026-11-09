@@ -44,7 +44,7 @@ export const admissionReportLimit = cpuProfile =>
 const modules = {
   core: 'authorization deprecated errors index internal json policy-admission types'.split(' '),
   executor:
-    'adapters artifacts build-provenance client custody-cli custody-files custody-snapshot evidence-json executor http index inventory-http inventory-manifest inventory-mcp-capture inventory-mcp inventory-observer inventory-scheduling inventory-worker inventory ledger-custody ledger-maintenance-cli ledger-maintenance ledger-recovery lifecycle model network pilot-review-cli pilot-review response-code retention sandbox signed-evidence store traces workspace-input-windows workspace-input'.split(
+    'adapters artifacts build-provenance client custody-cli custody-files custody-snapshot evidence-json executor http index inventory-http inventory-manifest inventory-mcp-capture inventory-mcp inventory-observer inventory-scheduling inventory-worker inventory ledger-custody ledger-format ledger-maintenance-cli ledger-maintenance ledger-recovery lifecycle model network pilot-review-cli pilot-review response-code retention sandbox signed-evidence store traces workspace-input-windows workspace-input'.split(
       ' ',
     ),
 };

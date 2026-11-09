@@ -1,2 +1,5 @@
 # Preserve the exact compiled bytes used by the differential oracle on every host.
 packages/executor/test/fixtures/inventory-before-finalizer.mjs text eol=lf
+
+# Compatibility fixtures: ledgers written by released builds, byte for byte.
+packages/executor/test/fixtures/ledgers/**/*.sqlite binary

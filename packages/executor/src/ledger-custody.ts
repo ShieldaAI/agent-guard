@@ -429,7 +429,7 @@ function verifyBackup(
         key.fill(0);
       }
       readers.set(snapshot.id, reader);
-      const state = reader.read() as Ledger & { keyCustody?: string };
+      const state = reader.read();
       if (
         state.inventoryInstanceId !== source.inventoryInstanceId ||
         state.revision !== snapshot.revision ||
@@ -655,7 +655,7 @@ export function manageLedgerCustody(
           for (const source of options.stores) {
             const opened = openStore(source.database, source.witnessPath, ring.keys);
             stores.set(source.id, opened);
-            const state = opened.store.read() as Ledger & { keyCustody?: string };
+            const state = opened.store.read();
             if (!metadata && state.keyCustody !== undefined) fail('CUSTODY_ALREADY_MANAGED');
             if (
               metadata &&
@@ -685,7 +685,7 @@ export function manageLedgerCustody(
             for (const source of options.stores) {
               const opened = openStore(source.database, source.witnessPath, ring.keys);
               stores.set(source.id, opened);
-              const state = opened.store.read() as Ledger & { keyCustody?: string };
+              const state = opened.store.read();
               if (
                 state.inventoryInstanceId !== metadata!.stores.find(s => s.id === source.id)?.inventoryInstanceId ||
                 state.keyCustody !== metadata!.id
@@ -800,10 +800,10 @@ export function manageLedgerCustody(
             metadata = (custody.read() as CustodyLedger).custody!;
           }
           for (const { store } of stores.values())
-            if ((store.read() as Ledger & { keyCustody?: string }).keyCustody !== metadata.id)
+            if (store.read().keyCustody !== metadata.id)
               store.transaction(state => {
                 if (state.schema === 1) state.schema = 2;
-                (state as Ledger & { keyCustody?: string }).keyCustody = metadata!.id;
+                state.keyCustody = metadata!.id;
               });
           ring.managed = group(metadata);
           publishRing();
@@ -857,10 +857,10 @@ export function manageLedgerCustody(
         metadata = (custody!.read() as CustodyLedger).custody!;
         if (!ring.managed) {
           for (const { store } of stores.values())
-            if ((store.read() as Ledger & { keyCustody?: string }).keyCustody !== metadata.id)
+            if (store.read().keyCustody !== metadata.id)
               store.transaction(state => {
                 if (state.schema === 1) state.schema = 2;
-                (state as Ledger & { keyCustody?: string }).keyCustody = metadata!.id;
+                state.keyCustody = metadata!.id;
               });
           ring.managed = group(metadata);
           publishRing();

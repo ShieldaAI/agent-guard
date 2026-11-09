@@ -1,5 +1,6 @@
 export { DurableExecutor, type ExecutorOptions, type TaskCredential } from './executor.js';
 export type { LedgerWitness } from './store.js';
+export { LEDGER_FORMAT_VERSION, type LedgerFormat, type LedgerFeature } from './ledger-format.js';
 export type {
   TaskFamilyScope,
   TaskFamilyDecision,

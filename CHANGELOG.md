@@ -7,6 +7,16 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (executor ledger format): ledgers carry an explicit `formatVersion` and a
+  `features` list, kept current at each commit. A migration registry brings older
+  layouts forward at open, inside the exclusive startup transaction, so the witness
+  and mirror update in the same commit. A newer layout is refused unchanged
+  (`STORE_FORMAT_UNSUPPORTED`). `executor.ledgerFormat()` and Agent Ops `check`
+  report the format. The optional ledger fields are now real types instead of casts.
+  Committed fixture ledgers written by `0.1.0-alpha.3`, `0.1.0` and the pre-format
+  0.2 build (plain and witnessed) must open, keep counters, receipts and tokens, and
+  still reconcile an uncertain effect. Policy: 1.x opens every ledger from
+  `0.1.0-alpha.3` on; downgrade is not supported.
 - Fix (executor ledger): when `ROLLBACK` itself fails, the store keeps the original
   transaction error instead of replacing it, and closes so an unknown transaction
   state is never read.

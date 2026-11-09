@@ -166,11 +166,13 @@ test('partial two-store key rotation preserves receipts and archived evidence th
     keyringFile: config.keyringFile,
     nextKeyId: 'rotation-1',
   });
-  assert.deepEqual(openRuntime(config, { checkOnly: true }), {
-    status: 'verified',
-    guardKeyId: 'rotation-1',
-    backendKeyId: 'initial',
-  });
+  const checked = openRuntime(config, { checkOnly: true });
+  assert.deepEqual(
+    { ...checked, ledgerFormat: undefined },
+    { status: 'verified', guardKeyId: 'rotation-1', backendKeyId: 'initial', ledgerFormat: undefined },
+  );
+  assert.equal(checked.ledgerFormat.formatVersion, 1, 'check reports the migrated authority layout');
+  assert.ok(checked.ledgerFormat.features.includes('retention'));
   fixture.reopen();
   assert.equal(fixture.workflow.requests('acme').requests[0].receipt.version, 2);
   fixture.close();

@@ -16,14 +16,14 @@ export interface PrunedReceipt {
   charged?: number;
   reconciliation?: { referenceHash: string; time: number };
 }
-interface RetentionState {
+export interface RetentionState {
   version: 1;
   /** Monotonic event sequence; a gap in exported events means they were evicted. */
   sequence: number;
   /** Per-family compact stubs for pruned settled receipts, oldest first. */
   pruned: Record<string, Record<string, PrunedReceipt>>;
 }
-type RetentionLedger = Ledger & { retention?: RetentionState };
+type RetentionLedger = Ledger;
 
 /** Stubs kept per family, and in total across families. */
 export const PRUNED_PER_FAMILY = 256;
