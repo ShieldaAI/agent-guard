@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { verifyPilotReview } from '@shieldaai/agent-guard-executor';
+import { verifyPilotReview } from '@shieldaai/agent-guard-executor/pilot';
 import { createPilotReviewFixture } from './pilot-review-fixture.mjs';
 
 const { policy, candidateBytes, bundle } = createPilotReviewFixture();

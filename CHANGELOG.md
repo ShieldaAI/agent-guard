@@ -7,6 +7,13 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Change (executor exports): the root keeps the executor, task server and client,
+  adapters, network and model tools. Sandbox, inventory (experimental), pilot review
+  and operator tooling move to `/sandbox`, `/inventory`, `/pilot` and `/ops`, and
+  Agent Ops building blocks to `/internal` (no semver). Every 0.1 root export still
+  works through a `@deprecated` alias bound to the same value, removed in 0.3.
+  agent-map adds `/oidc` and `/identity-http`. Application sources now import
+  packages by name only, and a test fails on any `dist/` import from `apps/`.
 - Add (executor ledger format): ledgers carry an explicit `formatVersion` and a
   `features` list, kept current at each commit. A migration registry brings older
   layouts forward at open, inside the exclusive startup transaction, so the witness

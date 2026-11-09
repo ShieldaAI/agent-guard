@@ -7,7 +7,7 @@ import {
   verifyTransferredTaskFamilyArchive,
   compactExportedTaskFamilies,
   externalTaskHistoryHead,
-} from '../../packages/executor/dist/lifecycle.js';
+} from '@shieldaai/agent-guard-executor/internal';
 import {
   companyHistory,
   historyState,

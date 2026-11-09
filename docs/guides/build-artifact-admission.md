@@ -15,10 +15,8 @@ Provision this enrollment through an authenticated host configuration channel. C
 
 ```ts
 import type { TaskOptions } from '@shieldaai/agent-guard';
-import {
-  ArtifactBroker, DurableExecutor,
-  type BuildArtifactRule, type BuildAttestationEnvelope,
-} from '@shieldaai/agent-guard-executor';
+import { ArtifactBroker, type BuildArtifactRule, type BuildAttestationEnvelope } from '@shieldaai/agent-guard-executor/sandbox';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 
 export function importBuild(
   executor: DurableExecutor, receiptKey: Uint8Array, enrolled: BuildArtifactRule,

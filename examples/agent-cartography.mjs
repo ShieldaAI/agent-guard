@@ -1,13 +1,13 @@
 // Synthetic, disposable company catalog. Run after npm run build.
 // An installed company host retains its own source enrollment and reference key.
 import { createHmac, randomBytes } from 'node:crypto';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 import {
-  DurableExecutor,
   validateInventoryManifest,
   composeInventorySnapshot,
   createInventoryObserverToken,
   startInventoryServer,
-} from '@shieldaai/agent-guard-executor';
+} from '@shieldaai/agent-guard-executor/inventory';
 
 const referenceKey = randomBytes(32);
 const reference = (kind, id) =>

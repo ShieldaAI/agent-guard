@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createHash } from 'node:crypto';
 import { parseArgs } from 'node:util';
-import { readLedgerKeyringPolicy } from '../../packages/executor/dist/ledger-maintenance.js';
+import { readLedgerKeyringPolicy } from '@shieldaai/agent-guard-executor/ops';
 import { loadConfig, initializeRuntime, openRuntime, openMaintenance } from './runtime.mjs';
 import {
   enrollBusinessHistoryMirror,

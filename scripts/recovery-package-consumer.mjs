@@ -3,12 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, realpathSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import {
-  DurableExecutor,
-  createLedgerKeyring,
-  readLedgerKeyring,
-  manageLedgerRecovery,
-} from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { createLedgerKeyring, readLedgerKeyring, manageLedgerRecovery } from '@shieldaai/agent-guard-executor/ops';
 
 if (process.platform === 'win32') {
   console.log('POSIX current-state recovery is outside the Windows deployment profile.');

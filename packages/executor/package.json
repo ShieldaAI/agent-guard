@@ -10,6 +10,26 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/entry-sandbox.d.ts",
+      "import": "./dist/entry-sandbox.js"
+    },
+    "./inventory": {
+      "types": "./dist/entry-inventory.d.ts",
+      "import": "./dist/entry-inventory.js"
+    },
+    "./pilot": {
+      "types": "./dist/entry-pilot.d.ts",
+      "import": "./dist/entry-pilot.js"
+    },
+    "./ops": {
+      "types": "./dist/entry-ops.d.ts",
+      "import": "./dist/entry-ops.js"
+    },
+    "./internal": {
+      "types": "./dist/entry-internal.d.ts",
+      "import": "./dist/entry-internal.js"
     }
   },
   "bin": {

@@ -27,11 +27,20 @@ import {
 import { runConformance, scenarioCatalog, type GuardLike } from '@shieldaai/agent-guard-scenarios';
 import {
   ArtifactBroker,
+  validateSandboxProfile,
+  createSandboxTool,
+  type BuildArtifactRule,
+  type BuildAttestationEnvelope,
+} from '@shieldaai/agent-guard-executor/sandbox';
+import {
   DurableExecutor,
   createRestrictedFetch,
   createModelTool,
-  validateSandboxProfile,
-  createSandboxTool,
+  type InventoryOptions,
+  type InventorySnapshot,
+  type InventoryTask,
+} from '@shieldaai/agent-guard-executor';
+import {
   createInventoryObserverToken,
   startInventoryServer,
   validateInventoryManifest,
@@ -42,13 +51,8 @@ import {
   type McpInventorySnapshot,
   type InventoryManifest,
   type HostInventorySnapshot,
-  type InventoryOptions,
-  type InventorySnapshot,
-  type InventoryTask,
   type InventoryServerOptions,
-  type BuildArtifactRule,
-  type BuildAttestationEnvelope,
-} from '@shieldaai/agent-guard-executor';
+} from '@shieldaai/agent-guard-executor/inventory';
 
 const calls: Array<{ name: string; arguments: Record<string, Json> }> = [];
 const client: McpToolClient = {

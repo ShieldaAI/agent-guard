@@ -49,6 +49,20 @@ await server.close();
 executor.close();
 ```
 
+## Import paths
+
+| Path | Contents |
+| --- | --- |
+| `@shieldaai/agent-guard-executor` | `DurableExecutor`, task server and `ExecutorClient`, tool adapters, network policy, model tools |
+| `…/sandbox` | governed sandbox, artifact broker, build provenance |
+| `…/inventory` | inventory observer, host manifest, MCP inventory (experimental) |
+| `…/pilot` | pilot review verification |
+| `…/ops` | keyring, key custody, recovery, ledger format |
+| `…/internal` | host building blocks used by Agent Ops; no semver guarantees |
+
+The 0.1 root exports of the moved names still work in 0.2. They are marked
+`@deprecated` and will be removed in 0.3.
+
 ## Authority and transport
 
 `DurableExecutor` is an administration object; never expose it to untrusted code.
@@ -332,7 +346,8 @@ model output, request parameters or a request-selected file.
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, validateInventoryManifest, composeInventorySnapshot } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { validateInventoryManifest, composeInventorySnapshot } from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32),
   inventory: { companyId: 'acme', sourceId: 'executor-eu-1', enrollmentGeneration: 'host-enrollment-1' } });
@@ -487,7 +502,8 @@ without falling back to core or changing authorization state.
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, createInventoryObserverToken, startInventoryServer } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { createInventoryObserverToken, startInventoryServer } from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32),
   inventory: { companyId: 'acme', sourceId: 'executor-eu-1', enrollmentGeneration: 'enrollment-1' } });

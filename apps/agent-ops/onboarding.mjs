@@ -19,9 +19,9 @@ import {
   createLedgerKeyring,
   configureLedgerKeyring,
   readLedgerKeyringPolicy,
-} from '../../packages/executor/dist/ledger-maintenance.js';
-import { parseEvidenceJson } from '../../packages/executor/dist/evidence-json.js';
-import { createMapOidcClient } from '../../packages/agent-map/dist/oidc.js';
+} from '@shieldaai/agent-guard-executor/ops';
+import { parseEvidenceJson } from '@shieldaai/agent-guard-executor/internal';
+import { createMapOidcClient } from '@shieldaai/agent-map/oidc';
 import { privateFile, openMaintenance, validateInitializationCapacity, validateConfiguredPaths } from './runtime.mjs';
 import { validateIdentityEnrollment } from './server.mjs';
 import { normalizeLimits, assertCapacity } from './limits.mjs';

@@ -4,8 +4,8 @@ import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import { resolve, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { createMapToken, MapService, startMapServer } from '../../packages/agent-map/dist/index.js';
-import { startMapIdentityServer } from '../../packages/agent-map/dist/identity-http.js';
+import { createMapToken, MapService, startMapServer } from '@shieldaai/agent-map';
+import { startMapIdentityServer } from '@shieldaai/agent-map/identity-http';
 import { createTestIdentityProvider } from '../../packages/agent-map/test/helpers/oidc-provider.mjs';
 import { inventoryBrowserFixture } from './test/inventory-fixture.mjs';
 

@@ -1,8 +1,8 @@
 import { createServer } from 'node:https';
 import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { readFileSync } from 'node:fs';
-import { createMapOidcClient } from '../../packages/agent-map/dist/oidc.js';
-import { parseEvidenceJson } from '../../packages/executor/dist/evidence-json.js';
+import { createMapOidcClient } from '@shieldaai/agent-map/oidc';
+import { parseEvidenceJson } from '@shieldaai/agent-guard-executor/internal';
 import { OpsError, fail, fields, identifier } from './workflow.mjs';
 import {
   createOpsTelemetry,

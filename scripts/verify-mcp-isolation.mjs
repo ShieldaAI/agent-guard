@@ -6,12 +6,8 @@ import { homedir, platform, arch } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
-import {
-  DurableExecutor,
-  buildDockerCreateArgs,
-  runDockerSandbox,
-  createRestrictedFetch,
-} from '@shieldaai/agent-guard-executor';
+import { DurableExecutor, createRestrictedFetch } from '@shieldaai/agent-guard-executor';
+import { buildDockerCreateArgs, runDockerSandbox } from '@shieldaai/agent-guard-executor/sandbox';
 import {
   ManagedMcpConnection,
   createRestrictedMcpHttpTransport,
