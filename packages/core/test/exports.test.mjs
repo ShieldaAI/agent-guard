@@ -68,7 +68,7 @@ test('first-party packages import the internal SPI from /internal, not the root'
     walk(join(repo, directory));
   const offenders = sources.filter(path => {
     for (const match of readFileSync(path, 'utf8').matchAll(
-      /import(?:\s+type)?\s*\{([^}]*)\}\s*from\s*'@shieldaai\/agent-guard'/g,
+      /import(?:\s+type)?\s*\{([^}]*)\}\s*from\s*(['"])@shieldaai\/agent-guard\2/g,
     )) {
       if (
         match[1].split(',').some(item =>

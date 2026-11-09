@@ -16,15 +16,8 @@ import {
   type Stats,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import {
-  canonicalJson,
-  digestJson,
-  immutableJson,
-  type Action,
-  type Json,
-  type TaskIdentity,
-  type ToolDefinition,
-} from '@shieldaai/agent-guard';
+import { type Action, type Json, type TaskIdentity, type ToolDefinition } from '@shieldaai/agent-guard';
+import { canonicalJson, digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { createRestrictedFetch, type NetworkPolicy } from './network.js';
 import { ExecutorError } from './store.js';
 

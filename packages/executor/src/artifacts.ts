@@ -3,15 +3,8 @@ import { lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync 
 import { readWorkspaceInput } from './workspace-input.js';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
-import {
-  canonicalJson,
-  digestJson,
-  GuardError,
-  immutableJson,
-  type Json,
-  type TaskOptions,
-  type ToolDefinition,
-} from '@shieldaai/agent-guard';
+import { GuardError, type Json, type TaskOptions, type ToolDefinition } from '@shieldaai/agent-guard';
+import { canonicalJson, digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import type { DurableExecutor, TaskCredential } from './executor.js';
 import { ExecutorError } from './store.js';
 import {
