@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { AgentGuard, containsLiteralSecret, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+import { AgentGuard, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+import { containsLiteralSecret, digestJson } from '@shieldaai/agent-guard/internal';
 import { Client, SdkError, SdkErrorCode, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
 import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';

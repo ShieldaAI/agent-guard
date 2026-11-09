@@ -1,4 +1,5 @@
-import { immutableJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 
 /** Preserve fractional measurements, but never let rounding manufacture a passing integer count. */
 function checkNumber(token: string): void {

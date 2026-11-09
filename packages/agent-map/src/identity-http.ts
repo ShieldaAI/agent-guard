@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import type { Duplex } from 'node:stream';
 import { isIP } from 'node:net';
 import { createHash, createPrivateKey, X509Certificate, randomBytes, timingSafeEqual } from 'node:crypto';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { MapService } from './service.js';
 import { mapIdentifier, validateReadScope, type ReadScope } from './types.js';
 import { fail, fields, integer, parseRequest } from './boundary.js';

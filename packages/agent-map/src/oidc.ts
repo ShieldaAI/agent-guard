@@ -4,7 +4,7 @@ import { lookup } from 'node:dns';
 import { X509Certificate } from 'node:crypto';
 import { rootCertificates, createSecureContext } from 'node:tls';
 import type { LookupFunction } from 'node:net';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import * as oidc from 'openid-client';
 import { fields, integer, fail, parseRequest } from './boundary.js';
 import { MapQueryError, mapIdentifier } from './types.js';

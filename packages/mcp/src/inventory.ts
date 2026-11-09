@@ -1,5 +1,5 @@
 import { createHmac, randomBytes } from 'node:crypto';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { McpBoundaryError } from './boundary.js';
 
 export type McpConnectionState = 'connecting' | 'refreshing' | 'ready' | 'quarantined' | 'closed';

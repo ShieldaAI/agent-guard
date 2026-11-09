@@ -1,9 +1,6 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import {
-  AgentGuard, GuardError, PolicyAdmission, assertActionAuthority, canonicalJson, digestJson, immutableJson,
-  type Action, type AuthorityPhase, type AuthorityState, type Json, type Policy, type PreparedAction, type TaskIdentity,
-  type TaskOptions, type TaskSnapshot, type ToolDefinition,
-} from '@shieldaai/agent-guard';
+import { AgentGuard, GuardError, type Action, type Json, type Policy, type PreparedAction, type TaskIdentity, type TaskOptions, type TaskSnapshot, type ToolDefinition } from '@shieldaai/agent-guard';
+import { PolicyAdmission, assertActionAuthority, canonicalJson, digestJson, immutableJson, type AuthorityPhase, type AuthorityState } from '@shieldaai/agent-guard/internal';
 import { ExecutorError, LedgerStore, type ExecutionReceipt, type Ledger, type LedgerWitness, type MemoryRecord, type StoredAction, type StoredTask } from './store.js';
 import { projectInventory, validateInventorySource, captureInventoryRegistrations, type InventoryOptions, type InventoryScope,
   type InventorySnapshot, type InventorySourceOptions } from './inventory.js';

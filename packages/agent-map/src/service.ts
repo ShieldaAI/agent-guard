@@ -1,4 +1,5 @@
-import { canonicalJson, immutableJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { canonicalJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { safeProperties } from './projection-fields.js';
 import { MapQueryError, mapIdentifier, validateReadScope, type JsonObject, type JsonValue,
   type MapEdge, type MapNode, type MapPolicyEvidence, type MapProjection, type MapSource, type MapStore,

@@ -63,7 +63,8 @@ class AgentGuard {
   execute(prepared: PreparedAction, options?: { approvalId?: string }): Promise<Json>;
   snapshot(task: TaskHandle): Readonly<TaskSnapshot>;
 }
-// Shared by executor implementations. AgentGuard manages its own pool.
+// Internal SPI from '@shieldaai/agent-guard/internal' (no semver guarantees; the root
+// aliases are deprecated). Shared by executor implementations; AgentGuard manages its own pool.
 class PolicyAdmission {
   assertCapacity(familyId: string): void;
   evaluate(policy: Policy, action: Readonly<Action>, snapshot: Readonly<TaskSnapshot>,
@@ -122,7 +123,7 @@ Capacity is checked in two phases.
 - **Preparation and approval** (`prepare`, `approve`): authority gates and *permanent* capacity apply. Permanent capacity is the call count and spent cost, which only grow.
 - **Dispatch** (`execute`): additionally enforces *transient* capacity, meaning concurrent calls and cost reserved by calls still in flight.
 
-So a call in flight does not refuse another preparation or lose a reviewer's approval. The approved action is refused at dispatch (`CONCURRENCY_EXCEEDED` or `COST_BUDGET_EXCEEDED`) until capacity frees, and its approval stays usable until it expires. The exported `assertActionAuthority` takes `phase: 'prepare' | 'dispatch'`; the default is `dispatch`.
+So a call in flight does not refuse another preparation or lose a reviewer's approval. The approved action is refused at dispatch (`CONCURRENCY_EXCEEDED` or `COST_BUDGET_EXCEEDED`) until capacity frees, and its approval stays usable until it expires. The internal `assertActionAuthority` (from `@shieldaai/agent-guard/internal`) takes `phase: 'prepare' | 'dispatch'`; the default is `dispatch`.
 
 The embedded guard remembers its highest observed clock reading. A lower reading yields `CLOCK_INVALID` on time-dependent operations until the clock catches up. Revocation remains available during rollback. This prevents an observed expiry from becoming valid again within that guard instance.
 

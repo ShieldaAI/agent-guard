@@ -1,7 +1,7 @@
 import { createCipheriv, createDecipheriv, createHash } from 'node:crypto';
 import { closeSync, constants, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readSync, realpathSync, unlinkSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { canonicalJson } from '@shieldaai/agent-guard';
+import { canonicalJson } from '@shieldaai/agent-guard/internal';
 import { historyFailure, validHistoryHead } from './history-state.mjs';
 
 export const MAX_HISTORY_PLAIN = 16 * 1024 * 1024;

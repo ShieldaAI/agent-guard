@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Change: the internal SPI moves to `@shieldaai/agent-guard/internal` (no semver
+  guarantees): `PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
+  `AuthorityPhase`, `AuthorityState`, `canonicalJson`, `digestJson` and
+  `immutableJson`. The root aliases still work, are marked `@deprecated`, and will
+  be removed in 0.3. First-party packages now import from `/internal`. The root
+  entry also exports `InvalidJsonError`.
 - Fix (Agent Ops): anonymous `GET /api/session` no longer creates server-side
   sessions, so cookieless traffic can't exhaust the session table and block sign-in.
   Pre-login state is a signed five-minute cookie with a derived CSRF token, and each

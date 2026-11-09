@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto';
-import { GuardError, GuardErrorCode, immutableJson } from '@shieldaai/agent-guard';
+import { GuardError, GuardErrorCode } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { ExecutorError } from './store.js';
 
 export interface DecisionTraceOptions {

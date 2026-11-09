@@ -1,7 +1,7 @@
 /** Private observer bridge: live host callbacks stay on the owning thread. */
 import { createHash } from 'node:crypto';
 import { isPromise } from 'node:util/types';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { ExecutorError } from './store.js';
 import { composeMcpInventorySnapshot, validateMcpConnectionInventory, type InventoryMcpConnection,
   type InventoryMcpSourceBinding, type McpInventorySnapshot } from './inventory-mcp.js';

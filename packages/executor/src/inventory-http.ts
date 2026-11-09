@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Socket } from 'node:net';
 import { performance } from 'node:perf_hooks';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { DurableExecutor } from './executor.js';
 import { ExecutorError } from './store.js';
 import { validateInventoryManifest, type InventoryManifest } from './inventory-manifest.js';

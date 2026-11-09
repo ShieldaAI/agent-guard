@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { types } from 'node:util';
 import { isIP } from 'node:net';
-import { digestJson, immutableJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { BuildProvenancePolicy, type BuildArtifactRule, type BuildAttestationEnvelope } from './build-provenance.js';
 import { parseEvidenceJson } from './evidence-json.js';
 import { boundedBase64, enrolledSigningKey, verifyEnvelopeBytes } from './signed-evidence.js';

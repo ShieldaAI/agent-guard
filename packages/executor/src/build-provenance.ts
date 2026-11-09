@@ -1,7 +1,8 @@
 import { enrolledSigningKey, verifyEnvelopeBytes } from './signed-evidence.js';
 import { parseEvidenceJson } from './evidence-json.js';
 import { createHash, type KeyObject } from 'node:crypto';
-import { digestJson, immutableJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 
 export interface BuildArtifactRule {
   readonly tenantId: string;

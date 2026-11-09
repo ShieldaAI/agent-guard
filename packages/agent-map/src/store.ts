@@ -1,6 +1,6 @@
 import { isIP } from 'node:net';
 import neo4j, { type Driver, type Transaction, type Record as GraphRecord } from 'neo4j-driver';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { MAP_LABELS, MAP_RELATIONSHIPS, MapQueryError, mapIdentifier, validateReadScope,
   type GuardLabel, type GuardRelation, type JsonObject, type MapCoverage, type MapEdge,
   type MapNode, type MapProjection, type MapReadRequest, type MapSource, type MapStore,

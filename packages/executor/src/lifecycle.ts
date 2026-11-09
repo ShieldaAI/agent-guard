@@ -1,5 +1,5 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { familyStubs, takeFamilyStubs, recordEvent, DEFAULT_RECENT_EVENTS_PER_TENANT } from './retention.js';
 import { ExecutorError, executionStatuses, type ExecutionStatus, type Ledger, type LedgerStore, type StoredTask, type StoredAction } from './store.js';
 

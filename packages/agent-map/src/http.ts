@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Socket } from 'node:net';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { MapService } from './service.js';
 import { validateReadScope, type ReadScope } from './types.js';
 import { createMapMcpHandler } from './mcp.js';

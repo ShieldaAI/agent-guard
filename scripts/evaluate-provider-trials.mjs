@@ -2,7 +2,7 @@
 import { createHash } from 'node:crypto';
 import { constants, closeSync, fsyncSync, fstatSync, linkSync, lstatSync, mkdtempSync, openSync, readFileSync, readSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { digestJson, immutableJson } from '@shieldaai/agent-guard';
+import { digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { CASES, CORPUS_SHA256, reservedCases, runGuardedTrial } from './evaluate-provider-tools.mjs';
 import { PRIVATE_CANARY } from '../examples/providers/protected-ticket.mjs';
 import { isEntry } from '../examples/providers/replay.mjs';

@@ -11,6 +11,13 @@ Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
+The stable API is the root entry: `AgentGuard`, `GuardError`, `GuardErrorCode`,
+`InvalidJsonError` and the exported types. Building blocks for executor and adapter
+authors (`PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
+`canonicalJson`, `digestJson`, `immutableJson`) live in
+`@shieldaai/agent-guard/internal`, which has no semver guarantees. Their root
+aliases still work but are deprecated and will be removed in 0.3.
+
 Try the [allow, deny and approval walkthrough](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/tool-permissions.md)
 for a complete local example with assertions about actual handler calls.
 

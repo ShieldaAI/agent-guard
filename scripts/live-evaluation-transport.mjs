@@ -1,5 +1,5 @@
 // Checkout evaluation transport for the host-owned synthetic ticket workflow.
-import { canonicalJson, immutableJson } from '@shieldaai/agent-guard';
+import { canonicalJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { createRestrictedFetch } from '@shieldaai/agent-guard-executor';
 import { ticketRequest } from '../examples/providers/workflow.mjs';
 

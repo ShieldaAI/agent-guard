@@ -1,4 +1,5 @@
-import { canonicalJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { canonicalJson } from '@shieldaai/agent-guard/internal';
 import { Ajv } from '@modelcontextprotocol/client/validators/ajv';
 import { isProxy } from 'node:util/types';
 

@@ -10,10 +10,10 @@ import type {
 } from './types.js';
 
 export { GuardError, GuardErrorCode } from './types.js';
-export { PolicyAdmission } from './policy-admission.js';
-export { assertActionAuthority, containsLiteralSecret } from './authorization.js';
-export type { AuthorityPhase, AuthorityState } from './authorization.js';
-export { immutableJson, canonicalJson, digestJson } from './json.js';
+export { InvalidJsonError } from './json.js';
+
+// Deprecated root aliases for the internal SPI, kept for one minor release.
+export * from './deprecated.js';
 export type {
   Action, Budget, Capability, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,

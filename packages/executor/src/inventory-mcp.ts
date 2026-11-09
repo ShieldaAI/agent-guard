@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isPromise } from 'node:util/types';
-import { immutableJson, type Json } from '@shieldaai/agent-guard';
+import { type Json } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { ExecutorError } from './store.js';
 import { composeInventorySnapshot, type HostInventorySnapshot } from './inventory-manifest.js';
 import type { InventorySnapshot } from './inventory.js';

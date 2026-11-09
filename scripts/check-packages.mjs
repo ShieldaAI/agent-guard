@@ -30,6 +30,11 @@ try {
     for (const path of ['dist/index.js', 'dist/index.d.ts', 'README.md', 'LICENSE']) {
       if (!pack.files.some(file => file.path === path)) throw new Error(`Missing package file: ${path}`);
     }
+    if (workspace === 'packages/core') {
+      for (const path of ['dist/internal.js', 'dist/internal.d.ts', 'dist/deprecated.js']) {
+        if (!pack.files.some(file => file.path === path)) throw new Error(`Missing internal entry file: ${path}`);
+      }
+    }
     if (workspace === 'packages/executor' && !pack.files.some(file => file.path === 'dist/pilot-review-cli.js')) {
       throw new Error('Missing installed pilot review executable.');
     }

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { MapQueryError, mapIdentifier, type JsonObject, type MapEdge, type MapNode, type MapPolicyCandidate, type MapPolicyEvidence } from './types.js';
 
 const MAPPING: Readonly<Record<string, MapPolicyCandidate['relationship']>> = Object.freeze({
