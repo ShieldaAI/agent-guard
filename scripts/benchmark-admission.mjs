@@ -304,6 +304,8 @@ export async function runAdmissionPhase({
         observers: [{ token, tenantIds: ['synthetic-admission'], profile: 'core' }],
         rateLimit: { maxRequests: 10000, windowMs: 60_000 },
         workerScheduling,
+        // The gate measures real projection cost on every poll; reuse would hide it.
+        reuseUnchangedMs: 0,
       });
       phase.workerScheduling.before = readScheduling();
       if (diagnostic) restoreRequests = instrumentObserverRequests(observer.server, diagnostic);

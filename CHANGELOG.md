@@ -7,6 +7,11 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Perf (inventory observer, experimental): an identical poll within
+  `reuseUnchangedMs` (default 1,000 ms; 0 disables) returns the previous observation
+  instead of re-projecting, keyed by the ledger ciphertext, registry, scope, profile
+  and manifest. `host-mcp` is never reused. Unchanged 500-task polls drop from about
+  4.2 ms to 0.25 ms; continuously written ledgers see no change.
 - Perf (executor ledger): `LedgerStore.read()` caches the last verified ciphertext and
   its decoded state. Each read still fetches the row and runs every witness and mirror
   check, but when the bytes are unchanged it returns a detached copy without

@@ -25,6 +25,12 @@ export interface InventoryServerOptions {
   mcpSources?: readonly InventoryMcpSourceBinding[];
   /** Trusted host policy. Linux background mode lowers only the observer worker native thread by up to five nice levels. */
   workerScheduling?: InventoryWorkerScheduling;
+  /**
+   * Reuse the previous observation for an identical poll (same ledger ciphertext, registry,
+   * tenant scope, profile and manifest) within this many milliseconds. 0 disables reuse.
+   * Never applies to host-mcp, whose live connection state is outside the ledger. Default 1000.
+   */
+  reuseUnchangedMs?: number;
   port?: number;
   maxRequestBytes?: number;
   maxResponseBytes?: number;
@@ -220,6 +226,7 @@ export async function startInventoryServer(
       'maxConnections',
       'rateLimit',
       'workerScheduling',
+      'reuseUnchangedMs',
     ],
     ['executor', 'observers'],
   );
@@ -232,6 +239,7 @@ export async function startInventoryServer(
   )
     return fail(CONFIG);
   const workerScheduling = config.workerScheduling === 'linux-background' ? 'linux-background' : 'default';
+  const reuseUnchangedMs = integer(config.reuseUnchangedMs, 1000, 0, 60_000);
   const port = integer(config.port, 0, 0, 65535);
   const requestLimit = integer(config.maxRequestBytes, 16 * 1024, 1, 64 * 1024);
   const responseLimit = integer(config.maxResponseBytes, 8 * 1024 * 1024, 128, 8 * 1024 * 1024);
@@ -297,10 +305,12 @@ export async function startInventoryServer(
   });
   seen.clear();
   // Readiness belongs to server startup; no authenticated poll pays module startup.
-  const observation = await createInventoryObservationSession(executor, workerScheduling).catch(error => {
-    for (const observer of observers) observer.hash.fill(0);
-    throw error;
-  });
+  const observation = await createInventoryObservationSession(executor, workerScheduling, { reuseUnchangedMs }).catch(
+    error => {
+      for (const observer of observers) observer.hash.fill(0);
+      throw error;
+    },
+  );
   const globalBucket = { started: performance.now(), used: 0 };
   const globalMaximum = Math.min(10_000, rateMaximum * observers.length);
   const sockets = new Map<Socket, ReturnType<typeof setTimeout>>();

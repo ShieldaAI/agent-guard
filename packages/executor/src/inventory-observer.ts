@@ -125,6 +125,8 @@ interface Job {
   settled: boolean;
   metadata?: ObservationMetadata;
   secondCapture: boolean;
+  /** Digest of every input that determines the result; absent when reuse does not apply. */
+  reuseKey?: string;
 }
 class ObservationPool {
   readonly #entry: ExecutorEntry;
@@ -146,10 +148,14 @@ class ObservationPool {
   #sequence = 0;
   #teardownFailed = false;
   #closePromise: Promise<void> | undefined;
+  readonly #reuseMs: number;
+  /** The last completed observation and the inputs that produced it. */
+  #last: { key: string; result: SerializedObservation; at: number } | undefined;
   get closed(): boolean {
     return this.#closed;
   }
-  constructor(entry: ExecutorEntry, ledger: LedgerEntry, scheduling: InventoryWorkerScheduling) {
+  constructor(entry: ExecutorEntry, ledger: LedgerEntry, scheduling: InventoryWorkerScheduling, reuseMs: number) {
+    this.#reuseMs = reuseMs;
     this.#entry = entry;
     this.#ledger = ledger;
     this.scheduling = scheduling;
@@ -363,6 +369,30 @@ class ObservationPool {
       const mcpBefore = profile === 'host-mcp' ? captureMcpBefore(manifest!, job.request.mcpSources ?? []) : undefined;
       if (job.request.signal.aborted || performance.now() >= job.request.deadline)
         throw new ExecutorError('REQUEST_TIMEOUT');
+      if (this.#reuseMs > 0 && profile !== 'host-mcp') {
+        const sha = (value: string | Uint8Array) => createHash('sha256').update(value).digest('hex');
+        job.reuseKey = sha(
+          JSON.stringify([
+            sha(ledger.payload),
+            ledger.witnessed,
+            ledger.mirror,
+            metadata.source,
+            metadata.registrations,
+            metadata.referenceKey ? sha(metadata.referenceKey) : null,
+            job.request.scope,
+            profile,
+            manifest ?? null,
+          ]),
+        );
+        const last = this.#last;
+        if (last && last.key === job.reuseKey && performance.now() - last.at < this.#reuseMs) {
+          // Identical inputs moments ago: the worker would produce the same projection.
+          this.#settle(job, undefined, last.result);
+          this.#active = undefined;
+          this.#pump();
+          return;
+        }
+      }
       const message: WorkerObservation = {
         type: 'snapshot',
         id: job.id,
@@ -476,12 +506,14 @@ class ObservationPool {
         createHash('sha256').update(message.json).digest('hex') !== message.sha256
       )
         throw unavailable();
-      this.#settle(job, undefined, {
+      const result = {
         json: message.json,
         bytes: message.bytes,
         profile: job.request.profile,
         tenantId: job.request.scope.tenantId,
-      });
+      };
+      if (job.reuseKey) this.#last = { key: job.reuseKey, result, at: performance.now() };
+      this.#settle(job, undefined, result);
     } else throw unavailable();
     this.#active = undefined;
     worker.unref();
@@ -524,7 +556,11 @@ export class InventoryObservationSession {
 export async function createInventoryObservationSession(
   executor: object,
   policy: InventoryWorkerScheduling = 'default',
+  options: { reuseUnchangedMs?: number } = {},
 ): Promise<InventoryObservationSession> {
+  const reuseMs = options.reuseUnchangedMs ?? 0;
+  if (!Number.isSafeInteger(reuseMs) || reuseMs < 0 || reuseMs > 60_000)
+    throw new ExecutorError('INVENTORY_CONFIG_INVALID');
   const scheduling = schedulingMode(policy);
   const entry = executors.get(executor),
     ledger = entry && ledgers.get(entry.ledger);
@@ -532,7 +568,7 @@ export async function createInventoryObservationSession(
   if (entry.pool?.closed) await entry.pool.close();
   if (entry.closed || ledger.closed) throw unavailable();
   if (entry.pool && entry.pool.scheduling !== scheduling) throw schedulingUnavailable();
-  const pool = entry.pool ?? new ObservationPool(entry, ledger, scheduling);
+  const pool = entry.pool ?? new ObservationPool(entry, ledger, scheduling, reuseMs);
   entry.pool = pool;
   const session = new InventoryObservationSession(pool);
   await pool.attach(session);

@@ -539,6 +539,14 @@ const observer = await startInventoryServer({
 ```
 
 The default `workerScheduling: 'default'` leaves native priorities unchanged.
+
+An identical poll (same ledger ciphertext, registry, tenant scope, profile and
+manifest) within `reuseUnchangedMs` (default 1,000 ms, 0 disables, at most 60,000)
+returns the previous observation, including its `snapshotId` and `generatedAt`,
+without running the projection. `host-mcp` polls are never reused, because live MCP
+connection state is outside the ledger. On an unchanged 500-task ledger this cut a
+poll from about 4.2 ms to 0.25 ms. It does not help a ledger that changes between
+polls, such as the admission stress benchmark.
 `linux-background` synchronously verifies the worker's own Linux native thread
 identity and lowers its priority by up to five nice levels, capped at nice 19
 (`min(19, initial nice + 5)`). This is a fixed policy, not a caller-supplied value.
