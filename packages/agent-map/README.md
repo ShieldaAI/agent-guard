@@ -209,6 +209,14 @@ requested action. Each result identifies its task, deployment, execution binding
 resource binding and external endpoints by stable entity ID, with an independent
 policy observation time, status, reason and `assessment: unknown`.
 
+`get_agent_access.data.outsideGuard.identityScope` runs the same evidence the other
+way. For each static execution identity of the selected agent, it lists every
+collected bucket in that account the identity has a candidate on but that tool's
+grants do not bind (`broader_than_grants`), or reports `matches_grants`. Missing,
+stale, disabled or malformed evidence, and more than 500 buckets, report `unknown`
+with a reason. Bucket policies, SCPs and permission boundaries are not evaluated, so
+the extra buckets are candidates, not proven access.
+
 Only the three collected S3 mappings are supported. A complete record contains
 zero or one candidate with mapping name, condition flag/key names and
 `resourceScope: bucket_summary`. Empty candidates never prove denial. The original

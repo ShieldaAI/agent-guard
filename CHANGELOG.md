@@ -7,6 +7,13 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (agent map): `get_agent_access.outsideGuard.identityScope` compares what each
+  static tool identity can reach with what that tool's grants bind. For a read
+  focused on one agent, the store reads every bucket in the account the identity has
+  an IAM identity-policy candidate on and lists the unbound ones (`broader_than_grants`),
+  or reports `matches_grants`; anything missing, stale, malformed or over 500 buckets is
+  `unknown` with a reason. Only identity policies are evaluated, so results are
+  candidates. No collector change: the candidate layer already covers every bucket.
 - Add (host manifest v3): `agent-guard-inventory-manifest-v3.schema.json` adds a
   required `directAccess` list, where the host declares paths that act without the
   guard (shell, database, network, SDK, MCP, other). Entries have opaque ids and target

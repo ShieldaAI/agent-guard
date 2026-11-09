@@ -27,6 +27,14 @@ import {
   policyParameters,
   policyPlan,
   safePolicyRow,
+  IDENTITY_SCOPE_CANDIDATE_LIMIT,
+  IDENTITY_SCOPE_COLUMNS,
+  IDENTITY_SCOPE_QUERY,
+  identityScopeEvidence,
+  identityScopeParameters,
+  identityScopePlan,
+  safeIdentityScopeRow,
+  type IdentityScopePlan,
   type PolicyPlan,
 } from './policy-reader.js';
 
@@ -482,13 +490,47 @@ export class Neo4jMapStore implements MapStore {
           return Math.floor(stamp / 1000);
         };
         let policyPairCount = 0;
+        let scopePairCount = 0;
         const policyChecks: {
           plan: PolicyPlan;
+          scopePlan: IdentityScopePlan;
           params: Record<string, unknown>;
           rows: JsonObject[];
+          scopeRows: JsonObject[];
           projection: MapProjection;
           maximumAge: number;
         }[] = [];
+        const readScope = async (
+          plan: IdentityScopePlan,
+          params: Record<string, unknown>,
+          chargeRows: boolean,
+        ): Promise<JsonObject[]> => {
+          if (!plan.probes.length) return [];
+          const rows: JsonObject[] = [];
+          let readBytes = 0;
+          await run(
+            IDENTITY_SCOPE_QUERY,
+            {
+              ...params,
+              scopePairs: identityScopeParameters(plan),
+              candidateLimit: neo4j.int(IDENTITY_SCOPE_CANDIDATE_LIMIT),
+              scopeRowLimit: neo4j.int(plan.probes.length * 2 + 1),
+            },
+            item => {
+              if (rows.length >= plan.probes.length * 2) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
+              const raw = Object.fromEntries(
+                IDENTITY_SCOPE_COLUMNS.map(column => [column, converted(item.get(column))]),
+              );
+              const safe = safeIdentityScopeRow(raw);
+              readBytes += Buffer.byteLength(JSON.stringify(safe), 'utf8');
+              if (readBytes > 4 * 1024 * 1024) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
+              if (chargeRows) charge(safe);
+              rows.push(safe);
+            },
+          );
+          rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en-US'));
+          return rows;
+        };
         const readPolicy = async (
           plan: PolicyPlan,
           params: Record<string, unknown>,
@@ -606,9 +648,16 @@ export class Neo4jMapStore implements MapStore {
             if (!selection.summary && !selection.history && id === currentId) {
               const plan = policyPlan(scope.companyId, tenantId, nodes, edges, 512 - policyPairCount);
               policyPairCount += plan.records.length;
+              // The reverse identity read can list hundreds of buckets per identity, so it runs
+              // only for a read focused on one agent (get_agent_access, get_agent_inventory).
+              const scopePlan =
+                selection.agentId === undefined
+                  ? { records: [], probes: [] }
+                  : identityScopePlan(scope.companyId, tenantId, nodes, edges, 128 - scopePairCount);
+              scopePairCount += scopePlan.records.length;
               let maximumAge = this.#policyAge;
               const enrolled = record.get('policyCoverage');
-              if (enrolled !== null && enrolled !== undefined && plan.probes.length) {
+              if (enrolled !== null && enrolled !== undefined && (plan.probes.length || scopePlan.probes.length)) {
                 try {
                   if (typeof enrolled !== 'string' || enrolled.length > 16_384) throw new Error();
                   const parsed = JSON.parse(enrolled) as { maxAgeSeconds?: unknown };
@@ -628,8 +677,15 @@ export class Neo4jMapStore implements MapStore {
               const rows = await readPolicy(plan, params, true);
               const evidence = policyEvidence(plan, rows, now(), maximumAge);
               for (const item of evidence) charge(item);
-              const enriched = { ...projection, policyEvidence: evidence };
-              policyChecks.push({ plan, params, rows, projection: enriched, maximumAge });
+              const scopeRows = await readScope(scopePlan, params, true);
+              const identityScope = identityScopeEvidence(scopePlan, scopeRows, now(), maximumAge);
+              for (const item of identityScope) charge(item);
+              const enriched = {
+                ...projection,
+                policyEvidence: evidence,
+                ...(selection.agentId === undefined ? {} : { identityScope }),
+              };
+              policyChecks.push({ plan, scopePlan, params, rows, scopeRows, projection: enriched, maximumAge });
               return enriched;
             }
             return projection;
@@ -682,6 +738,12 @@ export class Neo4jMapStore implements MapStore {
           if (JSON.stringify(rows) !== JSON.stringify(checked.rows)) throw new MapQueryError('MAP_UNAVAILABLE');
           const refreshed = policyEvidence(checked.plan, rows, now(), checked.maximumAge);
           if (JSON.stringify(refreshed) !== JSON.stringify(checked.projection.policyEvidence))
+            throw new MapQueryError('MAP_UNAVAILABLE');
+          const scopeRows = await readScope(checked.scopePlan, checked.params, false);
+          if (JSON.stringify(scopeRows) !== JSON.stringify(checked.scopeRows))
+            throw new MapQueryError('MAP_UNAVAILABLE');
+          const scoped = identityScopeEvidence(checked.scopePlan, scopeRows, now(), checked.maximumAge);
+          if (JSON.stringify(scoped) !== JSON.stringify(checked.projection.identityScope ?? []))
             throw new MapQueryError('MAP_UNAVAILABLE');
         }
         try {

@@ -111,6 +111,32 @@ export interface MapPolicyEvidence {
   readonly assessment: 'unknown';
   readonly candidates: readonly MapPolicyCandidate[];
 }
+/** A bucket a tool's static identity has an identity-policy candidate on, outside that tool's bindings. */
+export interface MapIdentityExtraResource {
+  readonly resourceId: string;
+  readonly bucketName: string;
+  readonly relationship: MapPolicyCandidate['relationship'];
+  readonly hasCondition: boolean;
+  readonly conditionKeys: readonly string[];
+}
+/** C2: what a tool's execution identity reaches compared with what that tool's grants bind. */
+export interface MapIdentityScope {
+  readonly executionBindingId: string;
+  readonly deploymentId: string | null;
+  readonly tool: string | null;
+  readonly identityId: string | null;
+  readonly status: 'broader_than_grants' | 'matches_grants' | 'unknown';
+  readonly reason:
+    | Exclude<MapPolicyEvidence['reason'], 'no_candidate' | 'unsupported_action' | 'unsupported_binding'>
+    | 'unsupported_identity'
+    | 'truncated';
+  readonly observedAt: string | null;
+  readonly boundBuckets: readonly string[];
+  readonly extraResources: readonly MapIdentityExtraResource[];
+  readonly truncated: boolean;
+  readonly evidenceKind: 'iam_identity_policy_candidate';
+  readonly assessment: 'unknown';
+}
 export interface MapProjection {
   readonly id: string;
   readonly snapshotId: string;
@@ -121,6 +147,8 @@ export interface MapProjection {
   readonly coverage: MapCoverage;
   /** Current, independently checked policy evidence; omitted for summaries/history. */
   readonly policyEvidence?: readonly MapPolicyEvidence[];
+  /** Current identity-scope comparison per static execution binding; omitted with policyEvidence. */
+  readonly identityScope?: readonly MapIdentityScope[];
 }
 export interface MapSource {
   readonly id: string;

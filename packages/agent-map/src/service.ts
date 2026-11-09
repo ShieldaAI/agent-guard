@@ -490,6 +490,37 @@ function directAccess(
   );
 }
 
+/**
+ * C2 per execution binding in the agent's focus. A store that did not run the reverse identity
+ * read reports every binding as `unknown` rather than leaving it out.
+ */
+function identityScope(projection: MapProjection, graph: { nodes: MapNode[] }): JsonObject[] {
+  const executions = graph.nodes.filter(node => node.label === 'GuardExecutionBinding');
+  const known = new Map((projection.identityScope ?? []).map(item => [item.executionBindingId, item]));
+  return ordered(
+    executions.map(execution => {
+      const item = known.get(execution.entityId);
+      return {
+        id: execution.entityId,
+        ...(item ?? {
+          executionBindingId: execution.entityId,
+          deploymentId: null,
+          tool: string(execution, 'tool'),
+          identityId: null,
+          status: 'unknown',
+          reason: 'collection_missing',
+          observedAt: null,
+          boundBuckets: [],
+          extraResources: [],
+          truncated: false,
+          evidenceKind: 'iam_identity_policy_candidate',
+          assessment: 'unknown',
+        }),
+      } as unknown as JsonObject;
+    }),
+  );
+}
+
 const POLICY_ACTIONS: Readonly<Record<string, string>> = Object.freeze({
   's3:GetObject': 'CAN_READ',
   's3:PutObject': 'CAN_WRITE',
@@ -1611,13 +1642,16 @@ export class MapService {
           .map(node => ({ id: node.entityId, kind: node.label, ...node.properties })),
         policyEvidence: policy as unknown as readonly JsonObject[],
         policyCoverage: policyCoverage(policy),
-        outsideGuard: { directAccess: directAccess(projection, graph, work) },
+        outsideGuard: {
+          directAccess: directAccess(projection, graph, work),
+          identityScope: identityScope(projection, graph),
+        },
         receipt: receipt(source),
         assessment: 'unknown',
         limitations: [
           'Declared and observed evidence only; current executor admission is required.',
           'External object and prefix bindings retain their original scope.',
-          'Paths outside the guard come from host declarations only; none_declared is the host claim, not a check, and neither status means safe.',
+          'Only S3 identity policies and host declarations are checked. Bucket policies, SCPs and permission boundaries are not, so identity-scope buckets are candidates and a deny elsewhere can remove the access. none_declared is the host claim, not a check, and no status means safe.',
         ],
       };
     } else if (operation === 'explain_access') {

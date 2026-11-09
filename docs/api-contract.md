@@ -628,6 +628,17 @@ The reference API exposes these observations through optional
 `MapProjection.policyEvidence` records. `get_agent_access` returns
 `data.policyEvidence`; `explain_access` returns it under `externalEvidence`;
 `find_agents_with_access` filters it to the requested action and exact task/binding.
+
+For a read focused on one agent, the store also runs the reverse direction and sets
+`MapProjection.identityScope`: for each static execution identity, every collected
+bucket in the same account the identity has a candidate on, compared with the buckets
+that tool's own grants bind for that deployment. `get_agent_access` returns it as
+`data.outsideGuard.identityScope`, one record per execution binding with `status`
+`broader_than_grants`, `matches_grants` or `unknown` (with a `reason`), the bound
+bucket names, and `extraResources` (bucket, relationship, condition flag and keys).
+More than 500 buckets sets `truncated` and `unknown`. Only identity policies are
+evaluated, so extra buckets are candidates; a bucket policy, SCP or permission
+boundary can still remove the access, and `matches_grants` does not mean safe.
 Each record has stable entity IDs for `taskId`, `deploymentId`,
 `executionBindingId`, `resourceBindingId`, `identityId` and `resourceId` (the last
 two may be null for unresolved bindings), plus `action`, `status`, `reason`,

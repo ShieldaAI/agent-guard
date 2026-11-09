@@ -8,6 +8,8 @@ import {
   type MapNode,
   type MapPolicyCandidate,
   type MapPolicyEvidence,
+  type MapIdentityExtraResource,
+  type MapIdentityScope,
 } from './types.js';
 
 const MAPPING: Readonly<Record<string, MapPolicyCandidate['relationship']>> = Object.freeze({
@@ -49,14 +51,8 @@ export interface PolicyPlan {
   readonly probes: readonly Probe[];
 }
 
-/** Pair only the selected task's grants with its deployment's declared execution identity. */
-export function policyPlan(
-  companyId: string,
-  tenantId: string,
-  nodes: readonly MapNode[],
-  edges: readonly MapEdge[],
-  maximum: number,
-): PolicyPlan {
+/** Bounded adjacency over one projection's authorized nodes and edges. */
+function graphIndex(nodes: readonly MapNode[], edges: readonly MapEdge[]) {
   const byId = new Map(nodes.map(node => [node.id, node]));
   const outgoing = new Map<string, Map<string, string[]>>(),
     incoming = new Map<string, Map<string, string[]>>();
@@ -90,6 +86,27 @@ export function policyPlan(
     step();
     return ids.length === 1 && ids[0] === target.id;
   };
+  return { linked, exact, step };
+}
+
+/** Python's scope ID uses compact ensure_ascii JSON; preserve that byte contract. */
+function collectionKey(companyId: string, tenantId: string, partition: string, accountId: string): string {
+  const encoded = JSON.stringify([companyId, tenantId, partition, accountId]).replace(
+    /[\u007f-\uffff]/g,
+    char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+  return createHash('sha256').update(encoded).digest('hex');
+}
+
+/** Pair only the selected task's grants with its deployment's declared execution identity. */
+export function policyPlan(
+  companyId: string,
+  tenantId: string,
+  nodes: readonly MapNode[],
+  edges: readonly MapEdge[],
+  maximum: number,
+): PolicyPlan {
+  const { linked, exact, step } = graphIndex(nodes, edges);
   const records: MapPolicyEvidence[] = [],
     probes: Probe[] = [],
     seen = new Set<string>();
@@ -218,11 +235,6 @@ export function policyPlan(
                   records.push(reason(base, 'unavailable', 'cloud_unresolved'));
                   continue;
                 }
-                // Python's scope ID uses compact ensure_ascii JSON; preserve that byte contract.
-                const encoded = JSON.stringify([companyId, tenantId, partition, accountId]).replace(
-                  /[\u007f-\uffff]/g,
-                  char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,
-                );
                 records.push(base);
                 probes.push({
                   key: recordIndex,
@@ -235,7 +247,7 @@ export function policyPlan(
                   bucketName: bucket[1]!,
                   principalLabel: principal[2] === 'role' ? 'AWSRole' : 'AWSUser',
                   relationship,
-                  collectionId: createHash('sha256').update(encoded).digest('hex'),
+                  collectionId: collectionKey(companyId, tenantId, partition, accountId),
                   proof: {
                     agentNodeId: agents[0]!.id,
                     agentEntityId: agents[0]!.entityId,
@@ -430,6 +442,30 @@ function unicodeOrder(a: string, b: string): number {
   }
   return left.length - right.length;
 }
+/** Condition keys are bounded, unique, sorted text, and present exactly when has_condition is. */
+function conditionKeysValid(candidate: Record<string, unknown>): boolean {
+  const keys = candidate.condition_keys,
+    lengths = candidate.condition_key_lengths;
+  return (
+    typeof candidate.has_condition === 'boolean' &&
+    Array.isArray(keys) &&
+    keys.length <= 128 &&
+    candidate.condition_key_count === keys.length &&
+    Array.isArray(lengths) &&
+    lengths.length === keys.length &&
+    !keys.some(
+      (key, index) =>
+        typeof key !== 'string' ||
+        !key ||
+        /[\u0000-\u001f\ud800-\udfff]/u.test(key) ||
+        Buffer.byteLength(key) > 256 ||
+        lengths[index] !== [...key].length,
+    ) &&
+    new Set(keys).size === keys.length &&
+    JSON.stringify(keys) === JSON.stringify([...(keys as string[])].sort(unicodeOrder)) &&
+    candidate.has_condition === keys.length > 0
+  );
+}
 function referenceMatches(actual: Record<string, unknown>, expected: MapNode): boolean {
   if (actual.id !== expected.id || actual.entity_id !== expected.entityId) return false;
   return referenceFields
@@ -623,8 +659,7 @@ export function policyEvidence(
         if (matches.length !== 1) invalid = true;
         continue;
       }
-      const keys = candidate.condition_keys,
-        lengths = candidate.condition_key_lengths;
+      const keys = candidate.condition_keys;
       const relation = candidate.relationship;
       if (
         candidate.collection_id !== c.id ||
@@ -638,23 +673,7 @@ export function policyEvidence(
         typeof relation !== 'string' ||
         !Object.values(MAPPING).includes(relation as MapPolicyCandidate['relationship']) ||
         seen.has(relation) ||
-        typeof candidate.has_condition !== 'boolean' ||
-        !Array.isArray(keys) ||
-        keys.length > 128 ||
-        candidate.condition_key_count !== keys.length ||
-        !Array.isArray(lengths) ||
-        lengths.length !== keys.length ||
-        keys.some(
-          (key, index) =>
-            typeof key !== 'string' ||
-            !key ||
-            /[\u0000-\u001f\ud800-\udfff]/u.test(key) ||
-            Buffer.byteLength(key) > 256 ||
-            lengths[index] !== [...key].length,
-        ) ||
-        new Set(keys).size !== keys.length ||
-        JSON.stringify(keys) !== JSON.stringify([...(keys as string[])].sort(unicodeOrder)) ||
-        candidate.has_condition !== keys.length > 0
+        !conditionKeysValid(candidate)
       ) {
         invalid = true;
         break;
@@ -663,7 +682,7 @@ export function policyEvidence(
       if (relation === probe.relationship)
         candidates.push({
           relationship: relation as MapPolicyCandidate['relationship'],
-          hasCondition: candidate.has_condition,
+          hasCondition: candidate.has_condition as boolean,
           conditionKeys: keys as string[],
           resourceScope: 'bucket_summary',
         });
@@ -678,6 +697,439 @@ export function policyEvidence(
       reason: candidates.length ? null : 'no_candidate',
       observedAt,
       candidates,
+    };
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------------------
+// C2: identity scope. The forward reader above probes only bound buckets. This
+// reverse reader asks, per static execution identity, which collected buckets in
+// the same account the identity has an identity-policy candidate on, and compares
+// them with the buckets that tool's own bindings map to. Bucket policies, SCPs and
+// permission boundaries are not evaluated, so extra buckets are candidates only.
+// ---------------------------------------------------------------------------
+
+/** Buckets listed per identity before the comparison reports `truncated`. */
+export const IDENTITY_SCOPE_BUCKETS = 500;
+const RELATIONSHIPS = Object.values(MAPPING);
+const BUCKET = /^[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]$/;
+
+interface ScopeProbe {
+  readonly key: number;
+  readonly identity: MapNode;
+  readonly accountId: string;
+  readonly partition: string;
+  readonly principalArn: string;
+  readonly principalLabel: 'AWSRole' | 'AWSUser';
+  readonly collectionId: string;
+  readonly bound: ReadonlySet<string>;
+  readonly proof: Readonly<Record<string, string | null>>;
+}
+export interface IdentityScopePlan {
+  readonly records: readonly MapIdentityScope[];
+  readonly probes: readonly ScopeProbe[];
+}
+
+/** One record per execution binding; a probe only for an unambiguous, resolved static AWS identity. */
+export function identityScopePlan(
+  companyId: string,
+  tenantId: string,
+  nodes: readonly MapNode[],
+  edges: readonly MapEdge[],
+  maximum: number,
+): IdentityScopePlan {
+  const { linked, exact, step } = graphIndex(nodes, edges);
+  const records: MapIdentityScope[] = [],
+    probes: ScopeProbe[] = [];
+  for (const execution of nodes.filter(node => node.label === 'GuardExecutionBinding')) {
+    if (records.length >= maximum) fail('MAP_LIMIT_EXCEEDED');
+    const tool = value(execution, 'tool');
+    const deployments = linked(execution, 'G_EXECUTES_FOR', 'GuardDeployment');
+    const tools = linked(execution, 'G_EXECUTES_TOOL', 'GuardTool');
+    const identities = linked(execution, 'G_USES_IDENTITY', 'GuardExternalIdentity');
+    const deployment = deployments.length === 1 ? deployments[0]! : null;
+    const identity = identities.length === 1 ? identities[0]! : null;
+    const base: MapIdentityScope = {
+      executionBindingId: execution.entityId,
+      deploymentId: deployment?.entityId ?? null,
+      tool,
+      identityId: identity?.entityId ?? null,
+      status: 'unknown',
+      reason: 'collection_missing',
+      observedAt: null,
+      boundBuckets: [],
+      extraResources: [],
+      truncated: false,
+      evidenceKind: 'iam_identity_policy_candidate',
+      assessment: 'unknown',
+    };
+    const record = (code: MapIdentityScope['reason']): void => {
+      records.push({ ...base, reason: code });
+    };
+    if (value(execution, 'identity_selection') !== 'static') {
+      record('identity_not_static');
+      continue;
+    }
+    const agents = deployment ? linked(deployment, 'G_INSTANCE_OF', 'GuardAgent') : [];
+    if (
+      !tool ||
+      !deployment ||
+      !identity ||
+      tools.length !== 1 ||
+      value(tools[0]!, 'name') !== tool ||
+      agents.length !== 1 ||
+      !exact(execution, 'G_EXECUTES_FOR', deployment) ||
+      !exact(execution, 'G_EXECUTES_TOOL', tools[0]!) ||
+      !exact(execution, 'G_USES_IDENTITY', identity) ||
+      !exact(deployment, 'G_INSTANCE_OF', agents[0]!)
+    ) {
+      record('binding_ambiguous');
+      continue;
+    }
+    const accountId = value(identity, 'account_id'),
+      partition = value(identity, 'partition'),
+      principalArn = value(identity, 'arn');
+    const principal = /^arn:aws:iam::([0-9]{12}):(role|user)\/.+$/.exec(principalArn ?? '');
+    if (
+      value(identity, 'provider') !== 'aws' ||
+      partition !== 'aws' ||
+      !accountId ||
+      !/^[0-9]{12}$/.test(accountId) ||
+      !principal ||
+      principal[1] !== accountId
+    ) {
+      record('unsupported_identity');
+      continue;
+    }
+    if (identity.properties.cloud_status === null || identity.properties.cloud_status === undefined) {
+      record('cloud_not_collected');
+      continue;
+    }
+    if (identity.properties.cloud_status !== 'resolved') {
+      record('cloud_unresolved');
+      continue;
+    }
+    // The buckets this tool's own grants bind for this deployment: task -> grant (same tool)
+    // -> selector <- binding (same tool and selector) -> external S3 resource.
+    const bound = new Set<string>();
+    for (const task of linked(deployment, 'G_ASSIGNED_TO', 'GuardTask', true))
+      for (const grant of linked(task, 'G_HAS_GRANT', 'GuardGrant')) {
+        if (value(grant, 'tool') !== tool) continue;
+        const resources = grant.properties.resources;
+        for (const selector of linked(grant, 'G_TARGETS', 'GuardResource')) {
+          const selectorValue = value(selector, 'resource_id');
+          if (!Array.isArray(resources) || !resources.includes(selectorValue!)) continue;
+          for (const binding of linked(selector, 'G_BINDS_SELECTOR', 'GuardResourceBinding', true)) {
+            step();
+            if (value(binding, 'tool') !== tool || value(binding, 'resource_ref') !== selectorValue) continue;
+            for (const target of linked(binding, 'G_MAPS_TO', 'GuardExternalResource')) {
+              const bucket = /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:\/.*)?$/.exec(
+                value(target, 'arn') ?? '',
+              );
+              if (value(target, 'provider') === 'aws' && bucket) bound.add(bucket[1]!);
+            }
+          }
+        }
+      }
+    const key = records.length;
+    records.push({ ...base, boundBuckets: [...bound].sort() });
+    probes.push({
+      key,
+      identity,
+      accountId,
+      partition,
+      principalArn: principalArn!,
+      principalLabel: principal[2] === 'role' ? 'AWSRole' : 'AWSUser',
+      collectionId: collectionKey(companyId, tenantId, partition, accountId),
+      bound,
+      proof: {
+        executionNodeId: execution.id,
+        executionEntityId: execution.entityId,
+        deploymentNodeId: deployment.id,
+        deploymentEntityId: deployment.entityId,
+        agentNodeId: agents[0]!.id,
+        agentEntityId: agents[0]!.entityId,
+        agentTeamId: value(agents[0]!, 'team_id'),
+        tool,
+      },
+    });
+  }
+  return { records, probes };
+}
+
+// The candidate's fixed fields are compared with its collection in Cypher, so each row
+// carries a compact boolean instead of repeating hashes for up to 1,500 candidates.
+const executionProof = `EXISTS {
+  MATCH (execution:GuardExecutionBinding {id:pair.executionNodeId,entity_id:pair.executionEntityId})
+    -[:G_EXECUTES_FOR]->(deployment:GuardDeployment {id:pair.deploymentNodeId,entity_id:pair.deploymentEntityId})
+    -[:G_INSTANCE_OF]->(agent:GuardAgent {id:pair.agentNodeId,entity_id:pair.agentEntityId})
+  WHERE ${proofScope('execution')} AND ${proofScope('deployment')} AND ${proofScope('agent')}
+    AND execution.identity_selection='static' AND execution.tool=pair.tool
+    AND ($allTeams OR agent.team_id IN $teamIds)
+    AND (agent.team_id=pair.agentTeamId OR (agent.team_id IS NULL AND pair.agentTeamId IS NULL))
+    AND COUNT { (execution)-[:G_EXECUTES_FOR]->() } = 1
+    AND COUNT { (deployment)-[:G_INSTANCE_OF]->() } = 1
+    AND COUNT { (execution)-[:G_USES_IDENTITY]->() } = 1
+    AND EXISTS { (execution)-[:G_USES_IDENTITY]->(i) }
+}`;
+export const IDENTITY_SCOPE_QUERY = `UNWIND $scopePairs AS pair
+OPTIONAL MATCH (i:GuardExternalIdentity {id:pair.identityNodeId,source_id:$sourceId,projection_id:$projectionId,tenant_id:$tenantId})
+OPTIONAL MATCH (i)-[ic:G_CLOUD_MATCH]->(p)
+OPTIONAL MATCH (pa:AWSAccount)-[po:RESOURCE]->(p)
+OPTIONAL MATCH (c:GuardAwsCollection {company_id:$companyId,tenant_id:$tenantId,partition:pair.partition,account_id:pair.accountId})
+OPTIONAL MATCH (c)-[pm:G_AWS_OBSERVED]->(p)
+CALL (p, c, pair) {
+  OPTIONAL MATCH (p)-[candidate:G_AWS_POLICY_CANDIDATE {collection_id:c.id}]->(b)
+  OPTIONAL MATCH (c)-[bm:G_AWS_OBSERVED]->(b)
+  OPTIONAL MATCH (ba:AWSAccount)-[bo:RESOURCE]->(b)
+  WITH candidate, b, bm, ba, bo ORDER BY b.id, candidate.relationship LIMIT $candidateLimit
+  RETURN collect(CASE WHEN candidate IS NULL THEN null ELSE {
+    bucket:substring(b.id,0,64),
+    relationship:substring(candidate.relationship,0,33),
+    has_condition:candidate.has_condition,
+    condition_keys:[key IN candidate.condition_keys[..129] | substring(key,0,257)],
+    condition_key_count:size(candidate.condition_keys),
+    condition_key_lengths:[key IN candidate.condition_keys[..129] | size(key)],
+    consistent:coalesce(b:AWSS3Bucket AND b.arn='arn:aws:s3:::'+b.id
+      AND candidate.capture_hash=c.content_hash AND candidate.captured_at=c.captured_at
+      AND candidate.policy_hash=c.policy_hash AND candidate.mapping_version='${VERSION}'
+      AND candidate.resource_scope='bucket_summary' AND candidate.assessment='unknown'
+      AND candidate.evidence_kind='iam_identity_policy_candidate'
+      AND bm.capture_hash=c.content_hash AND bm.captured_at=c.captured_at
+      AND b.lastupdated=c.captured_at AND ba.id=pair.accountId AND bo.lastupdated=c.captured_at, false)
+  } END) AS candidates
+}
+RETURN pair.key AS key,${executionProof} AS executionProof,
+ i {${referenceProjection('i')}} AS identity,
+ CASE WHEN ic IS NULL THEN null ELSE {eid:elementId(ic),kind:type(ic),evidence_kind:substring(ic.evidence_kind,0,65),assessment:substring(ic.assessment,0,33),observed_at:ic.observed_at} END AS identityLink,
+ CASE WHEN p IS NULL THEN null ELSE {eid:elementId(p),id:substring(p.id,0,2049),arn:substring(p.arn,0,2049),lastupdated:p.lastupdated,principal:p:AWSPrincipal,role:p:AWSRole,user:p:AWSUser} END AS principal,
+ CASE WHEN pa IS NULL THEN null ELSE {eid:elementId(pa),id:substring(pa.id,0,13),lastupdated:pa.lastupdated} END AS principalAccount,
+ CASE WHEN po IS NULL THEN null ELSE {eid:elementId(po),lastupdated:po.lastupdated} END AS principalOwnership,
+ CASE WHEN c IS NULL THEN null ELSE {eid:elementId(c),id:substring(c.id,0,65),schema_version:c.schema_version,status:substring(c.status,0,33),captured_at:c.captured_at,content_hash:substring(c.content_hash,0,65),policy_status:substring(c.policy_status,0,33),policy_hash:substring(c.policy_hash,0,65),policy_mapping_version:substring(c.policy_mapping_version,0,65)} END AS collection,
+ CASE WHEN pm IS NULL THEN null ELSE {${memberFields.replaceAll('m.', 'pm.').replaceAll('elementId(m)', 'elementId(pm)')}} END AS principalMember,
+ candidates
+LIMIT $scopeRowLimit`;
+export const IDENTITY_SCOPE_COLUMNS = [
+  'key',
+  'executionProof',
+  'identity',
+  'identityLink',
+  'principal',
+  'principalAccount',
+  'principalOwnership',
+  'collection',
+  'principalMember',
+  'candidates',
+] as const;
+/**
+ * At most three relationships per bucket, so one row past 500 buckets x 3 always shows a
+ * 501st bucket; unique (bucket, relationship) pairs make that the only way to reach it.
+ */
+export const IDENTITY_SCOPE_CANDIDATE_LIMIT = IDENTITY_SCOPE_BUCKETS * RELATIONSHIPS.length + 1;
+
+export function identityScopeParameters(plan: IdentityScopePlan): readonly Record<string, unknown>[] {
+  return plan.probes.map(probe => ({
+    ...probe.proof,
+    key: probe.key,
+    identityNodeId: probe.identity.id,
+    accountId: probe.accountId,
+    partition: probe.partition,
+  }));
+}
+export function safeIdentityScopeRow(raw: unknown): JsonObject {
+  try {
+    return immutableJson(raw, 8, 40_000, 1024 * 1024) as JsonObject;
+  } catch {
+    return fail('MAP_LIMIT_EXCEEDED');
+  }
+}
+
+/** Pure classification. Any malformed or stale evidence leaves the status `unknown`. */
+export function identityScopeEvidence(
+  plan: IdentityScopePlan,
+  rows: readonly JsonObject[],
+  now: number,
+  maximumAge: number,
+): readonly MapIdentityScope[] {
+  const groups = new Map<number, JsonObject[]>();
+  const requested = new Set(plan.probes.map(probe => probe.key));
+  for (const row of rows) {
+    const key = row.key;
+    if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail();
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  const result = [...plan.records];
+  for (const probe of plan.probes) {
+    const base = result[probe.key]!,
+      matches = groups.get(probe.key) ?? [];
+    const set = (code: MapIdentityScope['reason'], time: string | null = null): void => {
+      result[probe.key] = { ...base, status: 'unknown', reason: code, observedAt: time };
+    };
+    if (!matches.length || matches[0]!.executionProof !== true) {
+      set('changed');
+      continue;
+    }
+    // One identity, principal, account and member each: any fan-out is malformed evidence.
+    if (matches.length !== 1) {
+      set('evidence_invalid');
+      continue;
+    }
+    const row = matches[0]!;
+    const i = object(row.identity),
+      p = object(row.principal),
+      pa = object(row.principalAccount),
+      po = object(row.principalOwnership),
+      ic = object(row.identityLink),
+      c = object(row.collection),
+      pm = object(row.principalMember);
+    if (!i || !referenceMatches(i, probe.identity)) {
+      set('changed');
+      continue;
+    }
+    if (!p || !pa || !po || !ic) {
+      set('provider_missing');
+      continue;
+    }
+    if (
+      p.principal !== true ||
+      p.role !== (probe.principalLabel === 'AWSRole') ||
+      p.user !== (probe.principalLabel === 'AWSUser') ||
+      p.id !== probe.principalArn ||
+      p.arn !== probe.principalArn ||
+      pa.id !== probe.accountId ||
+      i.cloud_provider_id !== probe.principalArn ||
+      i.cloud_provider_label !== probe.principalLabel ||
+      i.cloud_match_kind !== 'exact' ||
+      ic.kind !== 'G_CLOUD_MATCH' ||
+      i.cloud_assessment !== 'unknown' ||
+      ic.assessment !== 'unknown' ||
+      ic.evidence_kind !== 'provider_inventory' ||
+      ic.observed_at !== i.cloud_observed_at
+    ) {
+      set('evidence_invalid');
+      continue;
+    }
+    if (!c) {
+      set('collection_missing');
+      continue;
+    }
+    if (
+      c.id !== probe.collectionId ||
+      c.schema_version !== 1 ||
+      c.status !== 'complete' ||
+      !hash(c.content_hash) ||
+      !stamp(c.captured_at, now)
+    ) {
+      set('collection_invalid');
+      continue;
+    }
+    const observedAt = new Date(c.captured_at * 1000).toISOString();
+    const times = [
+      p.lastupdated,
+      pa.lastupdated,
+      po.lastupdated,
+      i.cloud_observed_at,
+      i.cloud_node_updated,
+      i.cloud_ownership_updated,
+      i.cloud_account_updated,
+    ];
+    if (times.some(time => !stamp(time, now))) {
+      set('changed', observedAt);
+      continue;
+    }
+    if ([c.captured_at, ...times].some(time => now - (time as number) > maximumAge)) {
+      set('stale', observedAt);
+      continue;
+    }
+    if (
+      !pm ||
+      pm.capture_hash !== c.content_hash ||
+      pm.captured_at !== c.captured_at ||
+      p.lastupdated !== c.captured_at ||
+      po.lastupdated !== c.captured_at ||
+      i.cloud_node_updated !== p.lastupdated ||
+      i.cloud_ownership_updated !== po.lastupdated ||
+      i.cloud_account_updated !== pa.lastupdated
+    ) {
+      set('changed', observedAt);
+      continue;
+    }
+    if (c.policy_status === 'disabled' || c.policy_status === null || c.policy_status === undefined) {
+      set('disabled', observedAt);
+      continue;
+    }
+    if (
+      c.policy_status !== 'complete' ||
+      !hash(c.policy_hash) ||
+      c.policy_mapping_version !== VERSION ||
+      pm.policy_hash !== c.policy_hash ||
+      pm.policy_mapping_version !== VERSION ||
+      pm.policy_assessment !== 'unknown' ||
+      !['mapped', 'unsupported', 'boundary_unresolved'].includes(String(pm.policy_status)) ||
+      typeof pm.policy_boundary_present !== 'boolean' ||
+      pm.policy_boundary_present !== (pm.policy_status === 'boundary_unresolved')
+    ) {
+      set('collection_invalid', observedAt);
+      continue;
+    }
+    if (pm.policy_status !== 'mapped') {
+      set(pm.policy_status === 'boundary_unresolved' ? 'boundary_unresolved' : 'unsupported_policy', observedAt);
+      continue;
+    }
+    const raw = row.candidates;
+    if (!Array.isArray(raw) || raw.length > IDENTITY_SCOPE_CANDIDATE_LIMIT) {
+      set('evidence_invalid', observedAt);
+      continue;
+    }
+    const seen = new Set<string>(),
+      buckets = new Set<string>(),
+      extras: MapIdentityExtraResource[] = [];
+    let invalid = false;
+    for (const item of raw) {
+      const candidate = object(item);
+      const bucket = candidate?.bucket,
+        relation = candidate?.relationship;
+      if (
+        !candidate ||
+        candidate.consistent !== true ||
+        typeof bucket !== 'string' ||
+        !BUCKET.test(bucket) ||
+        typeof relation !== 'string' ||
+        !RELATIONSHIPS.includes(relation as MapPolicyCandidate['relationship']) ||
+        seen.has(`${bucket}\0${relation}`) ||
+        !conditionKeysValid(candidate)
+      ) {
+        invalid = true;
+        break;
+      }
+      seen.add(`${bucket}\0${relation}`);
+      buckets.add(bucket);
+      // The query orders by bucket, so the bucket past the limit marks a longer list.
+      if (buckets.size > IDENTITY_SCOPE_BUCKETS || probe.bound.has(bucket)) continue;
+      extras.push({
+        resourceId: `arn:aws:s3:::${bucket}`,
+        bucketName: bucket,
+        relationship: relation as MapPolicyCandidate['relationship'],
+        hasCondition: candidate.has_condition as boolean,
+        conditionKeys: candidate.condition_keys as string[],
+      });
+    }
+    if (invalid) {
+      set('evidence_invalid', observedAt);
+      continue;
+    }
+    const truncated = buckets.size > IDENTITY_SCOPE_BUCKETS;
+    extras.sort((a, b) =>
+      a.bucketName === b.bucketName ? (a.relationship < b.relationship ? -1 : 1) : a.bucketName < b.bucketName ? -1 : 1,
+    );
+    result[probe.key] = {
+      ...base,
+      status: truncated ? 'unknown' : extras.length ? 'broader_than_grants' : 'matches_grants',
+      reason: truncated ? 'truncated' : null,
+      observedAt,
+      extraResources: extras,
+      truncated,
     };
   }
   return result;

@@ -90,7 +90,7 @@ test('a v2 manifest without directAccess reads as unknown, never none_declared',
 test('another agent never sees a declared path of a deployment outside its focus', async () => {
   const result = await map.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'agent-none' });
   assert.doesNotMatch(JSON.stringify(result), /Ops shell|records database/);
-  assert.match(result.data.limitations.join(' '), /host declarations only/);
+  assert.match(result.data.limitations.join(' '), /Only S3 identity policies and host declarations are checked/);
 });
 
 test('the inventory deployments section carries the same status', async () => {
