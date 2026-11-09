@@ -263,6 +263,14 @@ try {
           log('OPERATIONS_STATUS', http.monitoringSummary());
         } catch {
           void stop('STORE_HEALTH_FAILED', 1);
+          return;
+        }
+        // Opt-in online retention (requests.autoArchiveAfterDays): small batches; never stops the service.
+        try {
+          const result = runtime.workflow.autoArchive();
+          if (result.archived || result.skipped) log('AUTO_ARCHIVE', result);
+        } catch {
+          log('AUTO_ARCHIVE_FAILED');
         }
       }, 60_000);
       monitor.unref();

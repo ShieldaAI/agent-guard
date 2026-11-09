@@ -7,6 +7,10 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (Agent Ops): opt-in online retention. With `requests.autoArchiveAfterDays`, the
+  service archives the executor task families of finished requests older than that,
+  10 per minute, through the operator's retire-then-archive path; blocked requests are
+  skipped. History compaction stays offline.
 - Fix (executor): an operator can accept a bounded backward clock step once at
   startup (`acceptClockSkewMs`, Agent Ops `--accept-clock-skew`), recorded as
   `CLOCK_SKEW_ACCEPTED`; without it a backward step still fails closed. A handler that

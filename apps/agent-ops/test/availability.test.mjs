@@ -168,3 +168,43 @@ test('after a backward clock step the service refuses to start unless the operat
   const { request } = await fixture.workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' });
   assert.equal(request.state, 'pending');
 });
+
+test('online retention archives old finished requests in small batches and leaves the rest', async t => {
+  const fixture = setup(t, { requests: { autoArchiveAfterDays: 1 } });
+  const finished = [];
+  for (let index = 0; index < 3; index++) {
+    const { request } = await fixture.workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' });
+    await fixture.workflow.decide({ ...owner, id: 'reviewer-alice' }, request.id, { digest: request.digest }, false);
+    finished.push(request.id);
+  }
+  const open = (await fixture.workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' })).request;
+  assert.deepEqual(fixture.workflow.autoArchive(), { archived: 0, skipped: 0 }, 'nothing is old enough yet');
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 2 * 24 * 60 * 60_000 });
+  fixture.reopen(); // The clocks are captured at construction; reopen two days later.
+  assert.deepEqual(fixture.workflow.autoArchive({ limit: 2 }), { archived: 2, skipped: 0 }, 'one small batch');
+  assert.deepEqual(
+    fixture.workflow.autoArchive({ limit: 2 }),
+    { archived: 2, skipped: 0 },
+    'the denied request and the expired one',
+  );
+  assert.deepEqual(fixture.workflow.autoArchive(), { archived: 0, skipped: 0 });
+  const requests = fixture.workflow.requests('acme').requests;
+  for (const id of [...finished, open.id]) assert.equal(requests.find(item => item.id === id).archived, true, id);
+  for (const id of finished) {
+    assert.ok(
+      fixture.runtime.executor.findTaskFamilyArchive({ tenantId: 'acme', taskId: `ticket:${id}` }),
+      'the executor holds the archive',
+    );
+  }
+  assert.ok(
+    fixture.workflow.data().audit.some(event => event.event === 'AUTO_ARCHIVED' && event.operatorId === 'retention'),
+  );
+});
+
+test('online retention is off unless configured and validates its setting', t => {
+  const fixture = setup(t);
+  assert.deepEqual(fixture.workflow.autoArchive(), { archived: 0, skipped: 0 });
+  for (const autoArchiveAfterDays of [0, 3651, 1.5]) {
+    assert.throws(() => setup(t, { requests: { autoArchiveAfterDays } }), /INVALID/);
+  }
+});

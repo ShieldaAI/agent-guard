@@ -88,7 +88,15 @@ The optional `requests` configuration sets review and admission policy:
 `reviewExpiryMs` (default 5 minutes, 1 minute to 24 hours), `forbidSelfApproval`
 (default `false`), `maxPendingPerRequester` (default 50) and `maxPendingPerTenant`
 (default 1,000). A requester or agent at its cap gets `PENDING_LIMIT_REACHED` (429)
-without affecting anyone else. IdP-side revocation
+without affecting anyone else.
+
+Set `requests.autoArchiveAfterDays` (1 to 3,650) to turn on online retention. Once a
+minute, the service archives the executor task families of finished requests older
+than that, at most 10 per run and oldest first. It uses the same retire-then-archive
+path as the Archive view and records `AUTO_ARCHIVED` by `retention`. A request with
+any blocker, such as an unconfirmed effect, is skipped and left for an operator.
+Moving request records into company history files is still an offline
+`compact-history` job. IdP-side revocation
 alone is bounded by session lifetime; use reload for immediate local revocation.
 
 The optional agent credential is a host-enrolled random bearer token with an agent

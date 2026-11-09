@@ -36,7 +36,7 @@ export const DEFAULT_REQUEST_POLICY = Object.freeze({
   maxPendingPerTenant: 1000,
 });
 export function normalizeRequestPolicy(value = {}) {
-  fields(value, Object.keys(DEFAULT_REQUEST_POLICY));
+  fields(value, [...Object.keys(DEFAULT_REQUEST_POLICY), 'autoArchiveAfterDays']);
   const policy = {
     ...DEFAULT_REQUEST_POLICY,
     ...Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)),
@@ -46,7 +46,8 @@ export function normalizeRequestPolicy(value = {}) {
     !integer(policy.reviewExpiryMs, 60_000, 24 * 60 * 60_000) ||
     typeof policy.forbidSelfApproval !== 'boolean' ||
     !integer(policy.maxPendingPerRequester, 1, 20_000) ||
-    !integer(policy.maxPendingPerTenant, 1, 20_000)
+    !integer(policy.maxPendingPerTenant, 1, 20_000) ||
+    (policy.autoArchiveAfterDays !== undefined && !integer(policy.autoArchiveAfterDays, 1, 3650))
   )
     fail('REQUEST_POLICY_INVALID');
   return Object.freeze(policy);
@@ -649,21 +650,71 @@ export class TicketWorkflow {
     )
       fail('ARCHIVE_PREVIEW_STALE', 409);
     this.previews.delete(input.id);
-    const scope = { tenantId: operator.tenantId, taskId: preview.taskId };
-    if (!preview.retired) this.executor.retireTaskFamily({ ...scope, expectedDigest: preview.digest });
-    const archiveDigest = preview.retired
-      ? preview.digest
-      : this.executor.previewTaskFamilyRetirement(scope).reviewDigest;
+    const receipt = this.#archiveFamily(
+      { tenantId: operator.tenantId, taskId: preview.taskId },
+      preview.requestId,
+      preview.retired,
+      preview.digest,
+      'ARCHIVED',
+      operator.id,
+    );
+    return { archivedCount: receipt.counts.tasks };
+  }
+  /** Retire (if needed) and archive one request's task family, recording the intent first. */
+  #archiveFamily(scope, requestId, retired, digest, event, actorId) {
+    if (!retired) this.executor.retireTaskFamily({ ...scope, expectedDigest: digest });
+    const archiveDigest = retired ? digest : this.executor.previewTaskFamilyRetirement(scope).reviewDigest;
     this.write(data => {
-      data.requests[preview.requestId].archiveIntent = true;
+      data.requests[requestId].archiveIntent = true;
     });
     const receipt = this.executor.archiveTaskFamily({ ...scope, expectedDigest: archiveDigest });
     this.write((data, now) => {
-      const request = data.requests[preview.requestId];
+      const request = data.requests[requestId];
       request.archived = receipt.archiveId;
       delete request.archiveIntent;
-      this.event(data, now, 'ARCHIVED', request, operator.id);
+      this.event(data, now, event, request, actorId);
     });
-    return { archivedCount: receipt.counts.tasks };
+    return receipt;
+  }
+  /**
+   * Online retention: archive the executor task families of finished requests older than
+   * `requests.autoArchiveAfterDays`, oldest first, at most `limit` per run, through the same
+   * retire-then-archive path an operator uses. A request with any blocker is skipped and left
+   * for review. Moving request records into company history files stays an offline job.
+   */
+  autoArchive({ limit = 10 } = {}) {
+    const days = this.requestPolicy.autoArchiveAfterDays;
+    if (days === undefined) return { archived: 0, skipped: 0 };
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('INVALID_INPUT');
+    const cutoff = this.clock() - days * 24 * 60 * 60_000;
+    const due = Object.values(this.data().requests)
+      .filter(
+        r =>
+          !r.archived &&
+          !r.archiveIntent &&
+          !r.noTask &&
+          !this.busy.has(r.id) &&
+          r.createdAt <= cutoff &&
+          terminal.has(this.public(r).state),
+      )
+      .sort((a, b) => a.createdAt - b.createdAt || (a.id < b.id ? -1 : 1))
+      .slice(0, limit);
+    let archived = 0,
+      skipped = 0;
+    for (const request of due) {
+      try {
+        const scope = { tenantId: request.tenantId, taskId: request.taskId };
+        const plan = this.executor.previewTaskFamilyRetirement(scope);
+        if ([...plan.retirementBlockers, ...plan.archiveBlockers].some(code => code !== 'FAMILY_NOT_RETIRED')) {
+          skipped++;
+          continue;
+        }
+        this.#archiveFamily(scope, request.id, plan.retired, plan.reviewDigest, 'AUTO_ARCHIVED', 'retention');
+        archived++;
+      } catch {
+        skipped++; // Left for an operator; a later run or the archive view will show why.
+      }
+    }
+    return { archived, skipped };
   }
 }
