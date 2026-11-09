@@ -39,6 +39,13 @@ export interface Action extends ResolvedAction {
 export interface TaskSnapshot extends TaskIdentity {
   sensitive: boolean; calls: number; concurrent: number; spent: number; reserved: number;
 }
+/** `snapshot()` view for hosts: the policy snapshot plus the budget and revocation state. */
+export interface TaskStatus extends TaskSnapshot {
+  /** The task's own budget; `deadline` is in clock milliseconds. */
+  budget: Readonly<Budget>;
+  /** True when this task or any ancestor is revoked. */
+  revoked: boolean;
+}
 export type PolicyDecision = 'allow' | 'deny' | 'require_approval';
 export type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
   context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
@@ -52,6 +59,38 @@ export interface GuardOptions {
    * change fails with POLICY_STATE_CHANGED as before.
    */
   maxPolicyAttempts?: number;
+  /** Observes each decision after it is made. It cannot change the outcome; a throwing hook is ignored. */
+  onDecision?: (event: Readonly<GuardDecision>) => void;
+  /** Bounds that were fixed before 0.2. Every value defaults to the previous constant. */
+  limits?: GuardLimits;
+}
+export interface GuardLimits {
+  /** Outstanding approvals per prepared action. Integer 1-64, default 4. */
+  maxApprovalsPerAction?: number;
+  /** Policy evaluations in flight across the guard. Integer 1-1024, default 64. */
+  maxPolicyEvaluations?: number;
+  /** Policy evaluations in flight per task family. Integer 1-1024, default 8. */
+  maxPolicyEvaluationsPerFamily?: number;
+  /** Longest a policy may run before POLICY_TIMEOUT, in milliseconds. 100-300,000, default 30,000. */
+  policyTimeoutMs?: number;
+}
+/**
+ * One authorization decision, for audit. Carries identifiers only: never arguments,
+ * results or policy reasons. `code` is set when the outcome is denied or failed.
+ */
+export interface GuardDecision {
+  operation: 'prepare' | 'approve' | 'execute';
+  outcome: 'allowed' | 'denied' | 'succeeded' | 'failed';
+  taskId: string; tenantId: string; principalId: string;
+  tool?: string; actionId?: string; resourceId?: string; approverId?: string;
+  code?: GuardErrorCodeValue;
+}
+/** Result of `executeDetailed()`. */
+export interface ExecutionResult {
+  readonly value: Json;
+  /** Cost units charged to the task: the reported actual cost, or the tool maximum. */
+  readonly charged: number;
+  readonly actionId: string;
 }
 export interface PreparedAction {
   readonly id: string; readonly digest: string;

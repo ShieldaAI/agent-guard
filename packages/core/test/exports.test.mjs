@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import * as root from '@shieldaai/agent-guard';
 import * as internal from '@shieldaai/agent-guard/internal';
 
-const STABLE = ['AgentGuard', 'GuardError', 'GuardErrorCatalog', 'GuardErrorCode', 'InvalidJsonError'];
+const STABLE = ['AgentGuard', 'GuardError', 'GuardErrorCatalog', 'GuardErrorCode', 'InvalidJsonError', 'monotonicClock'];
 const INTERNAL = ['PolicyAdmission', 'assertActionAuthority', 'canonicalJson', 'containsLiteralSecret', 'digestJson', 'immutableJson'];
 
 test('the root entry exports the stable API plus deprecated internal aliases', () => {

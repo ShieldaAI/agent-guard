@@ -16,8 +16,15 @@ and in the exported `GuardErrorCatalog` (meaning, whether a retry is safe, typic
 When core flattens an adapter error into `RESOLUTION_FAILED`, `ARGUMENT_INVALID` or
 `TOOL_FAILED`, a safe uppercase adapter code is kept as `error.detail` (and `cause.code`).
 
+For long-running hosts: `retireTask()` frees a finished task's ID and memory,
+`unapproveTool()`/`unregisterTool()` withdraw a tool, `executeDetailed()` returns the
+charged cost and action ID, `onDecision` observes every prepare/approve/execute
+decision (identifiers only, never arguments or results), and `limits` replaces the
+fixed approval and policy bounds. Deadlines are clock milliseconds; pass
+`clock: monotonicClock` to avoid `CLOCK_INVALID` on a backward system-clock step.
+
 The stable API is the root entry: `AgentGuard`, `GuardError`, `GuardErrorCode`,
-`GuardErrorCatalog`, `InvalidJsonError` and the exported types. Building blocks for executor and adapter
+`GuardErrorCatalog`, `InvalidJsonError`, `monotonicClock` and the exported types. Building blocks for executor and adapter
 authors (`PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
 `canonicalJson`, `digestJson`, `immutableJson`) live in
 `@shieldaai/agent-guard/internal`, which has no semver guarantees. Their root

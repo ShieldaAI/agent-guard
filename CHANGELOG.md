@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (core API shape for 1.0): `executeDetailed()` returns `{ value, charged,
+  actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
+  in long-running guards; `unapproveTool()` and `unregisterTool()`; an `onDecision`
+  audit hook (identifiers only; it cannot change an outcome); `snapshot()` adds
+  `budget` and `revoked`; a `limits` option for the previously fixed approval and
+  policy bounds; and `monotonicClock`. The default clock stays `Date.now`.
 - Add: an error catalog. `GuardErrorCatalog` documents every `GuardErrorCode` with its
   meaning, whether a retry is safe and the typical cause, and `docs/errors.md` is
   generated from it (a test fails on drift). Flattened adapter errors keep a safe

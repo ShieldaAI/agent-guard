@@ -5,8 +5,8 @@ import { GuardError, safeErrorDetail } from './types.js';
 import { assertActionAuthority, type AuthorityPhase } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
-  Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
-  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
+  Action, Budget, Capability, ExecutionResult, GuardDecision, GuardOptions, Json, Policy, PolicyDecision,
+  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, TaskStatus, ToolDefinition, ToolResult,
 } from './types.js';
 
 export { GuardError, GuardErrorCode } from './types.js';
@@ -16,9 +16,17 @@ export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
 // Deprecated root aliases for the internal SPI, kept for one minor release.
 export * from './deprecated.js';
 export type {
-  Action, Budget, Capability, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
-  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, ToolDefinition, ToolResult,
+  Action, Budget, Capability, ExecutionResult, GuardDecision, GuardLimits, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
+  PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, TaskStatus, ToolDefinition, ToolResult,
 } from './types.js';
+
+/**
+ * A wall-clock-anchored monotonic clock in milliseconds: it never steps backward when the
+ * system clock is adjusted. Pass it as `clock` to avoid CLOCK_INVALID on a backward step.
+ * The default clock remains `Date.now`, and all deadlines are clock milliseconds.
+ */
+export function monotonicClock(): number { return Math.floor(performance.timeOrigin + performance.now()); }
+const FAILED_AFTER_DISPATCH = new Set(['TOOL_FAILED', 'EXECUTION_ABORTED', 'RESULT_INVALID', 'COST_REPORT_INVALID']);
 
 const MAX_TIMER_DELAY = 2_147_483_647;
 
@@ -126,7 +134,9 @@ export class AgentGuard {
   #tools = new Map<string, ToolState>();
   #tasks = new WeakMap<TaskHandle, TaskState>();
   #prepared = new WeakMap<PreparedAction, PreparedState>();
-  #policyAdmission = new PolicyAdmission();
+  #policyAdmission: PolicyAdmission;
+  #maxApprovals: number;
+  #onDecision: ((event: Readonly<GuardDecision>) => void) | undefined;
   #taskIds = new Set<string>();
   #revision = 0;
   #policyVersion = 1;
@@ -145,6 +155,21 @@ export class AgentGuard {
     const attempts = options.maxPolicyAttempts === undefined ? 5 : options.maxPolicyAttempts;
     if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 16) fail('INVALID_INPUT');
     this.#maxPolicyAttempts = attempts;
+    if (options.onDecision !== undefined && typeof options.onDecision !== 'function') fail('INVALID_INPUT');
+    this.#onDecision = options.onDecision;
+    const limits = options.limits === undefined ? {} : options.limits;
+    if (limits === null || typeof limits !== 'object') fail('INVALID_INPUT');
+    const bounded = (value: unknown, fallback: number, min: number, max: number): number => {
+      const selected = value === undefined ? fallback : value;
+      if (typeof selected !== 'number' || !Number.isSafeInteger(selected) || selected < min || selected > max) fail('INVALID_INPUT');
+      return selected;
+    };
+    this.#maxApprovals = bounded(limits.maxApprovalsPerAction, 4, 1, 64);
+    this.#policyAdmission = new PolicyAdmission({
+      maxPending: bounded(limits.maxPolicyEvaluations, 64, 1, 1024),
+      maxPendingPerFamily: bounded(limits.maxPolicyEvaluationsPerFamily, 8, 1, 1024),
+      maxWaitMs: bounded(limits.policyTimeoutMs, 30_000, 100, 300_000),
+    });
     this.#policy = options.policy;
     this.#clock = options.clock ?? Date.now;
     this.#secrets = Object.freeze([...stringSet(options.secretValues ?? [])]);
@@ -184,6 +209,18 @@ export class AgentGuard {
     tool.approved = true;
   }
 
+  /** Withdraws approval: prepared actions for the tool fail with TOOL_UNAPPROVED until it is approved again. */
+  unapproveTool(name: string): void {
+    const tool = this.#tools.get(name);
+    if (!tool) fail('TOOL_UNKNOWN');
+    tool.approved = false;
+  }
+
+  /** Removes the tool. Prepared actions for it fail with TOOL_CHANGED; a later registration needs a new approval. */
+  unregisterTool(name: string): void {
+    if (!this.#tools.delete(name)) fail('TOOL_UNKNOWN');
+  }
+
   createTask(options: TaskOptions): TaskHandle { return this.#newTask(options, undefined); }
 
   delegateTask(parent: TaskHandle, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskHandle {
@@ -195,6 +232,18 @@ export class AgentGuard {
 
   revokeTask(task: TaskHandle): void { this.#revoke(this.#task(task)); }
 
+  /**
+   * Revokes the task and forgets it, freeing its ID and memory. Its handle becomes
+   * INVALID_TASK, its prepared actions fail, and its descendants stay revoked. Retire
+   * finished tasks in a long-running guard; a later task may reuse the ID.
+   */
+  retireTask(task: TaskHandle): void {
+    const state = this.#task(task);
+    this.#revoke(state);
+    this.#tasks.delete(task);
+    this.#taskIds.delete(state.identity.id);
+  }
+
   setPolicy(policy: Policy): void {
     if (typeof policy !== 'function') fail('INVALID_INPUT');
     this.#policy = policy;
@@ -203,6 +252,18 @@ export class AgentGuard {
   }
 
   async prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction> {
+    try {
+      const prepared = await this.#prepare(task, request);
+      this.#decision('prepare', 'allowed', this.#tasks.get(task), { tool: prepared.action.tool, actionId: prepared.id, resourceId: prepared.action.resourceId });
+      return prepared;
+    } catch (error) {
+      const tool = request !== null && typeof request === 'object' && typeof request.tool === 'string' && this.#tools.has(request.tool) ? request.tool : undefined;
+      this.#decision('prepare', 'denied', this.#tasks.get(task), { ...(tool === undefined ? {} : { tool }) }, error);
+      throw error;
+    }
+  }
+
+  async #prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction> {
     const state = this.#task(task);
     this.#live(state);
     if (this.#policy) this.#policyAdmission.assertCapacity(state.family.id);
@@ -254,6 +315,16 @@ export class AgentGuard {
   }
 
   approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string {
+    const state = this.#prepared.get(prepared);
+    const detail = state ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId } : {};
+    try {
+      const id = this.#approve(prepared, options);
+      this.#decision('approve', 'allowed', state?.task, { ...detail, approverId: options.approverId });
+      return id;
+    } catch (error) { this.#decision('approve', 'denied', state?.task, detail, error); throw error; }
+  }
+
+  #approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string {
     const state = this.#invocation(prepared);
     this.#fresh(state);
     const now = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion, 'prepare');
@@ -263,13 +334,32 @@ export class AgentGuard {
     if (!nonnegative(expiresAt) || expiresAt <= now ||
         lineage(state.task).some(task => expiresAt > task.budget.deadline)) fail('APPROVAL_INVALID');
     for (const [id, approval] of state.approvals) if (now >= approval.expiresAt) state.approvals.delete(id);
-    if (state.approvals.size >= 4) fail('ACTION_APPROVAL_LIMIT');
+    if (state.approvals.size >= this.#maxApprovals) fail('ACTION_APPROVAL_LIMIT');
     const id = randomUUID();
     state.approvals.set(id, { expiresAt, approverId });
     return id;
   }
 
   async execute(prepared: PreparedAction, options: { approvalId?: string } = {}): Promise<Json> {
+    return (await this.executeDetailed(prepared, options)).value;
+  }
+
+  /** Like execute(), but also returns the charged cost and the action ID for receipts. */
+  async executeDetailed(prepared: PreparedAction, options: { approvalId?: string } = {}): Promise<ExecutionResult> {
+    const state = this.#prepared.get(prepared);
+    const detail = state ? { tool: state.tool.name, actionId: state.handle.id, resourceId: state.handle.action.resourceId } : {};
+    try {
+      const result = await this.#execute(prepared, options);
+      this.#decision('execute', 'succeeded', state?.task, detail);
+      return result;
+    } catch (error) {
+      const code = error instanceof GuardError ? error.code : undefined;
+      this.#decision('execute', code !== undefined && FAILED_AFTER_DISPATCH.has(code) ? 'failed' : 'denied', state?.task, detail, error);
+      throw error;
+    }
+  }
+
+  async #execute(prepared: PreparedAction, options: { approvalId?: string }): Promise<ExecutionResult> {
     const state = this.#invocation(prepared);
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
     const approvalId = options.approvalId;
@@ -337,7 +427,7 @@ export class AgentGuard {
       // A synchronous handler or a busy microtask queue can settle before the deadline timer runs.
       if (this.#now() >= state.task.budget.deadline) controller.abort(new GuardError('TASK_EXPIRED'));
       if (controller.signal.aborted) fail('EXECUTION_ABORTED');
-      return value;
+      return Object.freeze({ value, charged: charge, actionId: state.handle.id });
     } finally {
       cancelTimer();
       for (const task of ancestors) {
@@ -349,7 +439,27 @@ export class AgentGuard {
     }
   }
 
-  snapshot(task: TaskHandle): Readonly<TaskSnapshot> { return this.#snapshot(this.#task(task)); }
+  /** Counters, budget and revocation state for the task. */
+  snapshot(task: TaskHandle): Readonly<TaskStatus> {
+    const state = this.#task(task);
+    return Object.freeze({ ...this.#snapshot(state), budget: state.budget, revoked: lineage(state).some(ancestor => ancestor.revoked) });
+  }
+
+  #decision(operation: GuardDecision['operation'], outcome: GuardDecision['outcome'], task: TaskState | undefined,
+    detail: { tool?: string; actionId?: string; resourceId?: string; approverId?: string }, error?: unknown): void {
+    const hook = this.#onDecision;
+    if (!hook || !task) return;
+    const code = error instanceof GuardError ? error.code : undefined;
+    const approverId = typeof detail.approverId === 'string' && detail.approverId.length <= 4096 ? detail.approverId : undefined;
+    try {
+      const event = Object.freeze({ operation, outcome, taskId: task.identity.id, tenantId: task.identity.tenantId, principalId: task.identity.principalId,
+        ...(detail.tool === undefined ? {} : { tool: detail.tool }), ...(detail.actionId === undefined ? {} : { actionId: detail.actionId }),
+        ...(detail.resourceId === undefined ? {} : { resourceId: detail.resourceId }), ...(approverId === undefined ? {} : { approverId }),
+        ...(code === undefined ? {} : { code }) });
+      const returned: unknown = hook(event);
+      if (isPromise(returned)) void (returned as Promise<unknown>).catch(() => {});
+    } catch { /* Observation never changes an authorization outcome. */ }
+  }
 
   #now(): number {
     let now: unknown;

@@ -44,7 +44,21 @@ interface TaskSnapshot extends TaskIdentity {
 type PolicyDecision = 'allow' | 'deny' | 'require_approval';
 type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
   context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
-interface GuardOptions { policy?: Policy; secretValues?: readonly string[]; clock?: () => number }
+interface GuardOptions {
+  policy?: Policy; secretValues?: readonly string[];
+  clock?: () => number; // milliseconds; default Date.now. monotonicClock() never steps backward.
+  maxPolicyAttempts?: number; // 1-16, default 5
+  onDecision?: (event: Readonly<GuardDecision>) => void; // observes only; a throwing hook is ignored
+  limits?: { maxApprovalsPerAction?: number; maxPolicyEvaluations?: number;
+    maxPolicyEvaluationsPerFamily?: number; policyTimeoutMs?: number }; // defaults 4, 64, 8, 30,000
+}
+interface GuardDecision {
+  operation: 'prepare' | 'approve' | 'execute'; outcome: 'allowed' | 'denied' | 'succeeded' | 'failed';
+  taskId: string; tenantId: string; principalId: string;
+  tool?: string; actionId?: string; resourceId?: string; approverId?: string; code?: string;
+}
+interface TaskStatus extends TaskSnapshot { budget: Readonly<Budget>; revoked: boolean }
+interface ExecutionResult { readonly value: Json; readonly charged: number; readonly actionId: string }
 interface PreparedAction {
   readonly id: string; readonly digest: string;
   readonly action: Readonly<Action>; readonly requiresApproval: boolean;
@@ -57,11 +71,15 @@ class AgentGuard {
   createTask(options: TaskOptions): TaskHandle;
   delegateTask(parent: TaskHandle, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskHandle;
   revokeTask(task: TaskHandle): void;
+  retireTask(task: TaskHandle): void; // revokes, then forgets the task so its ID and memory are freed
+  unapproveTool(name: string): void;
+  unregisterTool(name: string): void;
   setPolicy(policy: Policy): void; // Invalidates existing prepared actions and approvals.
   prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction>;
   approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string;
   execute(prepared: PreparedAction, options?: { approvalId?: string }): Promise<Json>;
-  snapshot(task: TaskHandle): Readonly<TaskSnapshot>;
+  executeDetailed(prepared: PreparedAction, options?: { approvalId?: string }): Promise<ExecutionResult>;
+  snapshot(task: TaskHandle): Readonly<TaskStatus>;
 }
 // Internal SPI from '@shieldaai/agent-guard/internal' (no semver guarantees; the root
 // aliases are deprecated). Shared by executor implementations; AgentGuard manages its own pool.

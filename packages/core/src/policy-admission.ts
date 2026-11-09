@@ -10,10 +10,19 @@ type Pending = { familyId: string; taskIds: readonly string[]; controller: Abort
 /** One pool per executor, shared by preparations and executions, including delegated tasks. */
 export class PolicyAdmission {
   #pending = new Set<Pending>();
+  readonly #maxPending: number;
+  readonly #maxPerFamily: number;
+  readonly #maxWaitMs: number;
+
+  constructor(limits: { maxPending?: number; maxPendingPerFamily?: number; maxWaitMs?: number } = {}) {
+    this.#maxPending = limits.maxPending ?? MAX_PENDING;
+    this.#maxPerFamily = limits.maxPendingPerFamily ?? MAX_PENDING_PER_FAMILY;
+    this.#maxWaitMs = limits.maxWaitMs ?? MAX_WAIT_MS;
+  }
 
   assertCapacity(familyId: string): void {
-    if (this.#pending.size >= MAX_PENDING ||
-        [...this.#pending].filter(entry => entry.familyId === familyId).length >= MAX_PENDING_PER_FAMILY) {
+    if (this.#pending.size >= this.#maxPending ||
+        [...this.#pending].filter(entry => entry.familyId === familyId).length >= this.#maxPerFamily) {
       throw new GuardError('POLICY_BUSY');
     }
   }
@@ -25,9 +34,9 @@ export class PolicyAdmission {
     const controller = new AbortController();
     const entry = { familyId: scope.familyId, taskIds: scope.taskIds, controller };
     this.#pending.add(entry);
-    const deadlineFirst = scope.remainingMs <= MAX_WAIT_MS;
+    const deadlineFirst = scope.remainingMs <= this.#maxWaitMs;
     const timeoutCode = deadlineFirst ? 'TASK_EXPIRED' : 'POLICY_TIMEOUT';
-    const waitMs = Math.min(scope.remainingMs, MAX_WAIT_MS);
+    const waitMs = Math.min(scope.remainingMs, this.#maxWaitMs);
     const expires = performance.now() + waitMs;
     const timer = setTimeout(() => controller.abort(new GuardError(timeoutCode)), waitMs);
     let rejectWait!: (reason: unknown) => void;
