@@ -123,7 +123,16 @@ export function initializeTickets(store, { guardInstanceId, tickets, limits }) {
 }
 
 export class TicketWorkflow {
-  constructor({ executor, store, guardInstanceId, limits, requestPolicy, clock = Date.now, afterCommit }) {
+  constructor({
+    executor,
+    store,
+    guardInstanceId,
+    limits,
+    requestPolicy,
+    clock = Date.now,
+    afterCommit,
+    acceptClockSkewMs,
+  }) {
     this.executor = executor;
     this.store = store;
     this.clock = clock;
@@ -133,6 +142,15 @@ export class TicketWorkflow {
     this.busy = new Set();
     this.previews = new Map();
     this.dispatchAuthorization = new Map();
+    if (acceptClockSkewMs !== undefined) {
+      // Operator override for a backward clock step, at startup only (see the executor option).
+      this.store.transaction(state => {
+        const data = state.ticketService,
+          now = this.clock();
+        if (Number.isSafeInteger(now) && now < data.lastClock && data.lastClock - now <= acceptClockSkewMs)
+          data.lastClock = now;
+      });
+    }
     const state = this.data();
     assertHistoryIdle(state);
     if (state.guardInstanceId !== guardInstanceId) fail('AUTHORITY_STORE_MISMATCH', 503);

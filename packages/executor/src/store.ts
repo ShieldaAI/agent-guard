@@ -14,6 +14,14 @@ export class ExecutorError extends Error {
     this.name = 'ExecutorError';
   }
 }
+/** Smallest ledger bound any public API accepts: the executor and the /ops key tools agree. */
+export const MIN_LEDGER_BYTES = 1024 * 1024;
+export function validatePublicLedgerMaxBytes(value: number = 16 * 1024 * 1024): number {
+  if (!Number.isSafeInteger(value) || value < MIN_LEDGER_BYTES || value > 64 * 1024 * 1024)
+    throw new ExecutorError('STORE_CONFIG_INVALID');
+  return value;
+}
+/** Internal store bound; tests may use tiny stores. Public entry points use validatePublicLedgerMaxBytes. */
 export function validateLedgerMaxBytes(value: number = 16 * 1024 * 1024): number {
   if (!Number.isSafeInteger(value) || value < 1024 || value > 64 * 1024 * 1024)
     throw new ExecutorError('STORE_CONFIG_INVALID');

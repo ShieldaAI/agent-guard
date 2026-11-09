@@ -156,3 +156,15 @@ test('rate-limit keys group IPv6 clients by /64 and unwrap IPv4-mapped addresses
   assert.notEqual(clientKey('2001:db8:1:2::1'), clientKey('2001:db8:1:3::1'));
   assert.equal(clientKey('fe80::1%en0'), clientKey('fe80::2'));
 });
+
+test('after a backward clock step the service refuses to start unless the operator accepts the skew', async t => {
+  const fixture = setup(t);
+  const realNow = Date.now();
+  fixture.close();
+  t.mock.timers.enable({ apis: ['Date'], now: realNow - 5_000 });
+  assert.throws(() => fixture.reopen(), { code: 'CLOCK_INVALID' });
+  fixture.close();
+  fixture.reopen({ acceptClockSkewMs: 60_000 });
+  const { request } = await fixture.workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' });
+  assert.equal(request.state, 'pending');
+});

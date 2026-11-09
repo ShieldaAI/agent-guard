@@ -229,6 +229,20 @@ tool effect. Buffers are volatile and can lose events through expiry, capacity o
 process loss. The [decision trace guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/decision-traces.md)
 describes the pseudonymous fields, access boundary, counters and export guarantees.
 
+## Clock steps and late completion
+
+Deadlines and approval expiries are clock milliseconds, and the ledger records the last
+time it saw. A backward system-clock step makes the next start fail with
+`CLOCK_INVALID`. After checking the host clock, an operator can start once with
+`acceptClockSkewMs` (Agent Ops: `--accept-clock-skew MS`): if the clock is behind by no
+more than that, the executor accepts the current time, records `CLOCK_SKEW_ACCEPTED`
+and continues. Later starts need no override.
+
+A handler that completes after the task was cancelled, revoked or expired is settled
+as `SUCCEEDED` and charged, but its result is withheld: `execute()` fails with
+`EXECUTION_ABORTED` and `detail: 'EFFECT_COMMITTED'`, and `execution()` shows the
+committed receipt. Do not retry it.
+
 ## Ledger format and compatibility
 
 A ledger carries two markers. `schema` (1, 2 or 3) is the authority mode that 0.1

@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix (executor): an operator can accept a bounded backward clock step once at
+  startup (`acceptClockSkewMs`, Agent Ops `--accept-clock-skew`), recorded as
+  `CLOCK_SKEW_ACCEPTED`; without it a backward step still fails closed. A handler that
+  completes after cancellation, revocation or its deadline now fails with
+  `EXECUTION_ABORTED` and `detail: 'EFFECT_COMMITTED'`, so the caller knows the effect
+  happened. The executor and the `/ops` key tools share one 1 MiB minimum ledger size.
 - Change (executor exports): the root keeps the executor, task server and client,
   adapters, network and model tools. Sandbox, inventory (experimental), pilot review
   and operator tooling move to `/sandbox`, `/inventory`, `/pilot` and `/ops`, and

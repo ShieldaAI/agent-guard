@@ -23,6 +23,7 @@ import {
 import {
   ExecutorError,
   LedgerStore,
+  MIN_LEDGER_BYTES,
   type ExecutionReceipt,
   type Ledger,
   type LedgerWitness,
@@ -117,6 +118,13 @@ export interface ExecutorOptions {
    * never invalidate a decision. Integer 1-16, default 5; 1 keeps single-evaluation behaviour.
    */
   maxPolicyAttempts?: number;
+  /**
+   * Operator override for a backward system-clock step, in milliseconds (up to 24 hours).
+   * At startup only, if the clock is behind the last recorded time by no more than this,
+   * the executor accepts the current time once and records CLOCK_SKEW_ACCEPTED. Leave unset
+   * normally: a backward step otherwise fails closed with CLOCK_INVALID.
+   */
+  acceptClockSkewMs?: number;
   /** Maximum decoded ledger snapshot bytes: 1 MiB through 64 MiB; defaults to 16 MiB. */
   maxLedgerBytes?: number;
   /** Aggregate unresolved actions across a task family, including delegated children. */
@@ -172,7 +180,7 @@ export class DurableExecutor {
     this.#maxRecords = options.maxRecords ?? 10_000;
     if (!Number.isSafeInteger(this.#maxRecords) || this.#maxRecords < 1) throw new GuardError('INVALID_INPUT');
     const maxLedgerBytes = options.maxLedgerBytes === undefined ? 16 * 1024 * 1024 : options.maxLedgerBytes;
-    if (!Number.isSafeInteger(maxLedgerBytes) || maxLedgerBytes < 1024 * 1024 || maxLedgerBytes > 64 * 1024 * 1024)
+    if (!Number.isSafeInteger(maxLedgerBytes) || maxLedgerBytes < MIN_LEDGER_BYTES || maxLedgerBytes > 64 * 1024 * 1024)
       throw new GuardError('INVALID_INPUT');
     const familyShare = Math.max(1, Math.floor(this.#maxRecords / 4));
     const bounded = (value: number | undefined, fallback: number, maximum: number): number => {
@@ -239,8 +247,25 @@ export class DurableExecutor {
           options.encryptionKey,
           this.#store.read().inventoryInstanceId,
         );
+      const skew = options.acceptClockSkewMs;
+      if (skew !== undefined && (!Number.isSafeInteger(skew) || skew < 1 || skew > 24 * 60 * 60_000))
+        throw new GuardError('INVALID_INPUT');
       const recovered = this.#store.transaction(state => {
+        let skewAccepted: { from: number; to: number } | undefined;
+        if (skew !== undefined) {
+          let current: number | undefined;
+          try {
+            current = this.#clock();
+          } catch {
+            /* #now reports CLOCK_INVALID below. */
+          }
+          if (Number.isSafeInteger(current) && current! < state.lastClock && state.lastClock - current! <= skew) {
+            skewAccepted = { from: state.lastClock, to: current! };
+            state.lastClock = current!;
+          }
+        }
         const now = this.#now(state);
+        if (skewAccepted) this.#audit(state, now, 'CLOCK_SKEW_ACCEPTED');
         // Bring an older ledger layout forward first; a newer one is refused unchanged.
         migrateLedger(state);
         state.epoch++; // Process/code changes invalidate every outstanding preparation.
@@ -1070,7 +1095,10 @@ export class DurableExecutor {
       }
       this.#settle(actionId, 'SUCCEEDED', cost);
       this.#record(trace, 'settle', 'SUCCEEDED');
-      if (controller.signal.aborted || this.#now() >= admitted.deadline) throw new GuardError('EXECUTION_ABORTED');
+      // The effect is committed and settled as SUCCEEDED, but the task was cancelled, revoked or
+      // ran past its deadline: withhold the result and say the effect happened.
+      if (controller.signal.aborted || this.#now() >= admitted.deadline)
+        throw new GuardError('EXECUTION_ABORTED', 'EXECUTION_ABORTED', { detail: 'EFFECT_COMMITTED' });
       return result.value;
     } catch (error) {
       const unknown = this.#store.transaction(state => {

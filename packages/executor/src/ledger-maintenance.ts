@@ -15,7 +15,7 @@ import {
 } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { parseEvidenceJson } from './evidence-json.js';
-import { ExecutorError, LedgerStore, validateLedgerMaxBytes } from './store.js';
+import { ExecutorError, LedgerStore, validatePublicLedgerMaxBytes } from './store.js';
 
 export interface LedgerKey {
   readonly keyId: string;
@@ -258,7 +258,7 @@ function openExisting(database: string, key: Uint8Array, witnessPath?: string, m
   );
 }
 function matchingStore(options: LedgerKeyOptions, keys: readonly LedgerKey[]): { store: LedgerStore; key: LedgerKey } {
-  validateLedgerMaxBytes(options.maxBytes);
+  validatePublicLedgerMaxBytes(options.maxBytes);
   for (const key of keys) {
     try {
       return { store: openExisting(options.database, key.key, options.witnessPath, options.maxBytes), key };
@@ -270,7 +270,7 @@ function matchingStore(options: LedgerKeyOptions, keys: readonly LedgerKey[]): {
 }
 /** Authenticate existing authority without changing epochs, approvals, budgets or plaintext state. */
 export function loadLedgerKey(options: LedgerKeyOptions): LedgerKey {
-  validateLedgerMaxBytes(options.maxBytes);
+  validatePublicLedgerMaxBytes(options.maxBytes);
   let bytes: Buffer | undefined, parsed: ParsedKeyring;
   try {
     bytes = readPrivate(options.keyringFile);
@@ -453,7 +453,7 @@ export function rotateLedgerKey(options: {
   witnessPath?: string;
   maxBytes?: number;
 }): LedgerRotationResult {
-  validateLedgerMaxBytes(options.maxBytes);
+  validatePublicLedgerMaxBytes(options.maxBytes);
   if (
     options.currentKey.byteLength !== 32 ||
     options.nextKey.byteLength !== 32 ||
@@ -514,7 +514,7 @@ export function rotateLedgerKeyring(
   options: LedgerKeyOptions & { nextKeyId: string },
 ): LedgerRotationResult & { keyId: string } {
   if (!keyIdPattern.test(options.nextKeyId)) fail();
-  validateLedgerMaxBytes(options.maxBytes);
+  validatePublicLedgerMaxBytes(options.maxBytes);
   return withKeyringLock(options.keyringFile, () => {
     const previous = readPrivate(options.keyringFile);
     let keys: LedgerKey[] = [];

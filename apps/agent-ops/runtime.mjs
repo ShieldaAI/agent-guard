@@ -330,7 +330,7 @@ export function openMaintenance(
     backendKey?.key.fill(0);
   }
 }
-export function openRuntime(config, { checkOnly = false, afterCommit } = {}) {
+export function openRuntime(config, { checkOnly = false, afterCommit, acceptClockSkewMs } = {}) {
   const limits = normalizeLimits(config.limits),
     preflight = openMaintenance(config);
   try {
@@ -407,6 +407,7 @@ export function openRuntime(config, { checkOnly = false, afterCommit } = {}) {
       encryptionKey: guardKey.key,
       maxLedgerBytes: limits.maxLedgerBytes,
       rollbackWitness: { path: config.ledgerWitness, mode: 'resume' },
+      ...(acceptClockSkewMs === undefined ? {} : { acceptClockSkewMs }),
     });
     const workflow = new TicketWorkflow({
       executor,
@@ -415,6 +416,7 @@ export function openRuntime(config, { checkOnly = false, afterCommit } = {}) {
       afterCommit,
       limits,
       requestPolicy: config.requests,
+      ...(acceptClockSkewMs === undefined ? {} : { acceptClockSkewMs }),
     });
     return {
       workflow,

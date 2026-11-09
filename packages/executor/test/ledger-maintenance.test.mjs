@@ -595,7 +595,8 @@ test('byte limits reject invalid settings and refuse decoded state above a small
       ),
     { code: 'STORE_WITNESS_UNAVAILABLE' },
   );
-  assert.throws(() => loadLedgerKey({ ...f.options, maxBytes: 1024 }), { code: 'LEDGER_KEY_UNAVAILABLE' });
+  // Below the public minimum, the size itself is refused before any key is tried.
+  assert.throws(() => loadLedgerKey({ ...f.options, maxBytes: 1024 }), { code: 'STORE_CONFIG_INVALID' });
   try {
     assert.deepEqual(fs.readFileSync(f.options.keyringFile), ring);
   } finally {

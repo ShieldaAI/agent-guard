@@ -29,7 +29,7 @@ const log = (event, details = {}) =>
 const usage = `Agent Ops single-owner Linux service
   node apps/agent-ops/cli.mjs onboard --manifest /private/company.json --output-dir /private/new-company-bundle
   node apps/agent-ops/cli.mjs preflight --config /absolute/private/config.json
-  node apps/agent-ops/cli.mjs --config /absolute/private/config.json
+  node apps/agent-ops/cli.mjs --config /absolute/private/config.json [--accept-clock-skew MS]
   node apps/agent-ops/cli.mjs init --config /absolute/private/config.json --tickets /absolute/private/tickets.json
   node apps/agent-ops/cli.mjs check --config /absolute/private/config.json
   node apps/agent-ops/cli.mjs configure-limits --config PATH [--apply --digest REVIEW_DIGEST]
@@ -70,13 +70,14 @@ try {
       tenant: { type: 'string' },
       request: { type: 'string' },
       limit: { type: 'string' },
+      'accept-clock-skew': { type: 'string' },
     },
   });
   const flags = parsed.values,
     names = parsed.tokens.filter(token => token.kind === 'option').map(token => token.name);
   if (new Set(names).size !== names.length) fail('USAGE_INVALID');
   const allowed = {
-    serve: ['config'],
+    serve: ['config', 'accept-clock-skew'],
     init: ['config', 'tickets'],
     check: ['config'],
     preflight: ['config'],
@@ -206,7 +207,9 @@ try {
         stores.close();
       }
     } else {
-      runtime = openRuntime(config);
+      const skew = flags['accept-clock-skew'];
+      if (skew !== undefined && (!/^[1-9][0-9]{0,7}$/.test(skew) || Number(skew) > 86_400_000)) fail('USAGE_INVALID');
+      runtime = openRuntime(config, skew === undefined ? {} : { acceptClockSkewMs: Number(skew) });
       http = await startOpsServer({
         ...config,
         host: config.listenHost,
