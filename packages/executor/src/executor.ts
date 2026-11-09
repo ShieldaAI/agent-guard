@@ -1,7 +1,7 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import {
   AgentGuard, GuardError, PolicyAdmission, assertActionAuthority, canonicalJson, digestJson, immutableJson,
-  type Action, type AuthorityState, type Json, type Policy, type PreparedAction, type TaskIdentity,
+  type Action, type AuthorityPhase, type AuthorityState, type Json, type Policy, type PreparedAction, type TaskIdentity,
   type TaskOptions, type TaskSnapshot, type ToolDefinition,
 } from '@shieldaai/agent-guard';
 import { ExecutorError, LedgerStore, type ExecutionReceipt, type Ledger, type LedgerWitness, type MemoryRecord, type StoredAction, type StoredTask } from './store.js';
@@ -279,7 +279,7 @@ export class DurableExecutor {
       snapshot: this.#snapshot(state, task), revoked: task.revoked,
     }));
   }
-  #gates(state: Ledger, action: StoredAction): void {
+  #gates(state: Ledger, action: StoredAction, phase: AuthorityPhase = 'dispatch'): void {
     if (this.#provenance(state, action.taskId).some(task => task.revoked)) throw new GuardError('TASK_REVOKED');
     const current = own(state.tools, action.action.tool);
     if (action.action.policyVersion !== state.epoch) throw new GuardError('POLICY_CHANGED');
@@ -290,7 +290,7 @@ export class DurableExecutor {
     const task = this.#task(state, action.taskId);
     assertActionAuthority(action.action, this.#authorities(state, action.taskId), {
       now: this.#now(state), maxCost: action.maxCost, controlPlane: registration.definition.controlPlane ?? false,
-      sensitive: state.families[task.family]!.sensitive, secretValues: this.#secrets,
+      sensitive: state.families[task.family]!.sensitive, secretValues: this.#secrets, phase,
     });
   }
   async #decision(state: Ledger, action: StoredAction): Promise<'allow' | 'require_approval'> {
@@ -473,12 +473,12 @@ export class DurableExecutor {
       requiresApproval: registration.definition.requiresApproval ?? false, status: 'PREPARED', maxCost: registration.definition.maxCost ?? 0 };
     // Retain the action's revisions, not a registration replaced before the caller resumes.
     if (trace) { trace.toolRevision = stored.toolRevision; trace.policyRevision = stored.action.policyVersion; }
-    this.#gates(state, stored);
+    this.#gates(state, stored, 'prepare');
     const decision = await this.#decision(state, stored);
     stored.requiresApproval ||= decision === 'require_approval';
     this.#store.transaction(current => {
       if (current.revision !== state.revision) throw new GuardError('POLICY_STATE_CHANGED');
-      this.#gates(current, stored);
+      this.#gates(current, stored, 'prepare');
       this.#prune(current, this.#now(current));
       this.#assertPendingCapacity(current, stored);
       if (Object.keys(current.actions).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
@@ -501,7 +501,7 @@ export class DurableExecutor {
       this.#prune(state, this.#now(state));
       const action = own(state.actions, id(actionId));
       if (!action || action.status !== 'PREPARED') throw new GuardError('INVALID_PREPARED');
-      this.#gates(state, action);
+      this.#gates(state, action, 'prepare');
       const now = this.#now(state);
       if (!Number.isSafeInteger(options.expiresAt) || options.expiresAt <= now ||
           this.#lineage(state, action.taskId).some(task => options.expiresAt > task.options.budget.deadline)) throw new GuardError('APPROVAL_INVALID');

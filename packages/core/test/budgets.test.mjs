@@ -180,7 +180,9 @@ test('safe-integer boundary respects outstanding reservations from sibling tasks
     execute: () => { assert.fail('two units exceed remaining reservation headroom'); },
   });
   f.guard.approveTool('run', fp);
-  await assert.rejects(f.prepare(f.sibling), isCode('COST_BUDGET_EXCEEDED'));
+  // Reservations held by an in-flight sibling are transient: preparation succeeds, dispatch refuses.
+  const second = await f.prepare(f.sibling);
+  await assert.rejects(f.guard.execute(second), isCode('COST_BUDGET_EXCEEDED'));
   release.resolve(); await first;
   assert.equal(f.guard.snapshot(f.parent).spent, Number.MAX_SAFE_INTEGER - 1);
 });

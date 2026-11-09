@@ -49,7 +49,9 @@ test('uncertain effects retain ancestor reservations and require one evidence-ba
   await assert.rejects(executor.execute(child.taskId, action.id), { code: 'TOOL_FAILED', message: 'TOOL_FAILED' });
   assert.equal(executor.execution(child.taskId, action.id).status, 'UNKNOWN');
   assert.equal(executor.snapshot('parent').reserved, 5); assert.equal(executor.snapshot('parent').concurrent, 1);
-  await assert.rejects(executor.prepare(child.taskId, { tool: 'test', args: null }), { code: 'CONCURRENCY_EXCEEDED' });
+  // The unresolved reservation blocks dispatch; preparation itself is not refused by transient capacity.
+  const blocked = await executor.prepare(child.taskId, { tool: 'test', args: null });
+  await assert.rejects(executor.execute(child.taskId, blocked.id), { code: 'CONCURRENCY_EXCEEDED' });
   executor.reconcile(action.id, { outcome: 'FAILED', actualCost: 2, reference: 'provider-receipt-17' });
   assert.equal(executor.snapshot('parent').spent, 2); assert.equal(executor.snapshot('parent').concurrent, 0);
   assert.throws(() => executor.reconcile(action.id, { outcome: 'FAILED', actualCost: 2, reference: 'same' }), { code: 'RECONCILIATION_INVALID' });

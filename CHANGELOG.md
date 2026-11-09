@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: a call in flight no longer refuses `prepare()` or `approve()` with
+  `CONCURRENCY_EXCEEDED`/`COST_BUDGET_EXCEEDED`, in core and in the durable
+  executor. Transient capacity (concurrent calls, reserved cost) is enforced at
+  dispatch; permanent capacity (calls, spent cost) still refuses preparation.
+  `assertActionAuthority` gains an optional `phase` (default `dispatch`).
+
 - Make self-hosted ticket/request capacity, live-store byte limits and retained
   key limits safely configurable through reviewed offline policy changes.
 - Add company onboarding, TLS/OIDC preflight, add-only reviewed ticket imports,

@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { isPromise } from 'node:util/types';
 import { digestJson, immutableJson, type JsonObject } from './json.js';
 import { GuardError } from './types.js';
-import { assertActionAuthority } from './authorization.js';
+import { assertActionAuthority, type AuthorityPhase } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
   Action, Budget, Capability, GuardOptions, Json, Policy, PolicyDecision,
@@ -12,7 +12,7 @@ import type {
 export { GuardError, GuardErrorCode } from './types.js';
 export { PolicyAdmission } from './policy-admission.js';
 export { assertActionAuthority, containsLiteralSecret } from './authorization.js';
-export type { AuthorityState } from './authorization.js';
+export type { AuthorityPhase, AuthorityState } from './authorization.js';
 export { immutableJson, canonicalJson, digestJson } from './json.js';
 export type {
   Action, Budget, Capability, GuardOptions, GuardErrorCodeValue, Json, Policy, PolicyDecision,
@@ -219,9 +219,9 @@ export class AgentGuard {
     const action: Readonly<Action> = Object.freeze({
       ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
     });
-    this.#gates(state, tool, action, policyVersion);
+    this.#gates(state, tool, action, policyVersion, 'prepare');
     const evaluation = await this.#evaluate(action, state);
-    this.#gates(state, tool, action, policyVersion);
+    this.#gates(state, tool, action, policyVersion, 'prepare');
     this.#checkPolicySnapshot(state, evaluation);
     const id = randomUUID();
     const digest = `sha256:${digestJson(normalizeJson({
@@ -237,7 +237,7 @@ export class AgentGuard {
   approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string {
     const state = this.#invocation(prepared);
     this.#fresh(state);
-    const now = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
+    const now = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion, 'prepare');
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
     const approverId = identifier(options.approverId);
     const expiresAt = options.expiresAt;
@@ -400,7 +400,7 @@ export class AgentGuard {
     return Object.freeze(result);
   }
 
-  #gates(task: TaskState, tool: ToolState, action: Readonly<Action>, version: number): number {
+  #gates(task: TaskState, tool: ToolState, action: Readonly<Action>, version: number, phase: AuthorityPhase = 'dispatch'): number {
     const now = this.#live(task);
     if (version !== this.#policyVersion) fail('POLICY_CHANGED');
     if (this.#tools.get(tool.name) !== tool) fail('TOOL_CHANGED');
@@ -410,7 +410,7 @@ export class AgentGuard {
       grants: [...ancestor.grants].map(([tool, resources]) => ({ tool, resources: [...resources] })),
       allowedRecipients: [...ancestor.recipients], allowControlPlane: ancestor.allowControlPlane,
       budget: ancestor.budget, snapshot: this.#snapshot(ancestor), revoked: ancestor.revoked,
-    })), { now, maxCost: tool.maxCost, controlPlane: tool.controlPlane, sensitive: task.family.sensitive, secretValues: this.#secrets });
+    })), { now, maxCost: tool.maxCost, controlPlane: tool.controlPlane, sensitive: task.family.sensitive, secretValues: this.#secrets, phase });
     return now;
   }
 

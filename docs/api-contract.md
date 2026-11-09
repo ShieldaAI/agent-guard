@@ -118,6 +118,12 @@ For external actions the guard scans outbound argument object keys and string va
 
 Before dispatch, budget admission updates every ancestor synchronously. Calls count attempts that reach a handler. A failed call or an uncertain side effect is not automatically retried or refunded.
 
+Capacity is checked in two phases.
+- **Preparation and approval** (`prepare`, `approve`): authority gates and *permanent* capacity apply. Permanent capacity is the call count and spent cost, which only grow.
+- **Dispatch** (`execute`): additionally enforces *transient* capacity, meaning concurrent calls and cost reserved by calls still in flight.
+
+So a call in flight does not refuse another preparation or lose a reviewer's approval. The approved action is refused at dispatch (`CONCURRENCY_EXCEEDED` or `COST_BUDGET_EXCEEDED`) until capacity frees, and its approval stays usable until it expires. The exported `assertActionAuthority` takes `phase: 'prepare' | 'dispatch'`; the default is `dispatch`.
+
 The embedded guard remembers its highest observed clock reading. A lower reading yields `CLOCK_INVALID` on time-dependent operations until the clock catches up. Revocation remains available during rollback. This prevents an observed expiry from becoming valid again within that guard instance.
 
 Budget `maxCost`, tool `maxCost` and reported `actualCost` use nonnegative safe integers in the same unit chosen by the host, such as microcurrency units. Fractional values and unsafe integers are rejected. The guard reserves `maxCost` and then settles the charge using `actualCost`, which must not exceed the reservation. If usage is omitted, it charges `maxCost`. An invalid or excessive cost report fails the call and revokes the task, charging the full reservation. The host must enforce the provider's actual cost ceiling.
