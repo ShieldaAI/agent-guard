@@ -192,6 +192,33 @@ configured record limit also bounds the number of entries. Exhaustion yields
 [executor guide](../packages/executor/README.md) for source-task handoffs and
 reconciliation.
 
+### Durable receipts and recent events
+
+`execution(taskId, actionId)` returns the action's status. Settled receipts are
+kept per task family (`maxReceiptsPerFamily`, default 64). Shared count and byte
+caps then remove receipts from the family with the most retained receipts,
+oldest first, so one tenant's traffic does not evict another tenant's receipts.
+Pruning runs on the next preparation, approval or task creation.
+
+A pruned settled receipt returns `{ id, status: 'PRUNED', outcome, charged?,
+reconciliation? }`, where `outcome` is `SUCCEEDED` or `FAILED`. Treat it like the
+outcome: it is not an unknown effect, and it never permits a retry. These stubs
+are bounded (256 per family, 1,024 in total, busiest family trimmed first). Once a
+stub is gone too, the call returns `INVALID_PREPARED`, as before. Archiving a
+family moves its stubs into the encrypted archive. Expired or invalidated
+preparations are deleted without a stub.
+
+`audit({ tenantId? })` returns recent metadata events, not a complete history.
+Each tenant keeps at most `maxRecentEventsPerTenant` events (16–1,000, default
+256). Host events without a tenant share their own bucket. The total stays at
+1,000, trimmed from the busiest tenant first. Events carry a strictly increasing
+`sequence`. A host that needs a durable audit trail polls and exports events, and
+treats a sequence gap as evicted events. Events recorded before this version have
+no `tenantId` or `sequence`.
+
+The new ledger fields are additive. Older executors ignore them, so no schema
+change is needed.
+
 ### Task-family retirement and archival
 
 The following `DurableExecutor` methods are host-only. They add no task/admin HTTP

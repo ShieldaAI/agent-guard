@@ -3,7 +3,7 @@ export type { LedgerWitness } from './store.js';
 export type { TaskFamilyScope, TaskFamilyDecision, TaskFamilyArchiveScope, TaskFamilyCounts,
   TaskFamilyRetirementPreview, TaskFamilyRetirementResult, TaskFamilyArchiveReceipt,
   ExecutionListScope, ExecutionList, MaintenanceStatistics } from './lifecycle.js';
-export { ExecutorError, type ExecutionReceipt, type ExecutionStatus } from './store.js';
+export { ExecutorError, type ExecutionReceipt, type ExecutionStatus, type ReceiptStatus } from './store.js';
 export type { DecisionTraceOptions, DecisionTraceScope, DecisionTraceEventName, DecisionTraceOutcome,
   DecisionTraceEvent, DecisionTraceSnapshot, DecisionTraceSink, DecisionTraceExportResult } from './traces.js';
 export type { InventoryOptions, InventoryScope, InventorySnapshot, InventorySourceOptions,

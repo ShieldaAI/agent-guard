@@ -166,7 +166,8 @@ test('bounded terminal retention never resets cumulative call or spend budgets',
     const action = await prepare(executor, 'task'); first ??= action;
     await executor.execute('task', action.id);
   }
-  assert.throws(() => executor.execution('task', first.id), { code: 'INVALID_PREPARED' });
+  const pruned = executor.execution('task', first.id);
+  assert.equal(pruned.status, 'PRUNED'); assert.equal(pruned.outcome, 'SUCCEEDED'); assert.equal(pruned.charged, 3);
   await assert.rejects(prepare(executor, 'task'), { code: 'CALL_BUDGET_EXCEEDED' });
   assert.equal(effects(), 7); assert.equal(executor.snapshot('task').calls, 7); assert.equal(executor.snapshot('task').spent, 21);
 });

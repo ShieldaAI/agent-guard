@@ -1,5 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from 'node:crypto';
 import { immutableJson } from '@shieldaai/agent-guard';
+import { familyStubs, takeFamilyStubs, recordEvent, DEFAULT_RECENT_EVENTS_PER_TENANT } from './retention.js';
 import { ExecutorError, executionStatuses, type ExecutionStatus, type Ledger, type LedgerStore, type StoredTask, type StoredAction } from './store.js';
 
 const MAX_ARCHIVES = 4096;
@@ -369,7 +370,13 @@ export class TaskFamilyLifecycle {
     now(state?: Ledger): number; activeTaskIds(): ReadonlySet<string>;
     quarantine(state: Ledger, tenantId: string, memoryIds: Set<string>): void;
     retired(taskIds: readonly string[]): void;
+    /** Records a recent event; defaults to the standard per-tenant rings. */
+    event?(state: Ledger, time: number, event: string, scope: { taskId?: string; tenantId?: string }): void;
   }) {}
+  #event(state: Ledger, time: number, event: string, scope: { taskId?: string; tenantId?: string }): void {
+    if (this.callbacks.event) this.callbacks.event(state, time, event, scope);
+    else recordEvent(state, DEFAULT_RECENT_EVENTS_PER_TENANT, time, event, scope);
+  }
   #digest(state: Ledger, scope: TaskFamilyScope): string {
     return createHmac('sha256', this.#reviewKey).update(JSON.stringify(['family-review-v1', state.inventoryInstanceId, state.revision, scope.tenantId, scope.taskId])).digest('hex');
   }
@@ -401,8 +408,7 @@ export class TaskFamilyLifecycle {
       const memoryIds = new Set([...current.memoryKeys].map(key => state.memory[key]!.at(-1)!.id));
       this.callbacks.quarantine(state, current.tenantId, memoryIds);
       retained.retiredFamilies[current.familyId] = { tenantDigest: tenantDigest(current.tenantId), retiredAt: now };
-      state.audit.push({ time: now, event: 'FAMILY_RETIRED', taskId: current.taskId });
-      if (state.audit.length > 1000) state.audit.splice(0, state.audit.length - 1000);
+      this.#event(state, now, 'FAMILY_RETIRED', { taskId: current.taskId, tenantId: current.tenantId });
       retiredIds = [...current.taskIds];
       return snapshot({ tenantId: current.tenantId, familyId: current.familyId, retiredAt: now,
         tasksRevoked: current.counts.tasks, preparationsCancelled: current.counts.preparedActions });
@@ -419,10 +425,11 @@ export class TaskFamilyLifecycle {
       const select = <T>(entries: Record<string, T>, ids: ReadonlySet<string>) => Object.fromEntries(Object.entries(entries).filter(([id]) => ids.has(id)));
       const tasks = select(state.tasks, current.taskIds), actions = select(state.actions, current.actionIds);
       const approvals = Object.fromEntries(Object.entries(state.approvals).filter(([, value]) => current.actionIds.has(value.actionId)));
+      const prunedReceipts = familyStubs(state, current.familyId);
       const audit = state.audit.filter(event => (event.taskId && current.taskIds.has(event.taskId)) || (event.actionId && current.actionIds.has(event.actionId)));
       const payload = JSON.stringify({ schemaVersion: 1, kind: 'agent-guard-task-family-archive', ledgerInstanceId: state.inventoryInstanceId,
         archiveId, tenantId: current.tenantId, familyId: current.familyId, retiredAt: current.retiredAt, archivedAt: now,
-        family: state.families[current.familyId], tasks, actions, approvals, memory: select(state.memory, current.memoryKeys), audit });
+        family: state.families[current.familyId], tasks, actions, approvals, memory: select(state.memory, current.memoryKeys), audit, prunedReceipts });
       if (Buffer.byteLength(payload) > MAX_PLAIN_BYTES) fail('ARCHIVE_CAPACITY_EXCEEDED');
       const key = randomBytes(32), iv = randomBytes(12);
       let ciphertext: string;
@@ -446,10 +453,10 @@ export class TaskFamilyLifecycle {
         for (const id of current.actionIds) delete state.actions[id];
         for (const id of Object.keys(approvals)) delete state.approvals[id];
         for (const key of current.memoryKeys) delete state.memory[key];
+        takeFamilyStubs(state, current.familyId);
         delete state.families[current.familyId]; delete retained.retiredFamilies[current.familyId];
         state.audit = state.audit.filter(event => !audit.includes(event));
-        state.audit.push({ time: now, event: 'FAMILY_ARCHIVED' });
-        if (state.audit.length > 1000) state.audit.splice(0, state.audit.length - 1000);
+        this.#event(state, now, 'FAMILY_ARCHIVED', { tenantId: current.tenantId });
         return this.#receipt(archiveId, current.tenantId, current.familyId, entry);
       } finally { key.fill(0); }
     });

@@ -14,6 +14,7 @@ import { bindExecutorObservation, closeExecutorObservation } from './inventory-o
 import { archivedTaskIdUsed, archivedMemoryIdUsed, TaskFamilyLifecycle, type TaskFamilyScope, type TaskFamilyDecision, type TaskFamilyArchiveScope,
   type TaskFamilyRetirementPreview, type TaskFamilyRetirementResult, type TaskFamilyArchiveReceipt,
   type ExecutionListScope, type ExecutionList, type MaintenanceStatistics } from './lifecycle.js';
+import { recordEvent, recordPruned, prunedReceipt, DEFAULT_RECENT_EVENTS_PER_TENANT, RECENT_EVENTS_TOTAL, type EventScope } from './retention.js';
 
 function id(value: unknown): string {
   if (typeof value !== 'string' || !value.trim() || value.length > 4096 || value.includes('\0')) throw new GuardError('INVALID_INPUT');
@@ -24,10 +25,6 @@ function own<T>(record: Record<string, T>, key: string): T | undefined { return 
 function clone<T>(value: T): T { return immutableJson(value) as T; }
 /** Internal signal: a policy decision was made on a task snapshot that has since changed. */
 class StalePolicyDecision extends Error {}
-function audit(state: Ledger, time: number, event: string, taskId?: string, actionId?: string): void {
-  state.audit.push({ time, event, ...(taskId === undefined ? {} : { taskId }), ...(actionId === undefined ? {} : { actionId }) });
-  if (state.audit.length > 1000) state.audit.splice(0, state.audit.length - 1000);
-}
 type Registered = { definition: ToolDefinition; fingerprint: string; revision: number };
 
 export interface ExecutorOptions {
@@ -40,6 +37,13 @@ export interface ExecutorOptions {
   policy?: Policy;
   secretValues?: readonly string[];
   maxRecords?: number;
+  /**
+   * Settled receipts kept per task family before the oldest are pruned to a PRUNED stub
+   * (integer 1-4096, default 64). Shared caps then prune from the busiest family first.
+   */
+  maxReceiptsPerFamily?: number;
+  /** Recent events kept per tenant (integer 16-1000, default 256); the busiest tenant is trimmed first. */
+  maxRecentEventsPerTenant?: number;
   /**
    * How many times a custom policy may be evaluated for one prepare or execute when the task's own
    * snapshot (counters or shared sensitivity) changes while it runs. Writes by other tasks or tenants
@@ -67,6 +71,8 @@ export class DurableExecutor {
   readonly #clock: () => number;
   readonly #secrets: readonly string[];
   readonly #maxRecords: number;
+  readonly #maxReceiptsPerFamily: number;
+  readonly #maxRecentEventsPerTenant: number;
   readonly #maxPolicyAttempts: number;
   /** Per-task queue for policy re-evaluations; first attempts stay parallel. */
   readonly #policyTurns = new Map<string, Promise<void>>();
@@ -98,6 +104,9 @@ export class DurableExecutor {
       return selected;
     };
     this.#maxPolicyAttempts = bounded(options.maxPolicyAttempts, 5, 16);
+    this.#maxReceiptsPerFamily = bounded(options.maxReceiptsPerFamily, 64, 4096);
+    this.#maxRecentEventsPerTenant = bounded(options.maxRecentEventsPerTenant, DEFAULT_RECENT_EVENTS_PER_TENANT, RECENT_EVENTS_TOTAL);
+    if (this.#maxRecentEventsPerTenant < 16) throw new GuardError('INVALID_INPUT');
     this.#maxPendingActionsPerFamily = bounded(options.maxPendingActionsPerFamily, Math.min(32, familyShare), familyShare);
     this.#maxPendingBytesPerFamily = bounded(options.maxPendingBytesPerFamily, 256 * 1024, 1024 * 1024);
     this.#maxTasksPerFamily = bounded(options.maxTasksPerFamily, Math.min(64, familyShare), familyShare);
@@ -136,7 +145,7 @@ export class DurableExecutor {
               toolRevision: action.toolRevision, started: performance.now() });
           }
         }
-        audit(state, now, 'EXECUTOR_STARTED');
+        this.#audit(state, now, 'EXECUTOR_STARTED');
         return recovered;
       });
       for (const context of recovered) this.#record(context, 'unknown', 'UNKNOWN', 'RECOVERY_UNKNOWN');
@@ -153,6 +162,7 @@ export class DurableExecutor {
       now: state => this.#now(state),
       activeTaskIds: () => new Set([...this.#active.values()].flatMap(active => active.taskIds)),
       quarantine: (state, tenantId, ids) => this.#quarantine(state, tenantId, ids),
+      event: (state, time, event, scope) => this.#recordEvent(state, time, event, scope),
       retired: ids => { for (const taskId of ids) this.#policyAdmission.revokeTask(taskId); },
     });
   }
@@ -248,25 +258,46 @@ export class DurableExecutor {
     }
     return [...visited.values()];
   }
-  /** Pruning never changes cumulative counters or releases unresolved reservations. */
+  #recordEvent(state: Ledger, time: number, event: string, scope: EventScope = {}): void {
+    recordEvent(state, this.#maxRecentEventsPerTenant, time, event, scope);
+  }
+  #audit(state: Ledger, time: number, event: string, taskId?: string, actionId?: string): void {
+    this.#recordEvent(state, time, event, { ...(taskId === undefined ? {} : { taskId }), ...(actionId === undefined ? {} : { actionId }) });
+  }
+  /**
+   * Pruning never changes cumulative counters or releases unresolved reservations.
+   * Settled receipts are kept per family; shared caps prune the busiest family first,
+   * so one tenant's traffic cannot evict another tenant's receipts.
+   */
   #prune(state: Ledger, now: number): void {
-    const terminal: StoredAction[] = [];
-    let terminalBytes = 0;
+    const settled = new Map<string, { action: StoredAction; bytes: number }[]>();
+    let count = 0; let bytes = 0; let records = 0;
     for (const [actionId, action] of Object.entries(state.actions)) {
+      records++;
       if (action.status === 'PREPARED') {
         const tool = own(state.tools, action.action.tool);
         if (action.action.policyVersion !== state.epoch || !tool || tool.revision !== action.toolRevision ||
             this.#provenance(state, action.taskId).some(task => task.revoked) ||
-            this.#lineage(state, action.taskId).some(task => now >= task.options.budget.deadline)) delete state.actions[actionId];
+            this.#lineage(state, action.taskId).some(task => now >= task.options.budget.deadline)) { delete state.actions[actionId]; records--; }
       } else if (action.status === 'SUCCEEDED' || action.status === 'FAILED') {
-        terminal.push(action); terminalBytes += Buffer.byteLength(JSON.stringify(action));
+        const family = this.#task(state, action.taskId).family;
+        const size = Buffer.byteLength(JSON.stringify(action));
+        let list = settled.get(family);
+        if (!list) settled.set(family, list = []);
+        list.push({ action, bytes: size }); count++; bytes += size;
       }
     }
+    const evict = (family: string): void => {
+      const oldest = settled.get(family)!.shift()!;
+      delete state.actions[oldest.action.id]; recordPruned(state, family, oldest.action);
+      count--; bytes -= oldest.bytes; records--;
+    };
+    for (const [family, list] of settled) while (list.length > this.#maxReceiptsPerFamily) evict(family);
     const retained = Math.min(256, Math.floor(this.#maxRecords / 2));
-    while (terminal.length > retained || terminalBytes > this.#store.maxBytes / 8 ||
-        (Object.keys(state.actions).length >= this.#maxRecords && terminal.length > 0)) {
-      const oldest = terminal.shift(); if (!oldest) break;
-      terminalBytes -= Buffer.byteLength(JSON.stringify(oldest)); delete state.actions[oldest.id];
+    while (count > 0 && (count > retained || bytes > this.#store.maxBytes / 8 || records >= this.#maxRecords)) {
+      let busiest = ''; let size = 0;
+      for (const [family, list] of settled) if (list.length > size) { busiest = family; size = list.length; }
+      evict(busiest);
     }
     for (const [approvalId, approval] of Object.entries(state.approvals)) {
       const action = own(state.actions, approval.actionId);
@@ -344,7 +375,7 @@ export class DurableExecutor {
       if (!old && Object.keys(state.tools).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
       const revision = (old?.revision ?? 0) + 1;
       state.tools[definition.name] = { fingerprint, revision, approved: false };
-      audit(state, now, 'TOOL_REGISTERED');
+      this.#audit(state, now, 'TOOL_REGISTERED');
       return revision;
     });
     this.#tools.set(definition.name, { definition: trusted, fingerprint, revision });
@@ -355,12 +386,12 @@ export class DurableExecutor {
       const tool = own(state.tools, id(name));
       if (!tool || tool.fingerprint !== fingerprint || !this.#tools.has(name)) throw new GuardError('TOOL_CHANGED');
       tool.approved = true;
-      audit(state, this.#now(state), 'TOOL_APPROVED');
+      this.#audit(state, this.#now(state), 'TOOL_APPROVED');
     });
   }
   setPolicy(policy: Policy): void {
     if (typeof policy !== 'function') throw new GuardError('INVALID_INPUT');
-    this.#store.transaction(state => { state.epoch++; audit(state, this.#now(state), 'POLICY_CHANGED'); });
+    this.#store.transaction(state => { state.epoch++; this.#audit(state, this.#now(state), 'POLICY_CHANGED'); });
     this.#policy = policy;
     this.#policyAdmission.invalidate('POLICY_CHANGED');
   }
@@ -404,7 +435,7 @@ export class DurableExecutor {
       state.tasks[options.id] = { options, parent: parentId, family, tokenHash: hash(token), revoked: false,
         calls: 0, concurrent: 0, spent: 0, reserved: 0,
         ...(provenance.sourceTaskId === undefined ? {} : { sourceTaskId: provenance.sourceTaskId }) };
-      audit(state, now, 'TASK_CREATED', options.id);
+      this.#audit(state, now, 'TASK_CREATED', options.id);
     });
     return Object.freeze({ taskId: options.id, token });
   }
@@ -430,7 +461,7 @@ export class DurableExecutor {
         entry.tenantId === revoked.options.tenantId && entry.origin.startsWith('task:') && descendants.has(entry.origin.slice(5)),
       )).map(history => history.at(-1)!.id));
       this.#quarantine(state, revoked.options.tenantId, entries);
-      audit(state, this.#now(state), 'TASK_REVOKED', taskId);
+      this.#audit(state, this.#now(state), 'TASK_REVOKED', taskId);
     });
     this.#policyAdmission.revokeTask(taskId);
     for (const active of this.#active.values()) if (active.taskIds.includes(taskId)) active.controller.abort();
@@ -457,7 +488,7 @@ export class DurableExecutor {
       if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
       const cancelled = action.status === 'PREPARED';
       if (action.status === 'PREPARED') { action.status = 'FAILED'; action.charged = 0; }
-      audit(state, this.#now(state), 'CANCELLATION_REQUESTED', taskId, actionId);
+      this.#audit(state, this.#now(state), 'CANCELLATION_REQUESTED', taskId, actionId);
       return cancelled;
     }); } catch (error) { this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error)); throw error; }
     this.#active.get(actionId)?.controller.abort();
@@ -528,7 +559,7 @@ export class DurableExecutor {
             this.#assertPendingCapacity(current, stored);
             if (Object.keys(current.actions).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
             current.actions[actionId] = stored;
-            audit(current, this.#now(current), 'ACTION_PREPARED', taskId, actionId);
+            this.#audit(current, this.#now(current), 'ACTION_PREPARED', taskId, actionId);
           });
           break;
         } catch (error) {
@@ -560,7 +591,7 @@ export class DurableExecutor {
       if (Object.keys(state.approvals).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
       if (Object.values(state.approvals).filter(approval => approval.actionId === actionId).length >= 4) throw new ExecutorError('ACTION_APPROVAL_LIMIT');
       state.approvals[approvalId] = { actionId, digest: action.digest, expiresAt: options.expiresAt, approverId: id(options.approverId), used: false };
-      audit(state, now, 'ACTION_APPROVED', action.taskId, actionId);
+      this.#audit(state, now, 'ACTION_APPROVED', action.taskId, actionId);
     });
     return approvalId;
   }
@@ -607,7 +638,7 @@ export class DurableExecutor {
       const task = this.#task(state, taskId);
       if (action.action.sensitive) state.families[task.family]!.sensitive = true;
       action.status = 'ADMITTED';
-      audit(state, now, 'ACTION_ADMITTED', taskId, actionId);
+      this.#audit(state, now, 'ACTION_ADMITTED', taskId, actionId);
       return { action: clone(action), identity: clone({ id: taskId, principalId: task.options.principalId, tenantId: task.options.tenantId }),
         taskIds: this.#provenance(state, taskId).map(parent => parent.options.id), deadline: task.options.budget.deadline, approvalDeadline };
     });
@@ -680,7 +711,7 @@ export class DurableExecutor {
           let observed = state.lastClock;
           try { observed = this.#now(state); }
           catch (clockError) { if (!(clockError instanceof GuardError && clockError.code === 'CLOCK_INVALID')) throw clockError; }
-          action.status = 'UNKNOWN'; audit(state, observed, 'OUTCOME_UNKNOWN', taskId, actionId);
+          action.status = 'UNKNOWN'; this.#audit(state, observed, 'OUTCOME_UNKNOWN', taskId, actionId);
           return true;
         }
         return false;
@@ -701,7 +732,7 @@ export class DurableExecutor {
       action.status = status; action.charged = actualCost;
       const now = this.#now(state);
       if (reconciliationReferenceHash !== undefined) action.reconciliation = { referenceHash: reconciliationReferenceHash, time: now };
-      audit(state, now, 'ACTION_SETTLED', action.taskId, actionId);
+      this.#audit(state, now, 'ACTION_SETTLED', action.taskId, actionId);
     });
   }
   /** Operator-only reconciliation requires evidence that backend work has ended; never call on lease expiry alone. */
@@ -722,12 +753,28 @@ export class DurableExecutor {
     this.#settle(actionId, evidence.outcome, evidence.actualCost, hash(evidence.reference));
   }
   execution(taskId: string, actionId: string): ExecutionReceipt {
-    const action = own(this.#store.read().actions, actionId);
-    if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
+    const state = this.#store.read();
+    const action = own(state.actions, actionId);
+    if (!action) {
+      const task = own(state.tasks, taskId);
+      const stub = task && prunedReceipt(state, task.family, actionId);
+      if (!stub || stub.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
+      return clone({ id: actionId, status: 'PRUNED', outcome: stub.outcome, ...(stub.charged === undefined ? {} : { charged: stub.charged }),
+        ...(stub.reconciliation === undefined ? {} : { reconciliation: stub.reconciliation }) });
+    }
+    if (action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
     return clone({ id: action.id, status: action.status, ...(action.charged === undefined ? {} : { charged: action.charged }),
       ...(action.reconciliation === undefined ? {} : { reconciliation: action.reconciliation }) });
   }
-  audit(): readonly Readonly<Ledger['audit'][number]>[] { return clone(this.#store.read().audit); }
+  /**
+   * Recent metadata events, oldest first. Bounded per tenant: this is not a complete history.
+   * Export durably by polling and comparing `sequence`; a gap means events were evicted.
+   */
+  audit(scope: { tenantId?: string } = {}): readonly Readonly<Ledger['audit'][number]>[] {
+    const tenantId = scope.tenantId === undefined ? undefined : id(scope.tenantId);
+    const events = this.#store.read().audit;
+    return clone(tenantId === undefined ? events : events.filter(event => event.tenantId === tenantId));
+  }
 
   #memory(state: Ledger, tenantId: string, entryId: string): MemoryRecord {
     const entry = own(state.memory, JSON.stringify([tenantId, entryId]))?.at(-1);
@@ -747,7 +794,7 @@ export class DurableExecutor {
     if (history.length >= 128 || (!history.length && Object.keys(state.memory).length >= this.#maxRecords)) throw new ExecutorError('MEMORY_LIMIT');
     const next: MemoryRecord = { ...entry, version: (history.at(-1)?.version ?? 0) + 1, quarantined: false };
     state.memory[key] = [...history, next];
-    audit(state, this.#now(state), 'MEMORY_WRITTEN');
+    this.#audit(state, this.#now(state), 'MEMORY_WRITTEN');
     return next;
   }
   /** Operator import. Unknown sensitivity is restricted; trust is metadata, never execution authority. */
@@ -815,7 +862,7 @@ export class DurableExecutor {
   quarantineMemory(tenantId: string, entryId: string): void {
     this.#store.transaction(state => {
       this.#quarantine(state, id(tenantId), new Set([id(entryId)]));
-      audit(state, this.#now(state), 'MEMORY_QUARANTINED');
+      this.#audit(state, this.#now(state), 'MEMORY_QUARANTINED');
     });
   }
   #quarantine(state: Ledger, tenantId: string, denied: Set<string>): void {
@@ -839,7 +886,7 @@ export class DurableExecutor {
       if (!previous || previous.quarantined) throw new ExecutorError('MEMORY_UNAVAILABLE');
       this.#writeMemory(state, { ...previous, sensitive: history!.some(entry => entry.sensitive),
         parentIds: [...new Set(history!.flatMap(entry => entry.parentIds))] });
-      audit(state, this.#now(state), 'MEMORY_ROLLED_BACK');
+      this.#audit(state, this.#now(state), 'MEMORY_ROLLED_BACK');
     });
   }
   close(): void {

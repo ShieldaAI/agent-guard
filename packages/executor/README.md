@@ -69,7 +69,8 @@ retracted. A canceled preparation cannot later dispatch.
 For an `APPROVAL_REQUIRED` response, show the exact prepared action to the authenticated
 reviewer. On a dispatch error or lost response, call `client.execution(action.id)` to
 inspect the task's retained status. If it is `UNKNOWN`, stop and give the action ID to
-the operator for backend reconciliation. Starting a new action can repeat an effect.
+the operator for backend reconciliation. A `PRUNED` receipt carries the settled
+`outcome`. Starting a new action can repeat an effect.
 Task responses carry fixed denial codes. Backend exception text stays on the executor side.
 When the reviewer refuses a prepared action, the trusted host calls
 `executor.cancel(taskId, action.id)` to retire it and prevent dispatch with an
@@ -135,10 +136,15 @@ Opening existing state above the configured bound fails before recovery mutates 
 Increasing this limit does not raise task, action, family or archive count limits.
 Family-wide pending action/byte and delegated-task
 caps prevent one task from filling shared storage through preparation/delegation.
-Expired or invalidated preparations and approvals are pruned. Terminal records have
-bounded retention; cumulative budgets and unresolved reservations are retained.
-The audit keeps the latest 1,000 metadata events, without arguments, results or raw
-reconciliation evidence. Task and action IDs are host-controlled audit metadata;
+Expired or invalidated preparations and approvals are pruned. Settled receipts are
+kept per task family (`maxReceiptsPerFamily`, default 64). Shared caps prune the
+busiest family first, so one tenant cannot evict another tenant's receipts. A pruned
+receipt reads as `status: 'PRUNED'` with its settled `outcome`. Cumulative budgets
+and unresolved reservations are always retained.
+`audit()` returns recent metadata events, without arguments, results or raw
+reconciliation evidence. Each tenant keeps up to `maxRecentEventsPerTenant` events
+(default 256), and the total stays at 1,000. Events carry a `sequence`; export
+them yourself if you need complete history. Task and action IDs are host-controlled audit metadata;
 avoid putting secrets in IDs. There is no automatic quota reset or distributed-worker
 support. Use the host-only task-family lifecycle APIs below for bounded archival;
 never delete active authority state to recover quota.

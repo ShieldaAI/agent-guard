@@ -23,9 +23,13 @@ export interface LedgerArchiveAccess {
 }
 export const executionStatuses = Object.freeze(['PREPARED', 'ADMITTED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'UNKNOWN'] as const);
 export type ExecutionStatus = typeof executionStatuses[number];
+/** PRUNED: the settled record was removed by retention; `outcome` keeps its result. */
+export type ReceiptStatus = ExecutionStatus | 'PRUNED';
 export interface ExecutionReceipt {
   readonly id: string;
-  readonly status: ExecutionStatus;
+  readonly status: ReceiptStatus;
+  /** Present only when status is PRUNED. */
+  readonly outcome?: 'SUCCEEDED' | 'FAILED';
   readonly charged?: number;
   readonly reconciliation?: { readonly referenceHash: string; readonly time: number };
 }
@@ -54,7 +58,8 @@ export interface Ledger {
   actions: Record<string, StoredAction>;
   approvals: Record<string, { actionId: string; digest: string; expiresAt: number; approverId: string; used: boolean }>;
   memory: Record<string, MemoryRecord[]>;
-  audit: { time: number; event: string; taskId?: string; actionId?: string }[];
+  /** Recent metadata events: bounded per tenant, not a complete history. */
+  audit: { time: number; event: string; sequence?: number; tenantId?: string; taskId?: string; actionId?: string }[];
 }
 
 function decode(text: string): Ledger {

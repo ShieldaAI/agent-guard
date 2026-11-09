@@ -7,6 +7,14 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: in the durable executor, one tenant's traffic no longer evicts another
+  tenant's receipts or audit events. Settled receipts are kept per task family
+  (`maxReceiptsPerFamily`, default 64), and shared caps prune the busiest family
+  first. A pruned receipt now returns `status: 'PRUNED'` with its settled `outcome`
+  instead of `INVALID_PREPARED`, which resolves the lost-response case. Audit
+  events are kept per tenant (`maxRecentEventsPerTenant`, default 256; total
+  still 1,000) and carry `tenantId` and a gap-detecting `sequence`.
+  `audit({ tenantId })` filters by tenant. The ledger change is additive.
 - Fix: in the durable executor, another task's or tenant's writes no longer make a
   call fail with `POLICY_STATE_CHANGED` while its policy is awaited. The check now
   compares the task's own policy inputs (counters, shared sensitivity), as the API

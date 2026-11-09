@@ -17,6 +17,8 @@ export function identifier(value) {
 const statuses = ['open', 'resolved'];
 const terminal = new Set(['completed', 'denied', 'expired', 'changed', 'failed', 'review_required']);
 const own = (object, key) => Object.hasOwn(object, key) ? object[key] : undefined;
+// A receipt pruned by executor retention keeps its settled outcome.
+const settledStatus = receipt => receipt.status === 'PRUNED' ? receipt.outcome : receipt.status;
 const clone = value => structuredClone(value);
 const hash = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const committedBytes = state => Buffer.byteLength(JSON.stringify({ ...state, revision: state.revision + 1 }));
@@ -207,7 +209,7 @@ export class TicketWorkflow {
           await this.executor.execute(request.taskId, request.actionId, { approvalId });
           this.write(data => { data.requests[id].state = 'completed'; data.requests[id].receipt = data.receipts[request.operationId]; });
         } catch (error) {
-          const status = this.executor.execution(request.taskId, request.actionId).status;
+          const status = settledStatus(this.executor.execution(request.taskId, request.actionId));
           this.write(data => { data.requests[id].state = ['UNKNOWN', 'ADMITTED', 'RUNNING', 'SUCCEEDED'].includes(status) ? 'unconfirmed' : status === 'PREPARED' ? 'review_required' : 'failed'; });
         } finally { this.dispatchAuthorization.delete(id); }
       }
@@ -242,7 +244,7 @@ export class TicketWorkflow {
     if (!receipt) fail('RECEIPT_NOT_FOUND', 409); // Absence never means failure or permission to retry.
     if (receipt.operationId !== request.operationId || receipt.requestId !== id || receipt.digest !== request.digest || receipt.tenantId !== request.tenantId || receipt.ticketId !== request.ticketId || receipt.status !== request.afterStatus || receipt.version !== Number(request.resourceVersion) + 1) fail('RECEIPT_MISMATCH', 503);
     let status;
-    try { status = this.executor.execution(request.taskId, request.actionId).status; }
+    try { status = settledStatus(this.executor.execution(request.taskId, request.actionId)); }
     catch (error) {
       if (error?.code !== 'INVALID_PREPARED') throw error;
       // The SDK may prune a terminal action before this business marker is saved.

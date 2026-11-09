@@ -1,5 +1,5 @@
 import type { Json, PreparedAction, TaskSnapshot } from '@shieldaai/agent-guard';
-import { ExecutorError, executionStatuses, type ExecutionReceipt } from './store.js';
+import { ExecutorError, executionStatuses, type ExecutionReceipt, type ExecutionStatus } from './store.js';
 import { isExecutorResponseCode } from './response-code.js';
 
 /** Task-only client. It has no administration or approval API and never follows redirects with credentials. */
@@ -54,12 +54,14 @@ export class ExecutorClient {
   snapshot(signal?: AbortSignal): Promise<TaskSnapshot> { return this.#call('snapshot', {}, signal); }
   async execution(actionId: string, signal?: AbortSignal): Promise<ExecutionReceipt> {
     const receipt = await this.#call<ExecutionReceipt>('execution', { actionId }, signal);
-    if (!receipt || receipt.id !== actionId || !executionStatuses.includes(receipt.status) ||
+    const pruned = receipt?.status === 'PRUNED';
+    if (!receipt || receipt.id !== actionId || (!pruned && !executionStatuses.includes(receipt.status as ExecutionStatus)) ||
+        (pruned ? receipt.outcome !== 'SUCCEEDED' && receipt.outcome !== 'FAILED' : receipt.outcome !== undefined) ||
         (receipt.charged !== undefined && (!Number.isSafeInteger(receipt.charged) || receipt.charged < 0))) throw new ExecutorError('EXECUTOR_RESPONSE_INVALID');
     const evidence = receipt.reconciliation;
     if (evidence !== undefined && (!evidence || typeof evidence.referenceHash !== 'string' || !/^[a-f0-9]{64}$/.test(evidence.referenceHash) ||
         !Number.isSafeInteger(evidence.time) || evidence.time < 0)) throw new ExecutorError('EXECUTOR_RESPONSE_INVALID');
-    return { id: receipt.id, status: receipt.status, ...(receipt.charged === undefined ? {} : { charged: receipt.charged }),
+    return { id: receipt.id, status: receipt.status, ...(pruned ? { outcome: receipt.outcome! } : {}), ...(receipt.charged === undefined ? {} : { charged: receipt.charged }),
       ...(evidence === undefined ? {} : { reconciliation: { referenceHash: evidence.referenceHash, time: evidence.time } }) };
   }
 }
