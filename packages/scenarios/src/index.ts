@@ -1,5 +1,5 @@
 import {
-  AgentGuard, GuardError,
+  AgentGuard, isGuardError, type GuardError,
   type Budget, type Capability, type GuardOptions, type Json, type Policy,
   type PreparedAction, type TaskHandle, type TaskOptions, type ToolDefinition,
 } from '@shieldaai/agent-guard';
@@ -22,8 +22,8 @@ export interface ConformanceOptions {
   readonly caseTimeoutMs?: number;
   /**
    * Return a new guard for each call. Defaults to the public AgentGuard implementation.
-   * Compatible adapters must preserve these APIs and throw this core package's GuardError
-   * with the documented reason codes. The provided clock and secret configuration must be honored.
+   * Compatible adapters must preserve these APIs and throw a GuardError (from any installed
+   * copy of core; checked with isGuardError) with the documented reason codes. The provided clock and secret configuration must be honored.
    */
   readonly createGuard?: ConformanceGuardFactory;
 }
@@ -40,7 +40,8 @@ export interface ConformanceCaseResult {
 }
 
 export interface ConformanceReport {
-  readonly catalogVersion: typeof SCENARIO_CATALOG_VERSION;
+  /** Catalog semver: versioned independently of the package; compare reports by this value. */
+  readonly catalogVersion: string;
   readonly passed: boolean;
   readonly scenarioCount: number;
   readonly caseCount: number;
@@ -115,7 +116,7 @@ class Checks {
     let rejected = false;
     try { await operation(); } catch (error) { rejection = error; rejected = true; }
     this.assert(rejected, `${label}: operation must reject`);
-    this.assert(rejection instanceof GuardError, `${label}: rejection must be GuardError`);
+    this.assert(isGuardError(rejection), `${label}: rejection must be GuardError`);
     this.assert(safeCode(rejection) !== 'INVALID_ERROR_CODE', `${label}: stable safe reason code`);
     if (expectedCode !== undefined) this.assert(rejection.code === expectedCode, `${label}: expected denial reason`);
     this.denialCodes.push(safeCode(rejection));
@@ -291,7 +292,7 @@ const cases: Record<ScenarioId, Pair> = {
       c.assert(Object.isFrozen(original.action.args) && Object.isFrozen(fields(original.action.args).details), 'prepared nested arguments are frozen');
       const concurrent = await Promise.allSettled(Array.from({ length: 8 }, () => f.guard.execute(original, { approvalId })));
       c.assert(concurrent.filter((entry) => entry.status === 'fulfilled').length === 1, 'exactly one concurrent approved dispatch');
-      c.assert(concurrent.filter((entry) => entry.status === 'rejected' && entry.reason instanceof GuardError).length === 7, 'replays return structured rejection');
+      c.assert(concurrent.filter((entry) => entry.status === 'rejected' && isGuardError(entry.reason)).length === 7, 'replays return structured rejection');
       c.assert(f.ledger.length === 1 && f.ledger[0] === `delete:${RECORD_A}`, 'caller mutation never changes executed target');
       const expired = await f.guard.prepare(task, { tool: 'delete_record', args: { resource: RECORD_A } });
       const expiredId = f.approve(expired, 1100);
@@ -473,7 +474,7 @@ const cases: Record<ScenarioId, Pair> = {
       const overrunTask = overrun.task(readGrant());
       let error: unknown;
       try { await overrun.invoke(overrunTask, 'read_document', { resource: GUIDE }); } catch (caught) { error = caught; }
-      c.assert(error instanceof GuardError, 'overrun cost report is rejected after effect');
+      c.assert(isGuardError(error), 'overrun cost report is rejected after effect');
       c.assert(overrun.guard.snapshot(overrunTask).spent === 2, 'overrun retains reserved charge');
       await c.denied(() => overrun.invoke(overrunTask, 'read_document', { resource: GUIDE }), 'overrun revokes future authority', 'TASK_REVOKED');
     },
@@ -624,7 +625,7 @@ const cases: Record<ScenarioId, Pair> = {
       await c.denied(() => f.guard.execute(fresh, { approvalId }), 'approval transfer to new version', 'APPROVAL_INVALID');
       let error: unknown;
       try { await f.guard.execute(old, { approvalId }); } catch (caught) { error = caught; }
-      c.assert(error instanceof GuardError && error.code === 'TOOL_FAILED', 'stale resource compare fails with a sanitized handler error');
+      c.assert(isGuardError(error) && error.code === 'TOOL_FAILED', 'stale resource compare fails with a sanitized handler error');
       c.denialCodes.push('TOOL_FAILED');
       c.assert(c.handlerInvocations === 1 && f.ledger.length === 0, 'stale attempt enters the handler but produces no effect');
       await c.denied(() => f.guard.execute(old, { approvalId }), 'stale attempt cannot replay', 'ACTION_USED');
@@ -677,7 +678,7 @@ export async function runConformance(options: ConformanceOptions = {}): Promise<
       try { await bounded(cases[scenarioId][variant](checks), 'case exceeded its asynchronous timeout', caseTimeoutMs); }
       catch (error) {
         failure = error instanceof CheckFailure ? error.message
-          : error instanceof GuardError ? `Unexpected guard rejection (${safeCode(error)}).`
+          : isGuardError(error) ? `Unexpected guard rejection (${safeCode(error)}).`
           : 'Unexpected fixture failure; raw error details omitted.';
       }
       results.push(Object.freeze({

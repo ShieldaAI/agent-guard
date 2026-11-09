@@ -120,6 +120,7 @@ export const GuardErrorCode = Object.freeze({
 export type GuardErrorCodeValue = typeof GuardErrorCode[keyof typeof GuardErrorCode];
 
 /** Errors emitted by the guard omit request values, policy exceptions and tool output. */
+const GUARD_ERROR_BRAND = Symbol.for('@shieldaai/agent-guard.GuardError');
 export class GuardError extends Error {
   readonly code: GuardErrorCodeValue;
   /**
@@ -134,6 +135,19 @@ export class GuardError extends Error {
     this.code = code;
     if (detail !== undefined) this.detail = detail;
   }
+}
+// A global-registry brand survives two installed copies of this package, unlike instanceof.
+Object.defineProperty(GuardError.prototype, GUARD_ERROR_BRAND, { value: true });
+
+/**
+ * True for a GuardError from any installed copy of this package. Prefer it over
+ * `instanceof GuardError` in libraries that may load a different copy than the host.
+ */
+export function isGuardError(value: unknown): value is GuardError {
+  try {
+    return value !== null && typeof value === 'object' && (value as Record<symbol, unknown>)[GUARD_ERROR_BRAND] === true &&
+      typeof (value as { code?: unknown }).code === 'string';
+  } catch { return false; }
 }
 
 /** Reads an adapter error's `code` without running accessors; returns it only if it is a safe identifier. */

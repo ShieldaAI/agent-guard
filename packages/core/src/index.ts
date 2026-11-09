@@ -9,7 +9,7 @@ import type {
   PreparedAction, ResolvedAction, TaskHandle, TaskIdentity, TaskOptions, TaskSnapshot, TaskStatus, ToolDefinition, ToolResult,
 } from './types.js';
 
-export { GuardError, GuardErrorCode } from './types.js';
+export { GuardError, GuardErrorCode, isGuardError } from './types.js';
 export { InvalidJsonError } from './json.js';
 export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
 

@@ -7,6 +7,9 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: scenarios recognize rejections with the new `isGuardError()` brand check
+  instead of `instanceof GuardError`, so a guard from a second installed copy of core
+  passes conformance. `ConformanceReport.catalogVersion` is typed as `string`.
 - Add (core API shape for 1.0): `executeDetailed()` returns `{ value, charged,
   actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
   in long-running guards; `unapproveTool()` and `unregisterTool()`; an `onDecision`
