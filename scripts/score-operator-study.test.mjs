@@ -6,10 +6,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { blankWorksheet, CASES, cli, scoreStudy } from './score-operator-study.mjs';
 
-const hash = (b) => createHash('sha256').update(b).digest('hex');
-const bytes = (v) => Buffer.from(JSON.stringify(v));
+const hash = b => createHash('sha256').update(b).digest('hex');
+const bytes = v => Buffer.from(JSON.stringify(v));
 const signer = () => generateKeyPairSync('ed25519');
-const pub = (k) => k.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
+const pub = k => k.publicKey.export({ format: 'der', type: 'spki' }).toString('base64');
 // Generated cryptographic/interaction fixtures only. Never accepted as real observations.
 function round({ changeEnrollment = () => {}, change = () => {} } = {}) {
   const facilitator = signer(),
@@ -24,9 +24,10 @@ function round({ changeEnrollment = () => {}, change = () => {} } = {}) {
     end: '2025-01-02T00:00:00.000Z',
     facilitatorKey: pub(facilitator),
     backendKey: pub(backend),
-    participants: ['keyboard-only', 'assistive-technology', 'standard', 'standard', 'standard'].map(
-      (method, i) => ({ alias: 'fake-' + i, method }),
-    ),
+    participants: ['keyboard-only', 'assistive-technology', 'standard', 'standard', 'standard'].map((method, i) => ({
+      alias: 'fake-' + i,
+      method,
+    })),
   };
   changeEnrollment(enrolled);
   const enrollmentBytes = bytes(enrolled),
@@ -40,7 +41,7 @@ function round({ changeEnrollment = () => {}, change = () => {} } = {}) {
       runRef = hash('run' + i);
     Object.assign(row, {
       runRef,
-      method: enrolled.participants.find((p) => p.alias === row.alias).method,
+      method: enrolled.participants.find(p => p.alias === row.alias).method,
       assistance: 'none',
       answer: c.answer,
       unsafeDecision: false,
@@ -65,7 +66,7 @@ function round({ changeEnrollment = () => {}, change = () => {} } = {}) {
   // Mutate observations or recorded events before signing to exercise independent content checks.
   change({ obs, manifest, facts });
   for (const row of manifest.rows) {
-    const receipt = facts.find((r) => r.alias === row.alias && r.scenario === row.scenario);
+    const receipt = facts.find(r => r.alias === row.alias && r.scenario === row.scenario);
     if (!receipt) continue;
     const raw = bytes(receipt);
     row.receiptSha256 = hash(raw);
@@ -80,12 +81,12 @@ function round({ changeEnrollment = () => {}, change = () => {} } = {}) {
     backendBytes,
     facilitatorSignature: sign(null, facilitatorBytes, facilitator.privateKey),
     backendSignature: sign(null, backendBytes, backend.privateKey),
-    readReceipt: (h) => receipts.get(h),
+    readReceipt: h => receipts.get(h),
     now: Date.parse('2025-01-03T00:00:00Z'),
   };
   return { input, receipts };
 }
-const result = (opts) => scoreStudy(round(opts).input);
+const result = opts => scoreStudy(round(opts).input);
 
 test('full witnessed matrix and signed same-attempt evidence pass; report exposes only grouped counts', () => {
   const r = result();
@@ -96,7 +97,7 @@ test('full witnessed matrix and signed same-attempt evidence pass; report expose
   assert.ok(!JSON.stringify(r).includes('fake-'));
 });
 test('96 percent stretch distinguishes pilot and failed utility; assistance consumes a planned attempt', () => {
-  const score = (n) =>
+  const score = n =>
     result({
       change: ({ obs }) => {
         for (const i of [10, 15, 20]) {
@@ -131,8 +132,7 @@ test('every safety failure, even under a high aggregate score, bars both gates',
     ({ obs }) => (obs.rows[3].disclosure = true),
     ({ obs }) => (obs.rows[0].unsafeDecision = true),
     ({ facts }) => facts[4].events.push({ ...facts[4].events[0] }),
-    ({ facts }) =>
-      facts[1].events.splice(1, 1, { type: 'wrong-target-approved', ref: facts[1].events[0].ref }),
+    ({ facts }) => facts[1].events.splice(1, 1, { type: 'wrong-target-approved', ref: facts[1].events[0].ref }),
     ({ facts }) => facts[4].events.pop(),
     ({ facts }) => (facts[4].events.at(-1).ref = hash('wrong-operation')),
     ({ facts }) => (facts[2].events[3].ref = facts[2].events[0].ref),
@@ -141,11 +141,11 @@ test('every safety failure, even under a high aggregate score, bars both gates',
 });
 test('an incomplete or substituted enrollment, observation matrix, or audit window cannot pass', () => {
   for (const changeEnrollment of [
-    (e) => e.participants.pop(),
-    (e) => (e.participants[0].method = 'standard'),
-    (e) => (e.participants[1].method = 'standard'),
-    (e) => (e.participants[3].alias = e.participants[2].alias),
-    (e) => (e.backendKey = e.facilitatorKey),
+    e => e.participants.pop(),
+    e => (e.participants[0].method = 'standard'),
+    e => (e.participants[1].method = 'standard'),
+    e => (e.participants[3].alias = e.participants[2].alias),
+    e => (e.backendKey = e.facilitatorKey),
   ])
     assert.throws(() => result({ changeEnrollment }));
   for (const change of [
@@ -178,7 +178,7 @@ test('detached signatures and source bytes bind the exact enrollment, roles and 
     assert.throws(() => scoreStudy({ ...input, ...mutation }));
   }
 });
-test('offline command reads signed receipt files; a frozen enrollment on its own remains unmeasured', (t) => {
+test('offline command reads signed receipt files; a frozen enrollment on its own remains unmeasured', t => {
   if (typeof constants.O_NONBLOCK !== 'number' || typeof constants.O_NOFOLLOW !== 'number') {
     assert.throws(() => cli(['enroll', 'unopened', 'unopened']), /UNSUPPORTED_FILE_OPEN/);
     return;
@@ -198,7 +198,7 @@ test('offline command reads signed receipt files; a frozen enrollment on its own
   assert.throws(() => cli(['enroll', enrollment, store('wrong', 'changed')], 0), /BRIEF_CHANGED/);
   const blank = cli(['worksheet', enrollment, 'facilitator']);
   assert.equal(blank.rows.length, 25);
-  assert.ok(blank.rows.every((row) => row.answer === null && row.runRef === null));
+  assert.ok(blank.rows.every(row => row.answer === null && row.runRef === null));
   const rdir = join(dir, 'receipts');
   mkdirSync(rdir);
   for (const [h, raw] of receipts) writeFileSync(join(rdir, h + '.json'), raw);

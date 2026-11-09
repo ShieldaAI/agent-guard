@@ -17,8 +17,13 @@ function readManifest(path) {
       length += count;
     }
     const after = fstatSync(fd);
-    if (length > maximum || length !== before.size || after.size !== before.size ||
-        after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) {
+    if (
+      length > maximum ||
+      length !== before.size ||
+      after.size !== before.size ||
+      after.mtimeMs !== before.mtimeMs ||
+      after.ctimeMs !== before.ctimeMs
+    ) {
       throw new Error('Npm manifest changed during validation.');
     }
     return JSON.parse(bytes.subarray(0, length).toString('utf8'));
@@ -34,9 +39,10 @@ function readManifest(path) {
 export function resolveInstallationNpmCli(nodeExecutable, platform) {
   try {
     const runtimeDirectory = dirname(realpathSync(nodeExecutable));
-    const launcher = platform === 'win32'
-      ? join(runtimeDirectory, 'node_modules', 'npm', 'bin', 'npm-cli.js')
-      : join(runtimeDirectory, 'npm');
+    const launcher =
+      platform === 'win32'
+        ? join(runtimeDirectory, 'node_modules', 'npm', 'bin', 'npm-cli.js')
+        : join(runtimeDirectory, 'npm');
     const cli = realpathSync(launcher);
     const packageDirectory = dirname(dirname(cli));
     if (cli !== join(packageDirectory, 'bin', 'npm-cli.js') || !statSync(cli).isFile()) {
@@ -49,7 +55,9 @@ export function resolveInstallationNpmCli(nodeExecutable, platform) {
     }
     return cli;
   } catch {
-    throw new Error('TRUSTED_NPM_NOT_FOUND: install npm with the running Node installation; npm_execpath and PATH overrides are not accepted.');
+    throw new Error(
+      'TRUSTED_NPM_NOT_FOUND: install npm with the running Node installation; npm_execpath and PATH overrides are not accepted.',
+    );
   }
 }
 

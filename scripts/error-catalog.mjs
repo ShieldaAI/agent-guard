@@ -9,8 +9,11 @@ const root = new URL('../', import.meta.url);
 export const catalogPath = new URL('docs/errors.md', root);
 
 export function renderErrorCatalog() {
-  const mcp = [...readFileSync(new URL('packages/mcp/src/boundary.ts', root), 'utf8')
-    .match(/export type McpBoundaryErrorCode =([\s\S]*?);/)[1].matchAll(/'([A-Z_]+)'/g)].map(match => match[1]);
+  const mcp = [
+    ...readFileSync(new URL('packages/mcp/src/boundary.ts', root), 'utf8')
+      .match(/export type McpBoundaryErrorCode =([\s\S]*?);/)[1]
+      .matchAll(/'([A-Z_]+)'/g),
+  ].map(match => match[1]);
   const escape = text => text.replaceAll('|', '\\|');
   const lines = [
     '# Error codes',
@@ -19,7 +22,7 @@ export function renderErrorCatalog() {
     '',
     'Every `GuardError.code` is listed here. Codes are stable identifiers and never carry',
     'request data. **Retryable** means repeating the same request later may succeed and',
-    'cannot repeat an effect. **HTTP** is the durable executor task server\'s status; its',
+    "cannot repeat an effect. **HTTP** is the durable executor task server's status; its",
     'JSON error body is `{ "error": code, "retryable": boolean }`.',
     '',
     '`RESOLUTION_FAILED`, `ARGUMENT_INVALID` and `TOOL_FAILED` flatten adapter errors. When',
@@ -28,8 +31,10 @@ export function renderErrorCatalog() {
     '',
     '| Code | Meaning | Retryable | HTTP | Typical cause |',
     '| --- | --- | --- | --- | --- |',
-    ...Object.entries(GuardErrorCatalog).map(([code, info]) =>
-      `| \`${code}\` | ${escape(info.meaning)} | ${info.retryable ? 'yes' : 'no'} | ${executorResponseStatus(code)} | ${escape(info.cause)} |`),
+    ...Object.entries(GuardErrorCatalog).map(
+      ([code, info]) =>
+        `| \`${code}\` | ${escape(info.meaning)} | ${info.retryable ? 'yes' : 'no'} | ${executorResponseStatus(code)} | ${escape(info.cause)} |`,
+    ),
     '',
     '## Durable executor codes',
     '',
@@ -37,11 +42,27 @@ export function renderErrorCatalog() {
     '',
     '| Code | Retryable | HTTP |',
     '| --- | --- | --- |',
-    ...['UNAUTHENTICATED', 'REQUEST_DENIED', 'REQUEST_INVALID', 'REQUEST_TOO_LARGE', 'REQUEST_TIMEOUT', 'CAPACITY_EXCEEDED',
-      'FAMILY_PENDING_LIMIT', 'FAMILY_PENDING_BYTES_LIMIT', 'FAMILY_TASK_LIMIT', 'FAMILY_TASK_BYTES_LIMIT', 'FAMILY_MEMORY_LIMIT',
-      'MEMORY_LIMIT', 'MEMORY_UNAVAILABLE', 'MEMORY_VERSION_CHANGED', 'RECONCILIATION_INVALID', 'OPERATION_FAILED',
-      'REQUEST_RATE_LIMITED']
-      .map(code => `| \`${code}\` | ${executorResponseRetryable(code) ? 'yes' : 'no'} | ${executorResponseStatus(code)} |`),
+    ...[
+      'UNAUTHENTICATED',
+      'REQUEST_DENIED',
+      'REQUEST_INVALID',
+      'REQUEST_TOO_LARGE',
+      'REQUEST_TIMEOUT',
+      'CAPACITY_EXCEEDED',
+      'FAMILY_PENDING_LIMIT',
+      'FAMILY_PENDING_BYTES_LIMIT',
+      'FAMILY_TASK_LIMIT',
+      'FAMILY_TASK_BYTES_LIMIT',
+      'FAMILY_MEMORY_LIMIT',
+      'MEMORY_LIMIT',
+      'MEMORY_UNAVAILABLE',
+      'MEMORY_VERSION_CHANGED',
+      'RECONCILIATION_INVALID',
+      'OPERATION_FAILED',
+      'REQUEST_RATE_LIMITED',
+    ].map(
+      code => `| \`${code}\` | ${executorResponseRetryable(code) ? 'yes' : 'no'} | ${executorResponseStatus(code)} |`,
+    ),
     '',
     '## MCP boundary codes',
     '',

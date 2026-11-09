@@ -22,8 +22,12 @@ export function validateRelease(root) {
   }
   const readManifest = directory => JSON.parse(readFileSync(join(root, directory, 'package.json'), 'utf8'));
   const workspace = readManifest('.');
-  if (typeof workspace.version !== 'string' || workspace.version.length === 0 ||
-      !Array.isArray(workspace.workspaces) || workspace.workspaces.length === 0) {
+  if (
+    typeof workspace.version !== 'string' ||
+    workspace.version.length === 0 ||
+    !Array.isArray(workspace.workspaces) ||
+    workspace.workspaces.length === 0
+  ) {
     throw new Error('Release requires a root version and explicit package workspaces.');
   }
   const manifests = workspace.workspaces.map(readManifest);
@@ -35,7 +39,9 @@ export function validateRelease(root) {
     for (const field of ['dependencies', 'optionalDependencies', 'peerDependencies', 'devDependencies']) {
       for (const [name, version] of Object.entries(manifest[field] ?? {})) {
         if (internalNames.has(name) && version !== workspace.version) {
-          throw new Error(`Release dependency mismatch: ${manifest.name} ${field}.${name} must be exactly ${workspace.version}.`);
+          throw new Error(
+            `Release dependency mismatch: ${manifest.name} ${field}.${name} must be exactly ${workspace.version}.`,
+          );
         }
       }
     }
@@ -47,11 +53,19 @@ export function validateRelease(root) {
     } catch {
       throw new Error('Stable release is blocked: a valid release-state.json approval record is required.');
     }
-    if (state?.schemaVersion !== 1 || state.version !== workspace.version ||
-        state.status !== 'approved' || !Array.isArray(state.blockers) || state.blockers.length !== 0 ||
-        !Array.isArray(state.evidence) || state.evidence.length === 0 ||
-        state.evidence.some(reference => typeof reference !== 'string' || reference.trim().length === 0)) {
-      throw new Error('Stable release is blocked: release-state.json must approve this exact version with evidence and no unresolved blockers.');
+    if (
+      state?.schemaVersion !== 1 ||
+      state.version !== workspace.version ||
+      state.status !== 'approved' ||
+      !Array.isArray(state.blockers) ||
+      state.blockers.length !== 0 ||
+      !Array.isArray(state.evidence) ||
+      state.evidence.length === 0 ||
+      state.evidence.some(reference => typeof reference !== 'string' || reference.trim().length === 0)
+    ) {
+      throw new Error(
+        'Stable release is blocked: release-state.json must approve this exact version with evidence and no unresolved blockers.',
+      );
     }
   }
 }

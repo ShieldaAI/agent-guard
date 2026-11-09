@@ -16,7 +16,8 @@ function fixture(t, options = {}) {
   write('package.json', { private: true, version, workspaces: ['packages/core', 'packages/adapter'] });
   write('packages/core/package.json', { name: '@fixture/core', version: options.coreVersion ?? version });
   write('packages/adapter/package.json', {
-    name: '@fixture/adapter', version,
+    name: '@fixture/adapter',
+    version,
     [options.dependencyField ?? 'dependencies']: { '@fixture/core': options.dependencyVersion ?? version },
   });
   if (options.releaseState !== undefined) write('release-state.json', options.releaseState);
@@ -24,7 +25,18 @@ function fixture(t, options = {}) {
   const git = args => execFileSync('git', args, { cwd: root, stdio: 'pipe' });
   git(['init', '--quiet']);
   git(['add', '.']);
-  git(['-c', 'user.name=Release Fixture', '-c', 'user.email=release@example.test', '-c', 'commit.gpgsign=false', 'commit', '--quiet', '-m', 'Release fixture']);
+  git([
+    '-c',
+    'user.name=Release Fixture',
+    '-c',
+    'user.email=release@example.test',
+    '-c',
+    'commit.gpgsign=false',
+    'commit',
+    '--quiet',
+    '-m',
+    'Release fixture',
+  ]);
   return { root, git };
 }
 
@@ -40,7 +52,8 @@ test('release root checks resolve directory aliases without accepting nested dir
   const aliases = mkdtempSync(join(tmpdir(), 'agent-guard-release-alias-'));
   t.after(() => rmSync(aliases, { recursive: true, force: true }));
   const kind = process.platform === 'win32' ? 'junction' : 'dir';
-  const rootAlias = join(aliases, 'root'), nestedAlias = join(aliases, 'nested');
+  const rootAlias = join(aliases, 'root'),
+    nestedAlias = join(aliases, 'nested');
   symlinkSync(root, rootAlias, kind);
   symlinkSync(join(root, 'packages/core'), nestedAlias, kind);
   assert.doesNotThrow(() => validateRelease(rootAlias));
@@ -83,7 +96,10 @@ test('release rejects an extracted package or nested directory', t => {
 });
 
 const approvedState = {
-  schemaVersion: 1, version: '0.1.0', status: 'approved', blockers: [],
+  schemaVersion: 1,
+  version: '0.1.0',
+  status: 'approved',
+  blockers: [],
   evidence: ['docs/releases/0.1.0.md'],
 };
 

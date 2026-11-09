@@ -7,11 +7,20 @@ if (files.length === 0) {
   process.stderr.write('WORKSPACE_TEST_FILES_REQUIRED\n');
   process.exitCode = 1;
 } else {
-  const child = spawn(process.execPath, ['--test',
-    ...(process.platform === 'win32' ? ['--test-concurrency=1'] : []), ...files], { stdio: 'inherit' });
+  const child = spawn(
+    process.execPath,
+    ['--test', ...(process.platform === 'win32' ? ['--test-concurrency=1'] : []), ...files],
+    { stdio: 'inherit' },
+  );
   let interrupted;
-  const forwardInterrupt = () => { interrupted ??= 'SIGINT'; child.kill('SIGINT'); };
-  const forwardTerminate = () => { interrupted ??= 'SIGTERM'; child.kill('SIGTERM'); };
+  const forwardInterrupt = () => {
+    interrupted ??= 'SIGINT';
+    child.kill('SIGINT');
+  };
+  const forwardTerminate = () => {
+    interrupted ??= 'SIGTERM';
+    child.kill('SIGTERM');
+  };
   process.once('SIGINT', forwardInterrupt);
   process.once('SIGTERM', forwardTerminate);
   child.once('error', () => {
@@ -23,8 +32,11 @@ if (files.length === 0) {
     process.removeListener('SIGTERM', forwardTerminate);
     const terminalSignal = interrupted ?? signal;
     if (terminalSignal) {
-      try { process.kill(process.pid, terminalSignal); }
-      catch { process.exitCode = 1; }
+      try {
+        process.kill(process.pid, terminalSignal);
+      } catch {
+        process.exitCode = 1;
+      }
     } else process.exitCode = code ?? 1;
   });
 }

@@ -16,14 +16,26 @@ export function validateSchedulingReading(value, requested) {
   workerSchedulingMode(requested);
   if (requested === 'default') {
     keys(value, ['mode', 'verified']);
-    assert.equal(value.mode, 'default'); assert.equal(value.verified, false);
+    assert.equal(value.mode, 'default');
+    assert.equal(value.verified, false);
     return;
   }
-  keys(value, ['mode', 'verified', 'workerTid', 'beforeNice', 'afterNice', 'currentNice',
-    'ownerTid', 'ownerBeforeNice', 'ownerCurrentNice']);
-  assert.equal(value.mode, 'linux-background'); assert.equal(value.verified, true);
+  keys(value, [
+    'mode',
+    'verified',
+    'workerTid',
+    'beforeNice',
+    'afterNice',
+    'currentNice',
+    'ownerTid',
+    'ownerBeforeNice',
+    'ownerCurrentNice',
+  ]);
+  assert.equal(value.mode, 'linux-background');
+  assert.equal(value.verified, true);
   assert.ok(tid(value.workerTid) && tid(value.ownerTid) && value.workerTid !== value.ownerTid);
-  for (const name of ['beforeNice', 'afterNice', 'currentNice', 'ownerBeforeNice', 'ownerCurrentNice']) assert.ok(nice(value[name]));
+  for (const name of ['beforeNice', 'afterNice', 'currentNice', 'ownerBeforeNice', 'ownerCurrentNice'])
+    assert.ok(nice(value[name]));
   assert.equal(value.afterNice, Math.min(19, value.beforeNice + 5));
   assert.equal(value.currentNice, value.afterNice);
   assert.equal(value.ownerCurrentNice, value.ownerBeforeNice);
@@ -35,16 +47,21 @@ export function schedulingEvidenceValid(phases, requested) {
     assert.equal(phases.length, 4);
     for (const phase of phases) {
       const value = phase.workerScheduling;
-      keys(value, ['requested', 'before', 'after']); assert.equal(value.requested, requested);
+      keys(value, ['requested', 'before', 'after']);
+      assert.equal(value.requested, requested);
       if (phase.mode === 'baseline') {
         // The unchanged baseline owns no observer; never create one for evidence.
-        assert.equal(value.before, null); assert.equal(value.after, null);
+        assert.equal(value.before, null);
+        assert.equal(value.after, null);
       } else {
         assert.equal(phase.mode, 'polling');
-        validateSchedulingReading(value.before, requested); validateSchedulingReading(value.after, requested);
+        validateSchedulingReading(value.before, requested);
+        validateSchedulingReading(value.after, requested);
         assert.deepEqual(value.after, value.before, 'SCHEDULING_CHANGED');
       }
     }
     return true;
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }

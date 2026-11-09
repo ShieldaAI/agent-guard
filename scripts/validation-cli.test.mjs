@@ -10,7 +10,8 @@ test('validation CLIs invoked through a directory alias evaluate the inputs and 
   const directory = mkdtempSync(join(tmpdir(), 'guard-validation-alias-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));
   const here = fileURLToPath(new URL('../', import.meta.url));
-  const actual = join(directory, 'checkout'), alias = join(directory, 'alias');
+  const actual = join(directory, 'checkout'),
+    alias = join(directory, 'alias');
   mkdirSync(join(actual, 'scripts'), { recursive: true });
   symlinkSync(actual, alias, 'junction');
   for (const dependency of ['examples', 'node_modules', 'packages']) {
@@ -19,12 +20,23 @@ test('validation CLIs invoked through a directory alias evaluate the inputs and 
   const evidence = join(actual, 'artifacts', 'platform-evidence.json');
   mkdirSync(join(actual, 'artifacts'));
   writeFileSync(evidence, '{"passed":true}');
-  for (const helper of ['benchmark-admission-client.mjs', 'benchmark-admission-diagnostics.mjs', 'benchmark-admission-profile.mjs', 'benchmark-admission-scheduling.mjs'])
+  for (const helper of [
+    'benchmark-admission-client.mjs',
+    'benchmark-admission-diagnostics.mjs',
+    'benchmark-admission-profile.mjs',
+    'benchmark-admission-scheduling.mjs',
+  ])
     copyFileSync(join(here, 'scripts', helper), join(actual, 'scripts', helper));
-  for (const [name, status] of [['verify-platform.mjs', 1], ['score-operator-study.mjs', 2], ['benchmark-admission.mjs', 1]]) {
+  for (const [name, status] of [
+    ['verify-platform.mjs', 1],
+    ['score-operator-study.mjs', 2],
+    ['benchmark-admission.mjs', 1],
+  ]) {
     copyFileSync(join(here, 'scripts', name), join(actual, 'scripts', name));
     const result = spawnSync(process.execPath, [join(alias, 'scripts', name)], {
-      env: { ...process.env, AGENT_GUARD_EXPECTED_HOST: 'invalid' }, encoding: 'utf8', timeout: 10_000,
+      env: { ...process.env, AGENT_GUARD_EXPECTED_HOST: 'invalid' },
+      encoding: 'utf8',
+      timeout: 10_000,
     });
     assert.ifError(result.error);
     assert.equal(result.status, status, result.stderr);
