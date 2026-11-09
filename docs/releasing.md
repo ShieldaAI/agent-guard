@@ -20,6 +20,9 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
 
 Release notes link the CI run URLs as evidence. Dated JSON under `docs/validation/` is historical; new releases do not add to it.
 
+Timing signals (admission during polling, and the constrained observer) do not run on pull requests. Both run nightly on the
+default branch and on manual dispatch; the job summary shows the p95 ratio, skipped polls and reasons. They are never a required check.
+
 ## Commands
 
 ```sh
