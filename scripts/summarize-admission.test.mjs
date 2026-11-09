@@ -7,7 +7,11 @@ import { summarizeAdmission, summarizeAdmissionFile } from './summarize-admissio
 
 const report = {
   gate: {
-    passed: false, maximumRatio: 1.1, baselineP95Ms: 35.801598, pollingP95Ms: 51.407993, regressionPercent: 43.591336,
+    passed: false,
+    maximumRatio: 1.1,
+    baselineP95Ms: 35.801598,
+    pollingP95Ms: 51.407993,
+    regressionPercent: 43.591336,
     failureReasons: [{ phase: 2, code: 'POLL_CADENCE_SKIPPED' }, { code: 'ADMISSION_REGRESSION_EXCEEDED' }],
   },
   phases: [{ polling: null }, { polling: { skippedBusy: 1 } }, { polling: { skippedBusy: 3 } }, { polling: null }],
@@ -24,7 +28,10 @@ test('summarizes the gate result, measures and reasons', () => {
 });
 
 test('reports a passing gate without reasons', () => {
-  const summary = summarizeAdmission({ gate: { passed: true, maximumRatio: 1.1, regressionPercent: -0.27, failureReasons: [] }, phases: [] }, 'x');
+  const summary = summarizeAdmission(
+    { gate: { passed: true, maximumRatio: 1.1, regressionPercent: -0.27, failureReasons: [] }, phases: [] },
+    'x',
+  );
   assert.match(summary, /Result: \*\*passed\*\*/);
   assert.match(summary, /\| Failure reasons \| none \|/);
 });
@@ -40,7 +47,10 @@ test('states a missing, malformed or gateless report instead of failing', t => {
 });
 
 test('keeps Markdown and HTML out of untrusted titles and codes', () => {
-  const summary = summarizeAdmission({ gate: { passed: false, failureReasons: [{ code: '<img src=x>|`' }] }, phases: [] }, '<b>|title');
+  const summary = summarizeAdmission(
+    { gate: { passed: false, failureReasons: [{ code: '<img src=x>|`' }] }, phases: [] },
+    '<b>|title',
+  );
   assert.doesNotMatch(summary, /[<>`]/);
   assert.match(summary, /^### btitle/);
 });

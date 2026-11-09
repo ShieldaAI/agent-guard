@@ -1,11 +1,20 @@
 # Changelog
 
-## 0.1.0 — Unreleased candidate
+## 0.1.0 — Approved, not yet published
 
-Publication is held for the Node HIGH review and final candidate acceptance,
-including the unresolved admission-performance gate. See the
-[candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
+Approved on 9 November 2026 with three recorded scope decisions:
+
+- The Node HIGH security releases are a post-release follow-up.
+- The single-CPU observer stress profile is out of scope.
+- The inventory observer is experimental.
+
+See the [release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
+
+- Report the installed package version from the MCP client (`agent-guard-mcp`) and
+  the Agent Map MCP server instead of hard-coded strings.
+- Release preflight requires every `release-state.json` evidence entry to be a
+  committed repository file.
 
 - Add (agent map): the "dangerous three" boundary flag. `get_agent_access` returns
   `boundaryFlags` with whether a live task can read private data, read outside content

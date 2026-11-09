@@ -7,17 +7,25 @@ import { pathToFileURL } from 'node:url';
 const MAX_REPORT_BYTES = 32 * 1024 * 1024;
 
 const number = (value, digits) => (typeof value === 'number' && Number.isFinite(value) ? value.toFixed(digits) : 'n/a');
-const text = value => String(value).replace(/[^A-Za-z0-9 _().,:%/+-]/g, '').slice(0, 120);
+const text = value =>
+  String(value)
+    .replace(/[^A-Za-z0-9 _().,:%/+-]/g, '')
+    .slice(0, 120);
 
 export function summarizeAdmission(report, title) {
   const heading = `### ${text(title)}`;
   const gate = report && typeof report === 'object' ? report.gate : undefined;
   if (!gate || typeof gate !== 'object') return `${heading}\n\nNo admission gate result was recorded.\n`;
   const reasons = Array.isArray(gate.failureReasons)
-    ? gate.failureReasons.map(reason => text(`${reason?.code ?? 'UNKNOWN'}${reason?.phase === undefined ? '' : ` (phase ${reason.phase})`}`))
+    ? gate.failureReasons.map(reason =>
+        text(`${reason?.code ?? 'UNKNOWN'}${reason?.phase === undefined ? '' : ` (phase ${reason.phase})`}`),
+      )
     : [];
   const skipped = Array.isArray(report.phases)
-    ? report.phases.reduce((total, phase) => total + (Number.isInteger(phase?.polling?.skippedBusy) ? phase.polling.skippedBusy : 0), 0)
+    ? report.phases.reduce(
+        (total, phase) => total + (Number.isInteger(phase?.polling?.skippedBusy) ? phase.polling.skippedBusy : 0),
+        0,
+      )
     : 'n/a';
   return [
     heading,

@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { once } from 'node:events';
+import { readFileSync } from 'node:fs';
 import { AgentGuard } from '@shieldaai/agent-guard';
 import { ManagedMcpConnection, createRestrictedMcpHttpTransport, assertVerifiedMcpClaims } from '../dist/index.js';
 
@@ -61,6 +62,7 @@ test('real HTTP 307 cannot forward credentials or request bodies to another serv
 
 test('HTTP profile accepts a benign SDK initialization and bounds streamed bytes', { timeout: 5_000 }, async t => {
   const received = [];
+  let clientInfo;
   const endpoint = await listen(t, async (req, res) => {
     if (req.method === 'GET') {
       res.writeHead(405);
@@ -71,6 +73,7 @@ test('HTTP profile accepts a benign SDK initialization and bounds streamed bytes
     for await (const chunk of req) chunks.push(chunk);
     const message = JSON.parse(Buffer.concat(chunks).toString());
     received.push(message.method);
+    if (message.method === 'initialize') clientInfo = message.params.clientInfo;
     if (!Object.hasOwn(message, 'id')) {
       res.writeHead(202);
       res.end();
@@ -93,6 +96,8 @@ test('HTTP profile accepts a benign SDK initialization and bounds streamed bytes
   assert.equal(connection.status, 'ready');
   await connection.close();
   assert.ok(received.includes('initialize'));
+  const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
+  assert.deepEqual(clientInfo, { name: 'shielda-agent-guard', version: packageVersion });
 
   const oversized = await listen(t, (_req, res) => {
     res.writeHead(200, { 'content-type': 'application/json' });

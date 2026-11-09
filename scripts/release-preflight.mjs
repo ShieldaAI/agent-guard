@@ -67,5 +67,25 @@ export function validateRelease(root) {
         'Stable release is blocked: release-state.json must approve this exact version with evidence and no unresolved blockers.',
       );
     }
+    // Evidence must name committed files in this checkout, not free text or paths outside it.
+    for (const reference of state.evidence) {
+      if (
+        reference !== reference.trim() ||
+        reference.startsWith('/') ||
+        reference.includes('\\') ||
+        reference.split('/').some(part => part === '' || part === '.' || part === '..')
+      ) {
+        throw new Error(
+          `Stable release is blocked: evidence reference "${reference}" must be a relative repository path.`,
+        );
+      }
+      const tracked = spawnSync('git', ['ls-files', '--error-unmatch', '--', reference], {
+        cwd: root,
+        encoding: 'utf8',
+      });
+      if (tracked.error || tracked.status !== 0 || tracked.stdout.trim() !== reference) {
+        throw new Error(`Stable release is blocked: evidence file "${reference}" is not committed in this checkout.`);
+      }
+    }
   }
 }
