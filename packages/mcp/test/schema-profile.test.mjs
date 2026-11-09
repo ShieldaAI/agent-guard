@@ -7,9 +7,21 @@ import { AgentGuard } from '@shieldaai/agent-guard';
 import { ManagedMcpConnection, compileBoundedSchema } from '../dist/index.js';
 
 const directory = new URL('./fixtures/schemas/', import.meta.url);
-const corpus = readdirSync(directory).filter(name => name.endsWith('.json'))
-  .flatMap(file => Object.entries(JSON.parse(readFileSync(new URL(file, directory), 'utf8')).tools).map(([tool, schema]) => ({ file, tool, schema })));
-const identity = { serverId: 'reference', transportIdentity: 'isolated-executor:reference-v1', tenantId: 'acme', principalId: 'operator' };
+const corpus = readdirSync(directory)
+  .filter(name => name.endsWith('.json'))
+  .flatMap(file =>
+    Object.entries(JSON.parse(readFileSync(new URL(file, directory), 'utf8')).tools).map(([tool, schema]) => ({
+      file,
+      tool,
+      schema,
+    })),
+  );
+const identity = {
+  serverId: 'reference',
+  transportIdentity: 'isolated-executor:reference-v1',
+  tenantId: 'acme',
+  principalId: 'operator',
+};
 
 test('the reference-server schema corpus compiles under the bounded profile', () => {
   assert.ok(corpus.length >= 20, `corpus has ${corpus.length} schemas`);
@@ -37,13 +49,28 @@ test('corpus schemas still validate the arguments they describe', () => {
 
 test('uniqueItems compares canonical JSON, so key order does not hide a duplicate', () => {
   const validate = compileBoundedSchema({ type: 'array', uniqueItems: true });
-  assert.equal(validate([{ a: 1, b: [1, 2] }, { b: [1, 2], a: 1 }]), false);
+  assert.equal(
+    validate([
+      { a: 1, b: [1, 2] },
+      { b: [1, 2], a: 1 },
+    ]),
+    false,
+  );
   assert.equal(validate([{ a: 1 }, { a: 2 }, 1, '1']), true);
   assert.equal(compileBoundedSchema({ type: 'array', uniqueItems: false })([1, 1]), true);
 });
 
 test('patterns with unbounded backtracking are refused; admitted ones stay fast', () => {
-  for (const pattern of ['(a+)+$', '^(a|aa)+$', '(\\w)\\1', '^(?=x).*$', '(?<=x)y', 'a*b*', '^a*a*a*$', 'x'.repeat(513)]) {
+  for (const pattern of [
+    '(a+)+$',
+    '^(a|aa)+$',
+    '(\\w)\\1',
+    '^(?=x).*$',
+    '(?<=x)y',
+    'a*b*',
+    '^a*a*a*$',
+    'x'.repeat(513),
+  ]) {
     assert.throws(() => compileBoundedSchema({ type: 'string', pattern }), { code: 'SCHEMA_UNSUPPORTED' }, pattern);
   }
   const worst = compileBoundedSchema({ type: 'array', items: { type: 'string', pattern: '^\\d*\\d*x$' } });
@@ -56,27 +83,62 @@ test('patterns with unbounded backtracking are refused; admitted ones stay fast'
 });
 
 test('dialects: draft-07, 2019-09 and 2020-12 are accepted; unknown dialects are not', () => {
-  for (const $schema of ['http://json-schema.org/draft-07/schema#', 'https://json-schema.org/draft/2019-09/schema', 'https://json-schema.org/draft/2020-12/schema']) {
+  for (const $schema of [
+    'http://json-schema.org/draft-07/schema#',
+    'https://json-schema.org/draft/2019-09/schema',
+    'https://json-schema.org/draft/2020-12/schema',
+  ]) {
     assert.doesNotThrow(() => compileBoundedSchema({ $schema, type: 'object' }));
   }
-  assert.throws(() => compileBoundedSchema({ $schema: 'https://example.com/custom', type: 'object' }), { code: 'SCHEMA_UNSUPPORTED' });
+  assert.throws(() => compileBoundedSchema({ $schema: 'https://example.com/custom', type: 'object' }), {
+    code: 'SCHEMA_UNSUPPORTED',
+  });
 });
 
 test('one unsupported tool schema is skipped and the rest of the registry loads', { timeout: 5_000 }, async t => {
   const server = new McpServer({ name: 'mixed', version: '1' });
   server.server.registerCapabilities({ tools: {} });
-  server.server.setRequestHandler('tools/list', () => ({ tools: [
-    { name: 'safe', inputSchema: { type: 'object', properties: { id: { type: 'string', pattern: '^[a-z]+$' } }, additionalProperties: false } },
-    { name: 'catastrophic', inputSchema: { type: 'object', properties: { id: { type: 'string', pattern: '(a+)+$' } } } },
-  ] }));
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair(); await server.connect(serverTransport);
+  server.server.setRequestHandler('tools/list', () => ({
+    tools: [
+      {
+        name: 'safe',
+        inputSchema: {
+          type: 'object',
+          properties: { id: { type: 'string', pattern: '^[a-z]+$' } },
+          additionalProperties: false,
+        },
+      },
+      {
+        name: 'catastrophic',
+        inputSchema: { type: 'object', properties: { id: { type: 'string', pattern: '(a+)+$' } } },
+      },
+    ],
+  }));
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
   t.after(() => server.close());
   const resolve = () => ({ resourceId: 'report', tenantId: 'acme' });
-  const connection = await ManagedMcpConnection.connect({ guard: new AgentGuard(), identity, transport: clientTransport,
-    tools: [{ name: 'safe', resolve }, { name: 'catastrophic', resolve }] });
+  const connection = await ManagedMcpConnection.connect({
+    guard: new AgentGuard(),
+    identity,
+    transport: clientTransport,
+    tools: [
+      { name: 'safe', resolve },
+      { name: 'catastrophic', resolve },
+    ],
+  });
   t.after(() => connection.close());
   assert.equal(connection.status, 'ready');
-  assert.deepEqual(connection.registrations.map(entry => entry.remoteName), ['safe']);
-  assert.deepEqual(connection.skipped.map(entry => ({ ...entry })), [{ kind: 'tool', remoteName: 'catastrophic', reason: 'SCHEMA_UNSUPPORTED' }]);
-  assert.deepEqual(connection.inventory().operations.map(entry => entry.name), [connection.registrations[0].name]);
+  assert.deepEqual(
+    connection.registrations.map(entry => entry.remoteName),
+    ['safe'],
+  );
+  assert.deepEqual(
+    connection.skipped.map(entry => ({ ...entry })),
+    [{ kind: 'tool', remoteName: 'catastrophic', reason: 'SCHEMA_UNSUPPORTED' }],
+  );
+  assert.deepEqual(
+    connection.inventory().operations.map(entry => entry.name),
+    [connection.registrations[0].name],
+  );
 });
