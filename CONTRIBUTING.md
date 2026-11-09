@@ -21,3 +21,9 @@ Keep the core's runtime dependency set empty unless a dependency materially impr
 Do not put real secrets, private organization data or live destructive targets in fixtures. Use synthetic identifiers and in-memory effect logs. Discuss behavior changes and document their scope in `docs/scenarios.md` and `docs/threat-model.md`.
 
 Contributions are provided under this repository's Apache-2.0 license. Security findings should use the private process in SECURITY.md rather than a public issue.
+
+## Formatting
+
+Run `npm run format` before committing. CI runs `npm run format:check` and fails on
+unformatted TypeScript or JavaScript. Markdown, JSON and evidence files are not
+reformatted.

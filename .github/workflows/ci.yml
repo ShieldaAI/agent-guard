@@ -62,6 +62,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
+      - run: npm run format:check
       - run: npm run check
       - name: Evaluate task completion and unauthorized effects
         id: outcome_evaluation
