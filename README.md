@@ -2,10 +2,10 @@
 
 Authorize AI agent tool calls in TypeScript with scoped resources, tenant checks, approvals and budgets. Register a tool, grant a task access to specific resources, and route execution through one guard. Destructive operations can require approval of the exact action before it runs.
 
-**Status: unpublished 0.1.0 candidate; production release held.** The current
-Node HIGH security prealert remains open, and final admission acceptance must be
-repeated on fixed Node images. The single-CPU 250 ms observer stress profile is
-unqualified and outside 0.1.0 scope.
+**Status: unpublished 0.1.0 candidate; final verification in progress.** The
+announced Node HIGH security releases are a post-release follow-up rather than a
+publication gate. Deployments must adopt the fixed Node runtime once it is out.
+The single-CPU 250 ms observer stress profile is unqualified and outside 0.1.0 scope.
 The [candidate release notes](docs/releases/0.1.0.md) track these gates; changing
 the version does not clear them. The latest published version is the experimental
 `0.1.0-alpha.3` release. The packages use the npm scope `@shieldaai`. The core has

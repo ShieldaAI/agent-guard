@@ -5,11 +5,13 @@
 retain the required native failures, including all three +10 `b4bf2ce` runs,
 and the new, unqualified +5 own-field candidate. Prior passes do not qualify a
 changed implementation.
-Exact-candidate performance verification, Node HIGH review, matching qualification
-on future reviewed fixed Node images, and final merged-candidate checks remain
-open. The security hold follows the existing
-[production acceptance policy](production-readiness.md#remaining-acceptance-and-operational-limits).
-Do not publish or create a stable GitHub release while these gates remain open.
+Exact-candidate performance verification and final merged-candidate checks remain
+open. After the [9 November maintainer decision](releases/0.1.0.md#scope-decision-node-security-releases),
+the Node HIGH review and the move to fixed Node images are a post-release
+follow-up for 0.1.0, not publication gates. R5 under the
+[production acceptance policy](production-readiness.md#remaining-acceptance-and-operational-limits)
+stays withheld until that review is complete.
+Do not publish or create a stable GitHub release while the remaining gates are open.
 Normal `npm run check` and `npm run pack` remain available for candidate work.
 At the 6 November checkpoint, `b4bf2ce` passed all six ordinary workflows/11 CI
 jobs and local **1,319/1,319 tests, zero skips, plus installed consumers**. Its
@@ -21,6 +23,11 @@ checks passed. The factored component confirmation reduced CPU on both fixtures,
 but repeated-fixture total wall time regressed 5.17%; it is not acceptance.
 
 ## Node-update checklist for 0.1.0
+
+**For 0.1.0, steps 1 and 2 are a post-release follow-up** (maintainer decision of
+9 November). Run steps 3–5 on the currently pinned runtime and images. Once the
+fixed Node releases are out, complete steps 1–2, rebuild the images and refresh
+the evidence.
 
 This is a preparation checklist, not permission to publish while the release
 state is blocked. Record results against one immutable candidate; retain failed

@@ -417,7 +417,10 @@ gates with stricter cleanup and deadline checks. A recurrence must be investigat
 using the retained safe diagnostics; the historical failure is not erased or
 reclassified as a proven resource-contention issue.
 
-**R5 acceptance is pending; its production score is withheld.** The
+**R5 acceptance is pending; its production score is withheld.** Under the
+[9 November maintainer decision](releases/0.1.0.md#scope-decision-node-security-releases),
+the 0.1.0 npm packages are published without waiting for this review. R5 itself
+is not cleared. The
 [official Node security prealert](https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md)
 announces HIGH issues in all supported Node release lines without identifying
 features or fixed versions. This does not establish that Agent Guard is
