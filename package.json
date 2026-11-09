@@ -25,12 +25,15 @@
     "demo": "npm run build && node examples/basic.mjs",
     "pack": "npm run build && node scripts/pack.mjs",
     "verify:mcp-isolation": "npm run build && node scripts/verify-mcp-isolation.mjs",
-    "agent-ops": "node apps/agent-ops/cli.mjs"
+    "agent-ops": "node apps/agent-ops/cli.mjs",
+    "format": "prettier --write \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\""
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",
     "@modelcontextprotocol/server": "2.4.0",
     "@types/node": "22.20.5",
+    "prettier": "3.9.10",
     "typescript": "7.0.2"
   }
 }
