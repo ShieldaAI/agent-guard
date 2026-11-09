@@ -1,7 +1,7 @@
 # Source-generation lifecycle implementation review
 
 Date: 30 October 2026. Scope: explicit source-generation replacement in the
-[Cartography integration plan](../../../docs/cartography-integration-plan.md#source-generation-lifecycle-milestone).
+[Cartography integration plan](../../../docs/archive/cartography-integration-plan.md#source-generation-lifecycle-milestone).
 This audit found an overlooked requirement in the earlier completion claims:
 publishing a restored or cloned executor under a new generation left the old
 source visible and protected indefinitely. The new lifecycle command closes

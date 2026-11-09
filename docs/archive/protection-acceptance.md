@@ -29,14 +29,14 @@ future deployment decision.
 
 ## Reviewed construction candidate
 
-The [final construction record](validation/project-quality-review-2026-11-05.json)
+The [final construction record](../validation/project-quality-review-2026-11-05.json)
 records a minimum engineering score of **9.7/10**, 919 passing workspace tests
 and ten browser states. Every category meets the 9.6 target in this rubric.
 
-The [replacement package record](validation/guarded-input-candidate-6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c.json)
+The [replacement package record](../validation/guarded-input-candidate-6a3697aadbb0293d3f2a79ca48d8a99057cf1d9138428489202a7bfea4a3679c.json)
 identifies the five npm tarballs and the static viewer used for construction
 review. Use its digest only when enrolling that exact review candidate. The
-[alpha.3 release](releases/0.1.0-alpha.3.md) has its own source commit, package
+[alpha.3 release](../releases/0.1.0-alpha.3.md) has its own source commit, package
 digests and fresh verification; it includes later release-check refinements.
 The replacement archive SHA-256 is
 `58e9a24b7492058cf2e71e3f76beb97500f8b5e99c8b2d8b0069cb7dc1de17a5`.
@@ -59,26 +59,26 @@ and [Linux open(2)](https://man7.org/linux/man-pages/man2/open.2.html).
 The platform, study and admission CLIs now run when launched through a directory
 alias. A regression checks that invalid inputs produce a failing exit code and
 that the platform checker replaces a stale passing result. The
-[preceding runtime verification record](validation/guarded-input-review-2026-11-05.json)
+[preceding runtime verification record](../validation/guarded-input-review-2026-11-05.json)
 records 917 workspace tests and 44 platform tests on each of macOS and the
 local Linux VM, all with zero skips. Three abrupt guest shutdowns on a separate
 Linux VM exercised SQLite recovery. A revocation acknowledged to the caller
 survived reboot and blocked the protected operation. Native Windows tests and
 physical storage failure tests are still outstanding.
-The [compiled-package comparison](validation/project-runtime-comparison-2026-11-05.json)
+The [compiled-package comparison](../validation/project-runtime-comparison-2026-11-05.json)
 verifies that those runtime files match the final candidate. Its 919-test
 construction record and updated browser checks are linked above.
 
 ## Earlier evidence
 
-The [original package manifest](validation/protection-96-candidate-2026-11-05.json)
-and [original verification record](validation/protection-96-verification-2026-11-05.json)
-identify the superseded candidate. Its [public paired evaluation](validation/protection-96-provider-2026-11-05.json)
+The [original package manifest](../validation/protection-96-candidate-2026-11-05.json)
+and [original verification record](../validation/protection-96-verification-2026-11-05.json)
+identify the superseded candidate. Its [public paired evaluation](../validation/protection-96-provider-2026-11-05.json)
 bound writes to the reviewed operation and checked that attack text reached
 the client. Credential-free controls over six private draft policies also
 passed. The enrolled model, disclosure approval, billing limits and actual
 provider responses remain outstanding. The
-[operator study scorer](../scripts/score-operator-study.mjs) checks a
+[operator study scorer](../../scripts/score-operator-study.mjs) checks a
 facilitator's observations against separate backend evidence. The operator
 packet still has zero completed sessions.
 
@@ -100,9 +100,9 @@ reviewer and backend observations described below.
 | R5 · Supply chain | Enroll the real builder/key and image identities. Admit a verified artifact and reviewed peer; swap bytes, signing key, peer generation or descriptor. Confirm the changed candidate is quarantined or rejected until independently approved. |
 | R6 · Code execution | On **each advertised host profile**, execute hostile and benign code in the deployed container/VM settings. Inspect guest privilege, mounts and interfaces, test resource limits, terminate the guest, restart the VM and verify cleanup. If the product includes a networked coding client, test the complete client/broker path. |
 | R7 · Memory and context | Persist permitted data, retrieve it via delegation, quarantine the source and attempt reuse/egress via each enabled handoff or import. Verify provenance and revocation survive restart and rollback does not make a foreign record accessible. |
-| R8 · Recovery and spend | Test actual backend idempotency, provider-side limits, concurrent admission and loss of a write receipt. Check reservation and confirmed effect counts after recovery. Try a pre-revocation restore against the deployed backup system; establish independent custody of the latest state where a [rollback witness](guides/ledger-rollback.md) is used. |
-| R9 · Human UX and operations | Run the [representative-operator study](guides/operator-usability-check.md) on the same integration with the enrolled cohort, facilitator, and distinct backend observer. Retain denominators, accessibility findings and unsafe decisions; any wrong approval, unsafe retry or disclosure blocks acceptance. |
-| R10 · Field effectiveness and rollout | Pre-enroll both provider trial policies, independent corpus review, budget authorization and per-pair utility/safety criteria. Run the [model-selected trial gate](guides/model-selected-provider-trials.md), reconcile usage, and retain the [company pilot review](guides/pilot-review.md) plus independent security review. Rehearsals and injected transports are ineligible. |
+| R8 · Recovery and spend | Test actual backend idempotency, provider-side limits, concurrent admission and loss of a write receipt. Check reservation and confirmed effect counts after recovery. Try a pre-revocation restore against the deployed backup system; establish independent custody of the latest state where a [rollback witness](../guides/ledger-rollback.md) is used. |
+| R9 · Human UX and operations | Run the [representative-operator study](../guides/operator-usability-check.md) on the same integration with the enrolled cohort, facilitator, and distinct backend observer. Retain denominators, accessibility findings and unsafe decisions; any wrong approval, unsafe retry or disclosure blocks acceptance. |
+| R10 · Field effectiveness and rollout | Pre-enroll both provider trial policies, independent corpus review, budget authorization and per-pair utility/safety criteria. Run the [model-selected trial gate](../guides/model-selected-provider-trials.md), reconcile usage, and retain the [company pilot review](../guides/pilot-review.md) plus independent security review. Rehearsals and injected transports are ineligible. |
 
 The company pilot verifier intentionally covers a **single read-only path**.
 Its receipt cannot approve code execution, arbitrary tools or all rows in this

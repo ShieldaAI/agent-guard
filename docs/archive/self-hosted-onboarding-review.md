@@ -3,13 +3,13 @@
 > Historical record. Results and remaining-work statements below reflect the
 > November 5 snapshot, including key-retirement follow-up. See the current
 > [production readiness acceptance](production-readiness.md) and
-> [deployment runbook](../deployment/production/README.md) for current status and procedures.
+> [deployment runbook](../../deployment/production/README.md) for current status and procedures.
 
 Each company owns its installation, identity enrollment, ticket data, keys and
 backup custody. The implementation adds private local onboarding and reviewed
 configuration/data changes to the existing single-owner Linux profile. Follow
-the [company onboarding runbook](../deployment/production/README.md#company-onboarding)
-and its [manifest example](../deployment/production/onboarding.example.json).
+the [company onboarding runbook](../../deployment/production/README.md#company-onboarding)
+and its [manifest example](../../deployment/production/onboarding.example.json).
 
 ## Configurable policy
 
@@ -81,7 +81,7 @@ tenant-scoped Previous/Next paging and mobile/keyboard navigation.
   the original restart/restore/recovery scenarios. The local hardened Linux run
   passed on Node 24.22.1/arm64, including a 2,000-ticket import, paging through all
   2,001 enrolled records and five retained keys under an eight-key policy. The
-  [dated Linux evidence](validation/self-hosted-onboarding-2026-11-05.json) records
+  [dated Linux evidence](../validation/self-hosted-onboarding-2026-11-05.json) records
   exact images/script hashes. Production and verification images share 4,302
   identical runtime files; test-only fixtures remain outside the production image.
   Fourteen checked runtime/UI/compiled modules also match the workspace bytes.

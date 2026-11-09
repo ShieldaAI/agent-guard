@@ -13,12 +13,54 @@ no third-party runtime dependencies and requires Node.js 22 or newer. It control
 registered calls within one process. It is not an OS sandbox or a universal
 prompt-injection detector.
 
-Start the defensive-project review with the [protection requirements and design](docs/protection-design.md)
-and the [engineering scorecard](docs/protection-assessment.md). The
-[acceptance criteria](docs/protection-acceptance.md) define the 9.6/10 target
-for each risk category and identify the checks needed for an actual deployment.
-The [production readiness review](docs/production-readiness.md) tracks the
-current self-hosted candidate separately from those historical construction scores.
+## Try it in five minutes
+
+Install with `npm install @shieldaai/agent-guard` (Node.js 22+, ESM), then run:
+
+```js
+import { AgentGuard, isGuardError } from '@shieldaai/agent-guard';
+
+const guard = new AgentGuard();
+// 1. Register and approve one tool. resolve() names the resource each call touches.
+const fingerprint = guard.registerTool({
+  name: 'delete-ticket', description: 'Delete one support ticket', requiresApproval: true,
+  resolve: args => ({ resourceId: `ticket:${args.id}`, tenantId: 'acme' }),
+  execute: args => ({ value: `deleted ${args.id}` }),
+});
+guard.approveTool('delete-ticket', fingerprint);
+
+// 2. Give the agent's task access to exactly one ticket.
+const task = guard.createTask({
+  id: 'triage-42', principalId: 'agent-1', tenantId: 'acme',
+  grants: [{ tool: 'delete-ticket', resources: ['ticket:42'] }],
+  budget: { maxCalls: 5, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
+});
+
+// 3. A denial: ticket 7 is outside the grant, so nothing runs.
+try { await guard.prepare(task, { tool: 'delete-ticket', args: { id: '7' } }); }
+catch (error) { console.log('denied:', isGuardError(error) && error.code); }
+
+// 4. An approval: a person approves the exact prepared action before it runs.
+const action = await guard.prepare(task, { tool: 'delete-ticket', args: { id: '42' } });
+const approvalId = guard.approve(action, { approverId: 'alice', expiresAt: Date.now() + 30_000 });
+console.log(await guard.execute(action, { approvalId }));
+```
+
+It prints `denied: GRANT_DENIED`, then `deleted 42`. Every denial code is listed in
+the [error catalog](docs/errors.md).
+
+## Maturity
+
+| Package | Status |
+| --- | --- |
+| `@shieldaai/agent-guard` (core), `-mcp`, `-scenarios` | stable API target for 1.0 |
+| `@shieldaai/agent-guard-executor` | 1.0 after the storage work; its inventory observer is experimental |
+| `@shieldaai/agent-map` (Cartography) | experimental |
+| Agent Ops (`apps/agent-ops`) | reference app |
+
+[Support and limits](docs/support-and-limits.md) states what each package enforces,
+what the host must provide and the known limits. Earlier plans, reviews and
+scorecards are kept in [docs/archive](docs/archive/README.md).
 
 Start with the [core tool-authorization example](packages/core/README.md), or use
 the [package selection guide](docs/package-guide.md) to choose between MCP
@@ -64,7 +106,7 @@ The [company cartography guide](docs/guides/agent-cartography.md) connects
 company-owned agents, owners, deployments, permissions, resources, credential
 references and relationships. Paged indexes and structured details distinguish
 declared access, host assertions, policy candidates and missing evidence.
-See the [Cartography plan](docs/cartography-integration-plan.md) for milestone
+See the [Cartography plan](docs/archive/cartography-integration-plan.md) for milestone
 status and the [viewer](apps/agent-map/README.md) for local preview instructions.
 The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic
 observer-to-viewer deployment, private backups, fresh-graph recovery, operational
@@ -138,7 +180,7 @@ The synthetic [SafeCall/executor integration](examples/safecall-executor.mjs) us
 the Node SafeCall package installed in the caller's environment, or accepts its
 local built entry point: `node examples/safecall-executor.mjs /absolute/path/to/llm-safecall-node/dist/index.js`.
 It exercises buffered output validation and actual authenticated budget admission
-without cloud credentials. See the [implementation status](docs/implementation-status.md)
+without cloud credentials. See the [implementation status](docs/archive/implementation-status.md)
 for checked features and remaining protected-release gates.
 
 ## Approve and execute an action
@@ -209,9 +251,9 @@ The model receives a dispatcher that selects the host-owned task, not the guard 
 The source-hosted [Agent Ops ticket workflow](apps/agent-ops/README.md) adds an OIDC
 operator interface, persistent conditional ticket updates, receipt-based recovery,
 safe task archival and offline key rotation. Its [Linux deployment runbook](deployment/production/README.md)
-defines the single-owner Docker Compose profile. The [production plan](docs/production-plan.md)
+defines the single-owner Docker Compose profile. The [production plan](docs/archive/production-plan.md)
 tracks the broader agent and permissions inventory for Agent Map/Cartography.
-The [self-hosted onboarding review](docs/self-hosted-onboarding-review.md) covers
+The [self-hosted onboarding review](docs/archive/self-hosted-onboarding-review.md) covers
 company identity/data enrollment, reviewed imports and safely configurable capacity.
 
 The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation, budgets, normalized typed arguments and resource-version checks. Catalog 1.2.0 runs twenty-four paired malicious and benign cases. A trusted handler must compare the approved resource version atomically with the actual effect.
@@ -224,7 +266,7 @@ Cost values must be nonnegative safe integers in a consistent host-defined unit,
 
 Start with the [threat model](docs/threat-model.md) and [API contract](docs/api-contract.md) when integrating the guard. The [architecture](docs/architecture.md) explains the implementation; [release instructions](docs/releasing.md) cover publishing the packages.
 
-The [release review](docs/quality-review.md) preserves verification of the published
+The [release review](docs/archive/quality-review.md) preserves verification of the published
 `0.1.0-alpha.1` packages. The [0.1.0-alpha.3 notes](docs/releases/0.1.0-alpha.3.md)
 preserve the latest publication; see the [unpublished 0.1.0 notes](docs/releases/0.1.0.md)
 and [changelog](CHANGELOG.md) for candidate changes and remaining release gates.

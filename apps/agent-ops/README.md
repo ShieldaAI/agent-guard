@@ -1,6 +1,6 @@
 # Agent Ops: protected ticket workflow
 
-Agent Ops is a repository-hosted reference service for one Linux owner. It combines
+Agent Ops is a **reference app**: a repository-hosted reference service for one Linux owner. It combines
 the durable executor, a persistent ticket backend, standard OIDC sign-in and a
 browser review/recovery interface. The backend owns real persisted ticket records;
 initial ticket data is explicitly enrolled by the deployment owner. It does not
@@ -267,10 +267,10 @@ reports name the measured engine/version; they do not establish human usability.
 The real-service harness uses OpenSSL to create disposable TLS and a local signed
 OIDC provider. Its browser accepts that fixture's self-signed certificate only;
 the service verifies the explicitly configured fixture CA. Runtime TLS validation
-is not disabled. The [verification review](../../docs/production-p0-review.md)
+is not disabled. The [verification review](../../docs/archive/production-p0-review.md)
 records measured results and their scope.
 
-The [production plan](../../docs/production-plan.md) also adds an agent inventory
+The [production plan](../../docs/archive/production-plan.md) also adds an agent inventory
 to Agent Map/Cartography: owners, identities, tools, permission evidence, resources,
 credential references, drift and freshness. Those graph extensions are planned;
 inventory observations never grant execution authority.

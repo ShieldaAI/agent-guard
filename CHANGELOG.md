@@ -7,6 +7,14 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Docs: one [Support and limits](docs/support-and-limits.md) page replaces the
+  protection design, assessment, acceptance and production-readiness documents;
+  earlier plans and reviews move to `docs/archive/`; `releasing.md` is cut to a
+  checklist, commands and rollback; the README gains a tested five-minute example
+  and a maturity table (stable / experimental / reference app); the threat model
+  covers Agent Ops; the API contract drops "Alpha". New releases link CI runs
+  instead of committing dated evidence JSON. A test checks every relative Markdown
+  link in the repository.
 - Test: seeded property tests for `canonicalJson`/`digestJson` (stable under key
   order, round-trip, injective across 3,000 generated values, no cross-type digest
   collisions) and model-based tests of budgets and reservations under random
@@ -286,7 +294,7 @@ Published all three packages under `@shieldaai` with the `alpha` dist-tag. The [
 - Remove obsolete build output and rebuild packages before packing.
 - Compile packed public types and README examples, execute a packaged MCP consumer, and require a clean committed checkout with aligned versions before publication.
 
-These changes are not included in the earlier `0.1.0-alpha.0` packages. See the [release review](docs/quality-review.md) for test results and registry verification.
+These changes are not included in the earlier `0.1.0-alpha.0` packages. See the [release review](docs/archive/quality-review.md) for test results and registry verification.
 
 ## 0.1.0-alpha.0 — 2026-10-24
 

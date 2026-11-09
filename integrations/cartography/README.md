@@ -1,7 +1,7 @@
 # Agent Guard Cartography integration
 
 Experimental implementation of the inventory contract and graph milestones in
-[the integration plan](../../docs/cartography-integration-plan.md). It validates
+[the integration plan](../../docs/archive/cartography-integration-plan.md). It validates
 single-tenant inventory files and enrolled observer responses, imports declared grants through Cartography's data
 model, and publishes immutable graph snapshots. Agent Guard's execution path is
 unchanged.

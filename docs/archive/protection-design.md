@@ -84,5 +84,5 @@ model's claim of success or a screenshot as evidence of an effect.
 
 Release owners should start with one tenant and one read-only path, pin the build,
 exercise revocation and rollback, then expand only the tested boundary. Use the
-[pilot evidence procedure](guides/pilot-review.md), [isolation procedure](guides/mcp-isolation-acceptance.md),
-and [reserved model trial procedure](guides/model-selected-provider-trials.md).
+[pilot evidence procedure](../guides/pilot-review.md), [isolation procedure](../guides/mcp-isolation-acceptance.md),
+and [reserved model trial procedure](../guides/model-selected-provider-trials.md).

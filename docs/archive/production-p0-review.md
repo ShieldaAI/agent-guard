@@ -2,12 +2,12 @@
 
 > Historical record. Results and next-work statements below reflect the November 5
 > snapshot. See the current [production readiness acceptance](production-readiness.md)
-> and [deployment runbook](../deployment/production/README.md) for current status and procedures.
+> and [deployment runbook](../../deployment/production/README.md) for current status and procedures.
 
 The implementation targets the selected durable reference ticket service, standard
 OIDC and a single-owner Linux Docker Compose deployment. The application and
-deployment contracts are in [Agent Ops](../apps/agent-ops/README.md) and the
-[Linux runbook](../deployment/production/README.md). This record covers the source
+deployment contracts are in [Agent Ops](../../apps/agent-ops/README.md) and the
+[Linux runbook](../../deployment/production/README.md). This record covers the source
 implementation and disposable local deployment checks, not a customer installation.
 
 ## Requirements and implementation
@@ -40,7 +40,7 @@ implementation and disposable local deployment checks, not a customer installati
   29.5.2. The measured verification image was
   `sha256:905c887cc5cd1c3cccb3f05d0e6d9a9bc7a38b954c847bf4c87da57ecde27857`.
   All eleven checked runtime, UI and executor module files matched the workspace
-  bytes inside this image. The [dated Linux evidence](validation/production-linux-2026-11-05.json)
+  bytes inside this image. The [dated Linux evidence](../validation/production-linux-2026-11-05.json)
   records exact image/script hashes and confirms the production and verification
   stages contain identical runtime code/dependencies; test fixtures are excluded
   from the production stage.

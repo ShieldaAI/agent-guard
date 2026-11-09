@@ -55,7 +55,7 @@ The following work belongs to deployment validation and the broader roadmap.
    with the native Linux Docker socket. A separate disposable Linux VM passed
    three shutdown/recovery cases. Native Windows/WSL2 execution and physical
    storage failure remain unverified. Provision private Windows ACLs and run
-   the [platform procedure](../deployment/README.md) before enabling that profile.
+   the [platform procedure](../../deployment/README.md) before enabling that profile.
 2. A complete networked coding client is future integration work. The governed
    shell, model broker, managed MCP lifecycle and isolated MCP fixture are
    implemented and tested. The host supplies its production MCP transport and
@@ -63,7 +63,7 @@ The following work belongs to deployment validation and the broader roadmap.
 3. For a deployment decision, collect pilot measurements and review the enrolled
    integration. Establish retention, backup/key rotation and operational
    reconciliation procedures for that environment.
-   The [offline pilot review gate](guides/pilot-review.md) binds both enrolled
+   The [offline pilot review gate](../guides/pilot-review.md) binds both enrolled
    signatures, the actual build and a specific deployment boundary to the evidence.
    Its rehearsal uses disposable keys and measurements.
 4. Enroll the company's actual builders, signing keys and release manifests.
@@ -73,7 +73,7 @@ The following work belongs to deployment validation and the broader roadmap.
    pinned-digest launch profile. Independent review of the deployed builders,
    container image supply chain and host's import paths remains open. Watch's
    inventory records operator-declared signature and attestation evidence.
-   See the [build artifact admission profile](guides/build-artifact-admission.md).
+   See the [build artifact admission profile](../guides/build-artifact-admission.md).
 5. Implement the later distributed-worker milestone, including shared transactions,
    worker fencing, remote delegation and partition/recovery tests. The executor
    intentionally rejects a second SQLite owner; independent local ledgers are not
@@ -87,6 +87,6 @@ character-count units. Declared cost bounds do not replace provider/account spen
 controls. Watch's unsupported PyPI prerelease/dev/post/local/epoch and complex range
 forms remain unknown. None of these projects claims to prevent all prompt injections.
 
-See [executor API/boundary](../packages/executor/README.md), [deployment and artifact
-profiles](../deployment/README.md), [MCP capabilities](../packages/mcp/README.md), and
-[scenario catalog](scenarios.md) for the concrete public interfaces and limits.
+See [executor API/boundary](../../packages/executor/README.md), [deployment and artifact
+profiles](../../deployment/README.md), [MCP capabilities](../../packages/mcp/README.md), and
+[scenario catalog](../scenarios.md) for the concrete public interfaces and limits.

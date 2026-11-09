@@ -1,4 +1,4 @@
-# Alpha API contract
+# API contract
 
 The host owns `AgentGuard`. Give the model only a dispatcher, never administration methods or opaque handles. Authority is stored by object identity inside one guard instance. All state is in memory and lasts for that instance's lifetime.
 

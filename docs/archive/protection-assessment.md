@@ -15,7 +15,7 @@ about construction quality.
 
 The scores and runtime comparisons below are bound to the recorded construction
 snapshot, before the alpha.3 version bump and release-check refinements. The
-[alpha.3 release notes](releases/0.1.0-alpha.3.md) link the exact published commit,
+[alpha.3 release notes](../releases/0.1.0-alpha.3.md) link the exact published commit,
 its subsequent fixes and fresh release verification. Historical package equality
 is not a claim that the release archive has the same bytes.
 
@@ -55,29 +55,29 @@ of policy, signatures and evidence files.
 
 The [requirements and protection design](protection-design.md) map all ten
 categories to their boundaries and acceptance behavior. The
-[final verification record](validation/project-quality-review-2026-11-05.json)
+[final verification record](../validation/project-quality-review-2026-11-05.json)
 binds the scores to source and package identities, test counts and reviewed
 screenshots. Three focused engineering reviews and a final reconciliation
 covered the implementation and its normal entry points.
 
 | Category | Checked behavior and evidence |
 | --- | --- |
-| R1 | Registered tools execute within trusted grants and resource resolution. Unknown requests have no effect, and useful tasks succeed. [Core](../packages/core/test/security.test.mjs), [provider workflow](../scripts/provider-ticket.test.mjs). |
-| R2 | Child scope narrows parent authority, tenant identity comes from the host, and revocation follows ancestry. [Core identity and delegation](../packages/core/test/security.test.mjs), [durable API](../packages/executor/test/executor.test.mjs). |
-| R3 | Tenant, arguments, version, expiry and staged bytes bind one approval. Enter denies, and explicit confirmation returns a backend-confirmed change. [Review workflow](../examples/providers/review-ticket.mjs), [staged-file regression](../packages/executor/test/sandbox-staged-input-version.test.mjs). |
-| R4 | Sensitivity persists across reuse, output is minimized, and host-held credentials and restricted network paths enforce recipients. [Credentials](../packages/mcp/test/credentials.test.mjs), [network](../packages/executor/test/network.test.mjs), [artifacts](../packages/executor/test/artifacts.test.mjs). |
-| R5 | Metadata generations, image digests, artifact bytes, enrolled builders and source policies are checked. Reviewed replacements succeed. [MCP lifecycle](../packages/mcp/test/managed.test.mjs), [build imports](../packages/executor/test/build-artifact-import.test.mjs). |
-| R6 | Real guest commands use selected bounded files and the documented privilege, network and resource restrictions. [Runtime](../packages/executor/test/sandbox.test.mjs), [file capture](../packages/executor/test/workspace-input.test.mjs), [isolated MCP](../scripts/mcp-isolation.test.mjs). |
-| R7 | Tenant-local IDs, permitted child reads, sensitivity, rollback and transitive quarantine survive reopening. [Memory regressions](../packages/executor/test/memory.test.mjs), [exact API](api-contract.md#governed-memory). |
-| R8 | Admission reserves capacity before effects; unresolved work retains accounting; committed revocation survives reboot. [Capacity](../packages/executor/test/capacity.test.mjs), [recovery](../packages/executor/test/recovery.test.mjs), [witness](guides/ledger-rollback.md). |
-| R9 | Filter failures hide stale matches, refresh recovers, authentication loss clears inventory, mobile views remain accessible, and policy evidence appears once. [Browser workflow](../apps/agent-map/check-browser.mjs), [auth](../apps/agent-map/test/auth.test.mjs), [traces](../packages/executor/test/traces.test.mjs). |
-| R10 | Evaluation accounts for safe completion, effects, control runs, planned rows and usage, and binds rollout evidence to its inputs. [Evaluation](../scripts/provider-evaluation.test.mjs), [trial checker](../scripts/provider-trials.test.mjs), [pilot verifier](../packages/executor/test/pilot-review.test.mjs). |
+| R1 | Registered tools execute within trusted grants and resource resolution. Unknown requests have no effect, and useful tasks succeed. [Core](../../packages/core/test/security.test.mjs), [provider workflow](../../scripts/provider-ticket.test.mjs). |
+| R2 | Child scope narrows parent authority, tenant identity comes from the host, and revocation follows ancestry. [Core identity and delegation](../../packages/core/test/security.test.mjs), [durable API](../../packages/executor/test/executor.test.mjs). |
+| R3 | Tenant, arguments, version, expiry and staged bytes bind one approval. Enter denies, and explicit confirmation returns a backend-confirmed change. [Review workflow](../../examples/providers/review-ticket.mjs), [staged-file regression](../../packages/executor/test/sandbox-staged-input-version.test.mjs). |
+| R4 | Sensitivity persists across reuse, output is minimized, and host-held credentials and restricted network paths enforce recipients. [Credentials](../../packages/mcp/test/credentials.test.mjs), [network](../../packages/executor/test/network.test.mjs), [artifacts](../../packages/executor/test/artifacts.test.mjs). |
+| R5 | Metadata generations, image digests, artifact bytes, enrolled builders and source policies are checked. Reviewed replacements succeed. [MCP lifecycle](../../packages/mcp/test/managed.test.mjs), [build imports](../../packages/executor/test/build-artifact-import.test.mjs). |
+| R6 | Real guest commands use selected bounded files and the documented privilege, network and resource restrictions. [Runtime](../../packages/executor/test/sandbox.test.mjs), [file capture](../../packages/executor/test/workspace-input.test.mjs), [isolated MCP](../../scripts/mcp-isolation.test.mjs). |
+| R7 | Tenant-local IDs, permitted child reads, sensitivity, rollback and transitive quarantine survive reopening. [Memory regressions](../../packages/executor/test/memory.test.mjs), [exact API](../api-contract.md#governed-memory). |
+| R8 | Admission reserves capacity before effects; unresolved work retains accounting; committed revocation survives reboot. [Capacity](../../packages/executor/test/capacity.test.mjs), [recovery](../../packages/executor/test/recovery.test.mjs), [witness](../guides/ledger-rollback.md). |
+| R9 | Filter failures hide stale matches, refresh recovers, authentication loss clears inventory, mobile views remain accessible, and policy evidence appears once. [Browser workflow](../../apps/agent-map/check-browser.mjs), [auth](../../apps/agent-map/test/auth.test.mjs), [traces](../../packages/executor/test/traces.test.mjs). |
+| R10 | Evaluation accounts for safe completion, effects, control runs, planned rows and usage, and binds rollout evidence to its inputs. [Evaluation](../../scripts/provider-evaluation.test.mjs), [trial checker](../../scripts/provider-trials.test.mjs), [pilot verifier](../../packages/executor/test/pilot-review.test.mjs). |
 
 The final workspace check passed **919 tests with zero skips**, plus the clean
 installed-package consumers. Browser verification covered ten states and four
 mobile views with zero axe violations and zero page errors. The
-[desktop explanation](validation/project-ux-desktop-2026-11-05.png) and
-[mobile recovery screen](validation/project-ux-recovery-2026-11-05.png) were visually
+[desktop explanation](../validation/project-ux-desktop-2026-11-05.png) and
+[mobile recovery screen](../validation/project-ux-recovery-2026-11-05.png) were visually
 reviewed.
 
 The preceding matching backend runtime passed 44/44 platform checks each on
@@ -115,13 +115,13 @@ fresh browser verification.
 | A dismissed terminal review could accept a buffered confirmation without Enter. Provider schemas exposed a foreign record ID; a probe distinguished it from a missing record. | Require a live terminal and an explicitly submitted line. Schema exposes a bounded ID format; resolution is scoped to the trusted tenant. Foreign/missing probes now have the same public result and no protected read. |
 | A rejected bearer session left old inventory on screen, the demo could invent matches for unsupported queries, and evidence labels failed contrast checks. | Clear protected data and outstanding queries on rejected auth, label unsupported/unknown results, invalidate stale results on edits, and improve contrast. The built application was exercised in Chromium, including a real scoped API session and forced 401. |
 
-See the [local verification record](validation/protection-review-2026-11-05.json)
+See the [local verification record](../validation/protection-review-2026-11-05.json)
 for exact test totals, runtime profiles and evaluation outcomes. Test populations
 overlap; do not add the focused and full suites together. Guide: [run the examples
-and packed consumers](../README.md#run-locally), [run the platform gate](guides/mcp-isolation-acceptance.md),
-[run the disposable Neo4j checks](../integrations/cartography/README.md),
-[evaluate both provider protocols](guides/provider-outcome-evaluation.md), and
-[reproduce the browser checks](../apps/agent-map/README.md).
+and packed consumers](../../README.md#run-locally), [run the platform gate](../guides/mcp-isolation-acceptance.md),
+[run the disposable Neo4j checks](../../integrations/cartography/README.md),
+[evaluate both provider protocols](../guides/provider-outcome-evaluation.md), and
+[reproduce the browser checks](../../apps/agent-map/README.md).
 
 ## Deployment-specific validation
 

@@ -5,7 +5,7 @@ compatibility or long-term-support promise. The
 [release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
 record the verified scope, known limits and post-release follow-ups.
 
-Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. Experimental TypeScript library; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
+Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. TypeScript library, stable API target for 1.0; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
 
 Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the

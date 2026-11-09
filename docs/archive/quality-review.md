@@ -68,6 +68,6 @@ The protected `v0.1.0-alpha.1` tag points to that commit. The [GitHub prerelease
 
 Build provenance remains future work, preferably through a restricted trusted-publishing workflow. Registry signatures and matching hashes establish artifact integrity but do not attest to the build process. The version tag is protected against changes and deletion; GitHub release assets do not have release immutability enabled.
 
-The initial packages record `gitHead` `6db7631a1f9ba070b5e5c9b2a5152be0584b0622`, but their packaged READMEs match release tag commit `f7e4c77d675a6ec2fd7ab402858d49038ccc86ea`. Executable files and integrity hashes were verified; the discrepancy affects documentation traceability. See [the release instructions](releasing.md).
+The initial packages record `gitHead` `6db7631a1f9ba070b5e5c9b2a5152be0584b0622`, but their packaged READMEs match release tag commit `f7e4c77d675a6ec2fd7ab402858d49038ccc86ea`. Executable files and integrity hashes were verified; the discrepancy affects documentation traceability. See [the release instructions](../releasing.md).
 
 For production privilege enforcement, test the host integration, credential isolation and resource-side controls, and obtain a security review appropriate to the application's risk. This alpha keeps authorization state in memory and does not provide distributed enforcement.

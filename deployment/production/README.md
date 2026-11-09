@@ -312,7 +312,7 @@ directory re-enrollment steps in the [recovery runbook](custody.md).
 Existing installations explicitly enroll the complete history mirror before
 claiming this protection. Recovery does not cover simultaneous loss of witness
 custody, its mirror or required keys. Keep these in an independent failure domain
-and test the actual storage's durability. The [production acceptance review](../../docs/production-readiness.md)
+and test the actual storage's durability. The [production acceptance review](../../docs/support-and-limits.md)
 separates repository fault-test evidence from company installation acceptance.
 
 The two application stores are linked by their stable authority identity. Missing

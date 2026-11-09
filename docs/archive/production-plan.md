@@ -12,7 +12,7 @@ below preserve historical implementation snapshots.
 
 The implemented reference profile and its measured checks are recorded in the
 [P0 verification review](production-p0-review.md). Use the
-[Linux runbook](../deployment/production/README.md) for installation and recovery.
+[Linux runbook](../../deployment/production/README.md) for installation and recovery.
 The [self-hosted onboarding review](self-hosted-onboarding-review.md) records the
 subsequent configurable limits, company setup and data-import verification.
 
@@ -53,8 +53,8 @@ and multiple executor owners require their own implementation and verification.
 
 The implementation now includes the static operator interface and a reference
 HTTPS service using OIDC, encrypted witnessed SQLite stores, role-bound decisions
-and backend receipts. See the [operator application](../apps/agent-ops/README.md)
-and [Linux deployment runbook](../deployment/production/README.md) for the supported
+and backend receipts. See the [operator application](../../apps/agent-ops/README.md)
+and [Linux deployment runbook](../../deployment/production/README.md) for the supported
 single-owner profile and capacity limits. The P1 inventory expansion and its
 remaining evidence boundaries are described below.
 
@@ -62,8 +62,8 @@ Two repeatable browser checks distinguish their evidence sources:
 
 | Check | Exercised behavior | Evidence boundary |
 | --- | --- | --- |
-| [UI contract walkthrough](../apps/agent-ops/check-browser.mjs) | Review, denial, lost HTTP response, receipt absence, recovery, expiry, restart-required review, blocked archival, role loss and service failure. | Synthetic API responses; includes explicit no-resubmission assertions. |
-| [Integrated service walkthrough](../apps/agent-ops/check-browser-service.mjs) | Browser OIDC sign-in, preparation, exact approval, durable receipt, denial, post-commit failure and receipt reconciliation, archival and sign-out. | Real local HTTPS service and encrypted witnessed stores with a disposable local IdP and controlled post-commit failure. |
+| [UI contract walkthrough](../../apps/agent-ops/check-browser.mjs) | Review, denial, lost HTTP response, receipt absence, recovery, expiry, restart-required review, blocked archival, role loss and service failure. | Synthetic API responses; includes explicit no-resubmission assertions. |
+| [Integrated service walkthrough](../../apps/agent-ops/check-browser-service.mjs) | Browser OIDC sign-in, preparation, exact approval, durable receipt, denial, post-commit failure and receipt reconciliation, archival and sign-out. | Real local HTTPS service and encrypted witnessed stores with a disposable local IdP and controlled post-commit failure. |
 
 Run either script with an existing tools directory containing `playwright` and
 `axe-core`, and optionally a directory for screenshots and JSON results:
@@ -84,8 +84,8 @@ Extend the existing exporter, observer collector, Cartography projections,
 scoped `MapService` queries and Agent Map viewer. Reuse the established tenant,
 source-generation and immutable snapshot boundaries described in the
 [Cartography integration plan](cartography-integration-plan.md). The
-[version-2 contract](agent-cartography-contract.md) and
-[company setup guide](guides/agent-cartography.md) implement the catalog and
+[version-2 contract](../agent-cartography-contract.md) and
+[company setup guide](../guides/agent-cartography.md) implement the catalog and
 read-only browsing path below. Host assertions, declared grants and mapped policy
 candidates retain separate provenance. Approval events, request-time decision
 logs and backend receipt history remain explicitly not collected by this catalog;
@@ -140,21 +140,21 @@ The implementation follows these boundaries.
 The self-hosted profile now has configurable, persisted retention and byte limits,
 company onboarding and reviewed data imports. The default values remain unchanged;
 changing them requires an offline preview and apply, with no eviction of retained
-authority. Reviewed [business-history compaction](guides/company-history.md) and
-[managed key retirement and current-state recovery](../deployment/production/custody.md)
+authority. Reviewed [business-history compaction](../guides/company-history.md) and
+[managed key retirement and current-state recovery](../../deployment/production/custody.md)
 now cover the selected ticket profile. Preserve complete history and registered
 backup dependencies; neither process authorizes discarding unresolved outcomes.
 Configure and test external durable audit retention, monitoring, alert routing and
 off-host witness custody. These operations must preserve unresolved outcomes and
 revocation history; capacity relief must never recreate previously spent authority.
 
-Use the [operator study](guides/operator-usability-check.md) on the actual
+Use the [operator study](../guides/operator-usability-check.md) on the actual
 approval, sign-in, inventory and receipt-recovery workflow. Enroll the build and
 deployment before collecting representative observations. Browser automation
 provides functional and automated accessibility evidence. Human observations
 remain separately identified, with complete planned denominators.
 
-Use the [model-selected trial procedure](guides/model-selected-provider-trials.md)
+Use the [model-selected trial procedure](../guides/model-selected-provider-trials.md)
 for each supported provider/model configuration with an approved budget and
 reviewed synthetic records. Keep exact configuration, outcomes, usage receipts
 and unresolved cases. Validate backend-specific idempotency, cancellation, cost

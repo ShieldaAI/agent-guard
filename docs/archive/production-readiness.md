@@ -1,14 +1,14 @@
 # Production readiness acceptance
 
 Scope note: the candidate results below describe the recorded P0 revisions.
-The subsequent [agent cartography expansion](agent-cartography-review.md) has its
+The subsequent [agent cartography expansion](../agent-cartography-review.md) has its
 own contract and verification. Earlier source fingerprints and scores do not
 automatically certify that expansion or remove the release hold below.
 
 **Scope change, 9 November 2026:** the constrained observer profile described
 below is no longer a 0.1.0 release gate. It remains unqualified with unchanged
 limits, and 0.1.0 does not support a single-logical-CPU observer-owning service
-with 250 ms polling. See the [scope decision](releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
+with 250 ms polling. See the [scope decision](../releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
 
 The constrained observer acceptance profile requires native Linux/cgroup v2,
 one selected logical CPU, one-CPU bandwidth quota with a 100 ms period and zero
@@ -49,8 +49,8 @@ The controlled exact-source
 the Colima-affined failure also remains evidence. The later `9709f70` constrained
 run failed cadence and overhead; an `a91028c` pass used unchanged runtime bytes.
 Neither result establishes the prior failure's cause or a timing fix. See the
-[one-CPU record](validation/one-cpu-observer-2026-11-06.json) and
-[required observer-service resource configuration](../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service).
+[one-CPU record](../validation/one-cpu-observer-2026-11-06.json) and
+[required observer-service resource configuration](../../deployment/cartography/RUNBOOK.md#matching-the-observer-owning-service).
 This profile belongs to a company's observer-owning executor, not the reference
 Agent Ops service, which does not start an observer. It reserves neither an
 exclusive nor physical core and does not guarantee an unknown deployment's latency.
@@ -140,11 +140,11 @@ recorded candidate gates to pass and the upstream Node HIGH security prealert
 review described below. R5 remains withheld. All six ordinary hosted workflows
 passed for the reviewed harness follow-up `a8c2d16`, including integration,
 packaging and the installed consumer. The
-[current CI record](validation/production-readiness-ci-2026-11-06-a8c2d16.json)
-and [integration follow-up](validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
+[current CI record](../validation/production-readiness-ci-2026-11-06-a8c2d16.json)
+and [integration follow-up](../validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
 bind those results to the exact source. The production application and admission
 performance inputs are unchanged from `fef2e37`.
-The [retained failure record](validation/cartography-readiness-failure-2026-11-06-1a612c9.json)
+The [retained failure record](../validation/cartography-readiness-failure-2026-11-06-1a612c9.json)
 identifies `1a612c9`: five workflows passed, including all 11 CI jobs, while
 Cartography integration reported 142 passed and one failed. Its nested owned
 Neo4j runner did not become ready before its deadline; no connection/authentication
@@ -153,7 +153,7 @@ safe failure diagnostics, enforces the existing deadline after probes and requir
 verified cleanup. Resources, timeouts and recovery assertions were not relaxed.
 Its passing result closes current verification; it does not explain the earlier
 timeout or guarantee that fixture startup can never fail.
-The verified [ledger-decoder candidate](validation/ledger-decoder-2026-11-06.json),
+The verified [ledger-decoder candidate](../validation/ledger-decoder-2026-11-06.json),
 `fef2e37`,
 uses private normalization of a freshly parsed graph; authenticated reads,
 witness checks and transactions remain unchanged. Its full local check passed
@@ -163,7 +163,7 @@ passed. All six ordinary hosted workflows and the candidate's one predeclared,
 uninstrumented full performance run passed. Admission p95 overhead was **6.44%**
 against the unchanged 10% gate, with 1,200 exact effects, 109 successful polls,
 no failed or skipped intervals, and complete cleanup.
-The [exact CI record](validation/production-readiness-ci-2026-11-06-fef2e37.json)
+The [exact CI record](../validation/production-readiness-ci-2026-11-06-fef2e37.json)
 binds all eight artifact digests and the tested merge tree to this source.
 `4b2cdc9` and `ab56766` records remain historical evidence.
 The evidence record retains earlier failed checks and current holds explicitly. No aggregate
@@ -235,7 +235,7 @@ for a deployment-specific assessment.
 
 ## Internal category judgment
 
-The [reviewed five-dimension rubric](validation/production-category-review-2026-11-06.json)
+The [reviewed five-dimension rubric](../validation/production-category-review-2026-11-06.json)
 records subjective internal engineering judgments for the documented profile.
 These are not statistical confidence, external certification or a guarantee of
 safety. **The every-category target remains unmet: R5 is withheld**;
@@ -263,13 +263,13 @@ validation; they are not fabricated or counted as completed product evidence.
 ## Implemented P0 behavior
 
 Companies supply their own OIDC issuer/client/subjects, TLS, private storage and
-ticket records. [Onboarding](../deployment/production/README.md#company-onboarding)
+ticket records. [Onboarding](../../deployment/production/README.md#company-onboarding)
 creates a fresh private bundle atomically, reports the exact callback URL and
 creates no authority before explicit initialization. Empty company data is valid;
 fixtures and hosted accounts are not required. Preflight explains missing setup,
 and actual startup independently enforces TLS, file custody and tenant enrollment.
 
-[Capacity settings](../deployment/production/README.md#reviewed-capacity-changes-and-ticket-imports)
+[Capacity settings](../../deployment/production/README.md#reviewed-capacity-changes-and-ticket-imports)
 have bounded integer ranges. Offline preview/apply binds an exact digest;
 persisted policy must match configuration, and a decrease cannot discard existing
 records or keys. Storage capacity never increases an agent's grants or budget.
@@ -287,7 +287,7 @@ or task archival, including one reserved slot for interrupted work. Existing
 over-cap history refuses startup without changing authority. Operators see
 committed/reserved capacity and 80%/95% warning thresholds.
 
-[Managed custody](../deployment/production/custody.md) supports complete registered
+[Managed custody](../../deployment/production/custody.md) supports complete registered
 store groups, authenticated cold backups, recoverable rotation and active-key
 retirement with historical escrow. New stores mirror exact-current encrypted
 state in independent witness custody, and history mirrors are durable before
@@ -296,7 +296,7 @@ rewinding witnesses, task identities or spent authority. Legacy stores need
 explicit enrollment. Setup distinguishes enrolled recovery from unverified legacy
 state; neither label claims that a backup or company recovery drill occurred.
 
-[Operations guidance](../deployment/production/monitoring.md) covers authenticated
+[Operations guidance](../../deployment/production/monitoring.md) covers authenticated
 status/activity, bounded metrics and security events, capacity/TLS alerts, unknown
 receipts, and recovery actions. [Agent Map planning](production-plan.md#p1--extend-agent-map-and-cartography-inventory)
 extends the existing inventory with ownership, permissions and relationships.
@@ -323,14 +323,14 @@ repository root. Tests use disposable synthetic identities, records and keys.
 
 ## Recorded candidate and baseline verification
 
-The [dated evidence record](validation/production-readiness-2026-11-06.json)
+The [dated evidence record](../validation/production-readiness-2026-11-06.json)
 identifies source revisions, image IDs, command results and hashes. It separates
 the runtime candidate from subsequent documentation or Python integration changes.
 It is the authoritative index for exact hosted run status; a workflow definition
 alone is not passing evidence.
 
 - The current `fef2e37` candidate passed **1,116/1,116 local tests, zero skips**,
-  plus all installed-package consumers. The [decoder record](validation/ledger-decoder-2026-11-06.json)
+  plus all installed-package consumers. The [decoder record](../validation/ledger-decoder-2026-11-06.json)
   identifies its exact 411-file source fingerprint and private implementation
   boundary. No authenticated read, witness/mirror check or transaction was removed.
 - All six ordinary workflows passed on `fef2e37`. CI `42202786641` passed all 11
@@ -340,7 +340,7 @@ alone is not passing evidence.
   including the real MCP lifecycle and cleanup checks. All eight CI artifact ZIP
   digests were verified against GitHub metadata and bind to the exact head.
   The tested PR merge and head have the same Git tree; the
-  [current CI record](validation/production-readiness-ci-2026-11-06-fef2e37.json)
+  [current CI record](../validation/production-readiness-ci-2026-11-06-fef2e37.json)
   retains the source, job and artifact evidence.
 - Hardened persistent-volume Linux recovery passed locally on ARM64 and hosted
   on AMD64. Each production/verification image pair shares **4,327 application
@@ -374,8 +374,8 @@ alone is not passing evidence.
   effects and charged calls matched, all 109 polls completed without skips or
   failures, and resources closed. The 10,000-task/100,000-grant graph profile
   passed publication/query gates. Verified artifact hashes and compressed raw
-  reports are retained in the [decoder record](validation/ledger-decoder-2026-11-06.json).
-  An [independent raw-sample recomputation](validation/ledger-decoder-full-gate-verification-2026-11-06.json)
+  reports are retained in the [decoder record](../validation/ledger-decoder-2026-11-06.json).
+  An [independent raw-sample recomputation](../validation/ledger-decoder-full-gate-verification-2026-11-06.json)
   matched every original gate without discarded samples or relaxed conditions.
   This is one passing candidate run, not a universal latency guarantee.
 - Cartography integration, the ordinary smoke pilot, Python audit, dependency
@@ -385,10 +385,10 @@ alone is not passing evidence.
 - CodeQL run `42202786742` passed both analyses and the **Unresolved security
   alerts** gate. A fresh query found zero open alerts for `refs/pull/8/merge` and
   five separately scoped open alerts on `main` (#15, #7, #6, #5 and #4).
-  The [triage record](validation/codeql-triage-2026-11-06.md) retains the fixes and
+  The [triage record](../validation/codeql-triage-2026-11-06.md) retains the fixes and
   reviewed loopback-healthcheck false positives. Default-branch closure is not
   claimed before merge.
-- The [prior exact CI record](validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
+- The [prior exact CI record](../validation/production-readiness-ci-2026-11-06-4b2cdc9.json)
   and the immutable prior-index link in the dated index preserve `4b2cdc9`,
   `ab56766` and older observations. They are not substituted for current candidate
   evidence. Earlier cadence failures and both ineligible diagnostic runs remain
@@ -401,11 +401,11 @@ alone is not passing evidence.
   The previous `fef2e37` integration passed all 143 tests in 196.42 seconds;
   this attempt finished with 142 passes and one failure in 304.83 seconds.
   These timings do not identify a cause. Full-log hashes, the safe exact error
-  excerpt and comparison are in the [failure record](validation/cartography-readiness-failure-2026-11-06-1a612c9.json).
+  excerpt and comparison are in the [failure record](../validation/cartography-readiness-failure-2026-11-06-1a612c9.json).
   The reviewed follow-up `a8c2d16` passed all six ordinary workflows. Its
-  [integration record](validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
+  [integration record](../validation/cartography-readiness-followup-2026-11-06-a8c2d16.json)
   retains exact counts, packaging/installed-consumer results and cleanup evidence.
-  The [runner change record](validation/neo4j-readiness-diagnostics-2026-11-06.json)
+  The [runner change record](../validation/neo4j-readiness-diagnostics-2026-11-06.json)
   identifies the unchanged bounds and stronger failure reporting/cleanup checks.
 
 ## Remaining acceptance and operational limits
@@ -418,7 +418,7 @@ using the retained safe diagnostics; the historical failure is not erased or
 reclassified as a proven resource-contention issue.
 
 **R5 acceptance is pending; its production score is withheld.** Under the
-[9 November maintainer decision](releases/0.1.0.md#scope-decision-node-security-releases),
+[9 November maintainer decision](../releases/0.1.0.md#scope-decision-node-security-releases),
 the 0.1.0 npm packages are published without waiting for this review. R5 itself
 is not cleared. The
 [official Node security prealert](https://raw.githubusercontent.com/nodejs/nodejs.org/main/apps/site/pages/en/blog/vulnerability/november-2026-security-releases.md)
@@ -426,7 +426,7 @@ announces HIGH issues in all supported Node release lines without identifying
 features or fixed versions. This does not establish that Agent Guard is
 exploitable, but application non-applicability cannot yet be established. Empty
 npm or Alpine findings do not clear native Node exposure. The
-[dated dependency review](../deployment/production/advisories-2026-11-06.md)
+[dated dependency review](../../deployment/production/advisories-2026-11-06.md)
 also records two builder-only moderate findings and their restricted-input
 assumptions; those findings are not dismissed or included in the runtime tree.
 
@@ -469,7 +469,7 @@ The supported operational boundary remains material:
   **5.18%** overhead: 1,200 exact effects, 129 successful polls, no missed cadence,
   and all resources closed. Its 10,000-task/100,000-grant graph profile also passed
   publication and query limits. All observations and earlier failed attempts
-  remain in the [pilot record](validation/cartography-pilot-2026-11-06.json).
+  remain in the [pilot record](../validation/cartography-pilot-2026-11-06.json).
   A subsequent docs-only rerun missed two polling intervals in each polling
   phase despite correct effects and cleanup. That failure remains in the history;
   the earlier full-profile pass did not waive it. The profiled projection cost

@@ -227,7 +227,7 @@ The 30 October 2026 local checks passed 582 JavaScript tests with no skips,
 474 Python unit tests and 65 disposable-Neo4j integration tests. The clean
 installed-package check compiled the public declarations/README examples and
 performed a real local HTTPS login and scoped read using the packed package.
-See the [milestone record](../../docs/cartography-integration-plan.md#company-identity-and-https-milestone)
+See the [milestone record](../../docs/archive/cartography-integration-plan.md#company-identity-and-https-milestone)
 for the scope of this evidence. Test fixtures require `openssl` on PATH; they
 generate short-lived keys/certificates in a private temporary directory and
 remove them during cleanup. They never install a system or browser CA.

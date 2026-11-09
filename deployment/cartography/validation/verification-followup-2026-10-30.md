@@ -1,7 +1,7 @@
 # Cartography implementation verification follow-up
 
 Date: 30 October 2026. All repository milestones in the
-[implementation plan](../../../docs/cartography-integration-plan.md) were already
+[implementation plan](../../../docs/archive/cartography-integration-plan.md) were already
 believed complete. The subsequent [source-generation lifecycle audit](source-lifecycle-review-2026-10-30.md)
 found and implemented a missed retirement requirement; it supersedes that completion
 claim. This earlier pass audited and tested the implementation, fixed one custom-store

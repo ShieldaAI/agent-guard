@@ -5,6 +5,8 @@ compatibility or long-term-support promise. The
 [release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
 record the verified scope, known limits and post-release follow-ups.
 
+**Experimental.** The API and graph model may change in any minor release.
+
 Query AI agent and MCP inventory, snapshot changes and access explanations over
 scoped HTTP and MCP interfaces. See the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)

@@ -12,7 +12,7 @@ Please report vulnerabilities through [GitHub private vulnerability reporting](h
 
 The supported boundary is registered tool execution through a trusted host in a single process. The model must not control administration APIs or obtain a bypass route to credentials and tools. The detailed assumptions and limitations are in [the threat model](docs/threat-model.md).
 
-Passing tests is evidence for those fixtures, not proof of universal injection resistance. The embedded core keeps state in memory. The optional executor adds a single-owner encrypted SQLite ledger and a separate Docker profile for isolated workloads. It does not provide distributed quotas or a sandbox for ordinary in-process handlers. See the [requirements and design](docs/protection-design.md) and [current verification and open gates](docs/protection-assessment.md) before choosing a deployment boundary.
+Passing tests is evidence for those fixtures, not proof of universal injection resistance. The embedded core keeps state in memory. The optional executor adds a single-owner encrypted SQLite ledger and a separate Docker profile for isolated workloads. It does not provide distributed quotas or a sandbox for ordinary in-process handlers. See the [requirements and design](docs/support-and-limits.md) and [current verification and open gates](docs/support-and-limits.md) before choosing a deployment boundary.
 
 ## Automated checks
 

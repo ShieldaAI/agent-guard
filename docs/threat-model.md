@@ -88,11 +88,32 @@ For hostile code or untrusted tool servers, add an operating-system or service b
 
 For MCP, the registered handler is the client bridge promise. The SDK can reject that promise on cancellation before a remote server has stopped. Local concurrency and cost reservations settle with the bridge, so enforce remote concurrency, cost ceilings and cancellation at the server or provider as well. A passing linked-transport SDK test does not establish HTTP/stdio transport security, authentication or remote-server isolation.
 
+## Agent Ops (reference app)
+
+[Agent Ops](../apps/agent-ops/README.md) is a reference service for one Linux owner. It adds a browser and agent HTTP boundary in front of the durable executor.
+
+**Browser sessions.** People sign in with OIDC. The confidential client verifies signed ID tokens, issuer, audience, state, nonce and PKCE, then maps the enrolled subject to one operator ID, tenant and explicit roles. IdP group names, browser fields, proxy headers and model output do not create permissions.
+
+- Before sign-in, the browser holds only a signed five-minute cookie with a derived CSRF token. Anonymous visitors create no server-side state.
+- Server state starts at `POST /auth/login`, with at most four pending sign-ins per client address.
+- A session lasts at most 15 minutes and cannot exceed the ID token expiry. Expiry, logout, process restart or identity reload invalidates it.
+- IdP-side revocation alone is bounded by session lifetime. Use reload (`SIGHUP`) for immediate local revocation.
+
+**Agent bearer tokens.** The optional agent credential is a host-enrolled random bearer token with an agent ID, tenant and exact ticket allowlist. It can only propose a status change through `POST /agent/requests` and read its own request and receipt. It cannot approve, execute directly, reconcile, archive or read arbitrary tickets. Keep it in the trusted adapter, outside prompts and tool arguments.
+
+**Availability limits.**
+
+- Each client address (IPv4, or IPv6 /64) gets 180 requests per minute. When the address table is full, the oldest window is dropped instead of refusing new clients.
+- Behind an L4 passthrough every client shares the proxy's address, so enforce a per-client limit at that layer too.
+- The optional `requests` configuration caps pending requests: `maxPendingPerRequester` (default 50) and `maxPendingPerTenant` (default 1,000). A requester or agent at its cap gets `PENDING_LIMIT_REACHED` (429) without affecting anyone else.
+
+**Self-approval.** One owner can hold the requester, reviewer and operator roles, so by default this is not a two-person approval policy. Set `"requests": { "forbidSelfApproval": true }` once a second reviewer is enrolled. Each decision records the actual enrolled reviewer's identity.
+
 ## Claims outside this threat model
 
 The alpha does not claim protection against operating-system or runtime vulnerabilities, malicious application administrators, compromised credential stores, arbitrary code execution in its own process, or unauthorized operations performed outside the wrapper. It does not verify the correctness of all model output or detect all prompt injection.
 
-Cross-process authentication, durable approval replay protection and persisted budgets require the optional executor or an equivalent service. Distributed revocation, federated agent identity and company-wide secret custody are outside the core and the single-owner executor. See the [API contract](api-contract.md) for local charging rules and the [protection design](protection-design.md) for the division of responsibilities.
+Cross-process authentication, durable approval replay protection and persisted budgets require the optional executor or an equivalent service. Distributed revocation, federated agent identity and company-wide secret custody are outside the core and the single-owner executor. See the [API contract](api-contract.md) for local charging rules and the [protection design](support-and-limits.md) for the division of responsibilities.
 
 ## Evidence and failure handling
 

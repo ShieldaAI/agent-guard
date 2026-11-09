@@ -10,7 +10,7 @@
   ],
   "evidence": [
     "docs/releases/0.1.0.md",
-    "docs/production-readiness.md",
+    "docs/archive/production-readiness.md",
     "docs/agent-cartography-review.md",
     "docs/validation/polling-and-map-timeouts-2026-11-06.json",
     "docs/validation/one-cpu-observer-2026-11-06.json",
