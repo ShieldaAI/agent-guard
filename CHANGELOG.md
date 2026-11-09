@@ -7,6 +7,11 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix: parallel calls on one task now work under a custom policy. A policy decision
+  made on a snapshot that changed while it ran is re-evaluated on fresh state, not
+  rejected outright. Re-evaluations on a task take turns, and the count is bounded by
+  the new `maxPolicyAttempts` option (1–16, default 5; `1` keeps the old behaviour).
+  The final checks and dispatch still run without an intervening await.
 - Fix: a call in flight no longer refuses `prepare()` or `approve()` with
   `CONCURRENCY_EXCEEDED`/`COST_BUDGET_EXCEEDED`, in core and in the durable
   executor. Transient capacity (concurrent calls, reserved cost) is enforced at

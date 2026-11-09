@@ -42,7 +42,17 @@ export interface TaskSnapshot extends TaskIdentity {
 export type PolicyDecision = 'allow' | 'deny' | 'require_approval';
 export type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
   context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
-export interface GuardOptions { policy?: Policy; secretValues?: readonly string[]; clock?: () => number }
+export interface GuardOptions {
+  policy?: Policy; secretValues?: readonly string[]; clock?: () => number;
+  /**
+   * How many times a custom policy may be evaluated for one prepare or execute when the task's
+   * counters or shared sensitivity change while it runs (for example, a parallel call on the same
+   * task starts or settles). Each attempt uses a fresh snapshot and a policy slot; the final checks
+   * and dispatch still happen without an intervening await. Integer 1-16, default 5. With 1, any
+   * change fails with POLICY_STATE_CHANGED as before.
+   */
+  maxPolicyAttempts?: number;
+}
 export interface PreparedAction {
   readonly id: string; readonly digest: string;
   readonly action: Readonly<Action>; readonly requiresApproval: boolean;

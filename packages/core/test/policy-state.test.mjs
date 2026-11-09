@@ -31,7 +31,8 @@ test('simultaneous executions cannot reuse a custom policy decision over stale c
   const outcomes = await Promise.allSettled(prepared.map(action => f.guard.execute(action)));
   assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
   const rejectedIndex = outcomes.findIndex(result => result.status === 'rejected');
-  assert.ok(rejectedWith('POLICY_STATE_CHANGED')(outcomes[rejectedIndex].reason));
+  // The stale decision is not reused: the policy is evaluated again on the new counters and denies.
+  assert.ok(rejectedWith('POLICY_DENIED')(outcomes[rejectedIndex].reason));
   assert.equal(f.effects(), 1);
   assert.equal(f.guard.snapshot(f.task).calls, 1);
   // Rejection did not consume the prepared action, but a fresh policy evaluation now denies it.
@@ -118,21 +119,23 @@ test('the policy pool bounds work across task roots and revocation unblocks wait
   assert.equal(f.effects(), 1);
 });
 
-test('preparation rejects a policy decision when task state changed while it awaited', async () => {
+test('preparation re-evaluates a policy decision when task state changed while it awaited', async () => {
   const entered = deferred(); const release = deferred();
-  let pause = false;
-  const f = fixture(async () => {
+  let pause = false; const seen = [];
+  const f = fixture(async (_action, snapshot) => {
+    seen.push(snapshot.calls);
     if (pause) { pause = false; entered.resolve(); await release.promise; }
     return 'allow';
   });
   const other = await f.prepare();
-  pause = true;
+  pause = true; seen.length = 0;
   const pending = f.prepare();
-  const checked = assert.rejects(pending, rejectedWith('POLICY_STATE_CHANGED'));
   await entered.promise;
   await f.guard.execute(other);
   release.resolve();
-  await checked;
+  assert.ok((await pending).id, 'the preparation completes on a fresh decision');
+  // Prepare, execute's own evaluation, then the stale prepare is evaluated again on calls = 1.
+  assert.deepEqual(seen, [0, 0, 1]);
   assert.equal(f.effects(), 1);
 });
 
@@ -152,16 +155,15 @@ test('settlement changes invalidate pending policy snapshots even without a new 
   await handlerEntered.promise;
   pause = true;
   const pending = f.guard.execute(second);
-  const checked = assert.rejects(pending, rejectedWith('POLICY_STATE_CHANGED'));
   await policyEntered.promise;
   const before = f.guard.snapshot(f.task);
   handlerRelease.resolve(); await active;
   assert.equal(f.guard.snapshot(f.task).calls, before.calls);
-  policyRelease.resolve(); await checked;
-  assert.equal(f.effects(), 1);
   assert.equal(f.guard.snapshot(f.task).spent, 1);
   pause = false;
-  assert.equal(await f.guard.execute(second), 'ok');
+  policyRelease.resolve();
+  // The settlement changed the snapshot, so the decision is made again before dispatch.
+  assert.equal(await pending, 'ok');
   assert.equal(f.effects(), 2);
 });
 
@@ -189,8 +191,10 @@ test('sibling sensitivity invalidates a pending custom policy decision for an in
   const action = await guard.prepare(actor, { tool: 'act', args: {} });
   pause = true;
   const pending = guard.execute(action);
-  const checked = assert.rejects(pending, rejectedWith('POLICY_STATE_CHANGED'));
+  // Re-evaluated on the new snapshot, the policy sees the shared sensitivity and denies.
+  const checked = assert.rejects(pending, rejectedWith('POLICY_DENIED'));
   await entered.promise;
+  pause = false;
   await guard.execute(read);
   release.resolve(); await checked;
   assert.equal(guard.snapshot(actor).calls, 0);

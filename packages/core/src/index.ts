@@ -130,11 +130,17 @@ export class AgentGuard {
   #clock: () => number;
   #observedClock = 0;
   #secrets: readonly string[];
+  #maxPolicyAttempts: number;
+  /** Per-task queue for policy re-evaluations; first attempts stay parallel. */
+  #policyTurns = new WeakMap<TaskState, Promise<void>>();
 
   constructor(options: GuardOptions = {}) {
     if (options === null || typeof options !== 'object') fail('INVALID_INPUT');
     if (options.policy !== undefined && typeof options.policy !== 'function') fail('INVALID_INPUT');
     if (options.clock !== undefined && typeof options.clock !== 'function') fail('INVALID_INPUT');
+    const attempts = options.maxPolicyAttempts === undefined ? 5 : options.maxPolicyAttempts;
+    if (!Number.isSafeInteger(attempts) || attempts < 1 || attempts > 16) fail('INVALID_INPUT');
+    this.#maxPolicyAttempts = attempts;
     this.#policy = options.policy;
     this.#clock = options.clock ?? Date.now;
     this.#secrets = Object.freeze([...stringSet(options.secretValues ?? [])]);
@@ -220,9 +226,18 @@ export class AgentGuard {
       ...resolved, tool: name, args, toolFingerprint: tool.fingerprint, policyVersion,
     });
     this.#gates(state, tool, action, policyVersion, 'prepare');
-    const evaluation = await this.#evaluate(action, state);
-    this.#gates(state, tool, action, policyVersion, 'prepare');
-    this.#checkPolicySnapshot(state, evaluation);
+    let evaluation: PolicyEvaluation;
+    let endTurn: (() => void) | undefined;
+    try {
+      // A decision made on a snapshot that changed during the await is re-evaluated, never reused.
+      for (let attempt = 1; ; attempt++) {
+        if (attempt > 1) endTurn ??= await this.#policyTurn(state);
+        evaluation = await this.#evaluate(action, state);
+        this.#gates(state, tool, action, policyVersion, 'prepare');
+        if (!this.#policySnapshotChanged(state, evaluation)) break;
+        if (attempt >= this.#maxPolicyAttempts) fail('POLICY_STATE_CHANGED');
+      }
+    } finally { endTurn?.(); }
     const id = randomUUID();
     const digest = `sha256:${digestJson(normalizeJson({
       preparedId: id, task: state.identity, action, toolRevision: tool.revision,
@@ -257,11 +272,24 @@ export class AgentGuard {
     if (approvalId !== undefined && typeof approvalId !== 'string') fail('APPROVAL_INVALID');
     this.#fresh(state);
     this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
-    const evaluation = await this.#evaluate(state.handle.action, state.task);
-    // No await occurs between these final checks, reservation, approval consumption and handler invocation.
-    this.#fresh(state);
-    const dispatchTime = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
-    this.#checkPolicySnapshot(state.task, evaluation);
+    let evaluation: PolicyEvaluation;
+    let dispatchTime: number;
+    let endTurn: (() => void) | undefined;
+    try {
+      // A decision made on a snapshot that changed during the await is re-evaluated, never reused.
+      // Re-evaluations on one task take turns, so concurrent calls converge instead of invalidating
+      // each other. The loop exits synchronously after the final checks: no await occurs between
+      // those checks, reservation, approval consumption and handler invocation.
+      for (let attempt = 1; ; attempt++) {
+        if (attempt > 1) endTurn ??= await this.#policyTurn(state.task);
+        evaluation = await this.#evaluate(state.handle.action, state.task);
+        this.#fresh(state);
+        dispatchTime = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion);
+        if (!this.#policySnapshotChanged(state.task, evaluation)) break;
+        if (attempt >= this.#maxPolicyAttempts) fail('POLICY_STATE_CHANGED');
+      }
+      // Ending the turn only schedules the next waiter; it resumes after this synchronous dispatch.
+    } finally { endTurn?.(); }
     this.#approval(state, approvalId, state.handle.requiresApproval || evaluation.decision === 'require_approval', dispatchTime);
     const ancestors = lineage(state.task);
     const controller = new AbortController();
@@ -426,11 +454,21 @@ export class AgentGuard {
     return { decision, snapshot };
   }
 
-  #checkPolicySnapshot(task: TaskState, evaluation: PolicyEvaluation): void {
+  /** Waits for this task's earlier re-evaluations; the returned function ends this turn (idempotent). */
+  async #policyTurn(task: TaskState): Promise<() => void> {
+    const previous = this.#policyTurns.get(task) ?? Promise.resolve();
+    let end!: () => void;
+    const turn = new Promise<void>(resolve => { end = resolve; });
+    this.#policyTurns.set(task, previous.then(() => turn));
+    await previous;
+    return end;
+  }
+
+  #policySnapshotChanged(task: TaskState, evaluation: PolicyEvaluation): boolean {
     const snapshot = evaluation.snapshot;
-    if (snapshot && (snapshot.calls !== task.calls || snapshot.concurrent !== task.concurrent ||
-        snapshot.spent !== task.spent || snapshot.reserved !== task.reserved ||
-        snapshot.sensitive !== task.family.sensitive)) fail('POLICY_STATE_CHANGED');
+    return !!snapshot && (snapshot.calls !== task.calls || snapshot.concurrent !== task.concurrent ||
+      snapshot.spent !== task.spent || snapshot.reserved !== task.reserved ||
+      snapshot.sensitive !== task.family.sensitive);
   }
 
   #approval(state: PreparedState, id: string | undefined, required: boolean, now: number): void {
