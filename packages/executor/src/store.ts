@@ -120,6 +120,32 @@ function decode(text: string): Ledger {
 }
 
 /** Shared private decoder for authority reads and host/MCP observations. */
+/**
+ * Deep copy with null prototypes everywhere, like a fresh decode: `__proto__` and other
+ * keys stay plain data. Iterative, so a deep ledger cannot overflow the stack.
+ */
+function detachedCopy<T>(value: T, freeze: boolean): T {
+  if (value === null || typeof value !== 'object') return value;
+  const make = (source: object): object => (Array.isArray(source) ? new Array(source.length) : Object.create(null));
+  const root = make(value as object);
+  const pending: [object, object][] = [[value as object, root]];
+  const created: object[] = [root];
+  while (pending.length) {
+    const [source, target] = pending.pop()!;
+    for (const key of Object.keys(source)) {
+      const child = (source as Record<string, unknown>)[key];
+      if (child !== null && typeof child === 'object') {
+        const copy = make(child);
+        created.push(copy);
+        pending.push([child, copy]);
+        (target as Record<string, unknown>)[key] = copy;
+      } else (target as Record<string, unknown>)[key] = child;
+    }
+  }
+  if (freeze) for (const item of created) Object.freeze(item);
+  return root as T;
+}
+
 export function decodeLedgerObservation(
   payload: string,
   key: Uint8Array,
@@ -260,6 +286,13 @@ export class LedgerStore {
   readonly #witnessed: boolean;
   #closed = false;
   #mirror = false;
+  /**
+   * The last verified ciphertext and its deep-frozen decoded state. read() still fetches the
+   * row and runs every witness/mirror check; only when the bytes equal the cached ciphertext
+   * does it skip decrypt, parse and walk, returning a detached copy instead. Any out-of-band
+   * change forces a full verified decode.
+   */
+  #cache: { payload: string; state: Ledger } | undefined;
   constructor(
     path: string,
     key: Uint8Array,
@@ -510,8 +543,9 @@ export class LedgerStore {
   read(): Ledger {
     if (this.#closed) throw new ExecutorError('STORE_CLOSED');
     try {
-      const payload = this.#payload(),
-        state = decodeLedgerObservation(payload, this.#key, this.maxBytes, this.#witnessed);
+      const payload = this.#payload();
+      const cached = this.#cache?.payload === payload ? this.#cache.state : undefined;
+      const state = cached ?? decodeLedgerObservation(payload, this.#key, this.maxBytes, this.#witnessed);
       const mode = (state as Ledger & { recoveryMirror?: unknown }).recoveryMirror;
       if (mode !== undefined || state.schema === 3 || this.#mirror) {
         if (
@@ -525,8 +559,11 @@ export class LedgerStore {
           throw new Error();
         this.#mirror = true;
       }
-      return state;
+      if (!cached) this.#cache = { payload, state: detachedCopy(state, true) };
+      // Every read stays a fresh, detached, mutable graph, exactly as a full decode returns.
+      return detachedCopy(this.#cache!.state, false);
     } catch {
+      this.#cache = undefined;
       throw new ExecutorError('STORE_CORRUPT');
     }
   }
@@ -626,6 +663,7 @@ export class LedgerStore {
     this.#exec('BEGIN IMMEDIATE');
     let acceptingWrites = true;
     try {
+      // read() returns a detached working copy; the cached snapshot is unchanged on rollback.
       const state = this.read();
       const result = operation(state, {
         readArchive: id => this.readArchive(id),
@@ -686,6 +724,7 @@ export class LedgerStore {
       }
       if (this.#mirror) this.#writeMirrorPayload(payload);
       this.#exec('COMMIT');
+      this.#cache = { payload, state: detachedCopy(state, true) };
       return result;
     } catch (error) {
       this.#exec('ROLLBACK');
@@ -734,6 +773,7 @@ export class LedgerStore {
     if (!this.#closed) {
       this.#db.close();
       this.#key.fill(0);
+      this.#cache = undefined; // Drop the decrypted snapshot with the key.
       this.#closed = true;
       closeLedgerObservation(this);
     }

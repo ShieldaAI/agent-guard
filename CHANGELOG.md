@@ -7,6 +7,13 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Perf (executor ledger): `LedgerStore.read()` caches the last verified ciphertext and
+  its decoded state. Each read still fetches the row and runs every witness and mirror
+  check, but when the bytes are unchanged it returns a detached copy without
+  decrypting, parsing or re-walking the ledger. With 1,000 tasks, read-bound calls
+  such as `snapshot()` take about half the time (3.6 ms to 1.8 ms); prepare and
+  execute are unchanged because the write path dominates. Read results stay fresh,
+  detached and mutable as before, and `close()` drops the decrypted cache.
 - Docs: one [Support and limits](docs/support-and-limits.md) page replaces the
   protection design, assessment, acceptance and production-readiness documents;
   earlier plans and reviews move to `docs/archive/`; `releasing.md` is cut to a
