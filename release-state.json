@@ -1,19 +1,19 @@
 {
   "schemaVersion": 1,
   "version": "0.1.0",
-  "status": "blocked",
-  "blockers": [
-    "Publication requires final-candidate uninstrumented full graph/admission acceptance on the currently pinned runtime, followed by exact merged-commit verification and final security review."
-  ],
+  "status": "approved",
+  "blockers": [],
   "outOfScope": [
     "Maintainer decision, 9 November 2026: 0.1.0 publication does not wait for the announced Node HIGH security releases for 22.x, 24.x and 26.x. The npm packages do not bundle Node. The advisory review, fixed immutable images and R5 acceptance remain open as a post-release follow-up, and production deployments must adopt the fixed Node runtime once it is released.",
-    "Maintainer decision, 9 November 2026: the synthetic native Linux single-logical-CPU, 512 MiB, 250 ms observer stress profile is not a 0.1.0 release gate. It remains unqualified with unchanged limits; 0.1.0 does not support confining the observer-owning service to one logical CPU with 250 ms polling."
+    "Maintainer decision, 9 November 2026: the synthetic native Linux single-logical-CPU, 512 MiB, 250 ms observer stress profile is not a 0.1.0 release gate. It remains unqualified with unchanged limits; 0.1.0 does not support confining the observer-owning service to one logical CPU with 250 ms polling.",
+    "Maintainer decision, 9 November 2026: the inventory observer is experimental in 0.1.0. The admission-during-250 ms-polling gate is not a release gate; both declared runs on 0632e32 (42591570269, 42593058817) failed it and remain recorded."
   ],
   "evidence": [
     "docs/releases/0.1.0.md",
     "docs/production-readiness.md",
     "docs/agent-cartography-review.md",
     "docs/validation/polling-and-map-timeouts-2026-11-06.json",
-    "docs/validation/one-cpu-observer-2026-11-06.json"
+    "docs/validation/one-cpu-observer-2026-11-06.json",
+    "docs/validation/release-0.1.0-final-2026-11-09.json"
   ]
 }

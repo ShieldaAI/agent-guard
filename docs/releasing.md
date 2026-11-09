@@ -24,6 +24,11 @@ but repeated-fixture total wall time regressed 5.17%; it is not acceptance.
 
 ## Node-update checklist for 0.1.0
 
+**For 0.1.0, the admission-during-polling gate in step 4 is not a release gate.**
+The inventory observer is experimental in 0.1.0 (see the
+[scope decision](releases/0.1.0.md#scope-decision-inventory-observer-is-experimental)).
+The full workflow's graph workload and recovery checks still apply.
+
 **For 0.1.0, steps 1 and 2 are a post-release follow-up** (maintainer decision of
 9 November). Run steps 3–5 on the currently pinned runtime and images. Once the
 fixed Node releases are out, complete steps 1–2, rebuild the images and refresh

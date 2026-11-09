@@ -1,15 +1,13 @@
 # @shieldaai/agent-guard
 
-**Unpublished 0.1.0 candidate.** Production release remains held for the Node
-HIGH security review and candidate acceptance gates. See the
-[candidate release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md).
-Evaluate this checkout using matching local workspace tarballs. The registry
-install below selects the earlier published experimental alpha, whose APIs
-and verification are recorded in its own release notes.
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
 
 Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. Experimental TypeScript library; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
 
-Install with `npm install @shieldaai/agent-guard@0.1.0-alpha.3`. For MCP integration,
+Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 

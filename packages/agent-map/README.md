@@ -1,11 +1,9 @@
 # Agent Guard reference map
 
-**Unpublished 0.1.0 candidate.** Production release remains held for the Node
-HIGH security review and candidate acceptance gates. See the
-[candidate release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md).
-Evaluate this checkout using matching local workspace tarballs. The registry
-install below selects the earlier published experimental alpha, whose APIs
-and verification are recorded in its own release notes.
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
 
 Query AI agent and MCP inventory, snapshot changes and access explanations over
 scoped HTTP and MCP interfaces. See the
@@ -19,7 +17,7 @@ It supplies the same evidence to HTTP, MCP clients and the
 executes an action. Declared grants and cloud associations are not effective
 permission decisions.
 
-Install the service with `npm install @shieldaai/agent-map@0.1.0-alpha.3`. It includes the
+Install the service with `npm install @shieldaai/agent-map`. It includes the
 `agent-guard-map` and `agent-guard-map-identity` commands. Viewer assets and the
 Python collector are separate repository components and are not bundled in this
 npm package. The commands require host-owned configuration and credentials.

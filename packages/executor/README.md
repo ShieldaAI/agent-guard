@@ -1,11 +1,12 @@
 # Agent Guard executor
 
-**Unpublished 0.1.0 candidate.** Production release remains held for the Node
-HIGH security review and candidate acceptance gates. See the
-[candidate release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md).
-Evaluate this checkout using matching local workspace tarballs. The registry
-install below selects the earlier published experimental alpha, whose APIs
-and verification are recorded in its own release notes.
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
+
+The inventory observer (`startInventoryServer()`) is **experimental** in 0.1.0.
+It makes no admission-latency promise under frequent polling; see the release notes.
 
 Persist AI agent tool approvals and budget admission across restarts, with
 authenticated task APIs. For the in-memory core and MCP integration, see the
@@ -14,8 +15,8 @@ authenticated task APIs. For the in-memory core and MCP integration, see the
 An additive Apache-2.0 package for a single trusted host: encrypted transactional
 authorization state, task-scoped HTTP credentials, typed adapters, governed memory,
 and a local Docker sandbox. Requires Node.js 22.13 or newer. No account or hosted
-service is required. Install the explicit prerelease tag with
-`npm install @shieldaai/agent-guard-executor@0.1.0-alpha.3`, or build the workspace tarballs.
+service is required. Install with
+`npm install @shieldaai/agent-guard-executor`, or build the workspace tarballs.
 
 ```ts
 import { randomBytes } from 'node:crypto';
@@ -194,6 +195,11 @@ describes the pseudonymous fields, access boundary, counters and export guarante
 ## Adapters and integrations
 
 ### Inventory for the trusted host
+
+**Experimental in 0.1.0.** On hosted runners, admission latency during 250 ms
+polling has passed and failed the 10% overhead gate on identical code, so 0.1.0
+makes no latency promise under frequent polling. Keep Cartography's default
+300-second collection interval.
 
 Enable the optional exporter with host-controlled enrollment configuration:
 
