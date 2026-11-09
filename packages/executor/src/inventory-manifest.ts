@@ -490,7 +490,8 @@ function validateCore(value: unknown): InventorySnapshot {
       'tasks',
       'tools',
     ]);
-    if (snapshot.schemaVersion !== 1 || snapshot.profile !== 'core') fail();
+    if ((snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== 2) || snapshot.profile !== 'core') fail();
+    const v2 = snapshot.schemaVersion === 2;
     const scope = source(snapshot.source);
     identifier(snapshot.snapshotId);
     timestamp(snapshot.generatedAt);
@@ -522,6 +523,7 @@ function validateCore(value: unknown): InventorySnapshot {
         'revoked',
         'sensitive',
         'usage',
+        ...(v2 ? ['untrusted'] : []),
       ]);
       for (const key of ['id', 'tenantId', 'principalId', 'familyId']) identifier(task[key]);
       if (task.tenantId !== scope.tenantId) fail();
@@ -550,14 +552,17 @@ function validateCore(value: unknown): InventorySnapshot {
       boolean(task.allowControlPlane);
       boolean(task.revoked);
       boolean(task.sensitive);
+      if (v2) boolean(task.untrusted);
       return task as unknown as InventorySnapshot['tasks'][number];
     });
     unique(tasks.map(task => task.id));
     const byId = new Map(tasks.map(task => [task.id, task]));
-    const families = new Map<string, boolean>();
+    const families = new Map<string, string>();
     for (const task of tasks) {
-      if (families.has(task.familyId) && families.get(task.familyId) !== task.sensitive) fail();
-      families.set(task.familyId, task.sensitive);
+      // Both flags are family-wide: every member must report the same value.
+      const flags = `${task.sensitive}:${task.untrusted === true}`;
+      if (families.has(task.familyId) && families.get(task.familyId) !== flags) fail();
+      families.set(task.familyId, flags);
       for (const [kind, relatedId] of [
         ['parent', task.parentTaskId],
         ['source', task.sourceTaskId],
@@ -600,6 +605,7 @@ function validateCore(value: unknown): InventorySnapshot {
         'requiresApproval',
         'controlPlane',
         'maxCost',
+        ...(v2 ? ['readsUntrusted', 'untrustedContext', 'sendsExternal'] : []),
       ]);
       identifier(tool.name);
       integer(tool.revision);
@@ -611,6 +617,16 @@ function validateCore(value: unknown): InventorySnapshot {
         boolean(tool.controlPlane);
         integer(tool.maxCost);
       } else if (tool.requiresApproval !== null || tool.controlPlane !== null || tool.maxCost !== null) fail();
+      if (v2) {
+        // Declared labels are known for registered tools only; null means not declared (unknown).
+        for (const key of ['readsUntrusted', 'sendsExternal'])
+          if (tool[key] !== null && (!tool.registered || typeof tool[key] !== 'boolean')) fail();
+        if (
+          tool.untrustedContext !== null &&
+          (!tool.registered || !['allow', 'require_approval', 'deny'].includes(tool.untrustedContext as string))
+        )
+          fail();
+      }
       return tool.name as string;
     });
     unique(tools);

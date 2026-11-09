@@ -68,6 +68,10 @@ class ToolProperties(GuardProperties):
     requires_approval: PropertyRef = PropertyRef("requires_approval")
     control_plane: PropertyRef = PropertyRef("control_plane")
     max_cost: PropertyRef = PropertyRef("max_cost")
+    # Inventory v2 outside-content labels; null (absent) for v1 imports and undeclared labels.
+    reads_untrusted: PropertyRef = PropertyRef("reads_untrusted")
+    untrusted_context: PropertyRef = PropertyRef("untrusted_context")
+    sends_external: PropertyRef = PropertyRef("sends_external")
 
 
 @dataclass(frozen=True)
@@ -93,6 +97,8 @@ class TaskProperties(GuardProperties):
     family_id: PropertyRef = PropertyRef("family_id")
     revoked: PropertyRef = PropertyRef("revoked")
     sensitive: PropertyRef = PropertyRef("sensitive")
+    # Inventory v2: the family read outside content. Absent for v1 imports.
+    untrusted: PropertyRef = PropertyRef("untrusted")
     allowed_recipients: PropertyRef = PropertyRef("allowed_recipients")
     allow_control_plane: PropertyRef = PropertyRef("allow_control_plane")
     max_calls: PropertyRef = PropertyRef("max_calls")

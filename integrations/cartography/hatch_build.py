@@ -12,6 +12,7 @@ class CustomBuildHook(BuildHookInterface):
         prefix = "src/" if self.target_name == "sdist" else ""
         for filename in (
             "agent-guard-inventory-v1.schema.json",
+            "agent-guard-inventory-v2.schema.json",
             "agent-guard-inventory-manifest-v1.schema.json",
             "agent-guard-inventory-manifest-v2.schema.json",
             "agent-guard-mcp-inventory-v1.schema.json",

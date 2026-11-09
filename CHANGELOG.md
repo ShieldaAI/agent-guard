@@ -7,6 +7,13 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (inventory schema v2): when outside-content labels are in use, executor
+  snapshots use `agent-guard-inventory-v2.schema.json`, a `$ref` envelope over v1
+  that adds `untrusted` on tasks and the three labels on tools. Otherwise the output
+  stays byte-identical v1. The Cartography collector validates v2 (resolving v1
+  locally, never over the network) and projects the fields onto `GuardTool` and
+  `GuardTask`; a v1-only collector fails closed on v2. A generator and drift test
+  keep the v2 file in sync with v1.
 - Add (scenarios): catalog 1.3.0 adds S13, sends after reading outside content, for
   thirteen scenarios and twenty-six cases. Adapters must support the outside-content
   labels to pass it.

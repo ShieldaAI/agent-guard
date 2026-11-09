@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
+from referencing import Registry, Resource
 
 from agent_guard_cartography.input_files import read_regular_file
 
@@ -28,6 +29,8 @@ MAX_JSON_VALUES = 500_000
 MAX_RESOURCE_SELECTORS = 100_000
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 SCHEMA_FILENAME = "agent-guard-inventory-v1.schema.json"
+# v2 is a $ref envelope over v1 (outside-content fields); executors emit it only when used.
+SCHEMA_V2_FILENAME = "agent-guard-inventory-v2.schema.json"
 MANIFEST_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v1.schema.json"
 MANIFEST_V2_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v2.schema.json"
 MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
@@ -46,8 +49,8 @@ def _fail(code: str) -> None:
     raise InventoryValidationError(code)
 
 
-@lru_cache(maxsize=4)
-def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
+@lru_cache(maxsize=8)
+def _schema(filename: str) -> dict[str, Any]:
     # Editable installs can expose both source modules and an older packaged
     # schema. Prefer the canonical schema only in this exact repository layout.
     # Installed wheels always use their bundled resource, independent of cwd.
@@ -73,6 +76,15 @@ def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
             raise InventoryValidationError("INVENTORY_SCHEMA_UNAVAILABLE") from None
     schema = json.loads(schema_text)
     Draft202012Validator.check_schema(schema)
+    return schema
+
+
+@lru_cache(maxsize=4)
+def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
+    schema = _schema(filename)
+    # v2 refers to v1 by its $id; resolve that from the bundled file, never the network.
+    base = _schema(SCHEMA_FILENAME)
+    registry = Registry().with_resource(base["$id"], Resource.from_contents(base))
     formats = FormatChecker()
 
     @formats.checks("date-time", raises=(ValueError, OverflowError))
@@ -85,7 +97,7 @@ def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
         datetime.fromisoformat(value)
         return True
 
-    return Draft202012Validator(schema, format_checker=formats)
+    return Draft202012Validator(schema, format_checker=formats, registry=registry)
 
 
 def _check_json_shape(
@@ -154,15 +166,17 @@ def _check_graph(snapshot: dict[str, Any]) -> None:
     _unique_records(snapshot["tools"], "name")
     tenant = snapshot["source"]["tenantId"]
     selectors = 0
-    family_sensitivity: dict[str, bool] = {}
+    family_sensitivity: dict[str, tuple[bool, bool]] = {}
 
     for task in tasks.values():
         if task["tenantId"] != tenant:
             _fail("INVENTORY_TENANT_MISMATCH")
         family = task["familyId"]
-        if family in family_sensitivity and family_sensitivity[family] != task["sensitive"]:
+        # sensitive and (v2) untrusted are family-wide: every member reports the same value.
+        flags = (task["sensitive"], task.get("untrusted", False))
+        if family in family_sensitivity and family_sensitivity[family] != flags:
             _fail("INVENTORY_FAMILY_INVALID")
-        family_sensitivity[family] = task["sensitive"]
+        family_sensitivity[family] = flags
         granted_tools: set[str] = set()
         for grant in task["grants"]:
             if grant["tool"] in granted_tools:
@@ -418,7 +432,9 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
     snapshot = _detached_json(value, MAX_SNAPSHOT_BYTES, MAX_JSON_VALUES)
     # Do not include jsonschema's exception text: it quotes imported properties,
     # which may contain secrets even though the schema refuses to accept them.
-    if next(_validator().iter_errors(snapshot), None) is not None:
+    version = snapshot.get("schemaVersion") if type(snapshot) is dict else None
+    filename = SCHEMA_V2_FILENAME if version == 2 else SCHEMA_FILENAME
+    if next(_validator(filename).iter_errors(snapshot), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
     _check_graph(snapshot)
     if snapshot["profile"] in ("host", "host-mcp"):

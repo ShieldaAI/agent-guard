@@ -260,6 +260,16 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
             requires_approval=tool["requiresApproval"] if tool else None,
             control_plane=tool["controlPlane"] if tool else None,
             max_cost=tool["maxCost"] if tool else None,
+            # Inventory v2 only; absent from v1 imports so their nodes are unchanged.
+            **(
+                {
+                    "reads_untrusted": tool["readsUntrusted"],
+                    "untrusted_context": tool["untrustedContext"],
+                    "sends_external": tool["sendsExternal"],
+                }
+                if tool and "readsUntrusted" in tool
+                else {}
+            ),
         )
 
     for task in snapshot["tasks"]:
@@ -308,6 +318,7 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
             grant_node_ids=grants,
             revoked=task["revoked"],
             sensitive=task["sensitive"],
+            **({"untrusted": task["untrusted"]} if "untrusted" in task else {}),
             allowed_recipients=task["allowedRecipients"],
             allow_control_plane=task["allowControlPlane"],
             max_calls=task["budget"]["maxCalls"],

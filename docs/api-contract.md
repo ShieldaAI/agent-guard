@@ -364,6 +364,14 @@ including revoked/expired tasks and unavailable handlers. Delegation and provena
 are separate edges. Tool fingerprint strings are bare SHA-256 hex; unavailable
 definition flags are `null`. Other enrichment coverage is `not_collected`.
 
+When any tool declares an outside-content label (`readsUntrusted`, `untrustedContext`,
+`sendsExternal`) or any task family is `untrusted`, the snapshot uses the
+[version-2 schema](../schemas/agent-guard-inventory-v2.schema.json) instead: every task
+adds `untrusted`, and every tool adds the three labels, `null` when undeclared or
+unregistered. v2 is a `$ref` envelope over v1; every other shape is unchanged. A
+collector that only knows v1 refuses v2 rather than dropping the fields. Without
+those labels the output is exactly v1.
+
 One synchronous ledger read produces an immutable, detached snapshot. Export does
 not run authorization callbacks or change ledger revision, budgets, approvals or
 audit. Observation timestamps use wall time, independent of the execution clock.

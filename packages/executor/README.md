@@ -348,7 +348,8 @@ observation time have stable `INVENTORY_*` error codes without source values.
 The direct `inventorySnapshot()` API remains synchronous and has no interruptible
 time limit. The HTTP observer described below uses a private worker. Neither API
 provides a per-poll latency guarantee. See the repository's Cartography integration plan and
-canonical `schemas/agent-guard-inventory-v1.schema.json` for the consumer contract.
+canonical `schemas/agent-guard-inventory-v1.schema.json` for the consumer contract. Snapshots
+switch to `agent-guard-inventory-v2.schema.json` only when outside-content labels are in use.
 
 The [Cartography pilot runbook](../../deployment/cartography/RUNBOOK.md) supplies
 an isolated live observer/collector/reference exercise, private archive backup and

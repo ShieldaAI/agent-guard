@@ -47,6 +47,8 @@ export interface InventoryTask {
   readonly revoked: boolean;
   readonly sensitive: boolean;
   readonly usage: InventoryUsage;
+  /** Schema v2 only: the task family has read outside content. */
+  readonly untrusted?: boolean;
 }
 export interface InventoryTool {
   readonly name: string;
@@ -57,9 +59,14 @@ export interface InventoryTool {
   readonly requiresApproval: boolean | null;
   readonly controlPlane: boolean | null;
   readonly maxCost: number | null;
+  /** Schema v2 only; null when the tool is not registered or did not declare the label. */
+  readonly readsUntrusted?: boolean | null;
+  readonly untrustedContext?: 'allow' | 'require_approval' | 'deny' | null;
+  readonly sendsExternal?: boolean | null;
 }
 export interface InventorySnapshot {
-  readonly schemaVersion: 1;
+  /** 1 by default; 2 when any tool declares an outside-content label or any family is untrusted. */
+  readonly schemaVersion: 1 | 2;
   readonly profile: 'core';
   readonly source: InventorySourceOptions & InventoryScope & { readonly inventoryInstanceId: string };
   readonly snapshotId: string;
@@ -80,7 +87,10 @@ export interface InventorySnapshot {
 export type InventoryRegistration = {
   readonly fingerprint: string;
   readonly revision: number;
-  readonly definition: Pick<ToolDefinition, 'requiresApproval' | 'controlPlane' | 'maxCost'>;
+  readonly definition: Pick<
+    ToolDefinition,
+    'requiresApproval' | 'controlPlane' | 'maxCost' | 'readsUntrusted' | 'untrustedContext' | 'sendsExternal'
+  >;
 };
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_VALUES = 500_000;
@@ -174,6 +184,26 @@ export function validateInventorySource(value: unknown): InventorySourceOptions 
   });
 }
 
+const UNTRUSTED_MODES = ['allow', 'require_approval', 'deny'] as const;
+type UntrustedMode = (typeof UNTRUSTED_MODES)[number];
+function declaredLabels(definition: unknown): {
+  readsUntrusted?: boolean;
+  untrustedContext?: UntrustedMode;
+  sendsExternal?: boolean;
+} {
+  const reads = field(definition, 'readsUntrusted'),
+    mode = field(definition, 'untrustedContext'),
+    sends = field(definition, 'sendsExternal');
+  if (reads !== undefined && typeof reads !== 'boolean') fail();
+  if (sends !== undefined && typeof sends !== 'boolean') fail();
+  if (mode !== undefined && !UNTRUSTED_MODES.includes(mode as UntrustedMode)) fail();
+  return {
+    ...(reads === undefined ? {} : { readsUntrusted: reads as boolean }),
+    ...(mode === undefined ? {} : { untrustedContext: mode as UntrustedMode }),
+    ...(sends === undefined ? {} : { sendsExternal: sends as boolean }),
+  };
+}
+
 /** Private worker input: callbacks and every other ToolDefinition field stay with the host. */
 export function captureInventoryRegistrations(
   live: ReadonlyMap<string, InventoryRegistration>,
@@ -194,6 +224,8 @@ export function captureInventoryRegistrations(
           requiresApproval: optionalBoolean(field(definition, 'requiresApproval')),
           controlPlane: optionalBoolean(field(definition, 'controlPlane')),
           maxCost: integer(field(definition, 'maxCost') ?? 0),
+          // Outside-content labels travel only when declared, so v1 inputs stay byte-identical.
+          ...declaredLabels(definition),
         },
       },
     ];
@@ -484,6 +516,7 @@ function constructInventory(
       allowControlPlane: optionalBoolean(stateField(options, 'allowControlPlane')),
       revoked: boolean(stateField(stored, 'revoked')),
       sensitive: boolean(stateField(stateField(families, familyId), 'sensitive')),
+      ...(stateField(stateField(families, familyId), 'untrusted') === true ? { untrusted: true } : {}),
       usage: {
         calls: integer(stateField(stored, 'calls')),
         concurrent: integer(stateField(stored, 'concurrent')),
@@ -519,10 +552,28 @@ function constructInventory(
       requiresApproval: registered ? optionalBoolean(field(definition, 'requiresApproval')) : null,
       controlPlane: registered ? optionalBoolean(field(definition, 'controlPlane')) : null,
       maxCost: registered ? integer(field(definition, 'maxCost') ?? 0) : null,
+      ...(registered ? declaredLabels(definition) : {}),
     });
   }
+  // Version 2 only when the outside-content data exists; otherwise the output stays exactly v1.
+  const v2 =
+    tasks.some(task => task.untrusted === true) ||
+    tools.some(tool => 'readsUntrusted' in tool || 'untrustedContext' in tool || 'sendsExternal' in tool);
+  if (v2) {
+    for (let index = 0; index < tasks.length; index++)
+      tasks[index] = { ...tasks[index]!, untrusted: tasks[index]!.untrusted === true };
+    for (let index = 0; index < tools.length; index++) {
+      const tool = tools[index]!;
+      tools[index] = {
+        ...tool,
+        readsUntrusted: tool.readsUntrusted ?? null,
+        untrustedContext: tool.untrustedContext ?? null,
+        sendsExternal: tool.sendsExternal ?? null,
+      };
+    }
+  }
   const snapshot: InventorySnapshot = {
-    schemaVersion: 1,
+    schemaVersion: v2 ? 2 : 1,
     profile: 'core',
     source: {
       companyId: enrollment.companyId,
