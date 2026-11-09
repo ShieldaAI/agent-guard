@@ -7,6 +7,12 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Test: seeded property tests for `canonicalJson`/`digestJson` (stable under key
+  order, round-trip, injective across 3,000 generated values, no cross-type digest
+  collisions) and model-based tests of budgets and reservations under random
+  interleavings, in core (60 seeds) and the durable executor (25 seeds, with
+  reconciliation and restart). Both model tests fail when reservation release is
+  broken. They use a small seeded generator instead of a new dependency.
 - Fix (executor task server): bearer authentication uses an in-memory token index, so
   malformed and unknown tokens are refused without decrypting the ledger, and a valid
   one is found in O(1) instead of a scan over every task. The server adds
