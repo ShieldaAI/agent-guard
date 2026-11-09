@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "date": "2026-11-06",
-  "status": "plus10_rejected_own_field_plus5_candidate_pending_node_hold",
+  "status": "bfe_declared_set_failed_unqualified_node_hold",
   "scope": "Synthetic observer embedding: one CPU, 512 MiB, no extra swap, immediate first poll then 250 ms serial cadence. Not the Agent Ops exporter deployment.",
   "unchangedGates": {
     "memoryBytes": 536870912,
@@ -2790,6 +2790,367 @@
       "artifactSha256": "0716504abbcd24eeed55bf74209ec8f477334443b3a76b56810085eebc4d0c8c",
       "admissionSha256": "f4018c53861d67ab48b115c19c0445e21261e6af355b2f1ea638ba808d9824fe",
       "interpretation": "Ordinary full passed; does not substitute for any of the three failed native constrained qualifications."
+    },
+    {
+      "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "sourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "sourceFingerprint": "9f4a75e3f9a001d0bc6e0ce465a62cd878c79f483b04f99a17337846b4d6133a",
+      "testedSourceCommit": "b73e8dfdf4cf047e0fee131361c9d2d7dc7168a4",
+      "testedSourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "runId": 42303202033,
+      "jobId": 128185926811,
+      "predeclaredRole": "auto",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 5,
+      "passed": true,
+      "acceptanceEvidenceEligible": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 39.501294,
+        "pollingP95Ms": 40.958839,
+        "ratio": 1.0368986646361509,
+        "regressionPercent": 3.689866463615088
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 137,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "firstPollingDurationsMs": [
+        141.452252,
+        125.176426
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactId": 13544629057,
+      "artifactSha256": "3a11748140c934829d4536ddb9d66085602e7ba766ff28b8b246399d154d7de8",
+      "artifactFiles": [
+        {
+          "path": "constrained-source.json",
+          "bytes": 452,
+          "sha256": "c0d57ee0a7a17ad1ecb7c4e9be9b88dee18a42c797fe33ad18f638696621d7c9"
+        },
+        {
+          "path": "constrained-observer/resources.json",
+          "bytes": 1514,
+          "sha256": "ef384844eb47f7368a276e95374d66fca60cd52e8e47f9a6a2e70e10b8ed12fd"
+        },
+        {
+          "path": "constrained-observer/admission.json",
+          "bytes": 450337,
+          "sha256": "34e803ed9d9fbb6313d5a657829932c59b26ba8a0db0ef2a5698cbe3e2ff64c7"
+        },
+        {
+          "path": "constrained-observer/staged-inputs.json",
+          "bytes": 16533,
+          "sha256": "f378aac8fa5730d279088ccccc589f1760e5ab8fd1de307673068d58aa6ede59"
+        },
+        {
+          "path": "constrained-observer/verification.json",
+          "bytes": 3296,
+          "sha256": "4a9a5da976fb7549eb38b4ced2b26abd62fda97bfc9a6c10ceda41d960526a14"
+        }
+      ],
+      "admissionSha256": "34e803ed9d9fbb6313d5a657829932c59b26ba8a0db0ef2a5698cbe3e2ff64c7",
+      "verification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/constrained-verification.json",
+        "sha256": "99384d5ff06d1fde6ff91850be91de63c8eecb841190a9b3141fcfa4e68bb9f1"
+      },
+      "interpretation": "Declared run retained without replacement. The third native run fails only the unchanged 10 percent overhead gate; zero poll failures or skips do not make the required set pass."
+    },
+    {
+      "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "sourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "sourceFingerprint": "9f4a75e3f9a001d0bc6e0ce465a62cd878c79f483b04f99a17337846b4d6133a",
+      "testedSourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "testedSourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "runId": 42303195348,
+      "jobId": 128185910999,
+      "predeclaredRole": "manual",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 5,
+      "passed": true,
+      "acceptanceEvidenceEligible": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 46.927267,
+        "pollingP95Ms": 48.657056,
+        "ratio": 1.036861064165531,
+        "regressionPercent": 3.686106416553092
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 165,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "firstPollingDurationsMs": [
+        174.163237,
+        156.91838
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactId": 13545003365,
+      "artifactSha256": "81f8ee9aa47edd478e63e4f63a1cf4dac99b2c068a587b02ef8ae2018be6cab9",
+      "artifactFiles": [
+        {
+          "path": "constrained-source.json",
+          "bytes": 490,
+          "sha256": "69347290b14f61772fe95b5951695bda4190abb7e2cfc61bbac9ac711ee91db2"
+        },
+        {
+          "path": "constrained-observer/resources.json",
+          "bytes": 1517,
+          "sha256": "a60c7ef6948a6c9ea869f34645c4fb1fd6f9fa63ccaa16946cc14981b94f8004"
+        },
+        {
+          "path": "constrained-observer/admission.json",
+          "bytes": 459715,
+          "sha256": "dbd9d08532fc946319eb15e9eefa672271d408cc13dcb0b43bfe4462462f7751"
+        },
+        {
+          "path": "constrained-observer/staged-inputs.json",
+          "bytes": 16533,
+          "sha256": "f378aac8fa5730d279088ccccc589f1760e5ab8fd1de307673068d58aa6ede59"
+        },
+        {
+          "path": "constrained-observer/verification.json",
+          "bytes": 3295,
+          "sha256": "f3be36b4e023699ef62cefec32603d763d3cfc9de0b20f5fde565f35c0f071d1"
+        }
+      ],
+      "admissionSha256": "dbd9d08532fc946319eb15e9eefa672271d408cc13dcb0b43bfe4462462f7751",
+      "verification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/constrained-verification.json",
+        "sha256": "99384d5ff06d1fde6ff91850be91de63c8eecb841190a9b3141fcfa4e68bb9f1"
+      },
+      "interpretation": "Declared run retained without replacement. The third native run fails only the unchanged 10 percent overhead gate; zero poll failures or skips do not make the required set pass."
+    },
+    {
+      "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "sourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "sourceFingerprint": "9f4a75e3f9a001d0bc6e0ce465a62cd878c79f483b04f99a17337846b4d6133a",
+      "testedSourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "testedSourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "runId": 42303238528,
+      "jobId": 128186653138,
+      "predeclaredRole": "manual2",
+      "profile": "full",
+      "resourceProfile": "native-single-logical-cpu",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 5,
+      "passed": false,
+      "acceptanceEvidenceEligible": false,
+      "gate": {
+        "passed": false,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [
+          {
+            "code": "ADMISSION_REGRESSION_EXCEEDED"
+          }
+        ],
+        "performanceEnforced": true,
+        "performancePassed": false,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 46.307453,
+        "pollingP95Ms": 51.668591,
+        "ratio": 1.115772681343541,
+        "regressionPercent": 11.57726813435409
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 170,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "firstPollingDurationsMs": [
+        178.727435,
+        158.053351
+      ],
+      "controls": {
+        "memoryMaxBytes": 536870912,
+        "memorySwapMaxBytes": 0,
+        "cpuQuotaUs": 100000,
+        "cpuPeriodUs": 100000,
+        "cpuBurstUs": 0,
+        "pidsMax": 128
+      },
+      "affinity": {
+        "before": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        },
+        "after": {
+          "cpusetCpusEffective": "0",
+          "processCpusAllowedList": "0"
+        }
+      },
+      "cleanup": {
+        "attempted": true,
+        "ownershipVerified": true,
+        "removalSucceeded": true,
+        "absenceVerified": true
+      },
+      "artifactId": 13544379131,
+      "artifactSha256": "6d353303b1c6fcbea67fa18eda1e995994305ec0bab73f36420fff5a747a0c90",
+      "artifactFiles": [
+        {
+          "path": "constrained-source.json",
+          "bytes": 490,
+          "sha256": "820620c0babc0d2039d315952d7638dce23486cc28204a4a39f691b777bb2d29"
+        },
+        {
+          "path": "constrained-observer/admission.json",
+          "bytes": 459177,
+          "sha256": "613418f94052e5e40f97d37f45adc1f69697eb8ab5dd14e7fdd0e1fb79297b1e"
+        },
+        {
+          "path": "constrained-observer/resources.json",
+          "bytes": 1516,
+          "sha256": "446b335131655922df23d8f0cfd38d697de25bae6239b87147a0681f3774d3f6"
+        },
+        {
+          "path": "constrained-observer/staged-inputs.json",
+          "bytes": 16533,
+          "sha256": "f378aac8fa5730d279088ccccc589f1760e5ab8fd1de307673068d58aa6ede59"
+        },
+        {
+          "path": "constrained-observer/verification.json",
+          "bytes": 3438,
+          "sha256": "2cca4ab9fce97b5f0afd75d709939db441d3d99bdb91a97434d6653ca2269f6a"
+        }
+      ],
+      "admissionSha256": "613418f94052e5e40f97d37f45adc1f69697eb8ab5dd14e7fdd0e1fb79297b1e",
+      "verification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/constrained-verification.json",
+        "sha256": "99384d5ff06d1fde6ff91850be91de63c8eecb841190a9b3141fcfa4e68bb9f1"
+      },
+      "interpretation": "Declared run retained without replacement. The third native run fails only the unchanged 10 percent overhead gate; zero poll failures or skips do not make the required set pass."
+    },
+    {
+      "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "sourceTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "runId": 42303199415,
+      "jobId": 128185924192,
+      "predeclaredRole": "ordinary-full-graph-admission",
+      "profile": "full",
+      "resourceProfile": "ordinary-hosted",
+      "workerScheduling": "linux-background",
+      "relativeWorkerNiceIncrease": 5,
+      "passed": true,
+      "gate": {
+        "passed": true,
+        "correctnessPassed": true,
+        "effectAccountingPassed": true,
+        "stressProfileValid": true,
+        "latencySamplesValid": true,
+        "failureReasons": [],
+        "performanceEnforced": true,
+        "performancePassed": true,
+        "maximumRatio": 1.1,
+        "baselineP95Ms": 19.112555,
+        "pollingP95Ms": 19.060458,
+        "ratio": 0.997274200126566,
+        "regressionPercent": -0.27257998734340205
+      },
+      "effects": 1200,
+      "calls": 1200,
+      "completedPolls": 61,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "graphPassed": true,
+      "liveRecoveryPassed": true,
+      "cleanupVerified": true,
+      "artifactId": 13544518767,
+      "artifactSha256": "88a32d212842b5b248c79fd65029569d18a41874b8107f632e1ffd4c93915656",
+      "artifactFiles": [
+        {
+          "path": "agent-guard-pilot-admission.json",
+          "bytes": 435853,
+          "sha256": "44982c089f9faaa1a029111e56c398daf95b2feee224968b9d3b70c1014afcb1"
+        },
+        {
+          "path": "agent-guard-pilot-benchmark.json",
+          "bytes": 23474,
+          "sha256": "14506562d1bdf548eff1a91d478ec70904192daec36b812d1c1df72a681800aa"
+        },
+        {
+          "path": "agent-guard-pilot-verification.json",
+          "bytes": 1770,
+          "sha256": "87da263bc897b163e4ede02183eaaa5f9d07736c1470e08e9a0ef20a2014a176"
+        }
+      ],
+      "admissionSha256": "44982c089f9faaa1a029111e56c398daf95b2feee224968b9d3b70c1014afcb1",
+      "verification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/pilot-verification.json",
+        "sha256": "ab0b7273413f3b9a9c2e258ea403769ccb3b9cf8edb56ef57d4dd07d2d7eb3c6"
+      },
+      "interpretation": "Ordinary full passed; it cannot substitute for the third required native run that failed."
     }
   ],
   "decisions": [
@@ -2824,7 +3185,16 @@
     "The +10 candidate full local npm run check passed 1,319/1,319 with zero skips plus all installed-package consumers. All four predeclared hosted performance qualifications and changed-source ordinary checks remain pending; the Node security hold and every prior failure remain unchanged.",
     "Reject the fixed+10 candidate after all three predeclared native runs failed cold cadence (two busy skips each, third also11.890percent numerical overhead), although ordinary full passed6.883percent and all ordinaryCI passed. Restore original+5 and evaluate only the private fresh authenticated core JSON own-field optimization; prototype10checks and7.95/9.32percent componentCPU gains do not establish whole-admission margin. Three native plus one full runs remain required for the new candidate; Nodehold and prior outcomes preserved.",
     "The final factored own-field implementation passed306 inventory checks including10sealed cases, plus25helper checks. Its one ABBA confirmation improved all8CPUcycles, but repeated-fixture total wall time regressed5.17percent; unique-fixture wall improved18.38percent. No samples removed or overall latency/cold-poll cause claim. Full local and hosted qualification remain pending.",
-    "The final own-field candidate full local npm run check passed1,329/1,329 with zero skips plus all installed-package consumers. Hosted ordinary checks and three native plus one ordinary full qualification remain pending; prior failures and Nodehold unchanged."
+    "The final own-field candidate full local npm run check passed1,329/1,329 with zero skips plus all installed-package consumers. Hosted ordinary checks and three native plus one ordinary full qualification remain pending; prior failures and Nodehold unchanged.",
+    "Completed bfe656a declared set: native overhead 3.689866%, 3.686106% and 11.577268%; the third fails. Ordinary full passed at -0.272580%. All 4,800 effects and 533 polls completed with zero failed/skipped polls and verified cleanup. No retry, substitution or qualification claim.",
+    "All six ordinary workflows and 11 CI jobs passed on the equal bfe656a merge tree. Local 1,329/1,329 zero-skip checks and installed consumers remain retained; hosted platform skips are separately recorded. Prepared 0.1.0 artifacts remain unpublished and actual clean release preflight remains blocked.",
+    "The isolated byte-transfer prototype is rejected: late-fixture owner CPU -1.75% but process CPU +6.36%, wall +10.27% and HTTP p95 +11.97%; large-Unicode owner CPU -35.38%, process CPU -4.51%, wall -6.44%. Eight tests and all 1,800 HTTP requests passed, with every sample retained. No cause claim, size-threshold tuning or production adoption.",
+    "The isolated bounded-fragment serializer passed 59 differential tests and boundary-memory probes but is rejected: process CPU regressed 4.738% on the repeated fixture and 5.607% on the unique control, with all eight cycles worse. All samples retained; no source/dist change, production adoption, admission qualification or causal claim.",
+    "The isolated native JSON serializer passed 61 differential tests and boundary-memory checks but is rejected: CPU +5.042%/+9.923% and wall +6.048%/+15.320% on the two fixtures, with all eight CPU cycles worse. Lower descriptive boundary-memory readings do not justify adoption; all samples retained.",
+    "One fixed current-bfe sealed-entry CPU profile completed 1,000 operations with hash/byte checks and 2,073 retained samples. Decoded JSON/base/wipe and recursive serializer were the largest sampled groups. The profile executes the same private entry in an isolated process main thread, includes labeled verification/profiler overhead, and establishes neither exact per-function CPU nor the cause of native admission failures.",
+    "The isolated grant-row cache passed 63/63 differential tests with zero skips and all bound checks, but is rejected for general adoption. Repeated-fixture CPU/wall improved 4.034%/5.462%; unique-control CPU/wall regressed 9.200%/5.957%. All four cycles per fixture had the same respective direction. All samples and the independent rejection are retained; bfe remains unchanged and unqualified.",
+    "The exact fixed-grant-shape serializer passed 64/64 differential tests and the byte/value boundary probe. Its single predeclared 1,600-operation ABBA loop completed and computed results in memory, but the reporter then exited 1 because differential.log was missing. No raw timing blocks or result report were written; the component performance conclusion is unknown. No retry/replacement or production adoption. The bfe native profile remains unqualified.",
+    "Descriptive recomputation of all 3\u00d74 retained native phase distributions found manual2 baseline phase p95s 44.893/47.179 ms and polling phase p95s 50.749/53.691 ms; both polling phases were slower in this run. This does not establish a cause or remove any samples."
   ],
   "evidenceLimits": [
     "The original worker-memory-final record lacks an outer execution record; its phase cleanup, CPU/memory limits and zero OOM are recorded, but PID/swap settings and outer-container removal cannot be independently re-proven from its three listed artifacts.",
@@ -6064,7 +6434,7 @@
   },
   "ownFieldObserverFollowup": {
     "checkpointDate": "2026-11-06",
-    "status": "local_functional_passed_hosted_qualification_pending",
+    "status": "local_and_ordinary_checks_passed_declared_performance_set_failed",
     "basedOn": "b4bf2cefb005963f1132bb8316a23c8ac87c6f7d",
     "scheduling": {
       "mode": "linux-background",
@@ -6121,13 +6491,21 @@
       "allFourMustPass": true,
       "retryAllowance": 0,
       "directory": "artifacts/agent-cartography/observer-own-fields-qualification",
-      "sourceBindingPending": true,
+      "sourceBindingPending": false,
       "unchangedLimitsAndGates": true,
       "declaration": {
         "path": "artifacts/agent-cartography/observer-own-fields-qualification/declaration-precommit-checkpoint.json",
         "sha256": "2021af27675048f6d0d76120fbd73e0ef1e7778378956272161d27a6da984b37",
         "sourceBindingPending": true,
         "scope": "Immutable precommit checkpoint with94 staged inputs; active declaration separately binds exact source before dispatch."
+      },
+      "sourceBoundDeclaration": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/declaration.json",
+        "sha256": "5a302fd6ad59194fe1c21499d6cd1bc2335434028fd441c1e7b179e239ada3ef"
+      },
+      "completedVerification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/qualification-verification.json",
+        "sha256": "5b5af3bc2f51bd1ee95e1c9cd70127823daf0ef20fdcec33f70a15c4f39ae904"
       }
     },
     "localFullCheck": {
@@ -6147,9 +6525,9 @@
         "files": 457
       },
       "performanceQualification": false,
-      "hostedQualification": "pending"
+      "hostedQualification": "completed_failed_required_native_set"
     },
-    "hostedQualification": "pending",
+    "hostedQualification": "completed_failed_required_native_set",
     "latestResults": "https://github.com/ShieldaAI/agent-guard/pull/10/checks",
     "nodeSecurityHoldUnchanged": true,
     "fixedNodeRuntimeRequalificationRequired": true,
@@ -6241,5 +6619,1306 @@
         "A measured gain cannot establish whole admission margin, coldpoll cadence or cause of earlier failures."
       ]
     }
+  },
+  "ownFieldHostedQualification": {
+    "checkpointDate": "2026-11-06",
+    "status": "unqualified",
+    "source": {
+      "head": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+      "headTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "testedMerge": "b73e8dfdf4cf047e0fee131361c9d2d7dc7168a4",
+      "mergeTree": "ed3ee4a1fa8f5ed1974d3af6b64bc5d0500ba6f3",
+      "parents": [
+        "6a47b9900217b604ff408995b516b4590b7fbea8",
+        "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5"
+      ],
+      "equal": true,
+      "sha256": "9f4a75e3f9a001d0bc6e0ce465a62cd878c79f483b04f99a17337846b4d6133a",
+      "files": 457,
+      "manifest": {
+        "path": "source-manifest.json",
+        "bytes": 82117,
+        "sha256": "eca2f148597357780c9d08662d105e1c7df535f953b0f078c08c179208ea3060"
+      }
+    },
+    "allRequiredRunsPassed": false,
+    "requiredRuns": {
+      "native": 3,
+      "ordinaryFull": 1,
+      "retries": 0,
+      "allFourMustPass": true
+    },
+    "aggregateVerification": {
+      "path": "artifacts/agent-cartography/observer-own-fields-qualification/qualification-verification.json",
+      "sha256": "5b5af3bc2f51bd1ee95e1c9cd70127823daf0ef20fdcec33f70a15c4f39ae904"
+    },
+    "constrainedVerification": {
+      "path": "artifacts/agent-cartography/observer-own-fields-qualification/constrained-verification.json",
+      "sha256": "99384d5ff06d1fde6ff91850be91de63c8eecb841190a9b3141fcfa4e68bb9f1"
+    },
+    "nativeRuns": [
+      {
+        "runId": 42303202033,
+        "jobId": 128185926811,
+        "role": "auto",
+        "passed": true,
+        "regressionPercent": 3.689866463615088,
+        "polls": 137
+      },
+      {
+        "runId": 42303195348,
+        "jobId": 128185910999,
+        "role": "manual",
+        "passed": true,
+        "regressionPercent": 3.686106416553092,
+        "polls": 165
+      },
+      {
+        "runId": 42303238528,
+        "jobId": 128186653138,
+        "role": "manual2",
+        "passed": false,
+        "regressionPercent": 11.57726813435409,
+        "polls": 170
+      }
+    ],
+    "ordinaryFull": {
+      "verification": {
+        "path": "artifacts/agent-cartography/observer-own-fields-qualification/pilot-verification.json",
+        "sha256": "ab0b7273413f3b9a9c2e258ea403769ccb3b9cf8edb56ef57d4dd07d2d7eb3c6"
+      },
+      "runId": 42303199415,
+      "jobId": 128185924192,
+      "passed": true,
+      "regressionPercent": -0.27257998734340205,
+      "polls": 61,
+      "graph": {
+        "sources": 100,
+        "tasks": 10000,
+        "grants": 100000,
+        "databaseNodes": 128201,
+        "databaseRelationships": 481100
+      },
+      "publicationMaxSeconds": 8.340631198000011,
+      "queryP95Seconds": {
+        "get_agent_access": 0.15512611100000004,
+        "explain_access": 0.18481574199999978
+      },
+      "liveRecoveryPassed": true
+    },
+    "allFourRuns": {
+      "effects": 4800,
+      "calls": 4800,
+      "polls": 533,
+      "failedPolls": 0,
+      "skippedPolls": 0,
+      "cleanupVerified": true
+    },
+    "stagedInputProof": {
+      "files": 94,
+      "allThreeManifestsEqual": true,
+      "manifestSha256": "f378aac8fa5730d279088ccccc589f1760e5ab8fd1de307673068d58aa6ede59",
+      "changedFilesOnly": [
+        "packages/executor/dist/inventory-worker.js",
+        "packages/executor/dist/inventory.d.ts",
+        "packages/executor/dist/inventory.js"
+      ],
+      "compiledRuntimeFilesIncludingDeclarations": 80
+    },
+    "ordinaryChecks": {
+      "verification": {
+        "path": "artifacts/agent-cartography/hosted-bfe656a/ci-bfe656a.json",
+        "sha256": "f4350d825f840a851883c71375a023deefb29caa23dc5c4a3c454114c0d4ec03"
+      },
+      "workflows": [
+        {
+          "id": 42303202080,
+          "name": "Python dependency audit",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42303202042,
+          "name": "Dependency Review",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42303202078,
+          "name": "CodeQL",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42303202070,
+          "name": "Cartography pilot",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42303202302,
+          "name": "CI",
+          "status": "completed",
+          "conclusion": "success"
+        },
+        {
+          "id": 42303202127,
+          "name": "Cartography integration",
+          "status": "completed",
+          "conclusion": "success"
+        }
+      ],
+      "ciRunId": 42303202302,
+      "elevenJobsPassed": true,
+      "platformResults": [
+        {
+          "jobId": 128185927935,
+          "name": "check (22)",
+          "node": "22.23.4",
+          "tests": 1329,
+          "pass": 1321,
+          "fail": 0,
+          "skipped": 8,
+          "durationMs": 59813.203064,
+          "packagingPassed": true,
+          "installedConsumersPassed": true,
+          "nativeJournalCheckpointObserved": true,
+          "skipDetails": {
+            "path": "job-128185927935-skips.json",
+            "bytes": 831,
+            "sha256": "1cfdaad9478d4eaa458787371b180f0b73a019d58ef13b6fa09cb9bb004a156c"
+          },
+          "skipDetailScope": "Explicit log skip markers; reported counts also include descendants of skipped suites."
+        },
+        {
+          "jobId": 128185927709,
+          "name": "check (24)",
+          "node": "24.22.2",
+          "tests": 1329,
+          "pass": 1321,
+          "fail": 0,
+          "skipped": 8,
+          "durationMs": 52638.994517,
+          "packagingPassed": true,
+          "installedConsumersPassed": true,
+          "nativeJournalCheckpointObserved": true,
+          "skipDetails": {
+            "path": "job-128185927709-skips.json",
+            "bytes": 918,
+            "sha256": "adc00bce869822df1ed8dc6a862377dcaa17f622a8702cd513b97987d226ad69"
+          },
+          "skipDetailScope": "Explicit log skip markers; reported counts also include descendants of skipped suites."
+        },
+        {
+          "jobId": 128185927930,
+          "name": "check (26)",
+          "node": "26.13.0",
+          "tests": 1329,
+          "pass": 1321,
+          "fail": 0,
+          "skipped": 8,
+          "durationMs": 55329.56465,
+          "packagingPassed": true,
+          "installedConsumersPassed": true,
+          "nativeJournalCheckpointObserved": true,
+          "skipDetails": {
+            "path": "job-128185927930-skips.json",
+            "bytes": 916,
+            "sha256": "9ab788938a964803de0d2755351d624fc77ce78f2a442d0ed3d8baf885683476"
+          },
+          "skipDetailScope": "Explicit log skip markers; reported counts also include descendants of skipped suites."
+        },
+        {
+          "jobId": 128185927916,
+          "name": "check (macos-latest, 24)",
+          "node": "24.22.2",
+          "tests": 1329,
+          "pass": 1321,
+          "fail": 0,
+          "skipped": 8,
+          "durationMs": 105697.370917,
+          "packagingPassed": true,
+          "installedConsumersPassed": true,
+          "nativeJournalCheckpointObserved": true,
+          "skipDetails": {
+            "path": "job-128185927916-skips.json",
+            "bytes": 918,
+            "sha256": "510c40c5f7206f823009ca7cb5a6296c87413863a862dfe1489117d96570d5bf"
+          },
+          "skipDetailScope": "Explicit log skip markers; reported counts also include descendants of skipped suites."
+        },
+        {
+          "jobId": 128185928081,
+          "name": "check (windows-latest, 24)",
+          "node": "24.22.2",
+          "tests": 1330,
+          "pass": 1182,
+          "fail": 0,
+          "skipped": 148,
+          "durationMs": 123007.6984,
+          "packagingPassed": true,
+          "installedConsumersPassed": true,
+          "nativeJournalCheckpointObserved": false,
+          "skipDetails": {
+            "path": "job-128185928081-skips.json",
+            "bytes": 9324,
+            "sha256": "d4d74ba4a700d672f4b4a0406622adfb210f3225007179978ea0b4d5a2051af2"
+          },
+          "skipDetailScope": "Explicit log skip markers; reported counts also include descendants of skipped suites."
+        }
+      ],
+      "browserScans": 195,
+      "isolation": {
+        "jobId": 128185928066,
+        "tests": 45,
+        "passed": 45,
+        "failed": 0,
+        "skipped": 0,
+        "mcpChecks": 21,
+        "mcpCleanup": true
+      },
+      "python": {
+        "runId": 42303202127,
+        "jobId": 128185926506,
+        "unitTests": 1022,
+        "integrationTests": 150,
+        "failed": 0,
+        "skipped": 0,
+        "packagingAndInstalledConsumer": true,
+        "containerRemovalConfirmed": true,
+        "tunnelClosedConfirmed": true
+      },
+      "codeql": {
+        "runId": 42303202078,
+        "analysisJobsPassed": 2,
+        "gateJobId": 128186641280,
+        "gate": "passed",
+        "currentPullRequestOpenAlerts": 0,
+        "alert23": {
+          "state": "fixed",
+          "dismissed": false,
+          "lastDetectedInstanceCommit": "66d60c3a8fc27fc707486a94c9bc387c7fee1fd2",
+          "note": "The fixed alert instance retains its last-detected commit; current analyses below bind the new tested merge."
+        },
+        "currentAnalyses": [
+          {
+            "id": 2115794760,
+            "commit_sha": "b73e8dfdf4cf047e0fee131361c9d2d7dc7168a4",
+            "category": "/language:javascript-typescript",
+            "results_count": 0,
+            "rules_count": 103,
+            "created_at": "2026-11-06T22:16:16Z",
+            "error": "",
+            "warning": ""
+          },
+          {
+            "id": 2115789599,
+            "commit_sha": "b73e8dfdf4cf047e0fee131361c9d2d7dc7168a4",
+            "category": "/language:actions",
+            "results_count": 0,
+            "rules_count": 23,
+            "created_at": "2026-11-06T22:15:24Z",
+            "error": "",
+            "warning": ""
+          }
+        ],
+        "mainOpenAlerts": 5,
+        "mainStatusSeparateFromPullRequest": true
+      },
+      "productionImage": "sha256:c0bd08d33ed20a3363866d4820a15d0b21488c3a73dd51e368dbc9eae4d24feb",
+      "verificationImage": "sha256:c5bc9fd5f266ecfa86ae4ae82060c972db2825885c92ec2bb54822cbb9518346",
+      "identicalApplicationEntries": 4337,
+      "recoveryStatus": "passed",
+      "artifactVerification": {
+        "path": "artifacts/agent-cartography/hosted-bfe656a/artifact-verification.json",
+        "sha256": "76af9fa92b8da77406daaa04d17294572c9819a9b0d30a414bb1aa67b4bfc217"
+      }
+    },
+    "preparedRelease": {
+      "manifest": {
+        "path": "artifacts/agent-cartography/release-bfe656a/manifest.json",
+        "sha256": "76eafef96091c079f80799624fe359f96b6baa3b08f38714006c9933930cc13c"
+      },
+      "commandCount": 1,
+      "version": "0.1.0",
+      "tag": "latest",
+      "packages": [
+        {
+          "name": "@shieldaai/agent-guard",
+          "version": "0.1.0",
+          "filename": "shieldaai-agent-guard-0.1.0.tgz",
+          "sha256": "ef08f854b0712e1695e1574cfd6b1a6c758265887fdf70bb1650269ae86afb6f",
+          "integrity": "sha512-eO94tmFTTCSvWYbeh/JhYFjGRraxUfhdJIZj8xRhUbCiQMpnWp0FH+z7VGOXkDtqiJMvlGLdhfUYeILiIiKQlA=="
+        },
+        {
+          "name": "@shieldaai/agent-guard-mcp",
+          "version": "0.1.0",
+          "filename": "shieldaai-agent-guard-mcp-0.1.0.tgz",
+          "sha256": "a08c0e23045cdcd9bc0bcd030c6766da9222102a2ef19c8c980dbf7eba4cabde",
+          "integrity": "sha512-mw7jQlH1C0TEv2odqWhDyBscmPdTDsyjXyAFnzAbmuIaJEx+M56t6DoHtcPOmCMAEFMdL5FYFPpksevs5yFmYw=="
+        },
+        {
+          "name": "@shieldaai/agent-guard-scenarios",
+          "version": "0.1.0",
+          "filename": "shieldaai-agent-guard-scenarios-0.1.0.tgz",
+          "sha256": "8e1f0cb3f69db93b402e123f90d19124cc4b4f9fd51611a1c552f37879cab0ca",
+          "integrity": "sha512-/pSy/hdlhJtjsnBaxXRGxIO/T4aFmcwUCFCWDXBJ1ke0SXzgkdLY6u1tQRCu8luDgcwg+uXXBLwTiP8mq0iceA=="
+        },
+        {
+          "name": "@shieldaai/agent-guard-executor",
+          "version": "0.1.0",
+          "filename": "shieldaai-agent-guard-executor-0.1.0.tgz",
+          "sha256": "dbd197ea2b76e0ed5354168666df7d30b0588735f4eefdd8f10b302842651d04",
+          "integrity": "sha512-3Fthidog6uRZQgnXFp7buX6mLORMJNAwTk/AOQ3Xdjn3DXnpLdLc/99abwKsOheZLcGj57ntkeXgfr9wzzi51g=="
+        },
+        {
+          "name": "@shieldaai/agent-map",
+          "version": "0.1.0",
+          "filename": "shieldaai-agent-map-0.1.0.tgz",
+          "sha256": "910c9fcd40a0b62f5c0bfcdfae9122736eb17ead483b840ea052a0ad1d5586d1",
+          "integrity": "sha512-OuCi+SCeU5w23nNzEJPGB9ET/8HbzpWeNf9B4I44IolcrrWc3SiWhlG1agRWjPdoLtWOtQjU31xpuTaYkHOpTQ=="
+        }
+      ],
+      "hostedPayloadComparison": [
+        {
+          "name": "@shieldaai/agent-guard",
+          "version": "0.1.0",
+          "file": "shieldaai-agent-guard-0.1.0.tgz",
+          "members": 13,
+          "hostedSha256": "43c1d5460123ac3379398b4e50ed61058487fd9099782147b1d677eb1eee6b59",
+          "localSha256": "ef08f854b0712e1695e1574cfd6b1a6c758265887fdf70bb1650269ae86afb6f",
+          "archiveBytesEqual": false,
+          "memberPathsBytesAndHeadersEqual": true
+        },
+        {
+          "name": "@shieldaai/agent-guard-mcp",
+          "version": "0.1.0",
+          "file": "shieldaai-agent-guard-mcp-0.1.0.tgz",
+          "members": 17,
+          "hostedSha256": "afc03ce23494ca064151e2e6415d166d1dd8950e3fd45cb2739a773aa268b08e",
+          "localSha256": "a08c0e23045cdcd9bc0bcd030c6766da9222102a2ef19c8c980dbf7eba4cabde",
+          "archiveBytesEqual": false,
+          "memberPathsBytesAndHeadersEqual": true
+        },
+        {
+          "name": "@shieldaai/agent-guard-scenarios",
+          "version": "0.1.0",
+          "file": "shieldaai-agent-guard-scenarios-0.1.0.tgz",
+          "members": 7,
+          "hostedSha256": "a63bcf3e8c0b38a5040e04278e0911e55af035a286176eced115b252066d7788",
+          "localSha256": "8e1f0cb3f69db93b402e123f90d19124cc4b4f9fd51611a1c552f37879cab0ca",
+          "archiveBytesEqual": false,
+          "memberPathsBytesAndHeadersEqual": true
+        },
+        {
+          "name": "@shieldaai/agent-guard-executor",
+          "version": "0.1.0",
+          "file": "shieldaai-agent-guard-executor-0.1.0.tgz",
+          "members": 73,
+          "hostedSha256": "8295b8db9e684ce9beff3838a7361b6c4bc108cac5b3c377d4f56e422c0fdb5b",
+          "localSha256": "dbd197ea2b76e0ed5354168666df7d30b0588735f4eefdd8f10b302842651d04",
+          "archiveBytesEqual": false,
+          "memberPathsBytesAndHeadersEqual": true
+        },
+        {
+          "name": "@shieldaai/agent-map",
+          "version": "0.1.0",
+          "file": "shieldaai-agent-map-0.1.0.tgz",
+          "members": 35,
+          "hostedSha256": "ed0ae62610d2971ef0c01221cafc831bd6b21224bc534ea4e8337d2458861e8f",
+          "localSha256": "910c9fcd40a0b62f5c0bfcdfae9122736eb17ead483b840ea052a0ad1d5586d1",
+          "archiveBytesEqual": false,
+          "memberPathsBytesAndHeadersEqual": true
+        }
+      ],
+      "all145MembersMatch": true,
+      "gzipArchiveEquality": false,
+      "preflight": {
+        "path": "artifacts/agent-cartography/release-bfe656a/release-preflight.json",
+        "sha256": "eab2e8a6ecf2b49e91c4be18e48382c144925919cf665f07b0245f47b695fda1"
+      },
+      "actualPreflightBlocked": true,
+      "published": false
+    },
+    "nodeSecurityHoldUnchanged": true,
+    "fixedNodeRuntimeRequalificationRequired": true,
+    "releaseApprovalChanged": false,
+    "causalConclusion": "The declared set failed despite zero failed/skipped polls and three passing numerical gates. Component gains and ordinary checks do not establish repeatable constrained admission margin or the cause of historical failures."
+  },
+  "rejectedByteTransferPrototype": {
+    "status": "rejected_not_adopted",
+    "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "review": {
+      "path": "artifacts/agent-cartography/observer-byte-transfer-prototype-1/review.json",
+      "sha256": "4884ae9b2d69637c147138e28fbf2ad904419c61a744235629d0af47041412a1"
+    },
+    "analysis": {
+      "path": "artifacts/agent-cartography/observer-byte-transfer-prototype-1/analysis.json",
+      "sha256": "9766700c09a1d0e08edeb74bb89733ed2d2e656fed59b3df91bc5a5497b15e89"
+    },
+    "rawAbba": {
+      "path": "artifacts/agent-cartography/observer-byte-transfer-prototype-1/benchmark.json",
+      "sha256": "b91109c97f38746fa945fa7c0f78378502dc5a8198779fbf34e071eed79b87f0"
+    },
+    "testsLog": {
+      "path": "artifacts/agent-cartography/observer-byte-transfer-prototype-1/tests-1.log",
+      "sha256": "f4a48296acbe58d31b826a506f780322fe03e9eb0a3e4cf647329d127347b0d4"
+    },
+    "scope": "Isolated copies only: dedicated full-length nonpooled UTF-8 buffer, independent byte length before allocation, SHA256, transfer and owner full-view/nonshared/nonresizable/UTF8/hash checks, same buffer delivered to HTTP. Capture/auth/authority unchanged.",
+    "productionOrDistEdits": false,
+    "tests": {
+      "tests": 8,
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "malformedOwnerEnvelopeCases": 22,
+      "allProfileWorkerAndHttpWireEquality": true,
+      "actualTransferDetachesAllAliases": true,
+      "actualFailedSendBufferWiped": true,
+      "independentUtf8CountBeforeAllocation": true,
+      "actualFreshEncryptedSqliteCapturePerHttpRequest": true,
+      "sameOwnedBufferPassedToHttpEnd": true,
+      "noAuthorityWritesDuringObservation": true,
+      "abortDeadlineAndIdentityControlsRetained": true
+    },
+    "experiment": {
+      "runs": 1,
+      "warmupSamples": 200,
+      "measuredSamples": 1600,
+      "httpRequests": 1800,
+      "allSamplesRetained": true,
+      "cleanupVerified": true,
+      "protocol": {
+        "fixtures": [
+          "late426660",
+          "largeUnicode"
+        ],
+        "variants": [
+          "baseline",
+          "candidate"
+        ],
+        "warmupsPerVariantPerFixture": 50,
+        "cycles": 4,
+        "blockOrder": [
+          "baseline",
+          "candidate",
+          "candidate",
+          "baseline"
+        ],
+        "samplesPerBlock": 50,
+        "scheduling": "default",
+        "responseLimit": 8388608,
+        "requestTimeoutMs": 10000,
+        "ownerThreadCpu": true,
+        "clientOnSeparateWorker": true
+      },
+      "results": [
+        {
+          "fixture": "late426660",
+          "plaintextBytes": 426660,
+          "bodyBytes": 158872,
+          "variants": {
+            "baseline": {
+              "ownerCpuMs": 298.36,
+              "processCpuMs": 2141.975,
+              "wallMs": 1898.795418,
+              "latencyMedianMs": 4.113207999999759,
+              "latencyP95Ms": 4.853582999999958,
+              "latencyMaxMs": 6.503458000000137,
+              "samples": 400,
+              "coldMs": 16.93183300000004
+            },
+            "candidate": {
+              "ownerCpuMs": 293.15,
+              "processCpuMs": 2278.283,
+              "wallMs": 2093.728206999999,
+              "latencyMedianMs": 4.591083000000026,
+              "latencyP95Ms": 5.434582999999293,
+              "latencyMaxMs": 7.119458000000122,
+              "samples": 400,
+              "coldMs": 12.20854200000008
+            }
+          },
+          "cycles": [
+            {
+              "cycle": 0,
+              "ownerCpuMsChangePercent": -2.207580656925434,
+              "processCpuMsChangePercent": 2.3050368769264917,
+              "wallMsChangePercent": 8.538944307043872
+            },
+            {
+              "cycle": 1,
+              "ownerCpuMsChangePercent": -7.331794780756262,
+              "processCpuMsChangePercent": 8.202361156970884,
+              "wallMsChangePercent": 8.48514434057137
+            },
+            {
+              "cycle": 2,
+              "ownerCpuMsChangePercent": 6.9904250189432915,
+              "processCpuMsChangePercent": 9.60200045637789,
+              "wallMsChangePercent": 14.305861314064172
+            },
+            {
+              "cycle": 3,
+              "ownerCpuMsChangePercent": -4.4092538842410605,
+              "processCpuMsChangePercent": 5.979816207840094,
+              "wallMsChangePercent": 9.786820206931068
+            }
+          ],
+          "changePercent": {
+            "ownerCpuMs": -1.746212629038757,
+            "processCpuMs": 6.363659706579217,
+            "wallMs": 10.266129102276956,
+            "latencyMedianMs": 11.618060647560146,
+            "latencyP95Ms": 11.970538054038427,
+            "latencyMaxMs": 9.47188403461623
+          }
+        },
+        {
+          "fixture": "largeUnicode",
+          "plaintextBytes": 1130750,
+          "bodyBytes": 807962,
+          "variants": {
+            "baseline": {
+              "ownerCpuMs": 1151.2640000000001,
+              "processCpuMs": 7793.287,
+              "wallMs": 6958.323999999999,
+              "latencyMedianMs": 14.33752099999947,
+              "latencyP95Ms": 16.947832999998354,
+              "latencyMaxMs": 36.44891699999971,
+              "samples": 400,
+              "coldMs": 19.759374999999636
+            },
+            "candidate": {
+              "ownerCpuMs": 743.924,
+              "processCpuMs": 7441.54,
+              "wallMs": 6510.066376000002,
+              "latencyMedianMs": 13.11354200000278,
+              "latencyP95Ms": 16.265917000000627,
+              "latencyMaxMs": 23.041791999999987,
+              "samples": 400,
+              "coldMs": 22.396999999999935
+            }
+          },
+          "cycles": [
+            {
+              "cycle": 0,
+              "ownerCpuMsChangePercent": -36.431567143449904,
+              "processCpuMsChangePercent": -7.146343849167902,
+              "wallMsChangePercent": -5.985102812359278
+            },
+            {
+              "cycle": 1,
+              "ownerCpuMsChangePercent": -38.71498950669484,
+              "processCpuMsChangePercent": -4.623959913224063,
+              "wallMsChangePercent": -8.39785822233412
+            },
+            {
+              "cycle": 2,
+              "ownerCpuMsChangePercent": -32.99590797230012,
+              "processCpuMsChangePercent": -3.026613512643239,
+              "wallMsChangePercent": -3.4792712393672764
+            },
+            {
+              "cycle": 3,
+              "ownerCpuMsChangePercent": -33.255092049250344,
+              "processCpuMsChangePercent": -2.8595771156328054,
+              "wallMsChangePercent": -7.787665336857952
+            }
+          ],
+          "changePercent": {
+            "ownerCpuMs": -35.38198015398728,
+            "processCpuMs": -4.5134613931194885,
+            "wallMs": -6.442034374944273,
+            "latencyMedianMs": -8.53689420923418,
+            "latencyP95Ms": -4.023617650691946,
+            "latencyMaxMs": -36.78332884348753
+          }
+        }
+      ],
+      "medianConvention": "median: arithmetic mean of two middle samples for even n; p95: sorted[floor(0.95*(n-1))]; no filtering"
+    },
+    "decision": "Reject unconditional transport change and do not introduce a fixture-specific size threshold. The representative late fixture has only a small owner CPU reduction and regresses total CPU, wall time and p95, while the large Unicode control improves.",
+    "acceptanceEvidenceEligible": false,
+    "wholeAdmissionQualified": false,
+    "causeOfEarlierFailuresEstablished": false,
+    "limitations": [
+      "Actual loopback HTTP component comparison on macOS arm64 Node26.12.0; no constrained Linux CPU/memory profile or admission workload.",
+      "Fixture uses fresh actual encrypted in-memory SQLite captures without a witness; witness/mirror/auth/capture module bytes are identical across variants, but this microbenchmark does not measure witnessed storage.",
+      "Owner CPU comes from main-thread user+system counters; process CPU includes worker and HTTP client threads. RSS measurements are process-wide, not per-component allocation attribution.",
+      "Canonical byte comparison replaces only snapshot UUIDs and ISO observation clocks; output order, escaping, lengths, hashes and other fields are compared.",
+      "Prototype JS copies only; private TypeScript result signature would need a corresponding change if ever adopted, but no production adoption is authorized."
+    ],
+    "newSerializerPrototypeAdopted": false,
+    "independentReview": {
+      "path": "artifacts/agent-cartography/observer-byte-transfer-prototype-1/independent-rejection.json",
+      "sha256": "cafad658226858a014d15b7709eea6c2b6e3a0aa9d235710e45af0d19423f152"
+    }
+  },
+  "rejectedBoundedFragmentSerializerPrototype": {
+    "status": "rejected_not_adopted",
+    "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "review": {
+      "path": "artifacts/agent-cartography/serializer-fragments-prototype-1/review.json",
+      "sha256": "c9fbb04c0fd98875873daca60b1212d93d0cc427fdd94604e2f795cdd7f0c15d"
+    },
+    "rawAbba": {
+      "path": "artifacts/agent-cartography/serializer-fragments-prototype-1/result.json",
+      "sha256": "88f9de872afd043d3f9033a0e98f7149d18504f8c8a30a80640e761285be600b"
+    },
+    "differentialLog": {
+      "path": "artifacts/agent-cartography/serializer-fragments-prototype-1/differential.log",
+      "sha256": "236b8a8ae4a7b3105909dc1188aeaba9c961f1b0fcf17480405d7415a2244459"
+    },
+    "boundaryMemory": {
+      "path": "artifacts/agent-cartography/serializer-fragments-prototype-1/boundary-memory.json",
+      "sha256": "348c7c9822e81e00ae33786179401bc47face919e6b1e4f523662dd3f2a07fed"
+    },
+    "productionOrDistEdits": false,
+    "scope": "Only an isolated copied serializer changes to bounded token batches; fresh authentication, shared constructor, own/descriptor readers, ordering, charging sequence and exact limits are unchanged.",
+    "tests": {
+      "tests": 59,
+      "passed": 59,
+      "failed": 0,
+      "skipped": 0,
+      "runs": 1,
+      "coverage": [
+        "Existing hash-pinned finalizer/identifier/projection oracle plus current sealed ciphertext path",
+        "Exact byte output and byte-charge sequence, including error prefixes",
+        "Inherited Object/Array serialization hooks, Unicode/scalar and numeric edges",
+        "500000 values, depth32/depth33 refusal, exact8MiB less32byte headroom and overflow",
+        "Actual copied core worker, original host/MCP pipeline and48 mirror-state combinations",
+        "Detached current metadata, public index privacy and synchronous frozen/null-prototype output"
+      ]
+    },
+    "memoryBounds": {
+      "batchTokens": 256,
+      "derivedMaximumChunks": 9766,
+      "exactByteBoundaryPassed": true,
+      "exactValueBoundaryPassed": true,
+      "rssCeilingClaimed": false
+    },
+    "experiment": {
+      "runs": 1,
+      "protocol": "predeclared-protocol.json",
+      "warmupPerVariantPerFixture": 50,
+      "measuredPerVariantPerFixture": 400,
+      "totalMeasuredOperations": 1600,
+      "allSamplesRetained": true,
+      "forcedGc": false,
+      "retries": false,
+      "node": "v26.12.0",
+      "platform": "darwin",
+      "architecture": "arm64",
+      "results": [
+        {
+          "fixture": "repeated426660",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 2.634667000000263,
+            "p95Ms": 3.754124999999931,
+            "totalWallMs": 1117.479292,
+            "totalCpuMs": 1218.787
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 2.7982500000000528,
+            "p95Ms": 3.7365420000000995,
+            "totalWallMs": 1171.6210419999998,
+            "totalCpuMs": 1276.5330000000001
+          },
+          "cpuRatio": 1.0473798949283182,
+          "wallRatio": 1.0484498910965052,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 1.0144694927380502,
+              "wallRatio": 0.9754896741030497
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 1.0453758923212486,
+              "wallRatio": 1.0954084905256245
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 1.0627284226986238,
+              "wallRatio": 1.064023011560122
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 1.0794775210359626,
+              "wallRatio": 1.0680545566600883
+            }
+          ]
+        },
+        {
+          "fixture": "unique1100selectors",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 5.354583999999704,
+            "p95Ms": 6.636707999999999,
+            "totalWallMs": 2222.244290999999,
+            "totalCpuMs": 2257.384
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 5.491541999999754,
+            "p95Ms": 6.714083000000755,
+            "totalWallMs": 2264.8188749999986,
+            "totalCpuMs": 2383.9500000000003
+          },
+          "cpuRatio": 1.0560675543017937,
+          "wallRatio": 1.01915837253916,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 1.0580063709113512,
+              "wallRatio": 1.0290323153800904
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 1.0431936539113233,
+              "wallRatio": 0.994252611656275
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 1.072409691377323,
+              "wallRatio": 1.0409896133521441
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 1.051577637352616,
+              "wallRatio": 1.0138061166029473
+            }
+          ]
+        }
+      ],
+      "cpuCyclesRegressed": 8,
+      "overallProcessMaxRssKiB": 206944
+    },
+    "decision": {
+      "correctnessAndBoundsPassed": true,
+      "componentImproved": false,
+      "recommendation": "Do not adopt. The one predeclared comparison regressed CPU on both fixtures and all eight cycles; memory structure alone does not justify this performance change.",
+      "wholeAdmissionQualified": false,
+      "coldPollCauseEstablished": false,
+      "furtherRunsPerformed": false
+    },
+    "limitations": [
+      "Local macOSarm64Node26 component experiment only, not constrained Linux/HTTP/admission qualification.",
+      "Each operation freshly authenticates/decrypts/parses the same ciphertext, performs original base+mirror validation, constructs and serializes the entire unchanged core inventory.",
+      "Only the copied serializer changes to capped token batches. Construction, fresh authentication, own/descriptor readers, lexical sort, encoded-string cache, charging order and exact limits remain unchanged.",
+      "Actual deployment boundary is fixed trusted worker with structured-cloned metadata and a newly constructed builtin Map. Arbitrary caller code or monkeypatched intrinsics are outside that boundary.",
+      "All ABBA samples and cycles retained; no retries, outlier removal, forcedGC or changed workload/order.",
+      "Boundary probe token/chunk counts are structural bounds, not allocated bytes or GC attribution. ABBA process memory readings combine alternating variants.",
+      "A measured gain cannot establish whole admission margin, coldpoll cadence or cause of earlier failures."
+    ],
+    "acceptanceEvidenceEligible": false,
+    "adopted": false
+  },
+  "rejectedNativeJsonSerializerPrototype": {
+    "status": "rejected-performance-regression",
+    "adopted": false,
+    "acceptanceEvidenceEligible": false,
+    "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "review": {
+      "path": "artifacts/agent-cartography/serializer-native-json-prototype-1/review.json",
+      "sha256": "39fd708ec82ece4cd20ddf87d4a2074dd6ce2f5934fb599c956d2d1398492833"
+    },
+    "rawAbba": {
+      "path": "artifacts/agent-cartography/serializer-native-json-prototype-1/result.json",
+      "sha256": "465526d2b1052b183cd455b46cc92004b629eebdac5e00ef474c01e76530faf7"
+    },
+    "differentialLog": {
+      "path": "artifacts/agent-cartography/serializer-native-json-prototype-1/differential.log",
+      "sha256": "f996882a2e1a3f62caf8cf6dfcf86e198cb88af0e90a026e78e6b2b62fd7d6bb"
+    },
+    "boundaryMemory": {
+      "path": "artifacts/agent-cartography/serializer-native-json-prototype-1/boundary-memory.json",
+      "sha256": "54da8dea309a00646593b5173a5417772871b241330951aff96abdc8f09d61fc"
+    },
+    "productionOrDistEdits": false,
+    "scope": "Isolated native JSON.stringify after complete original accounting and nulling only fresh constructor-owned containers. Original source/configuration/authority boundaries, limits, charge sequence and input evaluation order retained.",
+    "tests": {
+      "total": 61,
+      "passed": 61,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 2098.586041,
+      "attempts": 1,
+      "includes": [
+        "actual worker core plus unchanged host/MCP oracle",
+        "48 schema/witness/mirror combinations",
+        "exact raw/opaque bytes, Unicode/numbers and hostile hooks",
+        "input descriptor/own-field read order and multiply invalid inputs",
+        "source metadata own order/prototype/frozen descriptors",
+        "unchanged caller graph prototypes",
+        "depth/value/byte boundaries and identical charge traces"
+      ]
+    },
+    "experiment": {
+      "attempts": 1,
+      "variants": [
+        "baseline",
+        "native stringify after complete accounting and fresh-container null prototypes"
+      ],
+      "warmupPerVariantPerFixture": 50,
+      "batch": 50,
+      "order": [
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A"
+      ],
+      "measuredPerVariantPerFixture": 400,
+      "totalMeasuredOperations": 1600,
+      "forcedGc": false,
+      "allSamplesAndCyclesRetained": true,
+      "allEightCpuCyclesRegressed": true,
+      "independentlyRecomputedRawSamples": true,
+      "results": [
+        {
+          "fixture": "repeated426660",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 2.544083999999998,
+            "p95Ms": 3.0049999999999955,
+            "totalWallMs": 1030.9080820000001,
+            "totalCpuMs": 1130.0059999999999
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 2.6917080000002898,
+            "p95Ms": 3.18808399999989,
+            "totalWallMs": 1093.2616249999994,
+            "totalCpuMs": 1186.985
+          },
+          "cpuRatio": 1.0504236260692421,
+          "wallRatio": 1.0604840956130939,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 1.0208029867188935,
+              "wallRatio": 1.035487216252611
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 1.0653413006919747,
+              "wallRatio": 1.087971056237131
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 1.072877526847138,
+              "wallRatio": 1.0724587791107896
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 1.0489731866088035,
+              "wallRatio": 1.0478436217682041
+            }
+          ]
+        },
+        {
+          "fixture": "unique1100selectors",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 5.086499999999887,
+            "p95Ms": 6.095209000000068,
+            "totalWallMs": 2071.083835,
+            "totalCpuMs": 2155.54
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 5.352125000000342,
+            "p95Ms": 6.921957999999904,
+            "totalWallMs": 2388.369334,
+            "totalCpuMs": 2369.427
+          },
+          "cpuRatio": 1.0992266439036158,
+          "wallRatio": 1.153197805727647,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 1.0643132768717933,
+              "wallRatio": 1.067106673509816
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 1.222834644133009,
+              "wallRatio": 1.4759852017076285
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 1.0261790062022347,
+              "wallRatio": 1.0367590313353783
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 1.092361226687786,
+              "wallRatio": 1.039736550284661
+            }
+          ]
+        }
+      ]
+    },
+    "boundaryMemoryInterpretation": [
+      "Whole-process maxRSS and before/after memory include VM/module/fixture overhead and are not allocated-byte or GC attribution.",
+      "Prototype mutation and native stringify may have engine-specific costs. All accounting completes first; unchanged500000values/depth32/8MiB-headroom bound admitted output.",
+      "Original encoded-string cache and Object.keys sorting remain; native stringify repeats escaping and has its own temporary allocations."
+    ],
+    "unchangedBoundaries": {
+      "authorityStoreAndCryptoHashes": true,
+      "publicIndexHashes": true,
+      "synchronousFinalizerExactBody": true,
+      "projectInventoryExactBody": true,
+      "workerOnlyImportRelocation": true,
+      "actualHostMcpDifferential": true,
+      "noAuthorityCacheOrPrewarming": true,
+      "limitsAndInputEvaluationOrderPreserved": true
+    },
+    "assessment": "Do not adopt: exact current-contract behavior passes, but both fixture CPU and wall totals regress. Lower separate-process maxRSS does not outweigh measured component CPU regression.",
+    "wholeAdmissionQualified": false,
+    "causeOfEarlierFailuresEstablished": false
+  },
+  "sealedWorkerProfileDiagnostic": {
+    "status": "completed_one_fixed_diagnostic",
+    "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "review": {
+      "path": "artifacts/agent-cartography/sealed-worker-cpu-profile-1/review.json",
+      "sha256": "898f96ae55e47004497f6e5a7a00005af3d50a116faba8791deb15bb43d4a8a5"
+    },
+    "analysis": {
+      "path": "artifacts/agent-cartography/sealed-worker-cpu-profile-1/analysis.json",
+      "sha256": "29ea7e5214bfb24ee2fd634025c77c8fd77c6c4be53c09241361fa52cec83eb9"
+    },
+    "rawResults": {
+      "path": "artifacts/agent-cartography/sealed-worker-cpu-profile-1/result.json",
+      "sha256": "d13da9aafd99e782ba6a9634ca897a59f14e7555c233022dd429fc88c497020b"
+    },
+    "sanitizedProfile": {
+      "path": "artifacts/agent-cartography/sealed-worker-cpu-profile-1/sanitized.cpuprofile",
+      "sha256": "4da8aaa4bcafd22e046bf351e049fcb63def533b3465710755d86b016d787d73"
+    },
+    "runs": 1,
+    "operations": 1000,
+    "warmups": 0,
+    "retries": 0,
+    "allRecordsRetained": true,
+    "profileSamples": 2073,
+    "profileComplete": true,
+    "profilerClosed": true,
+    "environment": {
+      "node": "v26.12.0",
+      "v8": "14.6.202.34-node.39",
+      "openssl": "4.0.3",
+      "platform": "darwin",
+      "architecture": "arm64"
+    },
+    "fixture": {
+      "plaintextBytes": 426660,
+      "plaintextSha256": "44dfe5b52d6352f86ec2481f84a5a48d65ffe9c3893abb3f062dcd9bf29efe9f",
+      "ciphertextSha256": "812ad46d43bed4365a542e9b4f655fd05c213603a9afda91fc45580c7b93448a",
+      "outputBytes": 158872,
+      "canonicalOutputSha256": "9d4d1252d4f9bf628c25a910d2fa648d03756a3bfb7c7599dba6b54e5041257d"
+    },
+    "wallMs": 2998.943625,
+    "processCpuMs": 3129.174,
+    "mainThreadCpuMs": 2881.058,
+    "projectionWallSumMs": 2798.568628999994,
+    "verificationWallSumMs": 193.77137900000207,
+    "disjointSampleGroups": [
+      {
+        "category": "decoded-json-base-validation-and-wipe",
+        "samples": 713,
+        "percentOfAllSamples": 34.394597202122526,
+        "associatedSamplingDeltaUs": 1037890
+      },
+      {
+        "category": "serializer",
+        "samples": 530,
+        "percentOfAllSamples": 25.56681138446696,
+        "associatedSamplingDeltaUs": 759920
+      },
+      {
+        "category": "constructor-including-relations-and-references",
+        "samples": 334,
+        "percentOfAllSamples": 16.1119150988905,
+        "associatedSamplingDeltaUs": 483162
+      },
+      {
+        "category": "authenticated-decrypt-including-envelope-and-base64",
+        "samples": 248,
+        "percentOfAllSamples": 11.96333815726001,
+        "associatedSamplingDeltaUs": 361449
+      },
+      {
+        "category": "output-verification",
+        "samples": 116,
+        "percentOfAllSamples": 5.595754944524843,
+        "associatedSamplingDeltaUs": 165213
+      },
+      {
+        "category": "garbage-collector-unattributed",
+        "samples": 71,
+        "percentOfAllSamples": 3.424987940183309,
+        "associatedSamplingDeltaUs": 106111
+      },
+      {
+        "category": "harness-profiler-other",
+        "samples": 44,
+        "percentOfAllSamples": 2.122527737578389,
+        "associatedSamplingDeltaUs": 89999
+      },
+      {
+        "category": "sealed-entry-other",
+        "samples": 17,
+        "percentOfAllSamples": 0.8200675349734683,
+        "associatedSamplingDeltaUs": 25634
+      }
+    ],
+    "interpretation": [
+      "Fresh decoding and the canonical recursive serializer account for the largest sampled groups in this fixed fixture. Own-field reading and identifier validation are smaller sampled self frames after the prior narrow optimizations.",
+      "decodeCoreInventoryObservation self samples encompass native JSON.parse at its callsite plus base checks and wipe; this profile does not separately time JSON.parse or prove a safely removable validation.",
+      "The rejected allocation prototypes were not measured here; this is the current unchanged bfe baseline only. No optimization is adopted from sampled counts."
+    ],
+    "limitations": [
+      "Same private sealed worker entry runs in the isolated process main thread, with copied current modules. No actual HTTP, SQLite capture, observer queue, concurrent admission workload, cgroup or Linux scheduler is exercised.",
+      "Every operation freshly authenticates/decrypts/parses the same synthetic stored ciphertext with original limits and mirror checks; no response/authority cache, forced GC, synthetic warmup or filtered operation.",
+      "The in-process inspector and per-operation clocks/hash/byte checks perturb execution. Verification ancestry is retained and separated; samples cannot certify uninstrumented latency or acceptance.",
+      "Self and ancestry counts are sampled attribution, not exact per-function CPU. Native callsite samples include native work and do not establish JavaScript-only cost, I/O or host causality. Associated time deltas are sampling intervals, not measured function CPU.",
+      "Garbage-collector samples lack reliable operation ownership here; no allocation-byte or causal GC claim. Missing samples for a function do not prove zero cost.",
+      "All samples and source nodes are retained. Sanitized profile redacts non-module paths; raw profile is an ignored local artifact and contains no arguments or payload state.",
+      "The profile cannot identify the cause of prior intermittent native admission/cold-poll failures or establish performance margin."
+    ],
+    "productionOrDistEdits": false,
+    "acceptanceEvidenceEligible": false,
+    "causeOfEarlierFailuresEstablished": false
+  },
+  "rejectedGrantRowCachePrototype": {
+    "status": "rejected-unique-control-regression",
+    "adopted": false,
+    "acceptanceEvidenceEligible": false,
+    "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "review": {
+      "path": "artifacts/agent-cartography/serializer-grant-cache-prototype-1/review.json",
+      "sha256": "ed87173ca1d6e93afcbbedf3fddb971ae8f1ddb0767ce89ca687970b18c16656"
+    },
+    "rawAbba": {
+      "path": "artifacts/agent-cartography/serializer-grant-cache-prototype-1/result.json",
+      "sha256": "470116ab0dd791d92116009b9930548f028dfe1fe6df6808636fc4a0f4d4577c"
+    },
+    "independentReview": {
+      "path": "artifacts/agent-cartography/serializer-grant-cache-prototype-1/independent-rejection.json",
+      "sha256": "907a1ee7bba0b65d49678bf94deb920729d821d049846d65cd8393b573535de7"
+    },
+    "differentialLog": {
+      "path": "artifacts/agent-cartography/serializer-grant-cache-prototype-1/differential.log",
+      "sha256": "d7c3eff45d49c5c48d2e2ef7891167d6f1128bd5222535bec19cecd7043553ba"
+    },
+    "boundaryMemory": {
+      "path": "artifacts/agent-cartography/serializer-grant-cache-prototype-1/boundary-memory.json",
+      "sha256": "b86df03f299573c835f940ec840c66d5739ec5b80177e2a6ba95f2ac95ee2191"
+    },
+    "productionOrDistEdits": false,
+    "scope": "Isolated per-serialization cache of the last successful canonical grant row per tool, with a 1,024-entry bound. Exact resource values/order and complete byte/node/depth charging remain required. No cross-snapshot state or authority cache.",
+    "tests": {
+      "total": 63,
+      "passed": 63,
+      "failed": 0,
+      "skipped": 0,
+      "durationMs": 2340.910625,
+      "attempts": 1,
+      "includes": [
+        "actual worker core plus unchanged host/MCP oracle",
+        "48 schema/witness/mirror combinations",
+        "exact raw/opaque bytes, metadata and caller graph isolation",
+        "dense own-data exact grant shape; extra-field/accessor fallback",
+        "resource order/value/length change and hostile tool names",
+        "cache1024 saturation, last-row replacement and new-tool fallback",
+        "mutation/cross-call cache isolation",
+        "shallow then deep cached rows at depth32/33, empty/nonempty height",
+        "cached hits at exact8MiB-headroom and500000values plus one-over",
+        "full byte-charge totals and reserved task headroom",
+        "near-maximal1024entry cache-memory boundary"
+      ]
+    },
+    "experiment": {
+      "attempts": 1,
+      "warmupPerVariantPerFixture": 50,
+      "batch": 50,
+      "order": [
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A",
+        "A",
+        "B",
+        "B",
+        "A"
+      ],
+      "measuredPerVariantPerFixture": 400,
+      "totalMeasuredOperations": 1600,
+      "forcedGc": false,
+      "allSamplesAndCyclesRetained": true,
+      "repeatedAllFourCpuCyclesImproved": true,
+      "uniqueAllFourCpuCyclesRegressed": true,
+      "independentlyRecomputedRawSamples": true,
+      "results": [
+        {
+          "fixture": "repeated426660",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 2.3841659999999365,
+            "p95Ms": 2.9209580000000415,
+            "totalWallMs": 994.8649989999993,
+            "totalCpuMs": 1089.674
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 2.291917000000012,
+            "p95Ms": 2.7061670000000504,
+            "totalWallMs": 940.5301250000001,
+            "totalCpuMs": 1045.718
+          },
+          "cpuRatio": 0.9596613299023379,
+          "wallRatio": 0.9453846762579701,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 0.9297706320989209,
+              "wallRatio": 0.896228173987201
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 0.9726957047966227,
+              "wallRatio": 0.9556889898198853
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 0.9660765290847743,
+              "wallRatio": 0.9614702968028823
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 0.9770499234997451,
+              "wallRatio": 0.9732189433351377
+            }
+          ]
+        },
+        {
+          "fixture": "unique1100selectors",
+          "baseline": {
+            "iterations": 400,
+            "medianMs": 4.986667000000125,
+            "p95Ms": 5.954375000000255,
+            "totalWallMs": 2039.7185840000006,
+            "totalCpuMs": 2125.882
+          },
+          "candidate": {
+            "iterations": 400,
+            "medianMs": 5.267291000000114,
+            "p95Ms": 6.386332999999468,
+            "totalWallMs": 2161.2158319999985,
+            "totalCpuMs": 2321.46
+          },
+          "cpuRatio": 1.0919985210844252,
+          "wallRatio": 1.059565691538553,
+          "cycles": [
+            {
+              "cycle": 0,
+              "cpuRatio": 1.1383921498209626,
+              "wallRatio": 1.085617557402855
+            },
+            {
+              "cycle": 1,
+              "cpuRatio": 1.0764167742597792,
+              "wallRatio": 1.0588939742593544
+            },
+            {
+              "cycle": 2,
+              "cpuRatio": 1.071088505608303,
+              "wallRatio": 1.0467763996614492
+            },
+            {
+              "cycle": 3,
+              "cpuRatio": 1.0776358837088258,
+              "wallRatio": 1.0467281564539404
+            }
+          ]
+        }
+      ]
+    },
+    "boundsPassed": true,
+    "memoryLimits": "Cache is per serialize call, last successful row/tool, max1024 Map entries. Row resources copied by indexed loop. Retained row JSON is a subset of disjoint already charged successful subtrees\u2264admitted8MiB-minus16bytes/task; copied resource references\u2264admitted value count/current selector bound. Peak temporary/engine allocation overhead is not identified by these logical limits.",
+    "boundaryMemoryInterpretation": [
+      "Whole-process maxRSS and before/after memory include VM/module/fixture overhead and are not allocated-byte or GC attribution.",
+      "Cache JSON is bounded by already charged disjoint successful grant subtrees, copied references by admitted value count, entries1024. Every hit charges unchanged500000values/depth32/8MiB-headroom bounds.",
+      "Original encoded-string cache, constructors, Object.keys sorting and ordinary serialization remain; row cache adds retained JSON and copied resource references only for this call."
+    ],
+    "unchangedBoundaries": {
+      "allCodeOutsidePrivateSerializerExact": true,
+      "constructorExact": true,
+      "synchronousFinalizerExact": true,
+      "sourceEnvelopeAndPublicIndexExact": true,
+      "authorityStoreAndCryptoHashes": true,
+      "workerOnlyImportRelocation": true,
+      "actualHostMcpDifferential": true,
+      "noCrossSnapshotStateOrAuthorityCacheOrPrewarming": true
+    },
+    "assessment": "Do not adopt as a general optimization. Repeated-row savings are modest (~0.110ms CPU/op), while unique-selector control consistently regressesCPU9.20%. No parameter tuning or rerun was performed.",
+    "benefitHypothesis": "Repeated successfully encoded grant rows reuse canonical JSON after comparing every resource value/order and charging complete byte/node/depth costs. The unique control exercises ordinary fallback plus eligibility/cache bookkeeping. CPU samples are not available for this candidate, so the precise overhead mechanism is not established.",
+    "scopeLimit": "Local macOS arm64 Node26 fresh sealed core projection component experiment only, not native Linux/HTTP/admission qualification or a historical-cause finding.",
+    "wholeAdmissionQualified": false,
+    "causeOfEarlierFailuresEstablished": false
+  },
+  "fixedGrantShapePrototypeAttempt": {
+    "status": "correctness_passed_performance_result_unavailable_harness_reporting_failure",
+    "record": {
+      "path": "docs/validation/fixed-grant-shape-abba-reporting-failure-2026-11-09.json",
+      "sha256": "75f5f5ddc41166c6d7b4a89e457d56e244aa996b428666a7c317d9c46d120ad9"
+    },
+    "candidateSha256": "e8e7cfb3ff2f564c727fbebf847aa2b58b4f586c0b1a3b0c6f75515a39d34e9f",
+    "correctnessTests": 64,
+    "passed": 64,
+    "failed": 0,
+    "skipped": 0,
+    "boundaryProbeSha256": "806a04556c52025fdd9cedc8479da734caeab2a3e1dbd1c4ffb3b9b58a629198",
+    "measuredOperationsExecuted": 1600,
+    "rawTimingBlocksRetained": false,
+    "resultReportRetained": false,
+    "abRunner": {
+      "exitCode": 1,
+      "reason": "ENOENT differential.log; reporter failed after computing all results in memory but before persisting result.json"
+    },
+    "retries": 0,
+    "productionAdoption": false,
+    "profileQualified": false
+  },
+  "nativeAdmissionPhaseDistribution": {
+    "path": "docs/validation/one-cpu-observer-phase-distribution-2026-11-09.json",
+    "sha256": "0098420412136b70ffdf4e80438994bacc093825a387f18fe511f48c1ecc3491",
+    "allRunsAndPhasesRetained": true,
+    "method": "All250 measured samples in each phase; no filtering; gate ceil(n*0.95)-1 percentile; no causal attribution."
   }
 }
