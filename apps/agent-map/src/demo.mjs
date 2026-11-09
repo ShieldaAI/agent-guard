@@ -447,13 +447,11 @@ export async function queryDemo(operation, args = {}) {
     const limit = args.limit ?? 50;
     result = {
       data: {
-        candidates: matches
-          .slice(0, limit)
-          .map(agent => ({
-            agent,
-            assessment: 'unknown',
-            evidence: [{ policyEvidence: access(agent).data.policyEvidence, scope: 'exact' }],
-          })),
+        candidates: matches.slice(0, limit).map(agent => ({
+          agent,
+          assessment: 'unknown',
+          evidence: [{ policyEvidence: access(agent).data.policyEvidence, scope: 'exact' }],
+        })),
         truncated: matches.length > limit,
       },
     };
