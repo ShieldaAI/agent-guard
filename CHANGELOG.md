@@ -7,6 +7,9 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Fix (executor ledger): when `ROLLBACK` itself fails, the store keeps the original
+  transaction error instead of replacing it, and closes so an unknown transaction
+  state is never read.
 - Perf (inventory observer, experimental): an identical poll within
   `reuseUnchangedMs` (default 1,000 ms; 0 disables) returns the previous observation
   instead of re-projecting, keyed by the ledger ciphertext, registry, scope, profile

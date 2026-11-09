@@ -727,7 +727,13 @@ export class LedgerStore {
       this.#cache = { payload, state: detachedCopy(state, true) };
       return result;
     } catch (error) {
-      this.#exec('ROLLBACK');
+      try {
+        this.#exec('ROLLBACK');
+      } catch {
+        // The transaction state is unknown: fail closed rather than serve later reads from it,
+        // and keep the original error, which says what actually went wrong.
+        this.close();
+      }
       throw error;
     } finally {
       acceptingWrites = false;
