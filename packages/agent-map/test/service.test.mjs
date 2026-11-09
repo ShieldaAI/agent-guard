@@ -1144,3 +1144,24 @@ test('generic host action observations remain explicit unsupported evidence, nev
     });
   }
 });
+
+test('agents without a name sort last in code-unit order, not as the string "null"', async () => {
+  const f = fixture();
+  const agent = (id, name) =>
+    f.nodes.push({
+      id,
+      entityId: `entity:${id}`,
+      label: 'GuardAgent',
+      sourceId: 'source',
+      projectionId: 'current',
+      properties: { agent_id: id, name, team_id: 'team-one', owner_id: 'owner' },
+    });
+  agent('unnamed', null);
+  agent('nancy', 'nancy');
+  agent('accent', 'Émile');
+  agent('upper', 'Zed');
+  const names = (await f.service.query(scope, 'list_agents', { limit: 100 })).data.agents.map(item => item.name);
+  assert.equal(names.at(-1), null, 'the unnamed agent is last');
+  const named = names.filter(name => name !== null);
+  assert.deepEqual(named, [...named].sort(), 'named agents are in code-unit order regardless of locale');
+});

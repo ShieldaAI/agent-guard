@@ -202,6 +202,10 @@ const matching = (node: MapNode, id: string, native: string): boolean =>
 const unique = <T>(values: readonly T[]): T[] => [...new Set(values)];
 interface GraphIndex {
   nodes: Map<string, MapNode>;
+  /** Positions of each node ID in projection.nodes, so subgraphs keep projection order. */
+  nodePositions: Map<string, number[]>;
+  /** Positions of each source's edges in projection.edges. */
+  edgesFrom: Map<string, number[]>;
   outgoing: Map<string, Map<MapEdge['kind'], string[]>>;
   incoming: Map<string, Map<MapEdge['kind'], string[]>>;
 }
@@ -227,8 +231,23 @@ class QueryWork {
     const existing = this.#indices.get(projection);
     if (existing) return existing;
     this.step(projection.nodes.length + projection.edges.length);
-    const result: GraphIndex = { nodes: new Map(), outgoing: new Map(), incoming: new Map() };
-    for (const node of projection.nodes) result.nodes.set(node.id, node);
+    const result: GraphIndex = {
+      nodes: new Map(),
+      nodePositions: new Map(),
+      edgesFrom: new Map(),
+      outgoing: new Map(),
+      incoming: new Map(),
+    };
+    const push = (map: Map<string, number[]>, key: string, position: number): void => {
+      const list = map.get(key);
+      if (list) list.push(position);
+      else map.set(key, [position]);
+    };
+    projection.nodes.forEach((node, position) => {
+      result.nodes.set(node.id, node);
+      push(result.nodePositions, node.id, position);
+    });
+    projection.edges.forEach((edge, position) => push(result.edgesFrom, edge.source, position));
     const add = (map: GraphIndex['outgoing'], from: string, kind: MapEdge['kind'], to: string): void => {
       let kinds = map.get(from);
       if (!kinds) {
@@ -414,10 +433,22 @@ function focus(projection: MapProjection, agent: MapNode, work: QueryWork): { no
     ...connected(projection, nodeIds(executions), 'G_USES_IDENTITY', work),
     ...connected(projection, nodeIds(resourceBindings), 'G_MAPS_TO', work),
   ]);
-  work.step(projection.nodes.length + projection.edges.length);
+  // Build the subgraph from the index instead of scanning the whole projection per agent:
+  // the same nodes and edges in projection order, at a cost proportional to this subgraph.
+  const index = work.index(projection),
+    nodePositions: number[] = [],
+    edgePositions: number[] = [];
+  for (const id of selected) {
+    nodePositions.push(...(index.nodePositions.get(id) ?? []));
+    const outgoing = index.edgesFrom.get(id) ?? [];
+    work.step(1 + outgoing.length);
+    for (const position of outgoing) if (selected.has(projection.edges[position]!.target)) edgePositions.push(position);
+  }
+  nodePositions.sort((a, b) => a - b);
+  edgePositions.sort((a, b) => a - b);
   return {
-    nodes: projection.nodes.filter(node => selected.has(node.id)),
-    edges: projection.edges.filter(edge => selected.has(edge.source) && selected.has(edge.target)),
+    nodes: nodePositions.map(position => projection.nodes[position]!),
+    edges: edgePositions.map(position => projection.edges[position]!),
   };
 }
 
@@ -890,7 +921,7 @@ function nodeState(node: MapNode, projection: MapProjection, work: QueryWork): s
       work.step(targets.length);
       return targets.map(target => ({ kind, target: index.nodes.get(target)?.entityId ?? null }));
     })
-    .sort((a, b) => `${a.kind}:${a.target}`.localeCompare(`${b.kind}:${b.target}`));
+    .sort((a, b) => compare(`${a.kind}:${a.target}`, `${b.kind}:${b.target}`));
   return canonicalJson({ properties, edges } as Json);
 }
 function freshness(observedAt: unknown, now: number, staleSeconds: number): JsonObject {
@@ -926,6 +957,13 @@ const collection = Object.freeze({
   externalPolicyHistory: 'not_collected',
 });
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+const agentSortKey = (agent: JsonObject): string =>
+  JSON.stringify([
+    agent.name === null || agent.name === undefined ? 1 : 0,
+    agent.name ?? '',
+    agent.sourceId ?? '',
+    agent.id ?? '',
+  ]);
 function ordered(items: JsonObject[]): JsonObject[] {
   return items.sort((a, b) =>
     compare(
@@ -1411,7 +1449,8 @@ export class MapService {
             (args.environment === undefined ||
               (agent.environments as readonly string[]).includes(args.environment as string)),
         )
-        .sort((a, b) => `${a.name}:${a.sourceId}:${a.id}`.localeCompare(`${b.name}:${b.sourceId}:${b.id}`));
+        // Unnamed agents sort last; code-unit order keeps paging identical on every host and locale.
+        .sort((a, b) => compare(agentSortKey(a), agentSortKey(b)));
       const { items, ...pagination } = page(agents, args);
       data = { agents: items!, ...pagination };
     } else if (operation === 'list_owners' || operation === 'list_resources') {
@@ -1552,8 +1591,31 @@ export class MapService {
       const candidates: JsonObject[] = [];
       const limit = (args.limit as number | undefined) ?? 50;
       let truncated = false;
-      candidateSearch: for (const source of view.sources)
-        for (const agent of source.current.nodes.filter(node => node.label === 'GuardAgent')) {
+      candidateSearch: for (const source of view.sources) {
+        // A binding enters an agent's focus only via deployment -> agent <- task -> grant -> resource
+        // <- binding. Walking that chain backwards from the matching bindings yields exactly the
+        // agents that can have evidence; the full per-agent check below still runs unchanged.
+        const projection = source.current;
+        const matches = projection.nodes.filter(node => {
+          work.step();
+          return (
+            node.label === 'GuardResourceBinding' &&
+            strings(node, 'actions').includes(args.action as string) &&
+            (string(node, 'resource_ref') === args.resourceRef ||
+              connected(projection, new Set([node.id]), 'G_MAPS_TO', work).some(
+                external => string(external, 'arn') === args.resourceRef,
+              ))
+          );
+        });
+        if (!matches.length) continue;
+        const resources = nodeIds(connected(projection, nodeIds(matches), 'G_BINDS_SELECTOR', work));
+        const grants = nodeIds(connected(projection, resources, 'G_TARGETS', work, true));
+        const tasks = nodeIds(connected(projection, grants, 'G_HAS_GRANT', work, true));
+        const deploymentIds = nodeIds(
+          connected(projection, tasks, 'G_ASSIGNED_TO', work).filter(node => node.label === 'GuardDeployment'),
+        );
+        const reachable = nodeIds(connected(projection, deploymentIds, 'G_INSTANCE_OF', work));
+        for (const agent of projection.nodes.filter(node => node.label === 'GuardAgent' && reachable.has(node.id))) {
           work.step();
           const selected = focus(source.current, agent, work),
             selectedProjection = { ...source.current, ...selected };
@@ -1636,6 +1698,7 @@ export class MapService {
               ],
             });
         }
+      }
       data = { candidates, truncated };
     } else if (operation === 'get_changes') {
       data = retainedChanges(findSource(view, args.sourceId as string), args, work);
