@@ -6,21 +6,62 @@ import { readFileSync, writeFileSync } from 'node:fs';
 
 const root = new URL('../schemas/', import.meta.url);
 export const v2Path = new URL('agent-guard-inventory-v2.schema.json', root);
+export const manifestV3Path = new URL('agent-guard-inventory-manifest-v3.schema.json', root);
 const V1 = 'agent-guard-inventory-v1.schema.json';
-const LOCAL = new Set(['task', 'tool']);
+const MANIFEST_V2 = 'agent-guard-inventory-manifest-v2.schema.json';
+const MANIFEST_V3 = 'agent-guard-inventory-manifest-v3.schema.json';
+const LOCAL = new Set(['task', 'tool', 'manifest']);
 
-function rewrite(value) {
-  if (Array.isArray(value)) return value.map(rewrite);
+/** Points `#/$defs/x` at the base file, except the definitions this file restates. */
+function rewrite(value, base = V1, local = LOCAL) {
+  if (Array.isArray(value)) return value.map(item => rewrite(item, base, local));
   if (value === null || typeof value !== 'object') return value;
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => {
       if (key === '$ref' && typeof item === 'string' && item.startsWith('#/$defs/')) {
         const name = item.slice('#/$defs/'.length);
-        return [key, LOCAL.has(name) ? item : `${V1}${item}`];
+        return [key, local.has(name) ? item : `${base}${item}`];
       }
-      return [key, rewrite(item)];
+      return [key, rewrite(item, base, local)];
     }),
   );
+}
+
+/** Manifest v3: v2 plus a required host declaration of paths that bypass the guard. */
+export function renderManifestV3Schema() {
+  const v2 = JSON.parse(readFileSync(new URL(MANIFEST_V2, root), 'utf8'));
+  const { $defs: _defs, $id: _id, title: _title, description: _description, ...envelope } = v2;
+  const schema = {
+    $schema: v2.$schema,
+    $id: v2.$id.replace('manifest-v2', 'manifest-v3'),
+    title: 'Agent Guard host inventory manifest v3',
+    description:
+      'Manifest v2 plus `directAccess`: host-declared paths that act without the guard. [] means the host declared none; it is not a check. Shared shapes are $refs into v2.',
+    ...rewrite(envelope, MANIFEST_V2, new Set(['directAccess'])),
+    $defs: {
+      directAccess: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['id', 'deploymentId', 'kind', 'targetRef', 'description'],
+        properties: {
+          id: { $ref: `${MANIFEST_V2}#/$defs/opaque` },
+          deploymentId: { $ref: `${MANIFEST_V2}#/$defs/identifier` },
+          kind: { enum: ['shell', 'database', 'network', 'sdk', 'mcp', 'other'] },
+          targetRef: { anyOf: [{ $ref: `${MANIFEST_V2}#/$defs/opaque` }, { type: 'null' }] },
+          description: { $ref: `${MANIFEST_V2}#/$defs/purpose` },
+        },
+        description: 'At most 32 entries per deployment; deploymentId must name a declared deployment.',
+      },
+    },
+  };
+  schema.properties.schemaVersion = { const: 3 };
+  schema.required = [...schema.required, 'directAccess'];
+  schema.properties.directAccess = {
+    type: 'array',
+    maxItems: 1000,
+    items: { $ref: '#/$defs/directAccess' },
+  };
+  return JSON.stringify(schema, null, 2) + '\n';
 }
 
 export function renderInventoryV2Schema() {
@@ -55,9 +96,16 @@ export function renderInventoryV2Schema() {
     $id: v1.$id.replace('inventory-v1', 'inventory-v2'),
     title: 'Agent Guard inventory snapshot v2',
     description:
-      'Same as v1 plus outside-content fields on tasks and tools. Executors emit v2 only when a tool declares an outside-content label or a task family is untrusted. Shared shapes are $refs into v1.',
+      'Same as v1 plus outside-content fields on tasks and tools, and manifest v3. Executors emit v2 only when a tool declares an outside-content label, a task family is untrusted, or the manifest is v3. Shared shapes are $refs into v1.',
     ...rewrite(envelope),
-    $defs: { task, tool },
+    $defs: {
+      task,
+      tool,
+      // v2 snapshots also carry manifest v3 (directAccess); v1 and v2 manifests are unchanged.
+      manifest: {
+        oneOf: [{ $ref: `${V1}#/$defs/manifestV1` }, { $ref: `${V1}#/$defs/manifestV2` }, { $ref: MANIFEST_V3 }],
+      },
+    },
   };
   schema.properties.schemaVersion = { const: 2 };
   return JSON.stringify(schema, null, 2) + '\n';
@@ -65,6 +113,8 @@ export function renderInventoryV2Schema() {
 
 if (import.meta.url === `file://${process.argv[1]}`) {
   const text = renderInventoryV2Schema();
-  if (process.argv.includes('--write')) writeFileSync(v2Path, text);
-  else process.stdout.write(text);
+  if (process.argv.includes('--write')) {
+    writeFileSync(v2Path, text);
+    writeFileSync(manifestV3Path, renderManifestV3Schema());
+  } else process.stdout.write(text);
 }

@@ -430,6 +430,7 @@ function focus(projection: MapProjection, agent: MapNode, work: QueryWork): { no
     ...connected(projection, new Set([agent.id]), 'G_OWNED_BY', work),
     ...connected(projection, nodeIds(resourceBindings), 'G_RESOURCE_OWNED_BY', work),
     ...connected(projection, nodeIds(deployment), 'G_USES_CREDENTIAL', work),
+    ...connected(projection, nodeIds(deployment), 'G_DIRECT_ACCESS_FOR', work, true),
     ...connected(projection, nodeIds(executions), 'G_USES_IDENTITY', work),
     ...connected(projection, nodeIds(resourceBindings), 'G_MAPS_TO', work),
   ]);
@@ -450,6 +451,43 @@ function focus(projection: MapProjection, agent: MapNode, work: QueryWork): { no
     nodes: nodePositions.map(position => projection.nodes[position]!),
     edges: edgePositions.map(position => projection.edges[position]!),
   };
+}
+
+/**
+ * Host-declared paths that act without the guard, per deployment in the agent's focus.
+ * Manifest v3 sets `direct_access_status`; older manifests leave it absent, which reads as
+ * `unknown` and never as `none_declared`.
+ */
+function directAccess(
+  projection: MapProjection,
+  graph: { nodes: MapNode[]; edges: MapEdge[] },
+  work: QueryWork,
+): JsonObject[] {
+  return ordered(
+    graph.nodes
+      .filter(node => node.label === 'GuardDeployment')
+      .map(deployment => {
+        const entries = connected(projection, new Set([deployment.id]), 'G_DIRECT_ACCESS_FOR', work, true);
+        const declared = string(deployment, 'direct_access_status');
+        // An entry without the v3 status would be inconsistent; report what was found.
+        const status = entries.length ? 'found' : declared === 'none_declared' ? 'none_declared' : 'unknown';
+        return {
+          id: deployment.entityId,
+          deploymentId: string(deployment, 'deployment_id'),
+          status,
+          evidenceKind: 'declared',
+          entries: ordered(
+            entries.map(entry => ({
+              id: entry.entityId,
+              accessId: string(entry, 'access_id'),
+              kind: string(entry, 'kind'),
+              targetRef: string(entry, 'target_ref'),
+              description: string(entry, 'description'),
+            })),
+          ),
+        };
+      }),
+  );
 }
 
 const POLICY_ACTIONS: Readonly<Record<string, string>> = Object.freeze({
@@ -939,6 +977,7 @@ function changeSummary(node: MapNode): JsonObject {
     name:
       string(node, 'name') ??
       string(node, 'display_name') ??
+      string(node, 'description') ??
       string(node, 'task_id') ??
       string(node, 'agent_id') ??
       string(node, 'deployment_id') ??
@@ -1099,6 +1138,7 @@ function inventorySections(
         workloadGeneration: string(node, 'workload_generation'),
         buildRef: string(node, 'build_ref'),
         bindingAuthority: string(node, 'binding_authority'),
+        directAccessStatus: string(node, 'direct_access_status') ?? 'unknown',
         ...hostObservation(node),
       })),
     ),
@@ -1268,6 +1308,7 @@ function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonVa
           'GuardExternalResource',
           'GuardExternalIdentity',
           'GuardCredentialReference',
+          'GuardDirectAccess',
           'GuardMcpConnection',
           'GuardMcpOperation',
         ].includes(display.label) ||
@@ -1570,11 +1611,13 @@ export class MapService {
           .map(node => ({ id: node.entityId, kind: node.label, ...node.properties })),
         policyEvidence: policy as unknown as readonly JsonObject[],
         policyCoverage: policyCoverage(policy),
+        outsideGuard: { directAccess: directAccess(projection, graph, work) },
         receipt: receipt(source),
         assessment: 'unknown',
         limitations: [
           'Declared and observed evidence only; current executor admission is required.',
           'External object and prefix bindings retain their original scope.',
+          'Paths outside the guard come from host declarations only; none_declared is the host claim, not a check, and neither status means safe.',
         ],
       };
     } else if (operation === 'explain_access') {

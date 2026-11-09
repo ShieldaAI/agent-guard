@@ -172,7 +172,20 @@ export interface InventoryManifestV2 extends Omit<
   readonly deployments: readonly InventoryManifestDeploymentV2[];
   readonly resourceBindings: readonly InventoryManifestResourceBindingV2[];
 }
-export type InventoryManifest = InventoryManifestV1 | InventoryManifestV2;
+/** A host-declared path that acts without going through the guard (shell, raw database, ...). */
+export interface InventoryDirectAccess {
+  readonly id: string;
+  readonly deploymentId: string;
+  readonly kind: 'shell' | 'database' | 'network' | 'sdk' | 'mcp' | 'other';
+  readonly targetRef: string | null;
+  readonly description: string;
+}
+/** v2 plus `directAccess`: the host's declaration; [] means "none declared", not "checked". */
+export interface InventoryManifestV3 extends Omit<InventoryManifestV2, 'schemaVersion'> {
+  readonly schemaVersion: 3;
+  readonly directAccess: readonly InventoryDirectAccess[];
+}
+export type InventoryManifest = InventoryManifestV1 | InventoryManifestV2 | InventoryManifestV3;
 export interface HostInventorySnapshot extends Omit<InventorySnapshot, 'profile' | 'coverage'> {
   readonly profile: 'host';
   readonly manifest: InventoryManifest;
@@ -261,11 +274,13 @@ function awsReference(value: unknown, resource: boolean): { service: string; res
 /** Validate a complete host-owned configuration without executing accessors or retaining mutable input. */
 export function validateInventoryManifest(value: unknown): InventoryManifest {
   const copied = copy(value, 2 * 1024 * 1024);
-  const v2 =
-    copied !== null &&
-    typeof copied === 'object' &&
-    !Array.isArray(copied) &&
-    (copied as Record<string, unknown>).schemaVersion === 2;
+  const version =
+    copied !== null && typeof copied === 'object' && !Array.isArray(copied)
+      ? (copied as Record<string, unknown>).schemaVersion
+      : undefined;
+  // v3 is v2 plus a required directAccess declaration.
+  const v2 = version === 2 || version === 3;
+  const v3 = version === 3;
   const manifest = object(copied, [
     'schemaVersion',
     'evidenceKind',
@@ -279,8 +294,9 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
     'resourceBindings',
     'executionBindings',
     ...(v2 ? ['authorityId', 'owners', 'credentialReferences'] : []),
+    ...(v3 ? ['directAccess'] : []),
   ]);
-  if (![1, 2].includes(manifest.schemaVersion as number) || manifest.evidenceKind !== 'host_asserted') fail();
+  if (![1, 2, 3].includes(manifest.schemaVersion as number) || manifest.evidenceKind !== 'host_asserted') fail();
   source(manifest.source);
   identifier(manifest.manifestId);
   integer(manifest.revision);
@@ -465,6 +481,23 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
   });
   unique(executions.map(binding => binding.id));
   unique(executions.map(binding => JSON.stringify([binding.deploymentId, binding.tool])));
+  if (v3) {
+    const perDeployment = new Map<string, number>();
+    const entries = array(manifest.directAccess, 1000).map(value => {
+      const item = object(value, ['id', 'deploymentId', 'kind', 'targetRef', 'description']);
+      const id = opaque(item.id);
+      identifier(item.deploymentId);
+      if (!deploymentIds.has(item.deploymentId as string)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+      const count = (perDeployment.get(item.deploymentId as string) ?? 0) + 1;
+      if (count > 32) fail('INVENTORY_MANIFEST_LIMIT_EXCEEDED');
+      perDeployment.set(item.deploymentId as string, count);
+      choice(item.kind, ['shell', 'database', 'network', 'sdk', 'mcp', 'other']);
+      if (item.targetRef !== null) opaque(item.targetRef);
+      display(item.description, 1024);
+      return id;
+    });
+    unique(entries);
+  }
   return manifest as unknown as InventoryManifest;
 }
 
@@ -662,8 +695,23 @@ export function composeInventorySnapshot(core: InventorySnapshot, value: Invento
     if (!tools.has(binding.tool)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
   const now = Date.now();
   if (!Number.isSafeInteger(now) || now < 0 || now > 253_402_300_799_999) fail('INVENTORY_CLOCK_INVALID');
+  // A v3 manifest only fits the v2 snapshot schema; give every task and tool the v2 fields.
+  const shaped =
+    manifest.schemaVersion === 3 && snapshot.schemaVersion === 1
+      ? {
+          ...snapshot,
+          schemaVersion: 2 as const,
+          tasks: snapshot.tasks.map(task => ({ ...task, untrusted: false })),
+          tools: snapshot.tools.map(tool => ({
+            ...tool,
+            readsUntrusted: null,
+            untrustedContext: null,
+            sendsExternal: null,
+          })),
+        }
+      : snapshot;
   const composed: HostInventorySnapshot = {
-    ...snapshot,
+    ...shaped,
     profile: 'host',
     snapshotId: randomUUID(),
     generatedAt: new Date(now).toISOString(),

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://shielda.ai/schemas/agent-guard-inventory-v2.schema.json",
   "title": "Agent Guard inventory snapshot v2",
-  "description": "Same as v1 plus outside-content fields on tasks and tools. Executors emit v2 only when a tool declares an outside-content label or a task family is untrusted. Shared shapes are $refs into v1.",
+  "description": "Same as v1 plus outside-content fields on tasks and tools, and manifest v3. Executors emit v2 only when a tool declares an outside-content label, a task family is untrusted, or the manifest is v3. Shared shapes are $refs into v1.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -61,7 +61,7 @@
       }
     },
     "manifest": {
-      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/manifest"
+      "$ref": "#/$defs/manifest"
     },
     "mcp": {
       "$ref": "agent-guard-inventory-v1.schema.json#/$defs/mcp"
@@ -371,6 +371,19 @@
               }
             }
           }
+        }
+      ]
+    },
+    "manifest": {
+      "oneOf": [
+        {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/manifestV1"
+        },
+        {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/manifestV2"
+        },
+        {
+          "$ref": "agent-guard-inventory-manifest-v3.schema.json"
         }
       ]
     }

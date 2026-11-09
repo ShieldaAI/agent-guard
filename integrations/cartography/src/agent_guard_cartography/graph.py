@@ -30,6 +30,7 @@ from agent_guard_cartography.cloud import (
 from agent_guard_cartography.inventory import validate_snapshot
 from agent_guard_cartography.models import PROJECTION_LABELS, SCHEMAS
 
+OUTSIDE_CONTENT_TOOL_FIELDS = ("readsUntrusted", "untrustedContext", "sendsExternal")
 MAX_MCP_CONNECTION_RECEIPTS = 128
 MAX_MCP_RETIRED_SESSIONS = 64
 MAX_MCP_WATERMARK_BYTES = 1024 * 1024
@@ -70,6 +71,16 @@ def source_key(source: Mapping[str, str]) -> str:
 def _authority_hash(snapshot: dict) -> str:
     """A ledger revision cannot describe two different core authority states."""
     tasks = deepcopy(snapshot["tasks"])
+    tools = deepcopy(snapshot["tools"])
+    # Neutral inventory v2 fields say nothing a v1 record does not: a v3 manifest lifts a
+    # v1 core to the v2 shape at the same ledger revision without changing authority.
+    for task in tasks:
+        if task.get("untrusted") is False:
+            del task["untrusted"]
+    for tool in tools:
+        if all(tool.get(key, 0) is None for key in OUTSIDE_CONTENT_TOOL_FIELDS):
+            for key in OUTSIDE_CONTENT_TOOL_FIELDS:
+                del tool[key]
     for task in tasks:
         task["allowedRecipients"].sort()
         task["grants"].sort(key=lambda grant: grant["tool"])
@@ -78,7 +89,7 @@ def _authority_hash(snapshot: dict) -> str:
     return _key(
         snapshot["policyEpoch"],
         sorted(tasks, key=lambda task: task["id"]),
-        sorted(snapshot["tools"], key=lambda tool: tool["name"]),
+        sorted(tools, key=lambda tool: tool["name"]),
     )
 
 
@@ -91,7 +102,9 @@ def _manifest_hash(manifest: dict) -> str:
     normalized["taskBindings"].sort(key=lambda item: item["taskId"])
     for binding in normalized["resourceBindings"]:
         binding["actions"].sort()
-    if normalized["schemaVersion"] == 2:
+    if normalized["schemaVersion"] == 3:
+        normalized["directAccess"].sort(key=lambda item: item["id"])
+    if normalized["schemaVersion"] >= 2:
         for field in ("owners", "credentialReferences"):
             normalized[field].sort(key=lambda item: item["id"])
         for deployment in normalized["deployments"]:
@@ -407,8 +420,24 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 ownership_status=agent.get("ownershipStatus", "unknown"),
                 ownership_source=agent.get("ownershipSource"),
                 owner_node_id=node_id("GuardOwner", agent["ownerId"])
-                if manifest["schemaVersion"] == 2 and agent["ownerId"] is not None
+                if manifest["schemaVersion"] >= 2 and agent["ownerId"] is not None
                 else None,
+                **evidence,
+            )
+        # Manifest v3 declares paths that act without the guard. [] is the host's
+        # claim of none, not a check; v1/v2 manifests leave the status absent (unknown).
+        direct = manifest.get("directAccess")
+        declared = {entry["deploymentId"] for entry in direct or []}
+        for entry in direct or []:
+            make(
+                "GuardDirectAccess",
+                entry["id"],
+                access_id=entry["id"],
+                deployment_id=entry["deploymentId"],
+                kind=entry["kind"],
+                target_ref=entry["targetRef"],
+                description=entry["description"],
+                deployment_node_id=node_id("GuardDeployment", entry["deploymentId"]),
                 **evidence,
             )
         for deployment in manifest["deployments"]:
@@ -426,6 +455,15 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                     for ref in deployment.get("credentialReferenceIds", [])
                 ],
                 agent_node_id=node_id("GuardAgent", deployment["agentId"]),
+                **(
+                    {
+                        "direct_access_status": "found"
+                        if deployment["id"] in declared
+                        else "none_declared"
+                    }
+                    if direct is not None
+                    else {}
+                ),
                 **evidence,
             )
         for binding in manifest["resourceBindings"]:
@@ -738,6 +776,7 @@ def import_snapshot(
         ("G_INSTANCE_OF", "GuardDeployment", "GuardAgent", "agent_node_id"),
         ("G_OWNED_BY", "GuardAgent", "GuardOwner", "owner_node_id"),
         ("G_USES_CREDENTIAL", "GuardDeployment", "GuardCredentialReference", "credential_node_ids"),
+        ("G_DIRECT_ACCESS_FOR", "GuardDirectAccess", "GuardDeployment", "deployment_node_id"),
         ("G_BINDS_SELECTOR", "GuardResourceBinding", "GuardResource", "resource_node_id"),
         ("G_MAPS_TO", "GuardResourceBinding", "GuardExternalResource", "external_resource_node_id"),
         ("G_RESOURCE_OWNED_BY", "GuardResourceBinding", "GuardOwner", "owner_node_id"),

@@ -95,6 +95,7 @@ const READ_ORDER: readonly GuardLabel[] = [
   'GuardMcpOperation',
   'GuardOwner',
   'GuardCredentialReference',
+  'GuardDirectAccess',
 ];
 const historicalVisibility = (label: 'GuardAgent' | 'GuardTask', parameter: string): string =>
   `(n.entity_id IN $${parameter} OR NOT EXISTS {
@@ -120,6 +121,7 @@ const predicates: Readonly<Record<Exclude<GuardLabel, 'GuardAgent'>, string>> = 
   GuardMcpConnection: through('(n)<-[:G_VIA_CONNECTION]-(visible:GuardExecutionBinding)', 'GuardExecutionBinding'),
   GuardOwner: `(${through('(n)<-[:G_OWNED_BY]-(visible:GuardAgent)', 'GuardAgent')} OR ${through('(n)<-[:G_RESOURCE_OWNED_BY]-(visible:GuardResourceBinding)', 'GuardResourceBinding')})`,
   GuardCredentialReference: through('(n)<-[:G_USES_CREDENTIAL]-(visible:GuardDeployment)', 'GuardDeployment'),
+  GuardDirectAccess: through('(n)-[:G_DIRECT_ACCESS_FOR]->(visible:GuardDeployment)', 'GuardDeployment'),
   GuardMcpOperation: `EXISTS {
     MATCH (n)<-[:G_EXPOSES_OPERATION]-(c:GuardMcpConnection)<-[:G_VIA_CONNECTION]-(b:GuardExecutionBinding)
     MATCH (b)-[:G_EXECUTES_TOOL]->(tool:GuardTool)<-[:G_OPERATION_TOOL]-(n)
@@ -221,7 +223,21 @@ function safeNode(raw: unknown, label: unknown, sourceId: string, projectionId: 
       !['current', 'due', 'overdue', 'unknown'].includes(properties.rotation_status as string))
   )
     throw new MapQueryError('MAP_UNAVAILABLE');
-  if (label === 'GuardDeployment' && (!optionalOpaque(properties.runtime_ref) || !optionalOpaque(properties.build_ref)))
+  if (
+    label === 'GuardDeployment' &&
+    (!optionalOpaque(properties.runtime_ref) ||
+      !optionalOpaque(properties.build_ref) ||
+      ![undefined, null, 'found', 'none_declared'].includes(properties.direct_access_status as string))
+  )
+    throw new MapQueryError('MAP_UNAVAILABLE');
+  if (
+    label === 'GuardDirectAccess' &&
+    (!opaque(properties.access_id) ||
+      !optionalOpaque(properties.target_ref) ||
+      !['shell', 'database', 'network', 'sdk', 'mcp', 'other'].includes(properties.kind as string) ||
+      typeof properties.description !== 'string' ||
+      properties.description.length > 1024)
+  )
     throw new MapQueryError('MAP_UNAVAILABLE');
   if (
     label === 'GuardResourceBinding' &&

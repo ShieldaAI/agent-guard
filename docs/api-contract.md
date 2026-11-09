@@ -370,7 +370,17 @@ When any tool declares an outside-content label (`readsUntrusted`, `untrustedCon
 adds `untrusted`, and every tool adds the three labels, `null` when undeclared or
 unregistered. v2 is a `$ref` envelope over v1; every other shape is unchanged. A
 collector that only knows v1 refuses v2 rather than dropping the fields. Without
-those labels the output is exactly v1.
+those labels the output is exactly v1. A host snapshot composed with a
+[manifest v3](../schemas/agent-guard-inventory-manifest-v3.schema.json) is always v2,
+since only the v2 schema accepts that manifest; the lifted fields are `untrusted: false`
+and `null` labels.
+
+Manifest v3 is manifest v2 plus a required `directAccess` list: paths the host says
+act without the guard. Each entry has an opaque `id`, a declared `deploymentId`, a
+`kind` (`shell`, `database`, `network`, `sdk`, `mcp` or `other`), an opaque
+`targetRef` or `null`, and a `description` of at most 1,024 characters. At most 32
+entries per deployment and 1,000 in total. `[]` means the host declared none; the
+map reports it as `none_declared`, never as checked or safe.
 
 One synchronous ledger read produces an immutable, detached snapshot. Export does
 not run authorization callbacks or change ledger revision, budgets, approvals or

@@ -161,6 +161,17 @@ class DeploymentProperties(HostProperties):
     workload_generation: PropertyRef = PropertyRef("workload_generation")
     build_ref: PropertyRef = PropertyRef("build_ref")
     binding_authority: PropertyRef = PropertyRef("binding_authority")
+    # Manifest v3 only: "found" or "none_declared". Absent means unknown.
+    direct_access_status: PropertyRef = PropertyRef("direct_access_status")
+
+
+@dataclass(frozen=True)
+class DirectAccessProperties(HostProperties):
+    access_id: PropertyRef = PropertyRef("access_id")
+    deployment_id: PropertyRef = PropertyRef("deployment_id")
+    kind: PropertyRef = PropertyRef("kind")
+    target_ref: PropertyRef = PropertyRef("target_ref")
+    description: PropertyRef = PropertyRef("description")
 
 
 @dataclass(frozen=True)
@@ -292,6 +303,13 @@ SCHEMAS: dict[str, GuardSchema] = {
                     many=True,
                 ),
             ]
+        ),
+    ),
+    "GuardDirectAccess": GuardSchema(
+        label="GuardDirectAccess",
+        properties=DirectAccessProperties(),
+        other_relationships=OtherRelationships(
+            [relationship("G_DIRECT_ACCESS_FOR", "GuardDeployment", "deployment_node_id")]
         ),
     ),
     "GuardExternalResource": GuardSchema(

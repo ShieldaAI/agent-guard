@@ -96,7 +96,10 @@ The canonical schema is
 using JSON Schema Draft 2020-12. It is bundled into both the wheel and source
 archive, alongside the standalone
 [manifest v1 schema](../../schemas/agent-guard-inventory-manifest-v1.schema.json),
-[manifest v2 schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json), and
+[manifest v2 schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json),
+[manifest v3 schema](../../schemas/agent-guard-inventory-manifest-v3.schema.json)
+(v2 plus host-declared `directAccess`, projected as `GuardDirectAccess` nodes linked by
+`G_DIRECT_ACCESS_FOR`), the [inventory v2 schema](../../schemas/agent-guard-inventory-v2.schema.json), and
 [MCP connection schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json);
 installed consumers do not need this repository. Python additionally
 checks graph references and cross-record invariants that JSON Schema cannot express.

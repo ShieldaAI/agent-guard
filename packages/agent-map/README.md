@@ -128,7 +128,7 @@ documented by the schemas. No pagination cursor exposes a broader scope.
 | Operation | Arguments | Evidence |
 | --- | --- | --- |
 | `list_agents` | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. |
-| `get_agent_access` | `sourceId`, `agentId` | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations. |
+| `get_agent_access` | `sourceId`, `agentId` | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`). |
 | `explain_access` | `sourceId`, `taskId`, `tool`, `resourceId` | Visible delegation, declared matches, known blockers and explicit unknown checks. |
 | `find_agents_with_access` | `resourceRef`, `action`; optional `sourceId`, `limit` | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion. |
 | `get_changes` | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit` | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps. |

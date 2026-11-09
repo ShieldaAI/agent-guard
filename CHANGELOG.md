@@ -7,6 +7,17 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (host manifest v3): `agent-guard-inventory-manifest-v3.schema.json` adds a
+  required `directAccess` list, where the host declares paths that act without the
+  guard (shell, database, network, SDK, MCP, other). Entries have opaque ids and target
+  references, a 1,024-character description, and at most 32 per deployment (1,000 in
+  total). `[]` is the host's claim of none, not a check. The executor validates v3 and
+  composes it into a v2 snapshot. The collector projects `GuardDirectAccess` nodes and
+  a per-deployment `direct_access_status`. The map adds
+  `get_agent_access.outsideGuard.directAccess` with status `found`, `none_declared` or
+  `unknown`; an older manifest always reads as `unknown`. The collector's authority
+  hash now ignores neutral v2 fields, so moving a host to manifest v3 at the same
+  ledger revision is not refused as `REVISION_CONTENT_CONFLICT`.
 - Add (inventory schema v2): when outside-content labels are in use, executor
   snapshots use `agent-guard-inventory-v2.schema.json`, a `$ref` envelope over v1
   that adds `untrusted` on tasks and the three labels on tools. Otherwise the output

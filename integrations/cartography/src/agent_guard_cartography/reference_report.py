@@ -29,6 +29,7 @@ LABELS = frozenset(
         "GuardOwner",
         "GuardCredentialReference",
         "GuardDeployment",
+        "GuardDirectAccess",
         "GuardTask",
         "GuardPrincipal",
         "GuardGrant",

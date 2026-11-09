@@ -40,6 +40,8 @@ export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = O
     'workload_generation',
     'build_ref',
     'binding_authority',
+    // Manifest v3 only: 'found' | 'none_declared'; absent means unknown.
+    'direct_access_status',
     ...HOST_FIELDS,
   ],
   GuardTask: [
@@ -125,6 +127,7 @@ export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = O
     'rotation_status',
     ...HOST_FIELDS,
   ],
+  GuardDirectAccess: ['access_id', 'deployment_id', 'kind', 'target_ref', 'description', ...HOST_FIELDS],
   GuardMcpOperation: ['connection_id', 'name', 'kind', 'fingerprint', 'evidence_kind', 'assessment'],
 });
 

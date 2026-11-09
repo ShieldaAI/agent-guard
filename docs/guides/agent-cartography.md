@@ -16,7 +16,10 @@ No hosted maintainer account or customer data submission is required.
    [runnable example](../../examples/agent-cartography.mjs) and
    [closed schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json).
    Supply agent/owner names, purpose and lifecycle, deployment details, resource
-   bindings, and credential references from company-owned systems.
+   bindings, and credential references from company-owned systems. To also record
+   paths that act without the guard (an ops shell, a direct database connection),
+   use [manifest v3](../../schemas/agent-guard-inventory-manifest-v3.schema.json)
+   and list them in `directAccess`; `[]` declares none.
 4. Validate the manifest with `validateInventoryManifest`, then enroll it in the
    existing authenticated observer with profile `host` or `host-mcp`. Collection
    composes the company's assertions with the executor's actual declared grants;

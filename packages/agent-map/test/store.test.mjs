@@ -623,3 +623,43 @@ test('duplicate stable entity identities fail before scoped relationships can be
   });
   await assert.rejects(new Neo4jMapStore(backend.driver).read(scope), { code: 'MAP_UNAVAILABLE' });
 });
+
+test('declared direct access attaches only through an authorized deployment and is validated', async () => {
+  const opaque = `opaque:${'a'.repeat(64)}`;
+  const entry = {
+    ...agent,
+    id: 'direct',
+    entity_id: 'direct-entity',
+    access_id: opaque,
+    deployment_id: 'deployment',
+    kind: 'shell',
+    target_ref: null,
+    description: 'Ops shell',
+    command: 'private-command-canary',
+  };
+  const backend = fake({
+    nodes: [
+      { label: 'GuardAgent', node: agent },
+      {
+        label: 'GuardDeployment',
+        node: { ...agent, id: 'deployment', entity_id: 'deployment-entity', direct_access_status: 'found' },
+      },
+      { label: 'GuardDirectAccess', node: entry },
+    ],
+  });
+  const result = await new Neo4jMapStore(backend.driver).read(scope);
+  assert.doesNotMatch(JSON.stringify(result), /private-command-canary/);
+  const direct = backend.calls.find(c => c.query.includes("RETURN 'GuardDirectAccess' AS label"));
+  assert.match(direct.query, /G_DIRECT_ACCESS_FOR/);
+  assert.deepEqual(direct.params.GuardDeploymentIds, ['deployment']);
+  for (const [label, properties] of [
+    ['GuardDirectAccess', { ...entry, access_id: 'raw-name' }],
+    ['GuardDirectAccess', { ...entry, target_ref: 'db.internal' }],
+    ['GuardDirectAccess', { ...entry, kind: 'ssh' }],
+    ['GuardDirectAccess', { ...entry, description: 'x'.repeat(1025) }],
+    ['GuardDeployment', { ...agent, direct_access_status: 'safe' }],
+  ])
+    await assert.rejects(new Neo4jMapStore(fake({ nodes: [{ label, node: properties }] }).driver).read(scope), {
+      code: 'MAP_UNAVAILABLE',
+    });
+});

@@ -33,6 +33,9 @@ SCHEMA_FILENAME = "agent-guard-inventory-v1.schema.json"
 SCHEMA_V2_FILENAME = "agent-guard-inventory-v2.schema.json"
 MANIFEST_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v1.schema.json"
 MANIFEST_V2_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v2.schema.json"
+MANIFEST_V3_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v3.schema.json"
+# Manifest v3 directAccess: at most this many declared paths per deployment.
+MAX_DIRECT_ACCESS_PER_DEPLOYMENT = 32
 MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
 UTC_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
 
@@ -82,9 +85,12 @@ def _schema(filename: str) -> dict[str, Any]:
 @lru_cache(maxsize=4)
 def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
     schema = _schema(filename)
-    # v2 refers to v1 by its $id; resolve that from the bundled file, never the network.
-    base = _schema(SCHEMA_FILENAME)
-    registry = Registry().with_resource(base["$id"], Resource.from_contents(base))
+    # v2 schemas refer to v1 (and manifest v3 to manifest v2) by $id; resolve those
+    # from the bundled files, never the network.
+    registry = Registry()
+    for name in (SCHEMA_FILENAME, MANIFEST_V2_SCHEMA_FILENAME, MANIFEST_V3_SCHEMA_FILENAME):
+        base = _schema(name)
+        registry = registry.with_resource(base["$id"], Resource.from_contents(base))
     formats = FormatChecker()
 
     @formats.checks("date-time", raises=(ValueError, OverflowError))
@@ -321,7 +327,7 @@ def _check_manifest(manifest: dict) -> None:
             _aws_reference(binding["identity"], identity=True)
         elif binding["identity"] is not None:
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
-    if manifest["schemaVersion"] == 2:
+    if manifest["schemaVersion"] >= 2:
         owners = _unique_records(manifest["owners"], "id")
         credentials = _unique_records(manifest["credentialReferences"], "id")
         for item in (*agents.values(), *bindings.values()):
@@ -337,6 +343,16 @@ def _check_manifest(manifest: dict) -> None:
         for binding in bindings.values():
             if any(ref not in bindings or ref == binding["id"] for ref in binding["dependsOn"]):
                 _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+    if manifest["schemaVersion"] == 3:
+        _unique_records(manifest["directAccess"], "id")
+        per_deployment: dict[str, int] = {}
+        for entry in manifest["directAccess"]:
+            if entry["deploymentId"] not in deployments:
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            count = per_deployment.get(entry["deploymentId"], 0) + 1
+            if count > MAX_DIRECT_ACCESS_PER_DEPLOYMENT:
+                _fail("INVENTORY_MANIFEST_LIMIT_EXCEEDED")
+            per_deployment[entry["deploymentId"]] = count
 
 
 def validate_manifest(value: Any) -> dict[str, Any]:
@@ -345,9 +361,13 @@ def validate_manifest(value: Any) -> dict[str, Any]:
     version = manifest.get("schemaVersion") if type(manifest) is dict else None
     # JSON Schema integer semantics include 1.0/2.0; JavaScript has the same
     # numeric values. Booleans must not dispatch as version 1 in Python.
-    if type(version) not in (int, float) or version not in (1, 2):
+    if type(version) not in (int, float) or version not in (1, 2, 3):
         _fail("INVENTORY_SCHEMA_INVALID")
-    filename = MANIFEST_SCHEMA_FILENAME if version == 1 else MANIFEST_V2_SCHEMA_FILENAME
+    filename = {
+        1: MANIFEST_SCHEMA_FILENAME,
+        2: MANIFEST_V2_SCHEMA_FILENAME,
+        3: MANIFEST_V3_SCHEMA_FILENAME,
+    }[int(version)]
     if next(_validator(filename).iter_errors(manifest), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
     _check_manifest(manifest)

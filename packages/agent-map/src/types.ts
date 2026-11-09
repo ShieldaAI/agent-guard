@@ -31,6 +31,7 @@ export const MAP_LABELS = [
   'GuardMcpOperation',
   'GuardOwner',
   'GuardCredentialReference',
+  'GuardDirectAccess',
 ] as const;
 export type GuardLabel = (typeof MAP_LABELS)[number];
 export const MAP_RELATIONSHIPS = [
@@ -54,6 +55,7 @@ export const MAP_RELATIONSHIPS = [
   'G_RESOURCE_OWNED_BY',
   'G_USES_CREDENTIAL',
   'G_DEPENDS_ON',
+  'G_DIRECT_ACCESS_FOR',
 ] as const;
 export type GuardRelation = (typeof MAP_RELATIONSHIPS)[number];
 export interface MapNode {
