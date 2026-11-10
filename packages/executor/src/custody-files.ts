@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import {
   closeSync,
   constants,
@@ -8,8 +8,6 @@ import {
   openSync,
   readSync,
   realpathSync,
-  renameSync,
-  rmSync,
   writeFileSync,
   writeSync,
 } from 'node:fs';
@@ -101,16 +99,6 @@ export function writeNewPrivate(path: string, bytes: Uint8Array): void {
     closeSync(fd);
   }
   syncDirectory(dirname(path));
-}
-export function atomicPrivate(path: string, bytes: Uint8Array): void {
-  const temporary = join(dirname(path), `.custody-write-${randomBytes(16).toString('hex')}`);
-  try {
-    writeNewPrivate(temporary, bytes);
-    renameSync(temporary, path);
-    syncDirectory(dirname(path));
-  } finally {
-    rmSync(temporary, { force: true });
-  }
 }
 export function copyPrivate(
   source: string,

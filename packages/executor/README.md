@@ -191,7 +191,7 @@ the sole owner, rotate each store using the same next key ID, verify, then resta
 Never use first enrollment as recovery. Returned key buffers belong to the trusted
 host caller and should be erased after creating the executor. Maintenance
 `LedgerKeyOptions.maxBytes` and `rotateLedgerKey({ ..., maxBytes })` accept the
-configured store byte cap (default 16 MiB, 1024-byte minimum, 64 MiB ceiling); the CLI
+configured store byte cap (default 16 MiB, 1 MiB minimum, 64 MiB ceiling); the CLI
 uses `--max-bytes N`. Set it consistently when loading and rotating larger stores.
 A smaller cap refuses oversized existing state before mutation.
 
@@ -286,7 +286,8 @@ Enable the optional exporter with host-controlled enrollment configuration:
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, type InventorySnapshot } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import type { InventorySnapshot } from '@shieldaai/agent-guard-executor/inventory';
 
 // This in-memory example has no durable identity after close. A real installation
 // uses its existing private SQLite path and persistent protected encryption key.
@@ -363,7 +364,7 @@ ledger. The Python/Neo4j pilot remains optional and outside execution admission.
 ### Host-owned manifest and bindings
 
 `validateInventoryManifest(value)` checks and freezes host-authored configuration
-against the version-1 or version-2 manifest contract. `composeInventorySnapshot(core, manifest)`
+against the version-1, version-2 or version-3 manifest contract. `composeInventorySnapshot(core, manifest)`
 validates both inputs and produces a separate `HostInventorySnapshot` with
 `profile: 'host'`. The original core snapshot stays unchanged. The manifest is
 configuration owned by the trusted operator; it is never read from tool metadata,
@@ -629,7 +630,7 @@ witness and recovery mirror on the owning thread. The worker authenticates and
 decodes that captured state, projects the tenant's inventory, composes the host
 profile and serializes the response. It receives detached key copies and validated
 primitive tool flags, with no database handle or tool callbacks. Key copies are
-zeroed after use. No authority or response is cached between polls. The snapshot
+zeroed after use. No authority or response is cached between polls unless `reuseUnchangedMs` is set. The snapshot
 and its timestamp describe the capture point; a concurrent later mutation appears
 in a later snapshot. MCP callbacks remain on the owning thread: two full lifecycle
 digests bracket MCP projection, while only manifest-selected operations are

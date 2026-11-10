@@ -20,7 +20,7 @@ Custody operations: enroll, backup, verify, restore, rotate, retire, recover, st
 Generic CLI refuses external history; use the application custody command for its authoritative closure.
 Retirement removes only inactive runtime keys after independent encrypted escrow; no key destruction.
 Key limits: default 4, range 1..64; unmanaged rotation retains all keys.
-Ledger byte limits: default 16777216, range 1024..67108864.
+Ledger byte limits: default 16777216, range 1048576..67108864.
 Use canonical absolute paths on a private POSIX host. Stop every ledger owner before rotation.
 Retain all keyring keys and use the same next-key-id when retrying an interrupted rotation.`;
 

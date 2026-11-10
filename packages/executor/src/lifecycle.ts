@@ -863,7 +863,8 @@ export class TaskFamilyLifecycle {
         takeFamilyStubs(state, current.familyId);
         delete state.families[current.familyId];
         delete retained.retiredFamilies[current.familyId];
-        state.audit = state.audit.filter(event => !audit.includes(event));
+        const archivedEvents = new Set(audit);
+        state.audit = state.audit.filter(event => !archivedEvents.has(event));
         this.#event(state, now, 'FAMILY_ARCHIVED', { tenantId: current.tenantId });
         return this.#receipt(archiveId, current.tenantId, current.familyId, entry);
       } finally {
@@ -890,7 +891,8 @@ export class TaskFamilyLifecycle {
     const state = this.store.read(),
       tenantId = text(selected.tenantId),
       archiveId = text(selected.archiveId);
-    const entry = lifecycle(state) && own(lifecycle(state)!.archives, archiveId);
+    const current = lifecycle(state);
+    const entry = current && own(current.archives, archiveId);
     if (!entry || entry.tenantDigest !== tenantDigest(tenantId)) fail('LIFECYCLE_SCOPE_DENIED');
     const ciphertext = this.store.readArchive(archiveId);
     if (Buffer.byteLength(ciphertext) !== entry.cipherBytes || sha(ciphertext) !== entry.cipherSha256)

@@ -147,7 +147,6 @@ function decode(text: string): Ledger {
   return value as Ledger;
 }
 
-/** Shared private decoder for authority reads and host/MCP observations. */
 /**
  * Deep copy with null prototypes everywhere, like a fresh decode: `__proto__` and other
  * keys stay plain data. Iterative, so a deep ledger cannot overflow the stack.
@@ -174,6 +173,7 @@ function detachedCopy<T>(value: T, freeze: boolean): T {
   return root as T;
 }
 
+/** Shared private decoder for authority reads and host/MCP observations. */
 export function decodeLedgerObservation(
   payload: string,
   key: Uint8Array,
@@ -624,16 +624,16 @@ export class LedgerStore {
     const rows = this.#prepare(
       "SELECT CASE WHEN typeof(id)='text' AND length(id)<=128 THEN id END AS id, CASE WHEN typeof(payload)='text' AND length(CAST(payload AS BLOB))<=131072 THEN payload END AS payload FROM main.custody_catalog ORDER BY id",
     ).iterate();
+    // Compiled once, not once per row: a custody ledger holds up to 100,000 records.
+    const mirrored = this.#mirror
+      ? this.#prepare(
+          "SELECT payload FROM witness.custody_catalog WHERE id=? AND typeof(payload)='text' AND length(CAST(payload AS BLOB))<=131072",
+        )
+      : undefined;
     for (const row of rows) {
       if (typeof row.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(row.id) || typeof row.payload !== 'string')
         throw new ExecutorError('STORE_CUSTODY_CORRUPT');
-      if (
-        this.#mirror &&
-        this.#prepare(
-          "SELECT payload FROM witness.custody_catalog WHERE id=? AND typeof(payload)='text' AND length(CAST(payload AS BLOB))<=131072",
-        ).get(row.id)?.payload !== row.payload
-      )
-        throw new ExecutorError('STORE_RECOVERY_CORRUPT');
+      if (mirrored && mirrored.get(row.id)?.payload !== row.payload) throw new ExecutorError('STORE_RECOVERY_CORRUPT');
       yield { id: row.id, ciphertext: row.payload };
     }
   }

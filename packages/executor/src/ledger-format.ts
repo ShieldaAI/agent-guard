@@ -49,7 +49,7 @@ const migrations: readonly Migration[] = Object.freeze([
   },
 ]);
 
-export function ledgerFormatVersion(state: Ledger): number {
+function ledgerFormatVersion(state: Ledger): number {
   const version = state.formatVersion ?? 0;
   if (!Number.isSafeInteger(version) || version < 0) throw new ExecutorError('STORE_FORMAT_INVALID');
   return version;

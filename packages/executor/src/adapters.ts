@@ -16,7 +16,7 @@ import {
   type Stats,
 } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
-import { type Action, type Json, type TaskIdentity, type ToolDefinition } from '@shieldaai/agent-guard';
+import { type Json, type ToolDefinition } from '@shieldaai/agent-guard';
 import { canonicalJson, digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { createRestrictedFetch, type NetworkPolicy } from './network.js';
 import { ExecutorError } from './store.js';
@@ -350,7 +350,12 @@ export interface HttpGetToolOptions extends AdapterHostOptions {
   resources: Readonly<Record<string, HttpReadResource>>;
 }
 function endpoint(value: string): string {
-  const url = new URL(value);
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return fail('ADAPTER_CONFIG_INVALID');
+  }
   if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password || url.hash || url.href.length > 4096)
     fail('ADAPTER_CONFIG_INVALID');
   return url.href;

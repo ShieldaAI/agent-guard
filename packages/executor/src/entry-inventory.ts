@@ -22,6 +22,8 @@ export {
   type InventoryManifestExecutionBinding,
   type InventoryManifestV1,
   type InventoryManifestV2,
+  type InventoryManifestV3,
+  type InventoryDirectAccess,
   type InventoryOwnershipStatus,
   type InventoryOwner,
   type InventoryCredentialReference,

@@ -26,8 +26,8 @@ export interface RetentionState {
 type RetentionLedger = Ledger;
 
 /** Stubs kept per family, and in total across families. */
-export const PRUNED_PER_FAMILY = 256;
-export const PRUNED_TOTAL = 1024;
+const PRUNED_PER_FAMILY = 256;
+const PRUNED_TOTAL = 1024;
 /** Recent events kept in total; per-tenant caps keep any one tenant to a fair share. */
 export const RECENT_EVENTS_TOTAL = 1000;
 export const DEFAULT_RECENT_EVENTS_PER_TENANT = 256;

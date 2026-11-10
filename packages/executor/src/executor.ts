@@ -2,11 +2,9 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import {
   AgentGuard,
   GuardError,
-  type Action,
   type Json,
   type Policy,
   type PreparedAction,
-  type TaskIdentity,
   type TaskOptions,
   type TaskSnapshot,
   type ToolDefinition,
@@ -1256,14 +1254,14 @@ export class DurableExecutor {
       ...(action.reconciliation === undefined ? {} : { reconciliation: action.reconciliation }),
     });
   }
-  /**
-   * Recent metadata events, oldest first. Bounded per tenant: this is not a complete history.
-   * Export durably by polling and comparing `sequence`; a gap means events were evicted.
-   */
   /** The ledger's data layout version, authority-mode schema and optional features. */
   ledgerFormat(): LedgerFormat {
     return describeLedgerFormat(this.#store.read());
   }
+  /**
+   * Recent metadata events, oldest first. Bounded per tenant: this is not a complete history.
+   * Export durably by polling and comparing `sequence`; a gap means events were evicted.
+   */
   audit(scope: { tenantId?: string } = {}): readonly Readonly<Ledger['audit'][number]>[] {
     const tenantId = scope.tenantId === undefined ? undefined : id(scope.tenantId);
     const events = this.#store.read().audit;

@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { closeSync, constants, existsSync, lstatSync, mkdirSync, openSync, renameSync, rmSync } from 'node:fs';
+import { closeSync, constants, existsSync, mkdirSync, openSync, renameSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { LedgerStore, type Ledger, type LedgerWitness } from './store.js';
+import { LedgerStore, type Ledger } from './store.js';
 import {
   type LedgerKey,
   type ParsedKeyring,

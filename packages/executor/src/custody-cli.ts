@@ -4,7 +4,7 @@ import { parseEvidenceJson } from './evidence-json.js';
 import { privateBytes, custodyFail } from './custody-files.js';
 import { manageLedgerCustody, type CustodyRequest, type LedgerCustodyOptions } from './ledger-custody.js';
 
-export function readLedgerCustodyConfig(path: string): LedgerCustodyOptions {
+function readLedgerCustodyConfig(path: string): LedgerCustodyOptions {
   const bytes = privateBytes(path, 32768);
   try {
     const value = parseEvidenceJson(bytes, 32768) as unknown as LedgerCustodyOptions & { version?: number };

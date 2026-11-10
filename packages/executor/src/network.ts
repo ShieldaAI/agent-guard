@@ -34,7 +34,12 @@ export function createRestrictedFetch(policy: NetworkPolicy): typeof fetch {
   for (const n of [maxResponse, maxRequest, timeout])
     if (!Number.isSafeInteger(n) || n < 1) throw new ExecutorError('NETWORK_CONFIG_INVALID');
   for (const origin of [...origins, ...privateOrigins]) {
-    const url = new URL(origin);
+    let url: URL;
+    try {
+      url = new URL(origin);
+    } catch {
+      throw new ExecutorError('NETWORK_CONFIG_INVALID');
+    }
     if (url.origin !== origin || !['http:', 'https:'].includes(url.protocol) || !origins.has(origin))
       throw new ExecutorError('NETWORK_CONFIG_INVALID');
   }

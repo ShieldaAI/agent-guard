@@ -8,7 +8,11 @@ export class ExecutorClient {
   readonly #token: string;
   readonly #fetch: typeof fetch;
   constructor(options: { endpoint: string; token: string; fetch?: typeof fetch }) {
-    this.#endpoint = new URL(options.endpoint);
+    try {
+      this.#endpoint = new URL(options.endpoint);
+    } catch {
+      throw new ExecutorError('CLIENT_CONFIG_INVALID');
+    }
     if (
       this.#endpoint.username ||
       this.#endpoint.password ||
