@@ -83,6 +83,8 @@ test('the executor and the /ops key tools accept the same minimum ledger size', 
     () => new DurableExecutor({ database: join(root, 'a.sqlite'), encryptionKey: KEY, maxLedgerBytes: 512 * 1024 }),
     { code: 'INVALID_INPUT' },
   );
+  // The key tools are POSIX-only (private file modes), like the rollback witness.
+  if (process.platform === 'win32') return;
   createLedgerKeyring({ keyringFile: join(root, 'keys.json'), keyId: 'k' });
   assert.throws(
     () =>

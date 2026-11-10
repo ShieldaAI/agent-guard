@@ -55,8 +55,10 @@ test('fixtures cover alpha.3, 0.1.0 and the pre-format 0.2 build, plain and witn
   ]);
 });
 
+// The rollback witness is POSIX-only, so witnessed fixtures cannot be opened on Windows.
+const witnessedOnWindows = name => process.platform === 'win32' && name.endsWith('-witnessed');
 for (const name of fixtures) {
-  test(`${name}: opens, keeps authority and migrates to the current format`, t => {
+  test(`${name}: opens, keeps authority and migrates to the current format`, { skip: witnessedOnWindows(name) }, t => {
     const f = copy(t, name);
     let executor = f.open();
     assert.deepEqual(
