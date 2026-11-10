@@ -18,6 +18,7 @@ import {
   configureLedgerKeyring,
 } from '../dist/index.js';
 import { LedgerStore } from '../dist/store.js';
+import { fileURLToPath } from 'node:url';
 
 const posix = { skip: process.platform === 'win32' };
 function fixture(t, witnessed = true) {
@@ -300,7 +301,7 @@ test('maintenance rejects missing authority, live owners, unsafe key files and d
 test('offline CLI returns redacted JSON and refuses ordinary missing-store initialization', posix, t => {
   const f = fixture(t),
     cli = new URL('../dist/ledger-maintenance-cli.js', import.meta.url);
-  const run = (...args) => spawnSync(process.execPath, [cli.pathname, ...args], { encoding: 'utf8' });
+  const run = (...args) => spawnSync(process.execPath, [fileURLToPath(cli), ...args], { encoding: 'utf8' });
   const args = [
     '--keyring',
     f.options.keyringFile,
@@ -608,7 +609,7 @@ test('byte limits reject invalid settings and refuse decoded state above a small
 test('CLI policy configuration and status expose only safe metadata and validate numeric arguments', posix, t => {
   const f = fixture(t),
     cli = new URL('../dist/ledger-maintenance-cli.js', import.meta.url);
-  const run = (...args) => spawnSync(process.execPath, [cli.pathname, ...args], { encoding: 'utf8' });
+  const run = (...args) => spawnSync(process.execPath, [fileURLToPath(cli), ...args], { encoding: 'utf8' });
   const ringArgs = ['--keyring', f.options.keyringFile];
   const original = run('status', ...ringArgs);
   assert.equal(original.status, 0, original.stderr);

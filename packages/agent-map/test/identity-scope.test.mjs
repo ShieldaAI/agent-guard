@@ -2,7 +2,6 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   IDENTITY_SCOPE_BUCKETS,
-  IDENTITY_SCOPE_CANDIDATE_LIMIT,
   IDENTITY_SCOPE_QUERY,
   identityScopeEvidence,
   identityScopePlan,
@@ -318,7 +317,7 @@ test('more than 500 buckets is truncated and unknown', () => {
   // The read tool binds no candidate bucket, so it lists the first 100 either way.
   assert.equal(identityScopeEvidence(plan, full, now, maximumAge)[0].extraResources.length, 100);
   assert.equal(identityScopeEvidence(plan, over, now, maximumAge)[0].extraResources[0].bucketName, 'bucket-0000');
-  assert.equal(IDENTITY_SCOPE_CANDIDATE_LIMIT, IDENTITY_SCOPE_BUCKETS * 3 + 1);
+  assert.equal(plan.candidateLimit, IDENTITY_SCOPE_BUCKETS * 3 + 1, 'three relationships per bucket, plus one');
 });
 
 test('malformed, stale or missing evidence is unknown with a reason, never a match', () => {

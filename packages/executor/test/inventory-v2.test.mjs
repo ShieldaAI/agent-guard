@@ -11,7 +11,6 @@ function boundaryExecutor(labels = true) {
     database: ':memory:',
     encryptionKey: randomBytes(32),
     inventory: enrollment,
-    referenceMode: undefined,
   });
   const tool = definition => executor.approveTool(definition.name, executor.registerTool(definition));
   tool({

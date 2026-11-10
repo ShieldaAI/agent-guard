@@ -1,4 +1,4 @@
-import type { GuardRelation, JsonObject, MapNode } from './types.js';
+import type { GuardRelation, MapNode } from './types.js';
 
 /**
  * "Dangerous three": a live task of an agent that can read private data, read outside
@@ -416,5 +416,3 @@ export function dangerousThree(
     limitations: DANGEROUS_THREE_LIMITATIONS,
   };
 }
-
-export const dangerousThreeJson = (value: DangerousThree): JsonObject => value as unknown as JsonObject;

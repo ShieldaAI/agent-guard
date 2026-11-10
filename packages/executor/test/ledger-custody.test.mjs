@@ -1,19 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  mkdtempSync,
-  mkdirSync,
-  readFileSync,
-  writeFileSync,
-  rmSync,
-  realpathSync,
-  copyFileSync,
-  chmodSync,
-  existsSync,
-} from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync, realpathSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DatabaseSync } from 'node:sqlite';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
@@ -22,12 +11,12 @@ import {
   loadLedgerKey,
   readLedgerKeyringPolicy,
   rotateLedgerKeyring,
-  withLedgerKeyringState,
 } from '../dist/ledger-maintenance.js';
 import { manageLedgerRecovery } from '../dist/ledger-recovery.js';
 import { manageLedgerCustody } from '../dist/ledger-custody.js';
 import { LedgerStore } from '../dist/store.js';
 import { removeAtExit } from './temp-directory.mjs';
+import { fileURLToPath } from 'node:url';
 
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'guard-custody-')));
@@ -366,7 +355,7 @@ test('custody CLI previews and applies exact digest without disclosing escrow se
   const { options, root } = fixture(t);
   const config = join(root, 'offline', 'custody.json');
   writeFileSync(config, JSON.stringify({ version: 1, ...options }), { mode: 0o600 });
-  const cli = new URL('../dist/ledger-maintenance-cli.js', import.meta.url).pathname;
+  const cli = fileURLToPath(new URL('../dist/ledger-maintenance-cli.js', import.meta.url));
   const preview = spawnSync(process.execPath, [cli, 'custody', 'enroll', '--config', config], { encoding: 'utf8' });
   assert.equal(preview.status, 0, preview.stderr);
   const value = JSON.parse(preview.stdout);

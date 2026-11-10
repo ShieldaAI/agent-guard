@@ -1,10 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor } from '../dist/index.js';
 import { random } from '../../core/test/helpers/random.mjs';
+import { removeAtExit } from './temp-directory.mjs';
 
 const MAX_COST = 4;
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -17,7 +18,7 @@ const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function run(t, seed) {
   const rng = random(seed);
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'executor-model-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   const database = join(directory, 'ledger.sqlite'),
     key = Buffer.alloc(32, 31);
   const charges = new Map();

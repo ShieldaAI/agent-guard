@@ -553,7 +553,9 @@ function flagGraph(projection: MapProjection, work: QueryWork): FlagGraph {
             sensitivity = string(node, 'sensitivity');
           if (node.label !== 'GuardResourceBinding' || name === null) continue;
           if (sensitivity !== 'confidential' && sensitivity !== 'restricted') continue;
-          index.set(name, [...(index.get(name) ?? []), { id: node.entityId, sensitivity }]);
+          const items = index.get(name) ?? [];
+          items.push({ id: node.entityId, sensitivity });
+          index.set(name, items);
         }
         for (const [name, items] of index)
           index.set(name, items.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, 5));

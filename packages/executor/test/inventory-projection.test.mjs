@@ -532,8 +532,8 @@ for (const [name, expand] of [
   test(`inventory limit rejects the entire snapshot: ${name}`, () => {
     const state = ledger();
     expand(state);
-    const before = state.revision;
+    const before = JSON.stringify(state);
     assert.throws(() => project(state), { code: 'INVENTORY_LIMIT_EXCEEDED' });
-    assert.equal(state.revision, before);
+    assert.equal(JSON.stringify(state), before, 'a refused projection leaves the ledger state untouched');
   });
 }

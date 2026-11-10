@@ -77,7 +77,7 @@ test('an effect that completes after its deadline is reported as committed, not 
   assert.equal(executor.snapshot('t').reserved, 0, 'no reservation is held for a committed effect');
 });
 
-test('the executor and the /ops key tools accept the same minimum ledger size', t => {
+test('the executor and the /ops key tools refuse the same below-minimum ledger size', t => {
   const root = directory(t);
   assert.throws(
     () => new DurableExecutor({ database: join(root, 'a.sqlite'), encryptionKey: KEY, maxLedgerBytes: 512 * 1024 }),

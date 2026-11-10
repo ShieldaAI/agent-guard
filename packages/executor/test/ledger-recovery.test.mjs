@@ -372,7 +372,7 @@ test('generic recovery CLI requires exact preview and returns only safe metadata
   const f = fixture(t),
     config = join(f.root, 'keys', 'recovery.json');
   fs.writeFileSync(config, JSON.stringify({ version: 1, ...f.options }), { mode: 0o600 });
-  const cli = new URL('../dist/ledger-maintenance-cli.js', import.meta.url).pathname,
+  const cli = fileURLToPath(new URL('../dist/ledger-maintenance-cli.js', import.meta.url)),
     preview = spawnSync(process.execPath, [cli, 'recovery', 'repair', '--config', config], { encoding: 'utf8' });
   assert.equal(preview.status, 0, preview.stderr);
   const value = JSON.parse(preview.stdout);

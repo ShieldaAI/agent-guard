@@ -4,6 +4,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor } from '../dist/index.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -103,7 +104,7 @@ test('parallel executions on one durable task succeed under an async allow-all p
 
 test('durable maxPolicyAttempts is validated', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'executor-attempts-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   for (const value of [0, 17, 1.5]) {
     assert.throws(
       () =>

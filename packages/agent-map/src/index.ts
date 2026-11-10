@@ -21,6 +21,8 @@ export {
   type MapCoverage,
   type MapPolicyEvidence,
   type MapPolicyCandidate,
+  type MapIdentityScope,
+  type MapIdentityExtraResource,
   type GuardLabel,
   type GuardRelation,
   type JsonObject,

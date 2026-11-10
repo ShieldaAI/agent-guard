@@ -151,6 +151,16 @@ const SCOPE_HEADROOM_BYTES = 64 * 1024;
  * the read's byte budget if that is less), keep every record but drop the lists and report
  * them truncated, rather than fail the read.
  */
+/**
+ * A stable order for bounded, already materialized rows. Each row is serialized once: the
+ * comparator would otherwise re-serialize rows of up to 1 MiB on every comparison.
+ */
+function sortedBySerialization(rows: JsonObject[]): JsonObject[] {
+  return rows
+    .map(row => [JSON.stringify(row), row] as const)
+    .sort((a, b) => a[0].localeCompare(b[0], 'en-US'))
+    .map(entry => entry[1]);
+}
 function boundedRecords(
   records: readonly MapIdentityScope[],
   budget = SCOPE_RECORD_BYTES,
@@ -749,8 +759,7 @@ export class Neo4jMapStore implements MapStore {
               rows.push(safe);
             },
           );
-          rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en-US'));
-          return rows;
+          return sortedBySerialization(rows);
         };
         const readPolicy = async (
           plan: PolicyPlan,
@@ -778,8 +787,7 @@ export class Neo4jMapStore implements MapStore {
           );
           // Sort only the bounded materialized rows. A server ORDER BY would
           // expand malformed relationship fan-out before applying its LIMIT.
-          rows.sort((a, b) => JSON.stringify(a).localeCompare(JSON.stringify(b), 'en-US'));
-          return rows;
+          return sortedBySerialization(rows);
         };
         const sources: MapSource[] = [];
         for (const record of selected) {
@@ -810,12 +818,14 @@ export class Neo4jMapStore implements MapStore {
               currentTaskEntityIds: currentNodes.filter(node => node.label === 'GuardTask').map(node => node.entityId),
             };
             const nodes: MapNode[] = [];
+            // Ids already loaded, by label: each label's query is limited to what earlier ones found.
+            const idsByLabel = new Map<string, string[]>();
             const nodeQueries = NODES[accessMode]![id === currentId ? 0 : 1]!;
             for (const label of selection.summary
               ? (['GuardAgent', 'GuardDeployment', 'GuardOwner'] as const)
               : READ_ORDER) {
               const authorized: Record<string, unknown> = Object.fromEntries(
-                MAP_LABELS.map(kind => [`${kind}Ids`, nodes.filter(node => node.label === kind).map(node => node.id)]),
+                MAP_LABELS.map(kind => [`${kind}Ids`, idsByLabel.get(kind) ?? []]),
               );
               await run(
                 nodeQueries[label],
@@ -826,6 +836,9 @@ export class Neo4jMapStore implements MapStore {
                   const node = safeNode(item.get('node'), label, sourceId, id);
                   charge(node);
                   nodes.push(node);
+                  const ids = idsByLabel.get(label);
+                  if (ids) ids.push(node.id);
+                  else idsByLabel.set(label, [node.id]);
                 },
               );
             }
@@ -1020,6 +1033,7 @@ export class Neo4jMapStore implements MapStore {
           const entities = new Set(current.nodes.map(node => node.entityId));
           const nodeRoom = this.#nodes - nodeCount;
           const found: string[] = [];
+          const foundIds = new Set<string>();
           await run(
             ANCESTORS[accessMode]!,
             {
@@ -1029,7 +1043,10 @@ export class Neo4jMapStore implements MapStore {
             },
             item => {
               const ancestor = text(item.get('id'));
-              if (!loaded.has(ancestor) && !found.includes(ancestor) && found.length <= nodeRoom) found.push(ancestor);
+              if (!loaded.has(ancestor) && !foundIds.has(ancestor) && found.length <= nodeRoom) {
+                foundIds.add(ancestor);
+                found.push(ancestor);
+              }
             },
           );
           let notLoaded = found.length > nodeRoom;

@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { LedgerStore } from '../dist/store.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 const key = Buffer.alloc(32, 37);
 const uuid = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 
 function databaseFor(t) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'guard-inventory-identity-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   return join(directory, 'ledger.sqlite');
 }
 

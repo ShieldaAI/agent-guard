@@ -766,7 +766,7 @@ export interface IdentityScopePlan {
  * Extra buckets listed per execution binding. Tools that share a role share its probe, so
  * each record keeps its own list of at most this many buckets; a longer one is `truncated`.
  */
-export const IDENTITY_SCOPE_RECORD_BUCKETS = 100;
+const IDENTITY_SCOPE_RECORD_BUCKETS = 100;
 const LIST_SHORTENED = 'bucket_list_shortened';
 /**
  * A record with its bucket list cut to `keep` entries. Only the list changes: the status came
@@ -782,7 +782,7 @@ export function shortenScopeList(record: MapIdentityScope, keep: number): MapIde
   };
 }
 /** The reach read behind list_resources keeps fewer buckets per identity, bounding its rows. */
-export const IDENTITY_REACH_BUCKETS = 100;
+const IDENTITY_REACH_BUCKETS = 100;
 
 /**
  * One record per execution binding; a probe per distinct, unambiguous, resolved static AWS
@@ -1082,7 +1082,6 @@ export const IDENTITY_SCOPE_COLUMNS = [
  * At most three relationships per bucket, so one row past 500 buckets x 3 always shows a
  * 501st bucket; unique (bucket, relationship) pairs make that the only way to reach it.
  */
-export const IDENTITY_SCOPE_CANDIDATE_LIMIT = IDENTITY_SCOPE_BUCKETS * RELATIONSHIPS.length + 1;
 
 export function identityScopeParameters(plan: IdentityScopePlan): readonly Record<string, unknown>[] {
   return plan.probes.map(probe => ({
@@ -1258,7 +1257,9 @@ export function identityScopeEvidence(
   for (const row of rows) {
     const key = row.key;
     if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail();
-    groups.set(key, [...(groups.get(key) ?? []), row]);
+    const items = groups.get(key) ?? [];
+    items.push(row);
+    groups.set(key, items);
   }
   const outcomes = plan.probes.map(probe => probeOutcome(plan, probe, groups.get(probe.key) ?? [], now, maximumAge));
   const result = [...plan.records];

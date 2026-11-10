@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { mkdtempSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DurableExecutor } from '../dist/index.js';
 import { LedgerStore } from '../dist/store.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 test('executor ledger byte limits accept only bounded integer configuration', () => {
   for (const maxLedgerBytes of [0, 1024, 1024 * 1024 - 1, 64 * 1024 * 1024 + 1, 1.5, NaN, Infinity, '16777216', null])
@@ -20,7 +21,7 @@ test('executor ledger byte limits accept only bounded integer configuration', ()
 
 test('larger ledgers reopen only within the configured cap and failed shrinkage preserves authority', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agent-guard-ledger-limits-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   const database = join(directory, 'ledger.sqlite'),
     key = randomBytes(32),
     cap = 32 * 1024 * 1024;

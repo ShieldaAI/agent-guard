@@ -5,6 +5,7 @@ import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor, ExecutorClient } from '../dist/index.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 function setup(t, options = {}) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'executor-retention-')));
@@ -142,7 +143,7 @@ test('the shared event cap trims the busiest tenant first', async t => {
 
 test('retention options are validated', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'executor-retention-options-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   const open = (options, index) =>
     new DurableExecutor({
       database: join(directory, `bad-${index}.sqlite`),
