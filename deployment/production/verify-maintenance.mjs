@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createLedgerKeyring, loadLedgerKey, rotateLedgerKeyring } from '../../packages/executor/dist/index.js';
+import { LEDGER_FORMAT_VERSION, createLedgerKeyring, loadLedgerKey, rotateLedgerKeyring } from '../../packages/executor/dist/index.js';
 import { initializeRuntime, openRuntime } from '../../apps/agent-ops/runtime.mjs';
 import { manageBusinessRecovery } from '../../apps/agent-ops/custody.mjs';
 
@@ -44,7 +44,9 @@ try {
   const previous = loadLedgerKey({ ...options, database: config.backendDatabase, witnessPath: config.backendWitness });
   try { assert.equal(previous.keyId, 'fixture-initial'); } finally { previous.key.fill(0); }
   rotateLedgerKeyring({ ...options, database: config.backendDatabase, witnessPath: config.backendWitness });
-  assert.deepEqual(openRuntime(config, { checkOnly: true }), { status: 'verified', guardKeyId: 'fixture-next', backendKeyId: 'fixture-next' });
+  // `check` also reports the authority ledger layout: current format, mirror enrolled (schema 3).
+  assert.deepEqual(openRuntime(config, { checkOnly: true }), { status: 'verified', guardKeyId: 'fixture-next', backendKeyId: 'fixture-next',
+    ledgerFormat: { formatVersion: LEDGER_FORMAT_VERSION, schema: 3, features: ['recovery-mirror', 'retention'] } });
   owner = openRuntime(config);
   const reconciled = owner.workflow.reconcile(reviewer, proposed.request.id);
   assert.equal(reconciled.request.state, 'completed');
