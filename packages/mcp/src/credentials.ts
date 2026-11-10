@@ -79,7 +79,6 @@ export class VerifiedMcpHttpSession {
   #generation = 0;
   #closed = false;
   #busy = false;
-  #verification: AbortController | undefined;
   #sessionAbort: AbortController | undefined;
   #pending: Promise<void> | undefined;
 
@@ -192,7 +191,6 @@ export class VerifiedMcpHttpSession {
     const generation = ++this.#generation;
     this.#sessionAbort?.abort();
     const controller = new AbortController();
-    this.#verification = controller;
     this.#sessionAbort = controller;
     const timer = setTimeout(() => controller.abort(), this.#timeout);
     timer.unref();
@@ -267,7 +265,6 @@ export class VerifiedMcpHttpSession {
       deny();
     } finally {
       clearTimeout(timer);
-      this.#verification = undefined;
       this.#pending = undefined;
       this.#busy = false;
     }
@@ -280,7 +277,6 @@ export class VerifiedMcpHttpSession {
     const closing = this.#connection?.close();
     this.#closed = true;
     this.#generation++;
-    this.#verification?.abort();
     this.#sessionAbort?.abort();
     await Promise.all([closing, this.#pending?.catch(() => {})]);
   }

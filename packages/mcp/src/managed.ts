@@ -166,6 +166,7 @@ export class ManagedMcpConnection {
   readonly #guard: Pick<AgentGuard, 'registerTool'>;
   readonly #identity: Readonly<McpConnectionIdentity>;
   readonly #session = randomUUID();
+  readonly #validators = new WeakMap<object, (value: unknown) => boolean>();
   readonly #transportRef: string;
   readonly #client: Client;
   readonly #transport: Transport;
@@ -238,7 +239,10 @@ export class ManagedMcpConnection {
         cachePartition: this.#session,
         jsonSchemaValidator: {
           getValidator: <T>(schema: unknown) => {
-            const validate = compileBoundedSchema(schema);
+            // The SDK asks again on every call; a schema object is compiled once.
+            const known = typeof schema === 'object' && schema !== null ? this.#validators.get(schema) : undefined;
+            const validate = known ?? compileBoundedSchema(schema);
+            if (!known && typeof schema === 'object' && schema !== null) this.#validators.set(schema, validate);
             return (value: unknown) =>
               validate(value)
                 ? { valid: true as const, data: value as T, errorMessage: undefined }

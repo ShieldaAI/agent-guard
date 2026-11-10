@@ -70,6 +70,12 @@ test('patterns with unbounded backtracking are refused; admitted ones stay fast'
     'a*b*',
     '^a*a*a*$',
     'x'.repeat(513),
+    // Modifier groups: once looped forever in the scanner, or skipped the nested quantifier.
+    '(?i:a)',
+    'a(?i:b)',
+    '(?-i:a)',
+    '(?i:(a+)+$)|>',
+    '(?<!x)y',
   ]) {
     assert.throws(() => compileBoundedSchema({ type: 'string', pattern }), { code: 'SCHEMA_UNSUPPORTED' }, pattern);
   }
@@ -77,6 +83,9 @@ test('patterns with unbounded backtracking are refused; admitted ones stay fast'
   const started = performance.now();
   worst(Array.from({ length: 250 }, () => '1'.repeat(4_000)));
   assert.ok(performance.now() - started < 500, 'the per-validation pattern budget bounds total regex work');
+  const named = compileBoundedSchema({ type: 'string', pattern: '^(?<year>\\d{4})-(?:\\d{2})$' });
+  assert.deepEqual([named('2026-11'), named('26-11')], [true, false], 'named and non-capturing groups are admitted');
+  assert.throws(() => compileBoundedSchema({ type: 'string', pattern: '^(?<n>a+)+$' }), { code: 'SCHEMA_UNSUPPORTED' });
   const single = compileBoundedSchema({ type: 'string', pattern: '^[a-z]+$' });
   assert.equal(single('a'.repeat(4_096)), true);
   assert.equal(single('a'.repeat(4_097)), false, 'longer strings never match a pattern');

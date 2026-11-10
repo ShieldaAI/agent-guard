@@ -47,7 +47,7 @@ export interface JsonLimits {
   maxNodes: number;
   maxDepth: number;
 }
-export const MESSAGE_LIMITS: Readonly<JsonLimits> = Object.freeze({
+const MESSAGE_LIMITS: Readonly<JsonLimits> = Object.freeze({
   maxBytes: 1_048_576,
   maxNodes: 10_000,
   maxDepth: 32,
@@ -160,7 +160,7 @@ const dialects = new Set([
   'https://json-schema.org/draft/2020-12/schema#',
 ]);
 /** Strings longer than this never match a schema `pattern`; it bounds regex work per value. */
-export const PATTERN_INPUT_LIMIT = 4_096;
+const PATTERN_INPUT_LIMIT = 4_096;
 const PATTERN_SOURCE_LIMIT = 512;
 /**
  * Pattern work per validated value, charged as length squared (the worst case for an
@@ -175,7 +175,7 @@ let patternWork = Number.POSITIVE_INFINITY;
  * alternation (star height 1), and few variable-length quantifiers (one, or two when
  * the pattern is anchored at the start and has no top-level alternation).
  */
-export function safePattern(source: unknown): string {
+function safePattern(source: unknown): string {
   if (typeof source !== 'string' || !source.length || source.length > PATTERN_SOURCE_LIMIT)
     throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
   try {
@@ -223,13 +223,19 @@ export function safePattern(source: unknown): string {
       index++;
       atomEnd();
     } else if (char === '(') {
+      let opening = 1;
       if (source[index + 1] === '?') {
-        const kind = source.slice(index + 2, index + 4);
-        if (kind.startsWith('=') || kind.startsWith('!') || kind === '<=' || kind === '<!')
-          throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+        if (source[index + 2] === ':') opening = 3;
+        else {
+          // After `(?` only a named group is admitted. Lookaround and modifier groups such as
+          // `(?i:...)` are refused: the scanner must always advance, and must never skip text.
+          const named = /^\(\?<[^=!>][^>]*>/.exec(source.slice(index));
+          if (!named) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
+          opening = named[0].length;
+        }
       }
       groups.push({ quantified: false, alternation: false });
-      index += source[index + 1] === '?' ? (source[index + 2] === ':' ? 3 : source.indexOf('>', index) + 1 - index) : 1;
+      index += opening;
     } else if (char === ')') {
       const group = groups.pop();
       if (!group || !groups.length) throw new McpBoundaryError('SCHEMA_INVALID');

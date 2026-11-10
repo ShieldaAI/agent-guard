@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, realpathSync, rmSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { LEDGER_FORMAT_VERSION, createLedgerKeyring, loadLedgerKey, rotateLedgerKeyring } from '../../packages/executor/dist/index.js';
+import { LEDGER_FORMAT_VERSION, createLedgerKeyring, loadLedgerKey, rotateLedgerKeyring } from '../../packages/executor/dist/entry-ops.js';
 import { initializeRuntime, openRuntime } from '../../apps/agent-ops/runtime.mjs';
 import { manageBusinessRecovery } from '../../apps/agent-ops/custody.mjs';
 

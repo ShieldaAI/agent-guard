@@ -99,11 +99,39 @@ test('HTTP profile accepts a benign SDK initialization and bounds streamed bytes
   const packageVersion = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version;
   assert.deepEqual(clientInfo, { name: 'shielda-agent-guard', version: packageVersion });
 
-  const oversized = await listen(t, (_req, res) => {
+  // A valid initialize result padded past the limit: only the byte bound can refuse it.
+  const oversized = await listen(t, async (req, res) => {
+    if (req.method === 'GET') {
+      res.writeHead(405);
+      res.end();
+      return;
+    }
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const message = JSON.parse(Buffer.concat(chunks).toString());
+    if (!Object.hasOwn(message, 'id')) {
+      res.writeHead(202);
+      res.end();
+      return;
+    }
     res.writeHead(200, { 'content-type': 'application/json' });
-    res.write('x'.repeat(128));
-    res.end('y'.repeat(128));
+    res.end(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: message.id,
+        result: {
+          protocolVersion: message.params.protocolVersion,
+          capabilities: {},
+          serverInfo: { name: 'fixture', version: '1'.repeat(512) },
+        },
+      }),
+    );
   });
+  const roomy = await connect(
+    createRestrictedMcpHttpTransport({ endpoint: oversized, fetch, allowInsecureLoopback: true }),
+  );
+  assert.equal(roomy.status, 'ready', 'the same response is accepted under the default limit');
+  await roomy.close();
   await assert.rejects(
     connect(
       createRestrictedMcpHttpTransport({
