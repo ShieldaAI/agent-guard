@@ -42,7 +42,9 @@ jobs:
   check:
     name: ${{ matrix.os == 'ubuntu-latest' && format('check ({0})', matrix.node) || format('check ({0}, {1})', matrix.os, matrix.node) }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 15
+    # Windows runs test files one at a time and its durable SQLite commits are slow:
+    # the retention tests alone take about seven minutes there.
+    timeout-minutes: ${{ matrix.os == 'windows-latest' && 30 || 15 }}
     strategy:
       fail-fast: false
       matrix:

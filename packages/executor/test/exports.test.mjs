@@ -8,6 +8,7 @@ import * as inventory from '@shieldaai/agent-guard-executor/inventory';
 import * as pilot from '@shieldaai/agent-guard-executor/pilot';
 import * as ops from '@shieldaai/agent-guard-executor/ops';
 import * as internal from '@shieldaai/agent-guard-executor/internal';
+import { fileURLToPath } from 'node:url';
 
 const ROOT = [
   'DurableExecutor',
@@ -83,7 +84,7 @@ test('the root keeps every 0.1 export: its own API plus deprecated aliases bound
 });
 
 test("application sources import packages by name, never another package's dist/", () => {
-  const repo = new URL('../../../', import.meta.url).pathname;
+  const repo = fileURLToPath(new URL('../../../', import.meta.url));
   const offenders = [];
   const walk = directory => {
     for (const name of readdirSync(directory)) {

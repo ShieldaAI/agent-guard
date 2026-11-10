@@ -5,7 +5,6 @@ import {
   mkdtempSync,
   writeFileSync,
   readFileSync,
-  rmSync,
   chmodSync,
   realpathSync,
   symlinkSync,
@@ -22,11 +21,12 @@ import {
   createOutboundJsonTool,
   publicToolDefinition,
 } from '../dist/adapters.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 function directory(t) {
   const dir = realpathSync(mkdtempSync(join(tmpdir(), 'agent-guard-adapters-')));
   chmodSync(dir, 0o700);
-  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  removeAtExit(dir);
   return dir;
 }
 function executor(t, tools, resources, recipients = []) {

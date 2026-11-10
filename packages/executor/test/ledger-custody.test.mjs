@@ -27,10 +27,11 @@ import {
 import { manageLedgerRecovery } from '../dist/ledger-recovery.js';
 import { manageLedgerCustody } from '../dist/ledger-custody.js';
 import { LedgerStore } from '../dist/store.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 function fixture(t) {
   const root = realpathSync(mkdtempSync(join(tmpdir(), 'guard-custody-')));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+  removeAtExit(root);
   for (const dir of ['active', 'data', 'witness', 'custody', 'custody-witness', 'offline', 'backups'])
     mkdirSync(join(root, dir), { mode: 0o700 });
   const options = {

@@ -1,11 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmodSync, cpSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync } from 'node:fs';
+import { chmodSync, cpSync, mkdtempSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor, LEDGER_FORMAT_VERSION } from '../dist/index.js';
 import { LedgerStore } from '../dist/store.js';
 import { migrateLedger } from '../dist/ledger-format.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 const FIXTURES = new URL('./fixtures/ledgers/', import.meta.url);
 const KEY = Buffer.alloc(32, 0x5a);
@@ -14,7 +15,7 @@ const fixtures = readdirSync(FIXTURES).sort();
 /** A private, writable copy of a committed fixture (the store refuses group/world access). */
 function copy(t, name) {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ledger-format-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   cpSync(new URL(name, FIXTURES), directory, { recursive: true });
   for (const part of ['', 'data', 'witness']) {
     try {
@@ -130,7 +131,7 @@ test('migration is stepwise, idempotent and rejects malformed versions', () => {
 
 test('features are recomputed at each commit once a ledger has a format version', t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'ledger-features-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  removeAtExit(directory);
   const executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: Buffer.from(KEY) });
   t.after(() => executor.close());
   assert.deepEqual([...executor.ledgerFormat().features], ['retention']);

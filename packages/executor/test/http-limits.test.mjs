@@ -1,9 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor, startExecutorServer } from '../dist/index.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 function open(t, database) {
   const executor = new DurableExecutor({ database, encryptionKey: Buffer.alloc(32, 23), clock: () => 1000 });
@@ -29,7 +30,7 @@ function task(executor, id) {
 }
 function directory(t) {
   const path = realpathSync(mkdtempSync(join(tmpdir(), 'executor-limits-')));
-  t.after(() => rmSync(path, { recursive: true, force: true }));
+  removeAtExit(path);
   return path;
 }
 

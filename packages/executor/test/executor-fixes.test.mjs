@@ -1,14 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DurableExecutor } from '../dist/index.js';
 import { createLedgerKeyring, loadLedgerKey } from '../dist/entry-ops.js';
+import { removeAtExit } from './temp-directory.mjs';
 
 function directory(t) {
   const path = realpathSync(mkdtempSync(join(tmpdir(), 'executor-fixes-')));
-  t.after(() => rmSync(path, { recursive: true, force: true }));
+  removeAtExit(path);
   return path;
 }
 const KEY = Buffer.alloc(32, 51);

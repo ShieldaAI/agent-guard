@@ -4,6 +4,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import * as root from '@shieldaai/agent-guard';
 import * as internal from '@shieldaai/agent-guard/internal';
+import { fileURLToPath } from 'node:url';
 
 const STABLE = [
   'AgentGuard',
@@ -48,7 +49,7 @@ test('InvalidJsonError is exported and thrown for over-limit JSON', () => {
 });
 
 test('first-party packages import the internal SPI from /internal, not the root', () => {
-  const repo = new URL('../../../', import.meta.url).pathname;
+  const repo = fileURLToPath(new URL('../../../', import.meta.url));
   const sources = [];
   const walk = directory => {
     for (const name of readdirSync(directory)) {
