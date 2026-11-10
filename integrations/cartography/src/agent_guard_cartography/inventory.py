@@ -82,7 +82,7 @@ def _schema(filename: str) -> dict[str, Any]:
     return schema
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=8)
 def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
     schema = _schema(filename)
     # v2 schemas refer to v1 (and manifest v3 to manifest v2) by $id; resolve those

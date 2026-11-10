@@ -1,17 +1,12 @@
-import json
-from pathlib import Path
+import pytest
 
 from agent_guard_cartography.graph import import_snapshot
 
-FIXTURES = Path(__file__).parents[1] / "fixtures"
+pytestmark = pytest.mark.integration
 
 
-def load(name):
-    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
-
-
-def test_v2_outside_content_fields_are_projected(neo4j_session):
-    snapshot = load("core-v2-boundaries.json")
+def test_v2_outside_content_fields_are_projected(neo4j_session, snapshot_factory):
+    snapshot = snapshot_factory("core-v2-boundaries")
     result = import_snapshot(neo4j_session, snapshot, snapshot["source"])
     tools = {
         row["name"]: row
@@ -35,8 +30,8 @@ def test_v2_outside_content_fields_are_projected(neo4j_session):
     assert tasks == {"reader": True, "clean": False}
 
 
-def test_v1_imports_gain_no_outside_content_properties(neo4j_session):
-    snapshot = load("alpha-v1.json")
+def test_v1_imports_gain_no_outside_content_properties(neo4j_session, snapshot_factory):
+    snapshot = snapshot_factory()
     result = import_snapshot(neo4j_session, snapshot, snapshot["source"])
     keys = neo4j_session.run(
         "MATCH (n {projection_id:$id}) WHERE n:GuardTool OR n:GuardTask "

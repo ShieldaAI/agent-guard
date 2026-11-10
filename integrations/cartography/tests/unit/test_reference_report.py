@@ -533,3 +533,10 @@ def test_cumulative_file_and_byte_caps_fail_without_overwrite(tmp_path, fake_que
     with pytest.raises(ReportError, match="REFERENCE_REPORT_LIMIT_EXCEEDED"):
         write_report("endpoint", TOKEN, SOURCE, directory)
     assert existing.exists()
+
+
+def test_report_labels_match_the_projection_labels():
+    # A label added to the graph schema must be added here too, or every report is refused.
+    from agent_guard_cartography.models import PROJECTION_LABELS
+
+    assert report.LABELS == frozenset(PROJECTION_LABELS)

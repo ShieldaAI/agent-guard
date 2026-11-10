@@ -878,9 +878,14 @@ def cleanup_projection_rows(session: Session, projection_id: str, update_tag: in
                 cascade_delete=False,
             ).run(session)
     except BaseException:
-        session.run(
-            "MATCH (p:GuardSnapshot {id:$id}) SET p.status='failed'", id=projection_id
-        ).consume()
+        # Never let a broken session replace the original failure.
+        try:
+            session.run(
+                "MATCH (p:GuardSnapshot {id:$id,status:'cleaning'}) SET p.status='failed'",
+                id=projection_id,
+            ).consume()
+        except Exception:
+            pass
         raise
     session.run(
         "MATCH (p:GuardSnapshot {id:$id,status:'cleaning'}) SET p.status='staging'",
