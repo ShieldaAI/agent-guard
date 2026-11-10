@@ -70,14 +70,27 @@ test('patterns with unbounded backtracking are refused; admitted ones stay fast'
     'a*b*',
     '^a*a*a*$',
     'x'.repeat(513),
-    // Modifier groups: once looped forever in the scanner, or skipped the nested quantifier.
-    '(?i:a)',
-    'a(?i:b)',
-    '(?-i:a)',
-    '(?i:(a+)+$)|>',
     '(?<!x)y',
   ]) {
     assert.throws(() => compileBoundedSchema({ type: 'string', pattern }), { code: 'SCHEMA_UNSUPPORTED' }, pattern);
+  }
+  // Modifier groups once looped forever in the scanner, or skipped the nested quantifier.
+  // Node 24 and later accept the syntax, so the scanner refuses them as unsupported;
+  // Node 22 rejects the syntax itself, which is reported as an invalid schema.
+  const parses = pattern => {
+    try {
+      new RegExp(pattern, 'u');
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  for (const pattern of ['(?i:a)', 'a(?i:b)', '(?-i:a)', '(?i:(a+)+$)|>']) {
+    assert.throws(
+      () => compileBoundedSchema({ type: 'string', pattern }),
+      { code: parses(pattern) ? 'SCHEMA_UNSUPPORTED' : 'SCHEMA_INVALID' },
+      pattern,
+    );
   }
   const worst = compileBoundedSchema({ type: 'array', items: { type: 'string', pattern: '^\\d*\\d*x$' } });
   const started = performance.now();

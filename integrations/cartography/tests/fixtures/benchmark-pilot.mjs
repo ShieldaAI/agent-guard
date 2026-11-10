@@ -1,10 +1,12 @@
 // Exercise the actual scoped HTTP service against the runner-owned disposable DB.
 import { readFileSync } from 'node:fs';
 import { performance } from 'node:perf_hooks';
+import { text } from 'node:stream/consumers';
 import { createNeo4jMapStore, MapService, createMapToken, startMapServer } from '../../../../packages/agent-map/dist/index.js';
 
 const config = JSON.parse(readFileSync(process.env.AGENT_GUARD_TEST_NEO4J_CONFIG, 'utf8'));
-const input = JSON.parse(readFileSync(0, 'utf8'));
+// The request comes from the test on standard input, read as a stream rather than as a file.
+const input = JSON.parse(await text(process.stdin));
 const store = createNeo4jMapStore({ uri: config.uri, username: config.username, password: config.password });
 const token = createMapToken();
 const server = await startMapServer({ service: new MapService(store), credentials: [{ token, scope: input.scope }],
