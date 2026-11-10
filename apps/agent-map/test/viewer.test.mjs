@@ -402,3 +402,18 @@ test('demo distinguishes matching grants, unknown tasks and lookups without a de
     assert.deepEqual((await queryDemo('find_agents_with_access', { resourceRef, action })).data.candidates, []);
   }
 });
+
+test('a timeout or an out-of-range time never throws while rendering', () => {
+  // The viewer's own timeout rejects with a DOMException whose `code` is the number 20.
+  const timeout = new DOMException('The operation was aborted.', 'AbortError');
+  assert.equal(typeof timeout.code, 'number');
+  assert.match(errorMessage(timeout), /took too long/);
+  assert.match(errorMessage({ code: 404 }), /could not complete/);
+  assert.match(errorMessage({ code: 'MAP_NOT_FOUND' }), /unavailable/);
+  assert.match(errorMessage({ code: 'MAP_LIMIT_EXCEEDED' }), /too large/);
+  // A task deadline may be any safe integer; beyond the Date range it is shown as not observed.
+  assert.equal(displayTime(Number.MAX_SAFE_INTEGER), 'Not observed');
+  assert.equal(displayTime(Number.NaN), 'Not observed');
+  assert.notEqual(displayTime(1_800_000_000), 'Not observed');
+  assert.notEqual(displayTime(1_800_000_000_000), 'Not observed');
+});

@@ -16,11 +16,11 @@ import { dirname, isAbsolute, join } from 'node:path';
 import { canonicalJson } from '@shieldaai/agent-guard/internal';
 import { historyFailure, validHistoryHead } from './history-state.mjs';
 
-export const MAX_HISTORY_PLAIN = 16 * 1024 * 1024;
+const MAX_HISTORY_PLAIN = 16 * 1024 * 1024;
 const MAX_HISTORY_FILE = 24 * 1024 * 1024;
 export const historyHash = value => createHash('sha256').update(value).digest('hex');
 export const historyJson = value => canonicalJson(value);
-export const tenantHistoryDigest = tenantId => historyHash(`agent-ops-company-history-v1\0${tenantId}`);
+const tenantHistoryDigest = tenantId => historyHash(`agent-ops-company-history-v1\0${tenantId}`);
 function privateDirectory(path) {
   if (typeof path !== 'string' || !isAbsolute(path) || realpathSync(path) !== path)
     historyFailure('HISTORY_DIRECTORY_REQUIRED');

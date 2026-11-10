@@ -427,8 +427,9 @@ export function shortReference(value) {
     : (value ?? 'Unknown');
 }
 export function displayTime(value) {
-  if (typeof value === 'number') value = new Date(value < 1e12 ? value * 1000 : value).toISOString();
-  const timestamp = Date.parse(value);
+  // A numeric deadline can be beyond the Date range; toISOString() would throw during render.
+  const timestamp =
+    typeof value === 'number' ? new Date(value < 1e12 ? value * 1000 : value).getTime() : Date.parse(value);
   return Number.isFinite(timestamp)
     ? new Date(timestamp).toLocaleString(undefined, {
         month: 'short',
@@ -532,17 +533,20 @@ export function createQuerySession(invoke) {
     },
   });
 }
+/** The error's code when it is a string; a DOMException carries a numeric one. */
+export const errorCode = error => (typeof error?.code === 'string' ? error.code : '');
 export function errorMessage(error) {
   if (error?.status === 401)
     return 'Your reference credential was not accepted. Connect again with a valid credential.';
   if (error?.status === 403) return 'This reference operation is outside your authorized scope.';
-  if (error?.code?.includes('NOT_FOUND')) return 'That item is unavailable in your authorized inventory.';
-  if (error?.status === 429 || error?.code === 'MAP_RATE_LIMITED')
-    return 'Too many requests. Wait a moment, then try again.';
-  if (error?.code?.includes('LIMIT') || error?.status === 413)
-    return 'This view is too large. Narrow the source or agent selection and try again.';
-  if (error?.name === 'AbortError' || error?.code?.includes('TIMEOUT'))
+  // A timeout rejects with a DOMException whose `code` is a number, so only string codes are read.
+  const code = errorCode(error);
+  if (error?.name === 'AbortError' || code.includes('TIMEOUT'))
     return 'The reference service took too long. Try again shortly.';
+  if (code.includes('NOT_FOUND')) return 'That item is unavailable in your authorized inventory.';
+  if (error?.status === 429 || code === 'MAP_RATE_LIMITED') return 'Too many requests. Wait a moment, then try again.';
+  if (code.includes('LIMIT') || error?.status === 413)
+    return 'This view is too large. Narrow the source or agent selection and try again.';
   return 'The reference service could not complete this request. Try again shortly.';
 }
 const CSRF = /^agm_csrf_v1\.[A-Za-z0-9_-]{43}$/;

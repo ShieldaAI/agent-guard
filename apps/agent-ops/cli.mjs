@@ -228,11 +228,14 @@ try {
         return createHash('sha256').update(JSON.stringify(fixed)).digest('hex');
       };
       let stopping = false;
-      const stop = async (event, exitCode = 0) => {
+      // Only a stable uppercase code is logged, never a message or a path.
+      const reason = error =>
+        typeof error?.code === 'string' && /^[A-Z_]{1,64}$/.test(error.code) ? { code: error.code } : {};
+      const stop = async (event, exitCode = 0, details = {}) => {
         if (stopping) return;
         stopping = true;
         clearInterval(monitor);
-        log(event);
+        log(event, details);
         const timeout = setTimeout(() => process.exit(1), 25_000);
         timeout.unref();
         await http.close();
@@ -244,12 +247,11 @@ try {
         try {
           const next = loadConfig(flags.config);
           if (fingerprint(next) !== fingerprint(config)) fail('RESTART_REQUIRED');
+          // The server reports TLS_RELOADED and IDENTITY_BINDINGS_RELOADED as security events.
           http.replaceTls(next.tls);
-          log('TLS_RELOADED');
           http.replaceBindings(next.bindings, next.agents);
-          log('IDENTITIES_RELOADED');
-        } catch {
-          void stop('CONFIG_RELOAD_FAILED', 1);
+        } catch (error) {
+          void stop('CONFIG_RELOAD_FAILED', 1, reason(error));
         }
       });
       process.on('SIGTERM', () => {
@@ -261,16 +263,16 @@ try {
       const monitor = setInterval(() => {
         try {
           log('OPERATIONS_STATUS', http.monitoringSummary());
-        } catch {
-          void stop('STORE_HEALTH_FAILED', 1);
+        } catch (error) {
+          void stop('STORE_HEALTH_FAILED', 1, reason(error));
           return;
         }
         // Opt-in online retention (requests.autoArchiveAfterDays): small batches; never stops the service.
         try {
           const result = runtime.workflow.autoArchive();
           if (result.archived || result.skipped) log('AUTO_ARCHIVE', result);
-        } catch {
-          log('AUTO_ARCHIVE_FAILED');
+        } catch (error) {
+          log('AUTO_ARCHIVE_FAILED', reason(error));
         }
       }, 60_000);
       monitor.unref();

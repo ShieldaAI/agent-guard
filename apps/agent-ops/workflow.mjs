@@ -30,7 +30,7 @@ export function identifier(value) {
 const statuses = ['open', 'resolved'];
 const terminal = new Set(['completed', 'denied', 'expired', 'changed', 'failed', 'review_required']);
 /** Review and admission policy. Defaults keep existing installations' behaviour. */
-export const DEFAULT_REQUEST_POLICY = Object.freeze({
+const DEFAULT_REQUEST_POLICY = Object.freeze({
   reviewExpiryMs: 5 * 60_000,
   forbidSelfApproval: false,
   maxPendingPerRequester: 50,

@@ -383,7 +383,8 @@ export async function startOpsServer(options) {
         ) {
           if (request.headers.cookie || request.headers.origin) fail('FORBIDDEN', 403);
           const match = /^Bearer ([A-Za-z0-9_-]{43,128})$/.exec(request.headers.authorization ?? '');
-          const agent = match && agents.find(value => timingSafeEqual(value.tokenHash, digest(match[1])));
+          const presented = match && digest(match[1]);
+          const agent = presented && agents.find(value => timingSafeEqual(value.tokenHash, presented));
           if (!agent) fail('UNAUTHENTICATED', 401);
           const epoch = generation,
             check = () => {
@@ -421,11 +422,9 @@ export async function startOpsServer(options) {
             !session ||
             flow.sessionId !== session.id ||
             flow.generation !== generation ||
-            flow.expiresAt <= Date.now() ||
-            flow.busy
+            flow.expiresAt <= Date.now()
           )
             fail('AUTH_FAILED', 401);
-          flow.busy = true;
           flows.delete(stateValues[0]);
           let identity;
           try {

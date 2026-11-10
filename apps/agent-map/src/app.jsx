@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import cytoscape from 'cytoscape';
-import { agentOptions, componentHealth, createBearerQuerySession, createCompanyQuerySession, createQuerySession, endCompanySession, readCompanySession, retryCompanyLogout, startCompanyLogin, watchCompanySession, displayTime, errorMessage, evidenceState, graphElements, initialExplanation, kindName, nodeName, shortReference } from './view-model.mjs';
+import { agentOptions, componentHealth, createBearerQuerySession, createCompanyQuerySession, createQuerySession, endCompanySession, readCompanySession, retryCompanyLogout, startCompanyLogin, watchCompanySession, displayTime, errorCode, errorMessage, evidenceState, graphElements, initialExplanation, kindName, nodeName, shortReference } from './view-model.mjs';
 import { queryDemo } from './demo.mjs';
 import { PolicyEvidence } from './policy-evidence.jsx';
 import { AgentInventory, ChangesView, OwnersBrowse, ResourcesBrowse, Pager } from './inventory.jsx';
@@ -191,7 +191,7 @@ function OptionalGraph({ agent, query, reportError }) {
       if (!active) return;
       if (!Array.isArray(next.graph?.nodes) || !Array.isArray(next.graph?.edges)) throw Object.assign(new Error('VIEWER_RESPONSE_INVALID'), { code: 'VIEWER_RESPONSE_INVALID' });
       setResult(next); setNode(next.graph.nodes.find(item => item.label === 'GuardAgent') ?? null); setStatus('ready');
-    }).catch(error => { if (!active) return; const limit = error?.code?.includes('LIMIT') || error?.status === 413;
+    }).catch(error => { if (!active) return; const limit = errorCode(error).includes('LIMIT') || error?.status === 413;
       setStatus('error'); setLimited(limit); setError(limit ? GRAPH_LIMIT : errorMessage(error)); if (!limit) reportError(error); });
     return () => { active = false; controller.abort(); };
   }, [agent, query, reportError, attempt]);

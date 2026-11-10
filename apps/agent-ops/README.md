@@ -266,7 +266,7 @@ node apps/agent-ops/check-browser.mjs "$ops_browser_tools" artifacts/agent-ops-u
 node apps/agent-ops/check-browser-service.mjs "$ops_browser_tools" artifacts/agent-ops-ui
 ```
 
-Both scripts accept a fourth argument, `chromium`, `firefox` or `webkit`. Install
+Both scripts accept a third argument, `chromium`, `firefox` or `webkit`. Install
 the selected engines with Playwright and use separate artifact directories per
 engine. The checked-in private `tools/browser` package pins the same browser-test
 dependencies for CI without adding them to the production workspaces. Browser

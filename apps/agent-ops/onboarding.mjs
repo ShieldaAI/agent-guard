@@ -28,7 +28,6 @@ import { normalizeLimits, assertCapacity } from './limits.mjs';
 import { privateHistoryDirectory, privateHistoryMirrorDirectory } from './history-files.mjs';
 import { fields, fail, identifier, validateTicketSeed } from './workflow.mjs';
 import { validateTls } from './tls-policy.mjs';
-export { validateTls } from './tls-policy.mjs';
 
 const jsonBytes = value => Buffer.byteLength(JSON.stringify(value));
 const sha = value => createHash('sha256').update(value).digest('hex');

@@ -1,4 +1,4 @@
-export const OWNERSHIP = Object.freeze({
+const OWNERSHIP = Object.freeze({
   assigned: 'Assigned owner',
   unassigned: 'Unassigned owner',
   unknown: 'Ownership unknown',

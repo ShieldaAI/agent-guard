@@ -19,7 +19,7 @@ import { validateIdentityEnrollment } from './server.mjs';
 import { historyState } from './history-state.mjs';
 import { historyDirectoryEnrollment, historyMirrorEnrollment, verifyHistoryStorage } from './retention.mjs';
 
-export const MAX_CONFIGURED_PATH_BYTES = 512;
+const MAX_CONFIGURED_PATH_BYTES = 512;
 /** Keep startup/onboarding within the paths accepted by offline current recovery. */
 export function validateConfiguredPaths(config) {
   if (config.agents !== undefined && !Array.isArray(config.agents)) fail('CONFIG_INVALID');
@@ -399,7 +399,6 @@ export function openRuntime(config, { checkOnly = false, afterCommit, acceptCloc
       historyMirror,
       verifiedAt: Date.now(),
     });
-    if (checkOnly) return { status: 'verified', guardKeyId: guardKey.keyId, backendKeyId: backendKey.keyId };
     guard.close();
     guard = undefined;
     executor = new DurableExecutor({
@@ -434,7 +433,6 @@ export function openRuntime(config, { checkOnly = false, afterCommit, acceptCloc
     throw error;
   } finally {
     guard?.close();
-    if (checkOnly) backend?.close();
     guardKey.key.fill(0);
     backendKey?.key.fill(0);
   }
