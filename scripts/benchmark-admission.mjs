@@ -8,12 +8,8 @@ import { isEntry } from '../examples/providers/replay.mjs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { parseArgs } from 'node:util';
 import { isMainThread, threadId, Worker } from 'node:worker_threads';
-import {
-  DurableExecutor,
-  createInventoryObserverToken,
-  startExecutorServer,
-  startInventoryServer,
-} from '../packages/executor/dist/index.js';
+import { DurableExecutor, startExecutorServer } from '../packages/executor/dist/index.js';
+import { createInventoryObserverToken, startInventoryServer } from '../packages/executor/dist/entry-inventory.js';
 import { LedgerStore } from '../packages/executor/dist/store.js';
 import {
   createAdmissionDiagnostics,

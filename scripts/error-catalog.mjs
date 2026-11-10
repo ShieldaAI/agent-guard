@@ -4,6 +4,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { GuardErrorCatalog } from '@shieldaai/agent-guard';
 import { executorResponseStatus, executorResponseRetryable } from '../packages/executor/dist/response-code.js';
+import { pathToFileURL } from 'node:url';
 
 const root = new URL('../', import.meta.url);
 export const catalogPath = new URL('docs/errors.md', root);
@@ -74,7 +75,7 @@ export function renderErrorCatalog() {
   return lines.join('\n');
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const text = renderErrorCatalog();
   if (process.argv.includes('--write')) writeFileSync(catalogPath, text);
   else process.stdout.write(text);

@@ -3,6 +3,7 @@
 // to the v1 definitions, so v1 stays the single source for the shared shapes.
 // Usage: node scripts/inventory-v2-schema.mjs [--write]
 import { readFileSync, writeFileSync } from 'node:fs';
+import { pathToFileURL } from 'node:url';
 
 const root = new URL('../schemas/', import.meta.url);
 export const v2Path = new URL('agent-guard-inventory-v2.schema.json', root);
@@ -117,7 +118,7 @@ export function renderInventoryV2Schema() {
   return JSON.stringify(schema, null, 2) + '\n';
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   const text = renderInventoryV2Schema();
   if (process.argv.includes('--write')) {
     writeFileSync(v2Path, text);

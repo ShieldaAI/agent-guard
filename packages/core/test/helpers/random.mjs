@@ -18,7 +18,7 @@ export function random(seed) {
     }
     return copy;
   };
-  return { next, int, pick, shuffle, bool: () => next() < 0.5 };
+  return { next, int, pick, shuffle };
 }
 
 const ALPHABET = ['a', 'b', 'é', '"', '\\', '\n', ' ', '😀', '0', ' ', '\u0000'];

@@ -96,7 +96,7 @@ digest that locks the cases and criteria for the paid run. [Model-selected trial
 | [`@shieldaai/agent-guard`](packages/core) | Scoped task grants, delegation, tenant checks, approvals, shared sensitivity, secret scanning and budget admission |
 | [`@shieldaai/agent-guard-mcp`](packages/mcp) | Register MCP tools with explicit metadata approval and host-defined resource resolution |
 | [`@shieldaai/agent-guard-executor`](packages/executor) | Experimental durable executor, authenticated task API, governed memory, restricted network and Docker workload isolation |
-| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Twelve versioned scenarios, each with malicious and benign test cases |
+| [`@shieldaai/agent-guard-scenarios`](packages/scenarios) | Thirteen versioned scenarios, each with malicious and benign test cases |
 | [`@shieldaai/agent-map`](packages/agent-map) | Experimental scoped HTTP/MCP reference service for Cartography inventory, with a private React/Cytoscape viewer |
 
 The optional [Agent Map](packages/agent-map/README.md) reads published inventory
@@ -256,7 +256,7 @@ tracks the broader agent and permissions inventory for Agent Map/Cartography.
 The [self-hosted onboarding review](docs/archive/self-hosted-onboarding-review.md) covers
 company identity/data enrollment, reviewed imports and safely configurable capacity.
 
-The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation, budgets, normalized typed arguments and resource-version checks. Catalog 1.2.0 runs twenty-four paired malicious and benign cases. A trusted handler must compare the approved resource version atomically with the actual effect.
+The [scenario catalog](docs/scenarios.md) covers unknown tools/resources, delegation, protected administration, sensitive-data export, exact-action approvals, MCP metadata drift, secret and canary scanning, revocation and failed checks, tenant isolation, budgets, normalized typed arguments, resource-version checks and sends after reading outside content. Catalog 1.3.0 runs twenty-six paired malicious and benign cases. A trusted handler must compare the approved resource version atomically with the actual effect.
 
 All mandatory checks must pass. Custom policy can add restrictions but cannot override a missing grant, required approval, revoked task, tenant mismatch or exhausted budget. The same stored invocation is approved and executed; changing the original arguments does not change it.
 

@@ -3,7 +3,7 @@ import { spawn, spawnSync } from 'node:child_process';
 import { randomUUID, randomBytes, createHash, generateKeyPairSync, sign, verify } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, chmodSync, rmSync, existsSync } from 'node:fs';
 import { homedir, platform, arch } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'node:http';
 import { DurableExecutor, createRestrictedFetch } from '@shieldaai/agent-guard-executor';

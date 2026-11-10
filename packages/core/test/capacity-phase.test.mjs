@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AgentGuard, assertActionAuthority } from '../dist/index.js';
+import { AgentGuard } from '../dist/index.js';
+import { assertActionAuthority } from '../dist/internal.js';
 
 function gated(t, budget = {}) {
   const guard = new AgentGuard();

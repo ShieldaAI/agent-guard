@@ -60,7 +60,7 @@ export interface ToolDefinition {
   readsUntrusted?: boolean;
   /** What happens to this tool once the family is untrusted. Defaults to GuardOptions.untrustedContextDefault. */
   untrustedContext?: UntrustedContextMode;
-  /** false is enforced: a resolver returning external: true fails INVALID_INPUT. Omitted means unknown. */
+  /** false is enforced: a resolver returning external: true fails RESOLUTION_FAILED (detail INVALID_INPUT). Omitted means unknown. */
   sendsExternal?: boolean;
   /** Trusted synchronous schema parser. Its normalized result is frozen before resolution. */
   parse?(input: Json): Json;
@@ -214,8 +214,8 @@ export const GuardErrorCode = Object.freeze({
 
 export type GuardErrorCodeValue = (typeof GuardErrorCode)[keyof typeof GuardErrorCode];
 
-/** Errors emitted by the guard omit request values, policy exceptions and tool output. */
 const GUARD_ERROR_BRAND = Symbol.for('@shieldaai/agent-guard.GuardError');
+/** Errors emitted by the guard omit request values, policy exceptions and tool output. */
 export class GuardError extends Error {
   readonly code: GuardErrorCodeValue;
   /**

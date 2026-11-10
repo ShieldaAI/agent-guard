@@ -37,7 +37,7 @@ the adapter error has a safe uppercase `code`, the `GuardError` keeps it as `det
 | `POLICY_CHANGED` | The policy changed after preparation. | no | 409 | setPolicy() was called; prepare and review again. |
 | `POLICY_STATE_CHANGED` | The task changed while the policy was evaluating, beyond the retry bound. | yes | 409 | Heavy parallel use of one task; retry, or raise maxPolicyAttempts. |
 | `POLICY_BUSY` | Too many policy evaluations are in flight for this task family. | yes | 429 | Parallel calls exceeded the policy admission slots; retry shortly. |
-| `POLICY_TIMEOUT` | The policy did not decide before the task deadline. | yes | 503 | A slow asynchronous policy; retry with more time or a faster policy. |
+| `POLICY_TIMEOUT` | The policy did not decide within the policy time limit (limits.policyTimeoutMs, 30 seconds by default). | yes | 503 | A slow asynchronous policy; retry with more time or a faster policy. |
 | `ACTION_APPROVAL_LIMIT` | The action already has the maximum number of approvals. | no | 409 | Use an existing approval instead of issuing more. |
 | `ACTION_USED` | The prepared action was already dispatched. | no | 409 | Each prepared action runs at most once; prepare a new one. |
 | `APPROVAL_REQUIRED` | The action needs a human approval before dispatch. | no | 403 | Show the prepared action to a reviewer and pass the approval ID. |

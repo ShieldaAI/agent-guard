@@ -1,6 +1,7 @@
 // Agent map scale benchmark: synthetic sources with many agents, every operation.
 // Usage: node scripts/benchmark-agent-map.mjs [agentsPerSource=10] [sources=20] [tasksPerAgent=3]
 import { MapService, MAP_OPERATIONS } from '../packages/agent-map/dist/service.js';
+import { pathToFileURL } from 'node:url';
 
 const [agentsPerSource = 10, sourceCount = 20, tasksPerAgent = 3] = process.argv.slice(2).map(Number);
 const NOW = Date.parse('2030-01-02T00:00:00Z');
@@ -151,5 +152,5 @@ export async function runBenchmark(agents, sources, tasks) {
   return { agents: agents * sources, sources, tasksPerAgent: tasks, results };
 }
 
-if (import.meta.url === `file://${process.argv[1]}`)
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href)
   console.log(JSON.stringify(await runBenchmark(agentsPerSource, sourceCount, tasksPerAgent), null, 2));

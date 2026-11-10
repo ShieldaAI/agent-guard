@@ -54,6 +54,10 @@ test('oversized requests stop traversal before processing their remaining values
   );
   assert.equal(reads, 0);
   assert.equal(guard.snapshot(task).calls, 0);
+  // The cause is the byte limit, reached before `remainder`: a proxy alone is also refused,
+  // so the code above would pass even if traversal went on.
+  assert.throws(() => immutableJson({ large: Array(64).fill(shared), remainder }), /byte limit/);
+  assert.throws(() => immutableJson({ remainder }), /proxies/);
 });
 
 test('large aliased JSON input is rejected within a small normalization budget', () => {

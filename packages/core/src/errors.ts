@@ -122,7 +122,7 @@ export const GuardErrorCatalog: Readonly<Record<GuardErrorCodeValue, GuardErrorI
     'Parallel calls exceeded the policy admission slots; retry shortly.',
   ),
   POLICY_TIMEOUT: entry(
-    'The policy did not decide before the task deadline.',
+    'The policy did not decide within the policy time limit (limits.policyTimeoutMs, 30 seconds by default).',
     true,
     'A slow asynchronous policy; retry with more time or a faster policy.',
   ),

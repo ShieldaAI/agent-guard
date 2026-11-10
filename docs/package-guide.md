@@ -53,8 +53,8 @@ npm install @shieldaai/agent-guard-scenarios@alpha
 node --input-type=module -e "import { runConformance } from '@shieldaai/agent-guard-scenarios'; const r = await runConformance(); console.log(r.passed, r.passedCases, r.caseCount); if (!r.passed) process.exitCode = 1;"
 ```
 
-The current catalog runs twelve paired scenarios and prints `true 24 24` when
-all cases pass. The [scenario reference](scenarios.md) explains what they cover.
+The published alpha.3 catalog (1.2.0) runs twelve paired scenarios and prints `true 24 24`
+when all cases pass; this checkout's catalog (1.3.0) runs thirteen and prints `true 26 26`. The [scenario reference](scenarios.md) explains what they cover.
 
 ## Start with model response validation
 

@@ -7,7 +7,8 @@ import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { DurableExecutor, validateInventoryManifest, startInventoryServer } from '../packages/executor/dist/index.js';
+import { DurableExecutor } from '../packages/executor/dist/index.js';
+import { validateInventoryManifest, startInventoryServer } from '../packages/executor/dist/entry-inventory.js';
 import { MapService, createNeo4jMapStore, startMapServer } from '../packages/agent-map/dist/index.js';
 import { parseRequest } from '../packages/agent-map/dist/boundary.js';
 

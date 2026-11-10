@@ -173,8 +173,10 @@ are both retained in the [validation evidence](validation/README.md), alongside
 the graph/recovery reports and the superseded measurement.
 
 The [pilot CI workflow](../../.github/workflows/cartography-pilot.yml) runs the
-live restore/rollback exercise and graph/admission smoke profiles on relevant
-pull requests. Its manual full-benchmark option runs both acceptance profiles.
+live restore/rollback exercise and the graph smoke profile on relevant pull
+requests. The admission-during-polling profile never runs on pull requests: it
+runs nightly on the default branch with the acceptance profiles, and on manual
+dispatch (smoke by default, acceptance with the full-benchmark option).
 It uploads only safe
 verification reports for 30 days, never config, credentials, archives or database
 volumes. Local measurements do not establish a completed hosted CI run.

@@ -84,7 +84,6 @@ type ToolState = {
   parse: ToolDefinition['parse'];
 };
 type TaskState = {
-  handle: TaskHandle;
   identity: Readonly<TaskIdentity>;
   grants: Map<string, Set<string>>;
   recipients: Set<string>;
@@ -109,7 +108,6 @@ type PreparedState = {
 };
 type ApprovalState = {
   expiresAt: number;
-  approverId: string;
   /** Whether the family had read outside content when the approval was issued. */
   untrusted: boolean;
 };
@@ -492,7 +490,7 @@ export class AgentGuard {
     this.#fresh(state);
     const now = this.#gates(state.task, state.tool, state.handle.action, state.policyVersion, 'prepare');
     if (!options || typeof options !== 'object') fail('INVALID_INPUT');
-    const approverId = identifier(options.approverId);
+    identifier(options.approverId);
     const expiresAt = options.expiresAt;
     if (
       !nonnegative(expiresAt) ||
@@ -503,7 +501,7 @@ export class AgentGuard {
     for (const [id, approval] of state.approvals) if (now >= approval.expiresAt) state.approvals.delete(id);
     if (state.approvals.size >= this.#maxApprovals) fail('ACTION_APPROVAL_LIMIT');
     const id = randomUUID();
-    state.approvals.set(id, { expiresAt, approverId, untrusted: state.task.family.untrusted });
+    state.approvals.set(id, { expiresAt, untrusted: state.task.family.untrusted });
     return id;
   }
 
@@ -623,7 +621,15 @@ export class AgentGuard {
         );
       }
       // A synchronous handler or a busy microtask queue can settle before the deadline timer runs.
-      if (this.#now() >= state.task.budget.deadline) controller.abort(new GuardError('TASK_EXPIRED'));
+      // The handler has already run: a clock that fails here is an aborted execution with an
+      // unknown outcome, never a denial.
+      let expired: boolean;
+      try {
+        expired = this.#now() >= state.task.budget.deadline;
+      } catch {
+        return fail('EXECUTION_ABORTED');
+      }
+      if (expired) controller.abort(new GuardError('TASK_EXPIRED'));
       if (controller.signal.aborted) fail('EXECUTION_ABORTED');
       return Object.freeze({ value, charged: charge, actionId: state.handle.id });
     } finally {
@@ -726,7 +732,6 @@ export class AgentGuard {
     }
     const handle = Object.freeze({ id: identity.id });
     const state: TaskState = {
-      handle,
       identity,
       grants,
       recipients,

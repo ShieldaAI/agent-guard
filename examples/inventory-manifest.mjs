@@ -1,13 +1,13 @@
 // Run after npm run build. Synthetic host assertions; no AWS credentials or API calls.
 // A deployed host uses its existing protected ledger/key and operator-reviewed manifest file.
 import { randomBytes } from 'node:crypto';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 import {
-  DurableExecutor,
   validateInventoryManifest,
   composeInventorySnapshot,
   createInventoryObserverToken,
   startInventoryServer,
-} from '../packages/executor/dist/index.js';
+} from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({
   database: ':memory:',

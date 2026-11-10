@@ -8,7 +8,7 @@ import { pathToFileURL } from 'node:url';
 const [entry, output, label] = process.argv.slice(2);
 if (!entry || !output || !label) throw new Error('usage: generate-ledger-fixture.mjs <dist/index.js> <out> <label>');
 const { DurableExecutor } = await import(pathToFileURL(entry).href);
-export const FIXTURE_KEY = Buffer.alloc(32, 0x5a);
+const FIXTURE_KEY = Buffer.alloc(32, 0x5a);
 
 async function write(directory, witnessed) {
   // The witness lives outside the database directory: a separate restore domain.

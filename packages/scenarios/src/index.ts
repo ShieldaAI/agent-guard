@@ -35,7 +35,7 @@ export type GuardLike = Pick<
 export type ConformanceGuardFactory = (options: GuardOptions) => GuardLike;
 
 export interface ConformanceOptions {
-  /** Omit to execute all twelve scenarios. Each selected scenario runs both variants. */
+  /** Omit to execute every catalog scenario. Each selected scenario runs both variants. */
   readonly scenarioIds?: readonly ScenarioId[];
   /** Time limit per variant in milliseconds; defaults to 5000. Timeout does not cancel adapter work. */
   readonly caseTimeoutMs?: number;

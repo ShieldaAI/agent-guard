@@ -60,8 +60,8 @@ export function immutableJson(value: unknown, maxDepth = 64, maxNodes = 100_000,
       if (Array.isArray(input)) {
         if (input.length > maxNodes - nodes) throw new InvalidJsonError('JSON value exceeds the node limit');
         const keys = Object.getOwnPropertyNames(input);
-        if (keys.length !== input.length + 1 || input.length > maxNodes) {
-          throw new InvalidJsonError('Sparse, oversized arrays and extra array properties are unsupported');
+        if (keys.length !== input.length + 1) {
+          throw new InvalidJsonError('Sparse arrays and extra array properties are unsupported');
         }
         const result: JsonValue[] = [];
         for (let i = 0; i < input.length; i++) {

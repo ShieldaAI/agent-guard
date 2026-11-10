@@ -1,11 +1,8 @@
 // Run after npm run build. Synthetic ephemeral enrollment; no production ledger is read.
 // Real hosts reuse their protected database/key and enroll the collector independently.
 import { randomBytes } from 'node:crypto';
-import {
-  DurableExecutor,
-  createInventoryObserverToken,
-  startInventoryServer,
-} from '../packages/executor/dist/index.js';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { createInventoryObserverToken, startInventoryServer } from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({
   database: ':memory:',

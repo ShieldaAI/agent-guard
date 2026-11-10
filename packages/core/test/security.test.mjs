@@ -394,6 +394,32 @@ test('live approval records are bounded per action and expired records free spac
   assert.equal(f.effects.length, 1);
 });
 
+test('a clock that fails after the handler ran reports an aborted execution, never a denial', async () => {
+  let now = 1000;
+  const events = [];
+  const f = fixture({
+    options: { clock: () => now, onDecision: event => events.push(event) },
+    tool: {
+      execute: args => {
+        f.effects.push(args);
+        now = 500; // The system clock steps back while the handler runs.
+        return { value: 'ok', actualCost: 1 };
+      },
+    },
+    task: { budget: { ...defaultBudget(), deadline: 5000 } },
+  });
+  const prepared = await f.prepare();
+  await assert.rejects(f.guard.executeDetailed(prepared), code('EXECUTION_ABORTED'));
+  assert.equal(f.effects.length, 1, 'the effect happened');
+  const last = events.at(-1);
+  assert.deepEqual([last.operation, last.outcome, last.code], ['execute', 'failed', 'EXECUTION_ABORTED']);
+  now = 1000;
+  assert.deepEqual(
+    { calls: f.guard.snapshot(f.handle).calls, spent: f.guard.snapshot(f.handle).spent },
+    { calls: 1, spent: 1 },
+  );
+});
+
 test('clock rollback cannot resurrect an expired approval or task', async () => {
   let now = 1000;
   const f = fixture({

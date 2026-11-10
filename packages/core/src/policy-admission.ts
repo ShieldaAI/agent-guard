@@ -21,12 +21,10 @@ export class PolicyAdmission {
   }
 
   assertCapacity(familyId: string): void {
-    if (
-      this.#pending.size >= this.#maxPending ||
-      [...this.#pending].filter(entry => entry.familyId === familyId).length >= this.#maxPerFamily
-    ) {
-      throw new GuardError('POLICY_BUSY');
-    }
+    if (this.#pending.size >= this.#maxPending) throw new GuardError('POLICY_BUSY');
+    let family = 0;
+    for (const entry of this.#pending)
+      if (entry.familyId === familyId && ++family >= this.#maxPerFamily) throw new GuardError('POLICY_BUSY');
   }
 
   async evaluate(

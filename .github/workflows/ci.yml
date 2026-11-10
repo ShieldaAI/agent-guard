@@ -20,6 +20,10 @@ jobs:
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/browser/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm ci --prefix tools/browser --ignore-scripts
       - name: Record production dependency inventory
@@ -69,7 +73,8 @@ jobs:
       - name: Evaluate task completion and unauthorized effects
         id: outcome_evaluation
         if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
-        run: npm run evaluate:providers -- --output provider-evaluation.json
+        # `npm run check` has just built; the npm script would build a second time.
+        run: node scripts/evaluate-provider-tools.mjs --output provider-evaluation.json
       - name: Retain provider evaluation evidence
         if: always() && matrix.node == 24 && matrix.os == 'ubuntu-latest' && steps.outcome_evaluation.outcome != 'skipped'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -79,7 +84,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
-        run: npm run pack
+        run: node scripts/pack.mjs
       - if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
