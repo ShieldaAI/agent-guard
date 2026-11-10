@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { taskLiveness, type TaskLiveness } from './boundary-flags.js';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
 import {
   MapQueryError,
@@ -723,27 +724,164 @@ interface ScopeProbe {
   readonly principalArn: string;
   readonly principalLabel: 'AWSRole' | 'AWSUser';
   readonly collectionId: string;
-  readonly bound: ReadonlySet<string>;
   readonly proof: Readonly<Record<string, string | null>>;
+}
+/** What one tool's live grants bind on one deployment. */
+interface ToolGrants {
+  bound: Set<string>;
+  partial: Set<string>;
+  wildcard: boolean;
+  ambiguous: boolean;
+  lineageUnknown: boolean;
+}
+const EMPTY_TOOL_GRANTS: Readonly<ToolGrants> = Object.freeze({
+  bound: new Set<string>(),
+  partial: new Set<string>(),
+  wildcard: false,
+  ambiguous: false,
+  lineageUnknown: false,
+});
+/** One execution binding's comparison against its identity's probe. */
+interface ScopeLink {
+  readonly record: number;
+  readonly probe: number;
+  /** Buckets this tool's live grants bind as a whole bucket. */
+  readonly bound: ReadonlySet<string>;
+  /** Buckets bound only as an object or prefix: a bucket-level candidate may reach further. */
+  readonly partial: ReadonlySet<string>;
 }
 export interface IdentityScopePlan {
   readonly records: readonly MapIdentityScope[];
+  /** One probe per distinct identity; several tools sharing a role share its probe. */
   readonly probes: readonly ScopeProbe[];
+  readonly links: readonly ScopeLink[];
+  /** Only these bucket names are read, or every collected bucket when null. */
+  readonly buckets: readonly string[] | null;
+  /** Distinct buckets kept per identity before it reports `truncated`. */
+  readonly bucketLimit: number;
+  /** Rows read per identity; one past the expected maximum marks a longer list. */
+  readonly candidateLimit: number;
 }
+/**
+ * Extra buckets listed per execution binding. Tools that share a role share its probe, so
+ * each record keeps its own list of at most this many buckets; a longer one is `truncated`.
+ */
+export const IDENTITY_SCOPE_RECORD_BUCKETS = 100;
+const LIST_SHORTENED = 'bucket_list_shortened';
+/**
+ * A record with its bucket list cut to `keep` entries. Only the list changes: the status came
+ * from the full comparison and stands.
+ */
+export function shortenScopeList(record: MapIdentityScope, keep: number): MapIdentityScope {
+  if (record.extraResources.length <= keep) return record;
+  return {
+    ...record,
+    extraResources: record.extraResources.slice(0, keep),
+    truncated: true,
+    notes: record.notes?.includes(LIST_SHORTENED) ? record.notes : [...(record.notes ?? []), LIST_SHORTENED],
+  };
+}
+/** The reach read behind list_resources keeps fewer buckets per identity, bounding its rows. */
+export const IDENTITY_REACH_BUCKETS = 100;
 
-/** One record per execution binding; a probe only for an unambiguous, resolved static AWS identity. */
+/**
+ * One record per execution binding; a probe per distinct, unambiguous, resolved static AWS
+ * identity. Past `maximum` identities the rest report `not_evaluated` instead of failing the
+ * read. `buckets` limits the read to those bucket names (the reach check behind
+ * `list_resources`). Grants count only on live tasks at `observedAt` (the snapshot time).
+ */
 export function identityScopePlan(
   companyId: string,
   tenantId: string,
   nodes: readonly MapNode[],
   edges: readonly MapEdge[],
   maximum: number,
+  buckets: readonly string[] | null = null,
+  observedAt = Number.POSITIVE_INFINITY,
 ): IdentityScopePlan {
   const { linked, exact, step } = graphIndex(nodes, edges);
   const records: MapIdentityScope[] = [],
-    probes: ScopeProbe[] = [];
+    probes: ScopeProbe[] = [],
+    links: ScopeLink[] = [];
+  const probeByIdentity = new Map<string, number>();
+  const liveness = new Map<string, TaskLiveness>();
+  const indexes = new Map<string, Map<string, ToolGrants>>();
+  /**
+   * Per deployment, per tool: what live grants bind. task -> grant -> selector <- binding (same
+   * tool and selector) -> external S3 resource. Only a binding of the whole bucket covers a
+   * bucket-level candidate; an object or prefix is partial. A grant whose task's chain this read
+   * cannot finish (the same liveness as the flags) leaves the tool's lineage unknown.
+   */
+  const deploymentIndex = (deployment: MapNode): Map<string, ToolGrants> => {
+    const existing = indexes.get(deployment.id);
+    if (existing) return existing;
+    const index = new Map<string, ToolGrants>();
+    const facts = (tool: string): ToolGrants => {
+      let item = index.get(tool);
+      if (!item) {
+        item = { bound: new Set(), partial: new Set(), wildcard: false, ambiguous: false, lineageUnknown: false };
+        index.set(tool, item);
+      }
+      return item;
+    };
+    for (const task of linked(deployment, 'G_ASSIGNED_TO', 'GuardTask', true)) {
+      let life = liveness.get(task.id);
+      if (!life) {
+        life = taskLiveness(
+          (node, kind) => linked(node, kind, 'GuardTask'),
+          task,
+          observedAt,
+          () => step(),
+        );
+        liveness.set(task.id, life);
+      }
+      if (!life.live) continue;
+      // A task counts as live only on known facts: a missing `revoked` or `deadline` anywhere
+      // on its chain, or a snapshot time that does not parse, leaves its grants unknown.
+      const incomplete =
+        life.hidden ||
+        life.unrecorded ||
+        life.depthExceeded ||
+        life.ambiguous ||
+        life.unverified ||
+        Number.isNaN(observedAt);
+      for (const grant of linked(task, 'G_HAS_GRANT', 'GuardGrant')) {
+        const tool = value(grant, 'tool');
+        if (tool === null) continue;
+        const item = facts(tool);
+        if (incomplete) {
+          item.lineageUnknown = true;
+          continue;
+        }
+        const resources = grant.properties.resources;
+        if (Array.isArray(resources) && resources.includes('*')) item.wildcard = true;
+        for (const selector of linked(grant, 'G_TARGETS', 'GuardResource')) {
+          const selectorValue = value(selector, 'resource_id');
+          if (!Array.isArray(resources) || !resources.includes(selectorValue!)) continue;
+          for (const binding of linked(selector, 'G_BINDS_SELECTOR', 'GuardResourceBinding', true)) {
+            step();
+            if (value(binding, 'tool') !== tool || value(binding, 'resource_ref') !== selectorValue) continue;
+            const targets = linked(binding, 'G_MAPS_TO', 'GuardExternalResource');
+            // The collector writes one target per binding; more is malformed, so nothing is bound.
+            if (targets.length !== 1) item.ambiguous = true;
+            for (const target of targets) {
+              const bucket = /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/.exec(
+                value(target, 'arn') ?? '',
+              );
+              if (value(target, 'provider') !== 'aws' || !bucket) continue;
+              if (value(target, 'kind') === 'bucket' && bucket[2] === undefined) item.bound.add(bucket[1]!);
+              else item.partial.add(bucket[1]!);
+            }
+          }
+        }
+      }
+    }
+    for (const item of index.values()) for (const name of item.bound) item.partial.delete(name);
+    indexes.set(deployment.id, index);
+    return index;
+  };
   for (const execution of nodes.filter(node => node.label === 'GuardExecutionBinding')) {
-    if (records.length >= maximum) fail('MAP_LIMIT_EXCEEDED');
+    if (records.length >= 10_000) fail('MAP_LIMIT_EXCEEDED');
     const tool = value(execution, 'tool');
     const deployments = linked(execution, 'G_EXECUTES_FOR', 'GuardDeployment');
     const tools = linked(execution, 'G_EXECUTES_TOOL', 'GuardTool');
@@ -755,6 +893,7 @@ export function identityScopePlan(
       deploymentId: deployment?.entityId ?? null,
       tool,
       identityId: identity?.entityId ?? null,
+      accountId: identity ? value(identity, 'account_id') : null,
       status: 'unknown',
       reason: 'collection_missing',
       observedAt: null,
@@ -810,52 +949,66 @@ export function identityScopePlan(
       record('cloud_unresolved');
       continue;
     }
-    // The buckets this tool's own grants bind for this deployment: task -> grant (same tool)
-    // -> selector <- binding (same tool and selector) -> external S3 resource.
-    const bound = new Set<string>();
-    for (const task of linked(deployment, 'G_ASSIGNED_TO', 'GuardTask', true))
-      for (const grant of linked(task, 'G_HAS_GRANT', 'GuardGrant')) {
-        if (value(grant, 'tool') !== tool) continue;
-        const resources = grant.properties.resources;
-        for (const selector of linked(grant, 'G_TARGETS', 'GuardResource')) {
-          const selectorValue = value(selector, 'resource_id');
-          if (!Array.isArray(resources) || !resources.includes(selectorValue!)) continue;
-          for (const binding of linked(selector, 'G_BINDS_SELECTOR', 'GuardResourceBinding', true)) {
-            step();
-            if (value(binding, 'tool') !== tool || value(binding, 'resource_ref') !== selectorValue) continue;
-            for (const target of linked(binding, 'G_MAPS_TO', 'GuardExternalResource')) {
-              const bucket = /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:\/.*)?$/.exec(
-                value(target, 'arn') ?? '',
-              );
-              if (value(target, 'provider') === 'aws' && bucket) bound.add(bucket[1]!);
-            }
-          }
-        }
+    // What this tool's live grants bind for this deployment, from an index built once per
+    // deployment (every tool at once), so the work follows tasks and grants, not tools.
+    const index = deploymentIndex(deployment);
+    const facts = index.get(tool) ?? EMPTY_TOOL_GRANTS;
+    const { bound, partial, wildcard, ambiguous, lineageUnknown } = facts;
+    const boundBuckets = [...new Set([...bound, ...partial])].sort();
+    if (ambiguous) {
+      records.push({ ...base, boundBuckets, reason: 'binding_ambiguous' });
+      continue;
+    }
+    if (lineageUnknown) {
+      records.push({ ...base, boundBuckets, reason: 'grant_lineage_unknown' });
+      continue;
+    }
+    // A `*` grant lets the tool name any resource, so there is no narrower grant to compare with.
+    if (wildcard) {
+      records.push({ ...base, boundBuckets, reason: 'wildcard_grant' });
+      continue;
+    }
+    let probe = probeByIdentity.get(identity.id);
+    if (probe === undefined) {
+      if (probes.length >= maximum) {
+        records.push({ ...base, boundBuckets, reason: 'not_evaluated' });
+        continue;
       }
-    const key = records.length;
-    records.push({ ...base, boundBuckets: [...bound].sort() });
-    probes.push({
-      key,
-      identity,
-      accountId,
-      partition,
-      principalArn: principalArn!,
-      principalLabel: principal[2] === 'role' ? 'AWSRole' : 'AWSUser',
-      collectionId: collectionKey(companyId, tenantId, partition, accountId),
-      bound,
-      proof: {
-        executionNodeId: execution.id,
-        executionEntityId: execution.entityId,
-        deploymentNodeId: deployment.id,
-        deploymentEntityId: deployment.entityId,
-        agentNodeId: agents[0]!.id,
-        agentEntityId: agents[0]!.entityId,
-        agentTeamId: value(agents[0]!, 'team_id'),
-        tool,
-      },
-    });
+      probe = probes.length;
+      probeByIdentity.set(identity.id, probe);
+      probes.push({
+        key: probe,
+        identity,
+        accountId,
+        partition,
+        principalArn: principalArn!,
+        principalLabel: principal[2] === 'role' ? 'AWSRole' : 'AWSUser',
+        collectionId: collectionKey(companyId, tenantId, partition, accountId),
+        proof: {
+          executionNodeId: execution.id,
+          executionEntityId: execution.entityId,
+          deploymentNodeId: deployment.id,
+          deploymentEntityId: deployment.entityId,
+          agentNodeId: agents[0]!.id,
+          agentEntityId: agents[0]!.entityId,
+          agentTeamId: value(agents[0]!, 'team_id'),
+          tool,
+        },
+      });
+    }
+    links.push({ record: records.length, probe, bound, partial });
+    records.push({ ...base, boundBuckets });
   }
-  return { records, probes };
+  const filter = buckets === null ? null : [...new Set(buckets)].sort();
+  const bucketLimit = filter === null ? IDENTITY_SCOPE_BUCKETS : Math.min(IDENTITY_REACH_BUCKETS, filter.length);
+  return {
+    records,
+    probes,
+    links,
+    buckets: filter,
+    bucketLimit,
+    candidateLimit: bucketLimit * RELATIONSHIPS.length + 1,
+  };
 }
 
 // The candidate's fixed fields are compared with its collection in Cypher, so each row
@@ -881,9 +1034,11 @@ OPTIONAL MATCH (c:GuardAwsCollection {company_id:$companyId,tenant_id:$tenantId,
 OPTIONAL MATCH (c)-[pm:G_AWS_OBSERVED]->(p)
 CALL (p, c, pair) {
   OPTIONAL MATCH (p)-[candidate:G_AWS_POLICY_CANDIDATE {collection_id:c.id}]->(b)
+  WHERE $buckets IS NULL OR b.id IN $buckets
+  // Cut to the limit first, so membership lookups follow the limit, not the account size.
+  WITH c, pair, candidate, b ORDER BY b.id, candidate.relationship LIMIT $candidateLimit
   OPTIONAL MATCH (c)-[bm:G_AWS_OBSERVED]->(b)
   OPTIONAL MATCH (ba:AWSAccount)-[bo:RESOURCE]->(b)
-  WITH candidate, b, bm, ba, bo ORDER BY b.id, candidate.relationship LIMIT $candidateLimit
   RETURN collect(CASE WHEN candidate IS NULL THEN null ELSE {
     bucket:substring(b.id,0,64),
     relationship:substring(candidate.relationship,0,33),
@@ -909,6 +1064,7 @@ RETURN pair.key AS key,${executionProof} AS executionProof,
  CASE WHEN c IS NULL THEN null ELSE {eid:elementId(c),id:substring(c.id,0,65),schema_version:c.schema_version,status:substring(c.status,0,33),captured_at:c.captured_at,content_hash:substring(c.content_hash,0,65),policy_status:substring(c.policy_status,0,33),policy_hash:substring(c.policy_hash,0,65),policy_mapping_version:substring(c.policy_mapping_version,0,65)} END AS collection,
  CASE WHEN pm IS NULL THEN null ELSE {${memberFields.replaceAll('m.', 'pm.').replaceAll('elementId(m)', 'elementId(pm)')}} END AS principalMember,
  candidates
+ORDER BY key
 LIMIT $scopeRowLimit`;
 export const IDENTITY_SCOPE_COLUMNS = [
   'key',
@@ -946,11 +1102,156 @@ export function safeIdentityScopeRow(raw: unknown): JsonObject {
 }
 
 /** Pure classification. Any malformed or stale evidence leaves the status `unknown`. */
+type ProbeOutcome =
+  | { readonly ok: false; readonly reason: MapIdentityScope['reason']; readonly observedAt: string | null }
+  | {
+      readonly ok: true;
+      readonly observedAt: string;
+      readonly candidates: readonly { bucket: string; extra: MapIdentityExtraResource }[];
+      readonly truncated: boolean;
+    };
+function probeOutcome(
+  plan: IdentityScopePlan,
+  probe: ScopeProbe,
+  matches: readonly JsonObject[],
+  now: number,
+  maximumAge: number,
+): ProbeOutcome {
+  const failed = (reason: MapIdentityScope['reason'], observedAt: string | null = null): ProbeOutcome => ({
+    ok: false,
+    reason,
+    observedAt,
+  });
+  // The store could not keep this identity's row (too large): its list is cut short.
+  if (matches.some(row => row.oversized === true)) return failed('truncated');
+  if (!matches.length || matches[0]!.executionProof !== true) return failed('changed');
+  // One identity, principal, account and member each: any fan-out is malformed evidence.
+  if (matches.length !== 1) return failed('evidence_invalid');
+  const row = matches[0]!;
+  const i = object(row.identity),
+    p = object(row.principal),
+    pa = object(row.principalAccount),
+    po = object(row.principalOwnership),
+    ic = object(row.identityLink),
+    c = object(row.collection),
+    pm = object(row.principalMember);
+  if (!i || !referenceMatches(i, probe.identity)) return failed('changed');
+  if (!p || !pa || !po || !ic) return failed('provider_missing');
+  if (
+    p.principal !== true ||
+    p.role !== (probe.principalLabel === 'AWSRole') ||
+    p.user !== (probe.principalLabel === 'AWSUser') ||
+    p.id !== probe.principalArn ||
+    p.arn !== probe.principalArn ||
+    pa.id !== probe.accountId ||
+    i.cloud_provider_id !== probe.principalArn ||
+    i.cloud_provider_label !== probe.principalLabel ||
+    i.cloud_match_kind !== 'exact' ||
+    ic.kind !== 'G_CLOUD_MATCH' ||
+    i.cloud_assessment !== 'unknown' ||
+    ic.assessment !== 'unknown' ||
+    ic.evidence_kind !== 'provider_inventory' ||
+    ic.observed_at !== i.cloud_observed_at
+  )
+    return failed('evidence_invalid');
+  if (!c) return failed('collection_missing');
+  if (
+    c.id !== probe.collectionId ||
+    c.schema_version !== 1 ||
+    c.status !== 'complete' ||
+    !hash(c.content_hash) ||
+    !stamp(c.captured_at, now)
+  )
+    return failed('collection_invalid');
+  const observedAt = new Date(c.captured_at * 1000).toISOString();
+  const times = [
+    p.lastupdated,
+    pa.lastupdated,
+    po.lastupdated,
+    i.cloud_observed_at,
+    i.cloud_node_updated,
+    i.cloud_ownership_updated,
+    i.cloud_account_updated,
+  ];
+  if (times.some(time => !stamp(time, now))) return failed('changed', observedAt);
+  if ([c.captured_at, ...times].some(time => now - (time as number) > maximumAge)) return failed('stale', observedAt);
+  if (
+    !pm ||
+    pm.capture_hash !== c.content_hash ||
+    pm.captured_at !== c.captured_at ||
+    p.lastupdated !== c.captured_at ||
+    po.lastupdated !== c.captured_at ||
+    i.cloud_node_updated !== p.lastupdated ||
+    i.cloud_ownership_updated !== po.lastupdated ||
+    i.cloud_account_updated !== pa.lastupdated
+  )
+    return failed('changed', observedAt);
+  if (c.policy_status === 'disabled' || c.policy_status === null || c.policy_status === undefined)
+    return failed('disabled', observedAt);
+  if (
+    c.policy_status !== 'complete' ||
+    !hash(c.policy_hash) ||
+    c.policy_mapping_version !== VERSION ||
+    pm.policy_hash !== c.policy_hash ||
+    pm.policy_mapping_version !== VERSION ||
+    pm.policy_assessment !== 'unknown' ||
+    !['mapped', 'unsupported', 'boundary_unresolved'].includes(String(pm.policy_status)) ||
+    typeof pm.policy_boundary_present !== 'boolean' ||
+    pm.policy_boundary_present !== (pm.policy_status === 'boundary_unresolved')
+  )
+    return failed('collection_invalid', observedAt);
+  if (pm.policy_status !== 'mapped')
+    return failed(
+      pm.policy_status === 'boundary_unresolved' ? 'boundary_unresolved' : 'unsupported_policy',
+      observedAt,
+    );
+  const raw = row.candidates;
+  if (!Array.isArray(raw) || raw.length > plan.candidateLimit) return failed('evidence_invalid', observedAt);
+  const allowed = plan.buckets === null ? null : new Set(plan.buckets);
+  const seen = new Set<string>(),
+    buckets = new Set<string>(),
+    candidates: { bucket: string; extra: MapIdentityExtraResource }[] = [];
+  for (const item of raw) {
+    const candidate = object(item);
+    const bucket = candidate?.bucket,
+      relation = candidate?.relationship;
+    if (
+      !candidate ||
+      candidate.consistent !== true ||
+      typeof bucket !== 'string' ||
+      !BUCKET.test(bucket) ||
+      (allowed !== null && !allowed.has(bucket)) ||
+      typeof relation !== 'string' ||
+      !RELATIONSHIPS.includes(relation as MapPolicyCandidate['relationship']) ||
+      seen.has(`${bucket}\0${relation}`) ||
+      !conditionKeysValid(candidate)
+    )
+      return failed('evidence_invalid', observedAt);
+    seen.add(`${bucket}\0${relation}`);
+    buckets.add(bucket);
+    // The query orders by bucket, so the bucket past the limit marks a longer list.
+    if (buckets.size > plan.bucketLimit) continue;
+    candidates.push({
+      bucket,
+      extra: {
+        resourceId: `arn:aws:s3:::${bucket}`,
+        bucketName: bucket,
+        relationship: relation as MapPolicyCandidate['relationship'],
+        hasCondition: candidate.has_condition as boolean,
+        conditionKeys: candidate.condition_keys as string[],
+      },
+    });
+  }
+  return { ok: true, observedAt, candidates, truncated: buckets.size > plan.bucketLimit };
+}
+
 export function identityScopeEvidence(
   plan: IdentityScopePlan,
   rows: readonly JsonObject[],
   now: number,
   maximumAge: number,
+  /** For a team-scoped reader: the only bucket names it may see; null for an all-teams reader. */
+  readable: ReadonlySet<string> | null = null,
 ): readonly MapIdentityScope[] {
   const groups = new Map<number, JsonObject[]>();
   const requested = new Set(plan.probes.map(probe => probe.key));
@@ -959,177 +1260,59 @@ export function identityScopeEvidence(
     if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail();
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
+  const outcomes = plan.probes.map(probe => probeOutcome(plan, probe, groups.get(probe.key) ?? [], now, maximumAge));
   const result = [...plan.records];
-  for (const probe of plan.probes) {
-    const base = result[probe.key]!,
-      matches = groups.get(probe.key) ?? [];
-    const set = (code: MapIdentityScope['reason'], time: string | null = null): void => {
-      result[probe.key] = { ...base, status: 'unknown', reason: code, observedAt: time };
-    };
-    if (!matches.length || matches[0]!.executionProof !== true) {
-      set('changed');
+  for (const link of plan.links) {
+    const base = result[link.record]!,
+      outcome = outcomes[link.probe]!;
+    if (!outcome.ok) {
+      result[link.record] = {
+        ...base,
+        status: 'unknown',
+        reason: outcome.reason,
+        observedAt: outcome.observedAt,
+        // An identity row too large to keep is a cut list, and says so.
+        truncated: outcome.reason === 'truncated',
+      };
       continue;
     }
-    // One identity, principal, account and member each: any fan-out is malformed evidence.
-    if (matches.length !== 1) {
-      set('evidence_invalid');
-      continue;
-    }
-    const row = matches[0]!;
-    const i = object(row.identity),
-      p = object(row.principal),
-      pa = object(row.principalAccount),
-      po = object(row.principalOwnership),
-      ic = object(row.identityLink),
-      c = object(row.collection),
-      pm = object(row.principalMember);
-    if (!i || !referenceMatches(i, probe.identity)) {
-      set('changed');
-      continue;
-    }
-    if (!p || !pa || !po || !ic) {
-      set('provider_missing');
-      continue;
-    }
-    if (
-      p.principal !== true ||
-      p.role !== (probe.principalLabel === 'AWSRole') ||
-      p.user !== (probe.principalLabel === 'AWSUser') ||
-      p.id !== probe.principalArn ||
-      p.arn !== probe.principalArn ||
-      pa.id !== probe.accountId ||
-      i.cloud_provider_id !== probe.principalArn ||
-      i.cloud_provider_label !== probe.principalLabel ||
-      i.cloud_match_kind !== 'exact' ||
-      ic.kind !== 'G_CLOUD_MATCH' ||
-      i.cloud_assessment !== 'unknown' ||
-      ic.assessment !== 'unknown' ||
-      ic.evidence_kind !== 'provider_inventory' ||
-      ic.observed_at !== i.cloud_observed_at
-    ) {
-      set('evidence_invalid');
-      continue;
-    }
-    if (!c) {
-      set('collection_missing');
-      continue;
-    }
-    if (
-      c.id !== probe.collectionId ||
-      c.schema_version !== 1 ||
-      c.status !== 'complete' ||
-      !hash(c.content_hash) ||
-      !stamp(c.captured_at, now)
-    ) {
-      set('collection_invalid');
-      continue;
-    }
-    const observedAt = new Date(c.captured_at * 1000).toISOString();
-    const times = [
-      p.lastupdated,
-      pa.lastupdated,
-      po.lastupdated,
-      i.cloud_observed_at,
-      i.cloud_node_updated,
-      i.cloud_ownership_updated,
-      i.cloud_account_updated,
-    ];
-    if (times.some(time => !stamp(time, now))) {
-      set('changed', observedAt);
-      continue;
-    }
-    if ([c.captured_at, ...times].some(time => now - (time as number) > maximumAge)) {
-      set('stale', observedAt);
-      continue;
-    }
-    if (
-      !pm ||
-      pm.capture_hash !== c.content_hash ||
-      pm.captured_at !== c.captured_at ||
-      p.lastupdated !== c.captured_at ||
-      po.lastupdated !== c.captured_at ||
-      i.cloud_node_updated !== p.lastupdated ||
-      i.cloud_ownership_updated !== po.lastupdated ||
-      i.cloud_account_updated !== pa.lastupdated
-    ) {
-      set('changed', observedAt);
-      continue;
-    }
-    if (c.policy_status === 'disabled' || c.policy_status === null || c.policy_status === undefined) {
-      set('disabled', observedAt);
-      continue;
-    }
-    if (
-      c.policy_status !== 'complete' ||
-      !hash(c.policy_hash) ||
-      c.policy_mapping_version !== VERSION ||
-      pm.policy_hash !== c.policy_hash ||
-      pm.policy_mapping_version !== VERSION ||
-      pm.policy_assessment !== 'unknown' ||
-      !['mapped', 'unsupported', 'boundary_unresolved'].includes(String(pm.policy_status)) ||
-      typeof pm.policy_boundary_present !== 'boolean' ||
-      pm.policy_boundary_present !== (pm.policy_status === 'boundary_unresolved')
-    ) {
-      set('collection_invalid', observedAt);
-      continue;
-    }
-    if (pm.policy_status !== 'mapped') {
-      set(pm.policy_status === 'boundary_unresolved' ? 'boundary_unresolved' : 'unsupported_policy', observedAt);
-      continue;
-    }
-    const raw = row.candidates;
-    if (!Array.isArray(raw) || raw.length > IDENTITY_SCOPE_CANDIDATE_LIMIT) {
-      set('evidence_invalid', observedAt);
-      continue;
-    }
-    const seen = new Set<string>(),
-      buckets = new Set<string>(),
-      extras: MapIdentityExtraResource[] = [];
-    let invalid = false;
-    for (const item of raw) {
-      const candidate = object(item);
-      const bucket = candidate?.bucket,
-        relation = candidate?.relationship;
-      if (
-        !candidate ||
-        candidate.consistent !== true ||
-        typeof bucket !== 'string' ||
-        !BUCKET.test(bucket) ||
-        typeof relation !== 'string' ||
-        !RELATIONSHIPS.includes(relation as MapPolicyCandidate['relationship']) ||
-        seen.has(`${bucket}\0${relation}`) ||
-        !conditionKeysValid(candidate)
-      ) {
-        invalid = true;
-        break;
+    let hidden = false,
+      narrower = false;
+    const extras: MapIdentityExtraResource[] = [];
+    for (const { bucket, extra } of outcome.candidates) {
+      if (link.bound.has(bucket)) continue;
+      // A bucket-level candidate on a bucket the tool binds only in part may or may not
+      // reach past that object or prefix.
+      if (link.partial.has(bucket)) {
+        narrower = true;
+        continue;
       }
-      seen.add(`${bucket}\0${relation}`);
-      buckets.add(bucket);
-      // The query orders by bucket, so the bucket past the limit marks a longer list.
-      if (buckets.size > IDENTITY_SCOPE_BUCKETS || probe.bound.has(bucket)) continue;
-      extras.push({
-        resourceId: `arn:aws:s3:::${bucket}`,
-        bucketName: bucket,
-        relationship: relation as MapPolicyCandidate['relationship'],
-        hasCondition: candidate.has_condition as boolean,
-        conditionKeys: candidate.condition_keys as string[],
-      });
+      if (readable !== null && !readable.has(bucket)) {
+        hidden = true;
+        continue;
+      }
+      extras.push(extra);
     }
-    if (invalid) {
-      set('evidence_invalid', observedAt);
-      continue;
-    }
-    const truncated = buckets.size > IDENTITY_SCOPE_BUCKETS;
     extras.sort((a, b) =>
       a.bucketName === b.bucketName ? (a.relationship < b.relationship ? -1 : 1) : a.bucketName < b.bucketName ? -1 : 1,
     );
-    result[probe.key] = {
+    // Withheld buckets are still beyond this tool's grants, so they keep the status broad.
+    const broader = extras.length > 0 || hidden;
+    // The list names at most IDENTITY_SCOPE_RECORD_BUCKETS buckets (with all their
+    // relationships). The comparison itself is complete, so a cut list keeps its status.
+    const names = [...new Set(extras.map(extra => extra.bucketName))];
+    const listed =
+      names.length > IDENTITY_SCOPE_RECORD_BUCKETS ? new Set(names.slice(0, IDENTITY_SCOPE_RECORD_BUCKETS)) : null;
+    const notes = [...(hidden ? ['evidence_outside_visible_scope'] : []), ...(listed ? [LIST_SHORTENED] : [])];
+    result[link.record] = {
       ...base,
-      status: truncated ? 'unknown' : extras.length ? 'broader_than_grants' : 'matches_grants',
-      reason: truncated ? 'truncated' : null,
-      observedAt,
-      extraResources: extras,
-      truncated,
+      // More than the identity's bucket limit: the comparison is incomplete (spec: unknown).
+      status: outcome.truncated ? 'unknown' : broader ? 'broader_than_grants' : narrower ? 'unknown' : 'matches_grants',
+      reason: outcome.truncated ? 'truncated' : broader ? null : narrower ? 'binding_narrower_than_candidate' : null,
+      observedAt: outcome.observedAt,
+      extraResources: listed ? extras.filter(extra => listed.has(extra.bucketName)) : extras,
+      truncated: outcome.truncated || listed !== null,
+      ...(notes.length ? { notes } : {}),
     };
   }
   return result;

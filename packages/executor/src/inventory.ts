@@ -8,6 +8,11 @@ export interface InventorySourceOptions {
   readonly companyId: string;
   readonly sourceId: string;
   readonly enrollmentGeneration: string;
+  /**
+   * The executor's `untrustedContextDefault`, reported in v2 snapshots so readers can work
+   * out a tool's effective mode. Never part of the enrollment identity or reference keys.
+   */
+  readonly untrustedContextDefault?: 'allow' | 'require_approval' | 'deny';
 }
 export interface InventoryOptions extends InventorySourceOptions {
   /** Opaque tenant-scoped resource and recipient references are the default. */
@@ -67,8 +72,11 @@ export interface InventoryTool {
 export interface InventorySnapshot {
   /** 1 by default; 2 when any tool declares an outside-content label or any family is untrusted. */
   readonly schemaVersion: 1 | 2;
+  /** Schema v2 only: the mode for tools that declare no `untrustedContext`; null when unknown. */
+  readonly untrustedContextDefault?: 'allow' | 'require_approval' | 'deny' | null;
   readonly profile: 'core';
-  readonly source: InventorySourceOptions & InventoryScope & { readonly inventoryInstanceId: string };
+  readonly source: Omit<InventorySourceOptions, 'untrustedContextDefault'> &
+    InventoryScope & { readonly inventoryInstanceId: string };
   readonly snapshotId: string;
   readonly generatedAt: string;
   readonly ledgerRevision: number;
@@ -176,11 +184,19 @@ function closed(value: unknown, keys: readonly string[], code: string): void {
 
 export function validateInventorySource(value: unknown): InventorySourceOptions {
   const code = 'INVENTORY_CONFIG_INVALID';
-  closed(value, ['companyId', 'sourceId', 'enrollmentGeneration'], code);
+  const keys = ['companyId', 'sourceId', 'enrollmentGeneration'];
+  closed(
+    value,
+    Object.hasOwn(record(value, code), 'untrustedContextDefault') ? [...keys, 'untrustedContextDefault'] : keys,
+    code,
+  );
+  const mode = field(value, 'untrustedContextDefault', code);
+  if (mode !== undefined && !UNTRUSTED_MODES.includes(mode as UntrustedMode)) fail(code);
   return Object.freeze({
     companyId: identifier(field(value, 'companyId', code), code),
     sourceId: identifier(field(value, 'sourceId', code), code),
     enrollmentGeneration: identifier(field(value, 'enrollmentGeneration', code), code),
+    ...(mode === undefined ? {} : { untrustedContextDefault: mode as UntrustedMode }),
   });
 }
 
@@ -574,6 +590,7 @@ function constructInventory(
   }
   const snapshot: InventorySnapshot = {
     schemaVersion: v2 ? 2 : 1,
+    ...(v2 ? { untrustedContextDefault: enrollment.untrustedContextDefault ?? null } : {}),
     profile: 'core',
     source: {
       companyId: enrollment.companyId,

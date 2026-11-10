@@ -8,63 +8,128 @@ Exports from `@shieldaai/agent-guard`:
 
 ```ts
 type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json };
-interface Capability { tool: string; resources: readonly string[] }
-interface Budget { maxCalls: number; maxConcurrent: number; maxCost: number; deadline: number }
+interface Capability {
+  tool: string;
+  resources: readonly string[];
+}
+interface Budget {
+  maxCalls: number;
+  maxConcurrent: number;
+  maxCost: number;
+  deadline: number;
+}
 interface TaskOptions {
-  id: string; principalId: string; tenantId: string;
-  grants: readonly Capability[]; budget: Budget;
+  id: string;
+  principalId: string;
+  tenantId: string;
+  grants: readonly Capability[];
+  budget: Budget;
   allowedRecipients?: readonly string[];
   allowControlPlane?: boolean;
 }
-interface TaskIdentity { id: string; principalId: string; tenantId: string }
-interface TaskHandle { readonly id: string }
+interface TaskIdentity {
+  id: string;
+  principalId: string;
+  tenantId: string;
+}
+interface TaskHandle {
+  readonly id: string;
+}
 interface ResolvedAction {
-  resourceId: string; tenantId: string;
-  external?: boolean; recipient?: string; sensitive?: boolean;
+  resourceId: string;
+  tenantId: string;
+  external?: boolean;
+  recipient?: string;
+  sensitive?: boolean;
   resourceVersion?: string;
 }
 interface ToolDefinition {
-  name: string; description: string; inputSchema?: Json; metadata?: Json;
-  requiresApproval?: boolean; controlPlane?: boolean;
+  name: string;
+  description: string;
+  inputSchema?: Json;
+  metadata?: Json;
+  requiresApproval?: boolean;
+  controlPlane?: boolean;
   // Nonnegative safe integer cost units; the adapter enforces its provider-side bound.
   maxCost?: number;
   parse?(input: Json): Json;
   resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
-  execute(args: Json, context: {
-    signal: AbortSignal; action: Readonly<Action>; task: Readonly<TaskIdentity>
-  }): Promise<ToolResult> | ToolResult;
+  execute(
+    args: Json,
+    context: {
+      signal: AbortSignal;
+      action: Readonly<Action>;
+      task: Readonly<TaskIdentity>;
+    },
+  ): Promise<ToolResult> | ToolResult;
 }
-interface ToolResult { value: Json; actualCost?: number }
+interface ToolResult {
+  value: Json;
+  actualCost?: number;
+}
 interface Action extends ResolvedAction {
-  tool: string; args: Json; toolFingerprint: string; policyVersion: number;
+  tool: string;
+  args: Json;
+  toolFingerprint: string;
+  policyVersion: number;
 }
 interface TaskSnapshot extends TaskIdentity {
-  sensitive: boolean; calls: number; concurrent: number; spent: number; reserved: number;
+  sensitive: boolean;
+  calls: number;
+  concurrent: number;
+  spent: number;
+  reserved: number;
 }
 type PolicyDecision = 'allow' | 'deny' | 'require_approval';
-type Policy = (action: Readonly<Action>, task: Readonly<TaskSnapshot>,
-  context?: Readonly<{ signal: AbortSignal }>) => PolicyDecision | Promise<PolicyDecision>;
+type Policy = (
+  action: Readonly<Action>,
+  task: Readonly<TaskSnapshot>,
+  context?: Readonly<{ signal: AbortSignal }>,
+) => PolicyDecision | Promise<PolicyDecision>;
 interface GuardOptions {
-  policy?: Policy; secretValues?: readonly string[];
+  policy?: Policy;
+  secretValues?: readonly string[];
   clock?: () => number; // milliseconds; default Date.now. monotonicClock() never steps backward.
   maxPolicyAttempts?: number; // 1-16, default 5
   onDecision?: (event: Readonly<GuardDecision>) => void; // observes only; a throwing hook is ignored
   untrustedContextDefault?: 'allow' | 'require_approval' | 'deny'; // default 'allow'
-  limits?: { maxApprovalsPerAction?: number; maxPolicyEvaluations?: number;
-    maxPolicyEvaluationsPerFamily?: number; policyTimeoutMs?: number }; // defaults 4, 64, 8, 30,000
+  limits?: {
+    maxApprovalsPerAction?: number;
+    maxPolicyEvaluations?: number;
+    maxPolicyEvaluationsPerFamily?: number;
+    policyTimeoutMs?: number;
+  }; // defaults 4, 64, 8, 30,000
 }
 interface GuardDecision {
-  operation: 'prepare' | 'approve' | 'execute'; outcome: 'allowed' | 'denied' | 'succeeded' | 'failed';
-  taskId: string; tenantId: string; principalId: string;
-  tool?: string; actionId?: string; resourceId?: string; approverId?: string; code?: string;
+  operation: 'prepare' | 'approve' | 'execute';
+  outcome: 'allowed' | 'denied' | 'succeeded' | 'failed';
+  taskId: string;
+  tenantId: string;
+  principalId: string;
+  tool?: string;
+  actionId?: string;
+  resourceId?: string;
+  approverId?: string;
+  code?: string;
 }
-interface TaskStatus extends TaskSnapshot { budget: Readonly<Budget>; revoked: boolean }
-interface ExecutionResult { readonly value: Json; readonly charged: number; readonly actionId: string }
+interface TaskStatus extends TaskSnapshot {
+  budget: Readonly<Budget>;
+  revoked: boolean;
+}
+interface ExecutionResult {
+  readonly value: Json;
+  readonly charged: number;
+  readonly actionId: string;
+}
 interface PreparedAction {
-  readonly id: string; readonly digest: string;
-  readonly action: Readonly<Action>; readonly requiresApproval: boolean;
+  readonly id: string;
+  readonly digest: string;
+  readonly action: Readonly<Action>;
+  readonly requiresApproval: boolean;
 }
-class GuardError extends Error { readonly code: string }
+class GuardError extends Error {
+  readonly code: string;
+}
 class AgentGuard {
   constructor(options?: GuardOptions);
   registerTool(tool: ToolDefinition): string; // Returns the fingerprint. Approval is a separate step.
@@ -86,8 +151,12 @@ class AgentGuard {
 // aliases are deprecated). Shared by executor implementations; AgentGuard manages its own pool.
 class PolicyAdmission {
   assertCapacity(familyId: string): void;
-  evaluate(policy: Policy, action: Readonly<Action>, snapshot: Readonly<TaskSnapshot>,
-    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number }): Promise<'allow' | 'require_approval'>;
+  evaluate(
+    policy: Policy,
+    action: Readonly<Action>,
+    snapshot: Readonly<TaskSnapshot>,
+    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number },
+  ): Promise<'allow' | 'require_approval'>;
   revokeTask(taskId: string): void;
   invalidate(reason: 'TASK_REVOKED' | 'POLICY_CHANGED'): void;
 }
@@ -139,8 +208,9 @@ For external actions the guard scans outbound argument object keys and string va
 Before dispatch, budget admission updates every ancestor synchronously. Calls count attempts that reach a handler. A failed call or an uncertain side effect is not automatically retried or refunded.
 
 Capacity is checked in two phases.
-- **Preparation and approval** (`prepare`, `approve`): authority gates and *permanent* capacity apply. Permanent capacity is the call count and spent cost, which only grow.
-- **Dispatch** (`execute`): additionally enforces *transient* capacity, meaning concurrent calls and cost reserved by calls still in flight.
+
+- **Preparation and approval** (`prepare`, `approve`): authority gates and _permanent_ capacity apply. Permanent capacity is the call count and spent cost, which only grow.
+- **Dispatch** (`execute`): additionally enforces _transient_ capacity, meaning concurrent calls and cost reserved by calls still in flight.
 
 So a call in flight does not refuse another preparation or lose a reviewer's approval. The approved action is refused at dispatch (`CONCURRENCY_EXCEEDED` or `COST_BUDGET_EXCEEDED`) until capacity frees, and its approval stays usable until it expires. The internal `assertActionAuthority` (from `@shieldaai/agent-guard/internal`) takes `phase: 'prepare' | 'dispatch'`; the default is `dispatch`.
 
@@ -176,10 +246,10 @@ entry IDs; each lookup uses the task's authenticated tenant, so identical IDs in
 different tenants name different records. Delegated tasks use their inherited
 tenant and narrowed grants.
 
-| Tool | Exact arguments | Successful value from `execute()` |
-| --- | --- | --- |
-| `memory.read` | `{ id }` | `{ id, tenantId, origin, value, version, sensitive, trusted, parentIds, quarantined: false, familyId? }` |
-| `memory.write` | `{ id, value, ifVersion }` | `{ id, version, sensitive, trusted: false }` |
+| Tool           | Exact arguments            | Successful value from `execute()`                                                                        |
+| -------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `memory.read`  | `{ id }`                   | `{ id, tenantId, origin, value, version, sensitive, trusted, parentIds, quarantined: false, familyId? }` |
+| `memory.write` | `{ id, value, ifVersion }` | `{ id, version, sensitive, trusted: false }`                                                             |
 
 Extra argument fields are rejected. Use `ifVersion: 0` to create an entry and the
 current positive version to replace it. Reads and writes bind a version during
@@ -368,7 +438,9 @@ When any tool declares an outside-content label (`readsUntrusted`, `untrustedCon
 `sendsExternal`) or any task family is `untrusted`, the snapshot uses the
 [version-2 schema](../schemas/agent-guard-inventory-v2.schema.json) instead: every task
 adds `untrusted`, and every tool adds the three labels, `null` when undeclared or
-unregistered. v2 is a `$ref` envelope over v1; every other shape is unchanged. A
+unregistered. A v2 snapshot also carries `untrustedContextDefault`, the executor's mode
+for tools that set none, so a reader can work out each tool's effective mode. v2 is a
+`$ref` envelope over v1; every other shape is unchanged. A
 collector that only knows v1 refuses v2 rather than dropping the fields. Without
 those labels the output is exactly v1. A host snapshot composed with a
 [manifest v3](../schemas/agent-guard-inventory-manifest-v3.schema.json) is always v2,
@@ -391,14 +463,14 @@ changes or reference-mode changes. See the
 [executor guide](../packages/executor/README.md#inventory-for-the-trusted-host) for
 data minimization, limits and lifecycle requirements.
 
-| Error code | Meaning |
-| --- | --- |
-| `INVENTORY_DISABLED` | No inventory enrollment configured. |
-| `INVENTORY_CONFIG_INVALID` | Invalid enrollment or reference mode. |
-| `INVENTORY_SCOPE_INVALID` | Missing/invalid tenant or attempted filtering. |
-| `INVENTORY_STATE_INVALID` | State cannot be represented by the inventory contract. |
-| `INVENTORY_LIMIT_EXCEEDED` | Complete output exceeds a record, work or byte limit. |
-| `INVENTORY_CLOCK_INVALID` | Observation time cannot be encoded as a valid UTC timestamp. |
+| Error code                 | Meaning                                                      |
+| -------------------------- | ------------------------------------------------------------ |
+| `INVENTORY_DISABLED`       | No inventory enrollment configured.                          |
+| `INVENTORY_CONFIG_INVALID` | Invalid enrollment or reference mode.                        |
+| `INVENTORY_SCOPE_INVALID`  | Missing/invalid tenant or attempted filtering.               |
+| `INVENTORY_STATE_INVALID`  | State cannot be represented by the inventory contract.       |
+| `INVENTORY_LIMIT_EXCEEDED` | Complete output exceeds a record, work or byte limit.        |
+| `INVENTORY_CLOCK_INVALID`  | Observation time cannot be encoded as a valid UTC timestamp. |
 
 Store errors such as `STORE_CLOSED` or `STORE_CORRUPT` are preserved. Error messages
 contain stable codes, not source values. Failure never returns a truncated snapshot.
@@ -435,16 +507,16 @@ request bodies, 8 MiB responses, a 10-second deadline, four active requests,
 See the [observer guide](../packages/executor/README.md#observer-http-transport)
 for configurable bounds, strict parsing and remote TLS bridge requirements.
 
-| HTTP status | Error codes |
-| --- | --- |
-| 400 | `REQUEST_INVALID` |
-| 401 | `UNAUTHENTICATED` (Bearer challenge; no credential details) |
-| 403 | `REQUEST_DENIED`, `INVENTORY_SCOPE_DENIED` |
-| 408 | `REQUEST_TIMEOUT` |
-| 413 | `REQUEST_TOO_LARGE`, `INVENTORY_RESPONSE_TOO_LARGE`, `INVENTORY_LIMIT_EXCEEDED` |
-| 429 | `INVENTORY_RATE_LIMITED`, with `Retry-After` |
-| 431 | `REQUEST_TOO_LARGE` for parser header overflow |
-| 503 | `INVENTORY_BUSY`, `INVENTORY_UNAVAILABLE`, or a safe exporter availability code |
+| HTTP status | Error codes                                                                     |
+| ----------- | ------------------------------------------------------------------------------- |
+| 400         | `REQUEST_INVALID`                                                               |
+| 401         | `UNAUTHENTICATED` (Bearer challenge; no credential details)                     |
+| 403         | `REQUEST_DENIED`, `INVENTORY_SCOPE_DENIED`                                      |
+| 408         | `REQUEST_TIMEOUT`                                                               |
+| 413         | `REQUEST_TOO_LARGE`, `INVENTORY_RESPONSE_TOO_LARGE`, `INVENTORY_LIMIT_EXCEEDED` |
+| 429         | `INVENTORY_RATE_LIMITED`, with `Retry-After`                                    |
+| 431         | `REQUEST_TOO_LARGE` for parser header overflow                                  |
+| 503         | `INVENTORY_BUSY`, `INVENTORY_UNAVAILABLE`, or a safe exporter availability code |
 
 Errors are bounded `{ "error": "CODE" }` JSON without task data. Store and unexpected
 internal failures map to `INVENTORY_UNAVAILABLE`. Startup validation uses
@@ -636,9 +708,144 @@ that tool's own grants bind for that deployment. `get_agent_access` returns it a
 `data.outsideGuard.identityScope`, one record per execution binding with `status`
 `broader_than_grants`, `matches_grants` or `unknown` (with a `reason`), the bound
 bucket names, and `extraResources` (bucket, relationship, condition flag and keys).
-More than 500 buckets sets `truncated` and `unknown`. Only identity policies are
+More than 500 candidate buckets for one identity leaves the comparison incomplete:
+`truncated` and `unknown`. Only identity policies are
 evaluated, so extra buckets are candidates; a bucket policy, SCP or permission
-boundary can still remove the access, and `matches_grants` does not mean safe.
+boundary can still remove the access, and `matches_grants` does not mean safe. The
+comparison is per bucket, not per action: an identity that can write a bucket the tool
+only declares reading still reads `matches_grants`.
+
+For `get_agent_access`, the same one-agent read also loads the in-scope delegation
+ancestors of the agent's tasks (only their task records, stopping at the first ancestor
+outside the reader's scope, and only if they fit the read's remaining node, edge and byte
+budget; otherwise none, with the flag note `delegation_ancestors_not_loaded`) and asks, for each tool the agent holds a `*` grant on,
+whether any in-scope binding of that tool is marked confidential or restricted (up to
+five, as evidence). Both follow the team-wide visibility rules: a binding is in a team
+reader's scope only when a task of an in-scope agent holds an exact grant on it, so a `*`
+grant alone reads `unknown` for private data to a team reader. `get_agent_access` uses them for `data.boundaryFlags`.
+`dangerous_three` reports whether a live task can:
+
+- read private data: a granted binding marked `confidential` or `restricted`, or a task
+  that is already sensitive (a task without a boolean `sensitive` makes this leg and its
+  declared sends `unknown`);
+- read outside content: a granted tool with `readsUntrusted: true`, or an untrusted task.
+  Only an explicit `readsUntrusted: false` rules a tool out, since a resolver can mark any
+  call untrusted;
+- send out: a granted tool with `sendsExternal: true`. The core refuses those sends when
+  the effective recipient set (intersected over every ancestor) is empty or the task is
+  sensitive, so either makes that tool's contribution `absent`. An undeclared or
+  unregistered tool may send without marking the call external and stays `unknown`.
+
+Each leg is `present`, `absent` or `unknown`. The status is `exposed` when all three are
+present and a declared sending tool's effective mode (`untrustedContext`, else the
+executor's `untrustedContextDefault`) is `allow`; `mitigated` when every possible sender
+uses `require_approval` or `deny`; `unknown` when no leg is known to be absent but one
+(or the mode of a possible sender) is unknown; and `absent` otherwise. The agent's status is its worst live task (ranked
+exposed, unknown, mitigated, absent, so a mitigated task never hides an unknown one), and
+`taskId`, `legs` and `evidence` all describe that task. Evidence lists up to eight items
+per leg (and for mitigation), so every present leg keeps some; `evidenceTruncated` says
+when items were left out. Revoked and expired tasks (expiry judged at the snapshot's `generatedAt`, including through a
+delegation ancestor, and revocation also through a handoff source, as the executor checks)
+don't count; an agent with no live task is `unknown` with the note
+`no_live_tasks`. Other notes:
+
+- `ancestor_evidence_outside_visible_scope`: a parent or handoff source is outside a team
+  reader's scope.
+- `delegation_parent_missing`: an all-teams reader's read lacks a recorded parent or source.
+- `delegation_not_recorded`: an import from before `delegated`/`derived` existed.
+- `delegation_depth_exceeded`: a recorded parent or source lies more than 16 links away.
+- `delegation_ancestors_not_loaded`: no room was left in the read for the ancestors.
+- `delegation_evidence_ambiguous`: a task has more than one parent or handoff source.
+- `task_liveness_unverified`: a `revoked` or `deadline` on the chain is missing, or the
+  snapshot time does not parse.
+- `flags_limit_exceeded` / `flags_timeout`: the flag alone ran out of work or time; the rest
+  of `get_agent_access` still answers.
+
+In every delegation and liveness case above the task may have a revoked or expired
+ancestor, so it is never `absent`: at most `unknown`.
+
+`list_agents` with `includeFlags: true` adds `boundaryFlags.dangerousThree` to the page it
+returns, computed by a second read of only those agents under the one-agent rules, so a
+badge matches `get_agent_access` (when a read has no room for an agent's ancestors, that
+read reports `unknown` instead). Filtering with `flag: 'dangerous_three'` (everything
+but `absent`) or `flagStatus` needs every agent's flags, so it reads the full scoped
+graph and is bounded by the store's node limit.
+If that second read exceeds the store's limits or fails, the listing still answers: every
+agent on the page gets `dangerousThree: unknown`, and the response adds
+`flagsUnavailable` (`flags_limit_exceeded`, `flags_timeout` or `flags_read_unavailable`).
+The page flags use what is left of the query's time and their own work budget, so a
+slow or large page degrades its flags, not the listing. `flag` with `flagStatus: absent`
+is a contradiction and returns `MAP_REQUEST_INVALID`.
+`get_agent_inventory` does not load this boundary evidence.
+
+`list_resources` and `get_resource_access` read the reverse identity evidence for the
+buckets that visible bindings map to: at most 32 identities (the rest report
+`not_evaluated`) and 100 buckets per identity (more is `truncated`, so `unknown`). A record
+whose bucket list was cut keeps resources `unknown`, since it may reach buckets it no
+longer names. Each resource row gets `outsideGuard`:
+
+- `yes`: a declared direct path targets its host resource, or a tool identity has a
+  candidate on its bucket that the tool's own live grants don't bind.
+  `get_resource_access` lists them under `data.outsideGuard`: at most 100 identity rows
+  (one per execution binding and relationship) and 100 declared paths, with
+  `identitiesTruncated` and `directAccessTruncated`.
+- `none_found`: only for an S3-backed resource whose bucket the AWS collection resolved,
+  when every visible execution binding has a reach record, every visible deployment declared its
+  direct paths (and a `found` deployment has entries), every declared path has a target
+  this read can match, every visible granted tool has an execution identity that was
+  evaluated in the bucket's own AWS account, and nothing in the source lies outside the
+  reader's scope.
+- `unknown` otherwise, with `unknownReasons`: `binding_ambiguous`, `resource_not_collected`
+  (the AWS collection has not resolved the bucket, so no identity was compared with it),
+  `direct_access_undeclared`,
+  `direct_access_untargeted` (a path with no target, such as a shell),
+  `direct_access_target_unresolved`, `execution_identity_undeclared`,
+  `identity_scope_unknown`, `identity_scope_other_account` (candidates are collected per
+  account, so an identity elsewhere was never compared and a cross-account bucket policy
+  could still let it in), `identity_scope_not_collected[_for_resource]` (always for a
+  non-S3 resource), `outside_visible_scope` and `reach_not_evaluated`. A team reader gets
+  `outside_visible_scope` whenever any deployment or task of the source is outside its
+  scope, so `none_found` is mostly an all-teams answer. Reach has its own work budget:
+  when judging it would exceed that budget or the time left, the rest of the response is
+  still returned and reach reads `unknown` with the single reason `reach_not_evaluated`
+  and empty lists. Reach is judged within the resource's own source: identities and
+  paths of other sources are not compared. It is never proof that no path exists.
+
+A manifest v3 `targetRef` must name a host resource declared in `resourceBindings`;
+anything else is declared with `targetRef: null`. In `get_agent_access`, each declared
+path has `targetStatus`: `none`, `visible`, or `outside_visible_scope` when the target is
+a resource outside the reader's scope; the `targetRef` is then withheld (`null`) in the
+response, its graph and `get_changes`. Past 20,000 in-scope targets the check falls back
+to the resources this read holds, which can only withhold more.
+
+A tool's own binding covers a bucket-level candidate only when it binds the whole bucket;
+a bucket bound only as an object or prefix gives `unknown` with reason
+`binding_narrower_than_candidate`, since the candidate may reach past it. Grants of
+revoked or expired tasks (revoked through any ancestor or handoff source, expired through a
+delegation ancestor) don't count as
+bound; a grant whose task's chain this read cannot finish gives `unknown` with reason
+`grant_lineage_unknown`, as does a task or ancestor without a boolean `revoked` or (on the
+delegation chain) a numeric `deadline`, or a snapshot time that does not parse. Tools that
+share one role share one
+probe; a one-agent read evaluates at most 8 distinct identities (the rest are
+`not_evaluated`). Each execution binding lists at most 100 extra buckets (with all their
+relationships). A cut list sets `truncated: true` and the note `bucket_list_shortened`,
+and keeps its status: the comparison was complete, only the listing is shorter. The same
+applies when lists are dropped because the records pass 1 MiB in one read (or what is left
+of the read's 4 MiB budget after 64 KiB of headroom), when the read's final copy does not
+fit with them, and when the `get_agent_access` response does not fit its
+size limit with the lists: they are shortened to 25, 5, then no entries before the
+response is refused. If even the bare records do not fit the read, it answers without
+identity scope (`not_evaluated`). If comparing grants with
+identities needs more work than one read allows, the read answers without it: every
+execution binding reads `unknown` with reason `not_evaluated`, and resources read
+`unknown` (`identity_scope_not_collected`).
+
+A team reader's `identityScope` names only buckets that a binding reachable from an
+in-scope agent maps to. Any other bucket (another team's, or one no binding maps) is
+replaced by the note `evidence_outside_visible_scope`, with no name or count, and the
+status stays `broader_than_grants`. A tool with a `*` grant reports `unknown` with
+reason `wildcard_grant`, since there is no narrower grant to compare its identity with.
 Each record has stable entity IDs for `taskId`, `deploymentId`,
 `executionBindingId`, `resourceBindingId`, `identityId` and `resourceId` (the last
 two may be null for unresolved bindings), plus `action`, `status`, `reason`,

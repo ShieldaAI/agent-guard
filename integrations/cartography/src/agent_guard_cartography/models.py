@@ -72,6 +72,8 @@ class ToolProperties(GuardProperties):
     reads_untrusted: PropertyRef = PropertyRef("reads_untrusted")
     untrusted_context: PropertyRef = PropertyRef("untrusted_context")
     sends_external: PropertyRef = PropertyRef("sends_external")
+    # Inventory v2: the executor's mode for tools without their own; absent when unknown.
+    untrusted_context_default: PropertyRef = PropertyRef("untrusted_context_default")
 
 
 @dataclass(frozen=True)
@@ -95,6 +97,11 @@ class TaskProperties(GuardProperties):
     task_id: PropertyRef = PropertyRef("task_id")
     principal_id: PropertyRef = PropertyRef("principal_id")
     family_id: PropertyRef = PropertyRef("family_id")
+    # True when the task has a parent. A reader that cannot see the parent then knows a
+    # delegation ancestor is outside its scope, without learning the parent's identity.
+    delegated: PropertyRef = PropertyRef("delegated")
+    # True when the task was handed off from a source task, which the executor also checks.
+    derived: PropertyRef = PropertyRef("derived")
     revoked: PropertyRef = PropertyRef("revoked")
     sensitive: PropertyRef = PropertyRef("sensitive")
     # Inventory v2: the family read outside content. Absent for v1 imports.

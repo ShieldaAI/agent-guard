@@ -15,7 +15,8 @@
     "policyEpoch",
     "coverage",
     "tasks",
-    "tools"
+    "tools",
+    "untrustedContextDefault"
   ],
   "properties": {
     "schemaVersion": {
@@ -65,6 +66,15 @@
     },
     "mcp": {
       "$ref": "agent-guard-inventory-v1.schema.json#/$defs/mcp"
+    },
+    "untrustedContextDefault": {
+      "enum": [
+        "allow",
+        "require_approval",
+        "deny",
+        null
+      ],
+      "description": "The executor mode for tools that declare no untrustedContext; null when unknown (a v1 core lifted by a v3 manifest)."
     }
   },
   "allOf": [

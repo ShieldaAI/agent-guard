@@ -11,7 +11,13 @@ test('every map operation answers for 200 agents across 20 sources', { timeout: 
 
 test('fleet-wide impact queries stay within the work budget at 1,000 agents', { timeout: 60_000 }, async () => {
   const { results } = await runBenchmark(50, 20, 5);
-  for (const operation of ['find_agents_with_access', 'get_changes', 'get_resource_access', 'list_resources']) {
+  for (const operation of [
+    'find_agents_with_access',
+    'get_changes',
+    'get_resource_access',
+    'list_resources',
+    'list_agents_flags',
+  ]) {
     assert.equal(results[operation].ok, true, `${operation}: ${results[operation].code}`);
   }
 });

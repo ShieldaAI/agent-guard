@@ -108,6 +108,12 @@ export function renderInventoryV2Schema() {
     },
   };
   schema.properties.schemaVersion = { const: 2 };
+  schema.properties.untrustedContextDefault = {
+    enum: ['allow', 'require_approval', 'deny', null],
+    description:
+      'The executor mode for tools that declare no untrustedContext; null when unknown (a v1 core lifted by a v3 manifest).',
+  };
+  schema.required = [...schema.required, 'untrustedContextDefault'];
   return JSON.stringify(schema, null, 2) + '\n';
 }
 

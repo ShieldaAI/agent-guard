@@ -16,7 +16,13 @@ const entry = (id, overrides = {}) => ({
   description: 'Runs scripts on the build host without the guard',
   ...overrides,
 });
-const manifest = (directAccess = [entry('a')]) => ({ ...plain(fixture), schemaVersion: 3, directAccess });
+const manifest = (directAccess = [entry('a')]) => {
+  const value = { ...plain(fixture), schemaVersion: 3, directAccess };
+  // A host resource that direct paths can name as their target.
+  value.resourceBindings[0].target = { provider: 'host', id: opaque('c'), name: 'Records', kind: 'database' };
+  value.resourceBindings[0].actions = ['record.read'];
+  return value;
+};
 const code = value => {
   try {
     validateInventoryManifest(value);
@@ -84,6 +90,7 @@ test('v3 entries are checked one by one', () => {
     [{ deploymentId: 'missing' }, 'INVENTORY_MANIFEST_REFERENCE_INVALID'],
     [{ kind: 'ssh' }, 'INVENTORY_MANIFEST_INVALID'],
     [{ targetRef: 'prod-db.internal' }, 'INVENTORY_MANIFEST_INVALID'],
+    [{ targetRef: opaque('e') }, 'INVENTORY_MANIFEST_REFERENCE_INVALID'],
     [{ description: '' }, 'INVENTORY_MANIFEST_INVALID'],
     [{ description: 'x'.repeat(1025) }, 'INVENTORY_MANIFEST_INVALID'],
     [{ extra: true }, 'INVENTORY_MANIFEST_INVALID'],
@@ -107,6 +114,7 @@ test('composing v3 over a v1 core emits a v2 snapshot with neutral outside-conte
   const output = plain(composeInventorySnapshot(core, value));
   assert.equal(output.schemaVersion, 2, 'manifest v3 only fits the v2 snapshot schema');
   assert.equal(output.manifest.schemaVersion, 3);
+  assert.equal(output.untrustedContextDefault, null, 'a v1 core never reported the default');
   assert.deepEqual(output.manifest.directAccess, value.directAccess);
   assert.ok(output.tasks.every(task => task.untrusted === false));
   assert.ok(

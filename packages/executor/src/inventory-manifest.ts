@@ -482,6 +482,12 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
   unique(executions.map(binding => binding.id));
   unique(executions.map(binding => JSON.stringify([binding.deploymentId, binding.tool])));
   if (v3) {
+    // A target names a declared host resource; anything else is declared without one (null).
+    const hostTargets = new Set(
+      (manifest.resourceBindings as { target: { provider: string; id?: string } }[])
+        .filter(binding => binding.target.provider === 'host')
+        .map(binding => binding.target.id),
+    );
     const perDeployment = new Map<string, number>();
     const entries = array(manifest.directAccess, 1000).map(value => {
       const item = object(value, ['id', 'deploymentId', 'kind', 'targetRef', 'description']);
@@ -492,7 +498,10 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
       if (count > 32) fail('INVENTORY_MANIFEST_LIMIT_EXCEEDED');
       perDeployment.set(item.deploymentId as string, count);
       choice(item.kind, ['shell', 'database', 'network', 'sdk', 'mcp', 'other']);
-      if (item.targetRef !== null) opaque(item.targetRef);
+      if (item.targetRef !== null) {
+        opaque(item.targetRef);
+        if (!hostTargets.has(item.targetRef as string)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+      }
       display(item.description, 1024);
       return id;
     });
@@ -511,7 +520,9 @@ function strings(value: unknown, maximum: number): readonly string[] {
 }
 function validateCore(value: unknown): InventorySnapshot {
   try {
-    const snapshot = object(copy(value, 8 * 1024 * 1024, 500_000), [
+    const copied = copy(value, 8 * 1024 * 1024, 500_000);
+    const declared = copied && typeof copied === 'object' && !Array.isArray(copied) ? copied : {};
+    const snapshot = object(copied, [
       'schemaVersion',
       'profile',
       'source',
@@ -522,9 +533,11 @@ function validateCore(value: unknown): InventorySnapshot {
       'coverage',
       'tasks',
       'tools',
+      ...((declared as Record<string, unknown>).schemaVersion === 2 ? ['untrustedContextDefault'] : []),
     ]);
     if ((snapshot.schemaVersion !== 1 && snapshot.schemaVersion !== 2) || snapshot.profile !== 'core') fail();
     const v2 = snapshot.schemaVersion === 2;
+    if (v2 && ![null, 'allow', 'require_approval', 'deny'].includes(snapshot.untrustedContextDefault as string)) fail();
     const scope = source(snapshot.source);
     identifier(snapshot.snapshotId);
     timestamp(snapshot.generatedAt);
@@ -701,6 +714,8 @@ export function composeInventorySnapshot(core: InventorySnapshot, value: Invento
       ? {
           ...snapshot,
           schemaVersion: 2 as const,
+          // A v1 core never reported the executor default.
+          untrustedContextDefault: null,
           tasks: snapshot.tasks.map(task => ({ ...task, untrusted: false })),
           tools: snapshot.tools.map(tool => ({
             ...tool,

@@ -125,15 +125,26 @@ export interface MapIdentityScope {
   readonly deploymentId: string | null;
   readonly tool: string | null;
   readonly identityId: string | null;
+  /** The identity's AWS account; candidates are collected per account, so only its buckets are checked. */
+  readonly accountId: string | null;
   readonly status: 'broader_than_grants' | 'matches_grants' | 'unknown';
   readonly reason:
     | Exclude<MapPolicyEvidence['reason'], 'no_candidate' | 'unsupported_action' | 'unsupported_binding'>
     | 'unsupported_identity'
+    | 'not_evaluated'
+    | 'wildcard_grant'
+    | 'binding_narrower_than_candidate'
+    | 'grant_lineage_unknown'
     | 'truncated';
   readonly observedAt: string | null;
   readonly boundBuckets: readonly string[];
   readonly extraResources: readonly MapIdentityExtraResource[];
   readonly truncated: boolean;
+  /**
+   * `evidence_outside_visible_scope`: some extra buckets have no binding in your scope (another
+   * team's, or none). `bucket_list_shortened`: the list is cut; the status still stands.
+   */
+  readonly notes?: readonly string[];
   readonly evidenceKind: 'iam_identity_policy_candidate';
   readonly assessment: 'unknown';
 }
@@ -147,8 +158,29 @@ export interface MapProjection {
   readonly coverage: MapCoverage;
   /** Current, independently checked policy evidence; omitted for summaries/history. */
   readonly policyEvidence?: readonly MapPolicyEvidence[];
-  /** Current identity-scope comparison per static execution binding; omitted with policyEvidence. */
+  /** Current identity-scope comparison per static execution binding; only for one-agent reads. */
   readonly identityScope?: readonly MapIdentityScope[];
+  /**
+   * The same comparison limited to buckets that visible bindings map to; only for
+   * `outsideGuard` reads. `matches_grants` here covers only those buckets.
+   */
+  readonly identityReach?: readonly MapIdentityScope[];
+  /**
+   * Outside-guard reads for a team-scoped reader: false when the projection has no
+   * deployment or task outside the reader's read, so `none_found` can stand. Never a count.
+   */
+  readonly outsideVisibleScope?: boolean;
+  /** A boundary read had no room left for delegation ancestors and loaded none. */
+  readonly ancestorsNotLoaded?: boolean;
+  /** One-agent boundary reads for a team reader: host resource ids in its scope. */
+  readonly inScopeTargets?: readonly string[];
+  /**
+   * Boundary reads: for each tool the agent holds a `*` grant on, up to five in-scope bindings
+   * of that tool marked confidential or restricted. Read in place of loading every binding.
+   */
+  readonly wildcardSensitivity?: Readonly<
+    Record<string, readonly { readonly id: string; readonly sensitivity: string }[]>
+  >;
 }
 export interface MapSource {
   readonly id: string;
@@ -164,9 +196,17 @@ export interface MapView {
 export interface MapReadRequest {
   readonly sourceId?: string;
   readonly agentId?: string;
+  /** With agentId: also load boundary evidence (get_agent_access). */
+  readonly boundary?: boolean;
+  /** A flags read for a page of agents (1-100 native or entity ids), with one-agent rules. */
+  readonly agentIds?: readonly string[];
   readonly history?: boolean;
   /** Agent/deployment index only; avoids loading task neighborhoods before selecting an agent. */
   readonly summary?: boolean;
+  /** Full graph for boundary flags, without policy or identity evidence reads. */
+  readonly flags?: boolean;
+  /** Full graph plus identity reach limited to the buckets visible bindings map to. */
+  readonly outsideGuard?: boolean;
 }
 export interface MapStore {
   read(scope: ReadScope, request?: MapReadRequest): Promise<MapView>;

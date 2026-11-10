@@ -125,18 +125,18 @@ Source IDs are the graph source IDs returned by the service, not native source
 names. Native agent/task IDs and returned stable entity IDs are accepted where
 documented by the schemas. No pagination cursor exposes a broader scope.
 
-| Operation | Arguments | Evidence |
-| --- | --- | --- |
-| `list_agents` | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. |
-| `get_agent_access` | `sourceId`, `agentId` | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`). |
-| `explain_access` | `sourceId`, `taskId`, `tool`, `resourceId` | Visible delegation, declared matches, known blockers and explicit unknown checks. |
-| `find_agents_with_access` | `resourceRef`, `action`; optional `sourceId`, `limit` | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion. |
-| `get_changes` | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit` | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps. |
-| `get_inventory_health` | optional `sourceId` | Visible capture times and independently stale or unavailable components. |
-| `list_owners` | optional `sourceId`, `search`, `kind`, `offset`, `limit` | Declared owners and visible agent/resource counts. |
-| `list_resources` | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit` | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies. |
-| `get_resource_access` | `sourceId`, `resourceId`; optional `offset`, `limit` | Agents with an observed declared binding to this resource; assessment remains unknown. |
-| `get_agent_inventory` | `sourceId`, `agentId`; optional `section`, `offset`, `limit` | Paged structured evidence without requiring a focused graph. |
+| Operation                 | Arguments                                                                                                                                                       | Evidence                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_agents`             | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `flag`, `flagStatus`, `includeFlags`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. With a flag argument, also `boundaryFlags.dangerousThree`.                                                                                                                                                                                                                               |
+| `get_agent_access`        | `sourceId`, `agentId`                                                                                                                                           | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `boundaryFlags` (the dangerous-three flag); `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`) and `outsideGuard.identityScope` compares each tool identity's S3 reach with its grants. |
+| `explain_access`          | `sourceId`, `taskId`, `tool`, `resourceId`                                                                                                                      | Visible delegation, declared matches, known blockers and explicit unknown checks.                                                                                                                                                                                                                                                                   |
+| `find_agents_with_access` | `resourceRef`, `action`; optional `sourceId`, `limit`                                                                                                           | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion.                                                                                                                                                                                                                                                     |
+| `get_changes`             | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit`                                                                          | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps.                                                                                                                                                                                                                                               |
+| `get_inventory_health`    | optional `sourceId`                                                                                                                                             | Visible capture times and independently stale or unavailable components.                                                                                                                                                                                                                                                                            |
+| `list_owners`             | optional `sourceId`, `search`, `kind`, `offset`, `limit`                                                                                                        | Declared owners and visible agent/resource counts.                                                                                                                                                                                                                                                                                                  |
+| `list_resources`          | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit`                                                                                      | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies, plus `outsideGuard`: `yes`, `none_found` or `unknown`.                                                                                                                                                                                           |
+| `get_resource_access`     | `sourceId`, `resourceId`; optional `offset`, `limit`                                                                                                            | Agents with an observed declared binding to this resource, plus the identities and declared direct paths that reach it outside the guard; assessment remains unknown.                                                                                                                                                                               |
+| `get_agent_inventory`     | `sourceId`, `agentId`; optional `section`, `offset`, `limit`                                                                                                    | Paged structured evidence without requiring a focused graph.                                                                                                                                                                                                                                                                                        |
 
 Paged indexes return their named array plus `total`, `offset`, `limit` and
 `truncated`; totals and filters apply only to the authorized view. Defaults are
@@ -164,7 +164,36 @@ readable names/labels and stable entity IDs. Generic host resources never imply
 AWS policy resolution, and unsupported host actions remain explicitly
 `not_collected` policy evidence.
 
-For `get_changes`, `changeKind` is `all`, `permissions`, `ownership` or `bindings`.
+For `get_changes`, `changeKind` is `all`, `permissions`, `ownership`, `bindings` or
+`outside_guard`. Declared direct paths and a deployment's declaration status are
+`outside_guard` changes and carry `evidenceKind: declared`.
+
+### Boundary flags
+
+`get_agent_access.data.boundaryFlags` holds the `dangerous_three` flag: whether one of
+the agent's live tasks can read private data, read outside content and send data out.
+Each leg is `present`, `absent` or `unknown`, with evidence naming the task, tool and
+resource binding; `taskId`, `legs` and `evidence` all describe the agent's worst live
+task. The status is `exposed` (a declared sending tool runs in `allow` mode),
+`mitigated` (every possible sender needs approval or is refused after outside content),
+`unknown` or `absent`. Only an explicit `readsUntrusted: false` or `sendsExternal: false`
+rules a tool out, and a task without a boolean `sensitive` makes private data and its
+declared sends `unknown`. A v1 inventory, an unregistered tool, a delegation ancestor outside
+your scope, an older import without delegation data or a chain deeper than 16 ancestors
+make the affected leg `unknown`; the status is `absent` only when another leg is known
+absent. When a read has no room left for an agent's delegation ancestors it loads none and
+notes `delegation_ancestors_not_loaded`; a missing parent (`delegation_parent_missing`
+for an all-teams reader), more than one parent or handoff source
+(`delegation_evidence_ambiguous`) or missing revocation or expiry facts
+(`task_liveness_unverified`) is also noted. A task counts as live only if no delegation ancestor or handoff source is revoked and
+no delegation ancestor has expired (the executor's own rules); a task whose chain was read
+only in part is never `absent`, since an unread ancestor may be revoked or expired. An agent's status is its worst live task, ranked exposed, unknown, mitigated,
+absent, so a mitigated task never hides one that might be exposed. Empty effective recipients and a sensitive task stop only
+sends a tool declares external. The flag is declared evidence, not proof that data can
+leave. `list_agents` adds the status for the returned page with `includeFlags: true`
+(one extra read of those agents; if it is too large, every flag on the page is `unknown`
+and the response says `flagsUnavailable`), and filters with `flag: 'dangerous_three'` (everything
+but `absent`) or `flagStatus` (a read of the full scoped graph).
 An explicit `offset` or `limit` makes `changeSummaryScope: page`: `changes`,
 relationship deltas and affected-agent companions describe that detail page.
 Legacy calls without paging retain complete bounded `changes` summaries with
@@ -213,8 +242,9 @@ policy observation time, status, reason and `assessment: unknown`.
 way. For each static execution identity of the selected agent, it lists every
 collected bucket in that account the identity has a candidate on but that tool's
 grants do not bind (`broader_than_grants`), or reports `matches_grants`. Missing,
-stale, disabled or malformed evidence, and more than 500 buckets, report `unknown`
-with a reason. Bucket policies, SCPs and permission boundaries are not evaluated, so
+stale, disabled or malformed evidence, and an identity with candidates on more than 500
+buckets, report `unknown` with a reason. Each record lists at most 100 extra buckets; a
+cut list is marked `truncated` and keeps its `broader_than_grants` status. Bucket policies, SCPs and permission boundaries are not evaluated, so
 the extra buckets are candidates, not proven access.
 
 Only the three collected S3 mappings are supported. A complete record contains
@@ -264,10 +294,19 @@ close it when the host shuts down.
 ```ts
 import { MapService, validateReadScope, type MapStore } from '@shieldaai/agent-map';
 
-const store: MapStore = { async read() { return { sources: [] }; } };
+const store: MapStore = {
+  async read() {
+    return { sources: [] };
+  },
+};
 const service = new MapService(store);
-const scope = validateReadScope({ subject: 'reader', companyId: 'example',
-  tenantIds: ['engineering'], teamIds: ['platform'], allTeams: false });
+const scope = validateReadScope({
+  subject: 'reader',
+  companyId: 'example',
+  tenantIds: ['engineering'],
+  teamIds: ['platform'],
+  allTeams: false,
+});
 const response = await service.query(scope, 'list_agents', {});
 console.log(response.data);
 ```
@@ -280,28 +319,41 @@ strings. The CLI adds the private-file checks described in the deployment guide.
 
 ```ts
 import { readFile } from 'node:fs/promises';
-import { MapService, startMapIdentityServer,
-  type MapIdentityServer, type MapStore } from '@shieldaai/agent-map';
+import { MapService, startMapIdentityServer, type MapIdentityServer, type MapStore } from '@shieldaai/agent-map';
 
 export async function startCompanyReference(clientSecret: string): Promise<MapIdentityServer> {
-  const store: MapStore = { async read() { return { sources: [] }; } };
+  const store: MapStore = {
+    async read() {
+      return { sources: [] };
+    },
+  };
   return startMapIdentityServer({
     service: new MapService(store),
-    publicOrigin: 'https://localhost:8788', listenHost: '127.0.0.1', port: 8788,
+    publicOrigin: 'https://localhost:8788',
+    listenHost: '127.0.0.1',
+    port: 8788,
     tls: {
       key: await readFile('/absolute/private/tls/server-key.pem', 'utf8'),
       cert: await readFile('/absolute/private/tls/server-chain.pem', 'utf8'),
     },
     oidc: {
       issuer: 'https://login.example.invalid',
-      clientId: 'replace-with-registered-client-id', clientSecret,
+      clientId: 'replace-with-registered-client-id',
+      clientSecret,
     },
     companyId: 'example-company',
-    bindings: [{
-      subject: 'replace-with-exact-idp-sub',
-      scope: { subject: 'platform-reader', companyId: 'example-company',
-        tenantIds: ['engineering'], teamIds: ['platform'], allTeams: false },
-    }],
+    bindings: [
+      {
+        subject: 'replace-with-exact-idp-sub',
+        scope: {
+          subject: 'platform-reader',
+          companyId: 'example-company',
+          tenantIds: ['engineering'],
+          teamIds: ['platform'],
+          allTeams: false,
+        },
+      },
+    ],
     viewerDirectory: '/absolute/path/to/agent-guard/apps/agent-map/dist',
   });
 }

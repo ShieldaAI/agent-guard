@@ -308,7 +308,8 @@ export class DurableExecutor {
       // times that ceiling accommodates detached flags without a hidden global
       // 10k-tool cap on a tenant whose own exported tools remain within 10k.
       return {
-        source: this.#inventorySource,
+        // The default travels beside the enrollment identity; it never enters reference keys.
+        source: { ...this.#inventorySource, untrustedContextDefault: this.#untrustedDefault },
         registrations: captureInventoryRegistrations(this.#tools, this.#store.maxBytes * 4),
         referenceKey: this.#inventoryReferenceKey ? new Uint8Array(this.#inventoryReferenceKey) : undefined,
       };
@@ -826,7 +827,14 @@ export class DurableExecutor {
     if (!this.#inventorySource) throw new ExecutorError('INVENTORY_DISABLED');
     const state = this.#store.read();
     // Observation time is independent of the authorization clock and cannot advance its watermark.
-    return projectInventory(state, this.#tools, this.#inventorySource, scope, Date.now(), this.#inventoryReferenceKey);
+    return projectInventory(
+      state,
+      this.#tools,
+      { ...this.#inventorySource, untrustedContextDefault: this.#untrustedDefault },
+      scope,
+      Date.now(),
+      this.#inventoryReferenceKey,
+    );
   }
 
   async prepare(taskId: string, request: { tool: string; args: Json }): Promise<PreparedAction> {

@@ -7,13 +7,45 @@ including the unresolved admission-performance gate. See the
 [candidate release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (agent map): the "dangerous three" boundary flag. `get_agent_access` returns
+  `boundaryFlags` with whether a live task can read private data, read outside content
+  and send out, each leg `present`, `absent` or `unknown` with evidence, and a status of
+  `exposed`, `mitigated`, `unknown` or `absent`. Only explicit `false` labels rule a tool
+  out; a sensitive task or empty recipients stop only declared external sends.
+  `list_agents` adds the status for the returned page with `includeFlags` (one extra
+  read of those agents), and filters with `flag`/`flagStatus`. `get_agent_access` now also
+  loads the in-scope delegation ancestors of the agent's tasks (after its own nodes, only
+  if they fit) and asks which in-scope bindings of `*`-granted tools are sensitive, so list
+  and detail agree.
+- Add (agent map): outside-guard reach for resources. `list_resources` rows get
+  `outsideGuard` (`yes`, `none_found`, `unknown` with reasons); `get_resource_access`
+  lists the tool identities and declared direct paths that reach the resource. A manifest
+  v3 `targetRef` must now name a declared host resource. A team reader's identity scope
+  names only buckets mapped by in-scope bindings; anything else is a note without a
+  count. `get_changes` reports
+  declared direct paths under the new `outside_guard` change kind, labelled declared.
+- Add (inventory v2): `untrustedContextDefault`, the executor's mode for tools without
+  their own, so readers can work out effective modes. The collector projects it onto
+  `GuardTool`, and adds `delegated` and `derived` to `GuardTask` so a reader knows a
+  parent or handoff source exists without learning which.
+- Upgrade note (agent map): projections imported before this change have no
+  `delegated` or `derived` on tasks. Until the source publishes again, their boundary flags
+  never read `absent` (the status is at most `unknown`) and identity scope reports
+  `grant_lineage_unknown` for every granted tool. The new `untrusted_context_default`
+  appears once as a changed tool field.
+- Fix (agent map): the store's relationship query no longer scans every node in the
+  database; it starts from the snapshot. Neo4j plan tests now check the boundary reads
+  (one-agent, page-of-agents and full flags, outside-guard, summary and history, for team
+  and all-teams readers) for cartesian products and all-node scans.
 - Add (agent map): `get_agent_access.outsideGuard.identityScope` compares what each
   static tool identity can reach with what that tool's grants bind. For a read
   focused on one agent, the store reads every bucket in the account the identity has
   an IAM identity-policy candidate on and lists the unbound ones (`broader_than_grants`),
   or reports `matches_grants`; anything missing, stale, malformed or over 500 buckets is
-  `unknown` with a reason. Only identity policies are evaluated, so results are
-  candidates. No collector change: the candidate layer already covers every bucket.
+  `unknown` with a reason. Each tool lists at most 100 extra buckets; a cut list is marked
+  `truncated` and keeps its status. Only identity policies are evaluated, so results are
+  candidates. The candidate layer already covers every bucket; the collector adds only the
+  task `delegated` and `derived` facts used to check task liveness.
 - Add (host manifest v3): `agent-guard-inventory-manifest-v3.schema.json` adds a
   required `directAccess` list, where the host declares paths that act without the
   guard (shell, database, network, SDK, MCP, other). Entries have opaque ids and target

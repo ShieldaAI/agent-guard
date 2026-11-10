@@ -18,12 +18,13 @@ def test_v2_outside_content_fields_are_projected(neo4j_session):
         for row in neo4j_session.run(
             "MATCH (t:GuardTool {projection_id:$id}) "
             "RETURN t.name AS name, t.reads_untrusted AS reads, t.sends_external AS sends, "
-            "t.untrusted_context AS mode",
+            "t.untrusted_context AS mode, t.untrusted_context_default AS default",
             id=result.projection_id,
         )
     }
     assert (tools["email.read"]["reads"], tools["email.read"]["sends"]) == (True, False)
     assert tools["email.send"]["mode"] == "require_approval"
+    assert {row["default"] for row in tools.values()} == {"allow"}
     tasks = {
         row["id"]: row["untrusted"]
         for row in neo4j_session.run(
@@ -42,4 +43,10 @@ def test_v1_imports_gain_no_outside_content_properties(neo4j_session):
         "UNWIND keys(n) AS key RETURN collect(DISTINCT key) AS keys",
         id=result.projection_id,
     ).single(strict=True)["keys"]
-    assert not {"reads_untrusted", "sends_external", "untrusted_context", "untrusted"} & set(keys)
+    assert not {
+        "reads_untrusted",
+        "sends_external",
+        "untrusted_context",
+        "untrusted_context_default",
+        "untrusted",
+    } & set(keys)

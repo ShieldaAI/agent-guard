@@ -1,6 +1,13 @@
 import { type Json } from '@shieldaai/agent-guard';
 import { canonicalJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { safeProperties } from './projection-fields.js';
+import { shortenScopeList } from './policy-reader.js';
+import {
+  DANGEROUS_THREE_LIMITATIONS,
+  dangerousThree,
+  type DangerousThreeStatus,
+  type FlagGraph,
+} from './boundary-flags.js';
 import {
   MapQueryError,
   mapIdentifier,
@@ -8,9 +15,12 @@ import {
   type JsonObject,
   type JsonValue,
   type MapEdge,
+  type MapIdentityExtraResource,
+  type MapIdentityScope,
   type MapNode,
   type MapPolicyEvidence,
   type MapProjection,
+  type MapReadRequest,
   type MapSource,
   type MapStore,
   type MapView,
@@ -62,6 +72,11 @@ export const MAP_INPUT_SCHEMAS: Readonly<Record<MapOperation, JsonObject>> = Obj
     environment: idSchema,
     ownershipStatus: ownershipSchema,
     lifecycleState: lifecycleSchema,
+    /** Only agents with this boundary flag (not `absent`), optionally one status. */
+    flag: choice('dangerous_three'),
+    flagStatus: choice('exposed', 'mitigated', 'unknown', 'absent'),
+    /** Add `boundaryFlags` to every agent; reads tasks, so it costs more than the plain index. */
+    includeFlags: { type: 'boolean' },
     limit: limitSchema,
     offset: offsetSchema,
   }),
@@ -87,7 +102,7 @@ export const MAP_INPUT_SCHEMAS: Readonly<Record<MapOperation, JsonObject>> = Obj
       since: idSchema,
       agentId: idSchema,
       resourceId: idSchema,
-      changeKind: choice('all', 'permissions', 'ownership', 'bindings'),
+      changeKind: choice('all', 'permissions', 'ownership', 'bindings', 'outside_guard'),
       offset: offsetSchema,
       limit: limitSchema,
     },
@@ -167,6 +182,8 @@ export function validateQueryArguments(operation: unknown, value: unknown): Read
         item > (key === 'offset' ? 100_000 : 100)
       )
         fail();
+    } else if ((properties[key] as JsonObject).type === 'boolean') {
+      if (typeof item !== 'boolean') fail();
     } else if (key === 'search') {
       if (
         typeof item !== 'string' ||
@@ -220,6 +237,10 @@ class QueryWork {
   constructor(timeout: number, maxBytes: number) {
     this.#deadline = performance.now() + timeout;
     this.#evidenceBytes = maxBytes;
+  }
+  /** Milliseconds left before this query's deadline. */
+  remaining(): number {
+    return Math.max(0, this.#deadline - performance.now());
   }
   step(amount = 1): void {
     if (performance.now() >= this.#deadline) fail('MAP_TIMEOUT');
@@ -458,11 +479,26 @@ function focus(projection: MapProjection, agent: MapNode, work: QueryWork): { no
  * Manifest v3 sets `direct_access_status`; older manifests leave it absent, which reads as
  * `unknown` and never as `none_declared`.
  */
+/** A declared target names a host resource; name it only when that resource is in the reader's scope. */
+function targetVisibility(projection: MapProjection, scope: ReadScope, work: QueryWork): (target: string) => boolean {
+  if (scope.allTeams) return () => true;
+  work.step(projection.nodes.length);
+  const visible = new Set([
+    ...projection.nodes
+      .filter(node => node.label === 'GuardExternalResource')
+      .map(node => string(node, 'host_resource_id'))
+      .filter((id): id is string => id !== null),
+    ...(projection.inScopeTargets ?? []),
+  ]);
+  return target => visible.has(target);
+}
 function directAccess(
   projection: MapProjection,
   graph: { nodes: MapNode[]; edges: MapEdge[] },
+  scope: ReadScope,
   work: QueryWork,
 ): JsonObject[] {
+  const visibleTarget = targetVisibility(projection, scope, work);
   return ordered(
     graph.nodes
       .filter(node => node.label === 'GuardDeployment')
@@ -477,18 +513,357 @@ function directAccess(
           status,
           evidenceKind: 'declared',
           entries: ordered(
-            entries.map(entry => ({
-              id: entry.entityId,
-              accessId: string(entry, 'access_id'),
-              kind: string(entry, 'kind'),
-              targetRef: string(entry, 'target_ref'),
-              description: string(entry, 'description'),
-            })),
+            entries.map(entry => {
+              const target = string(entry, 'target_ref');
+              const targetStatus =
+                target === null ? 'none' : visibleTarget(target) ? 'visible' : 'outside_visible_scope';
+              return {
+                id: entry.entityId,
+                accessId: string(entry, 'access_id'),
+                kind: string(entry, 'kind'),
+                targetRef: targetStatus === 'visible' ? target : null,
+                targetStatus,
+                description: string(entry, 'description'),
+              };
+            }),
           ),
         };
       }),
   );
 }
+
+/**
+ * The bounded, read-only graph view the boundary flags use. Sensitive bindings for `*` grants
+ * come from the store's wildcard read when it ran (one-agent boundary reads); a team-wide read
+ * already holds every in-scope binding, indexed once per projection.
+ */
+const sensitiveIndex = new WeakMap<MapProjection, Map<string, { id: string; sensitivity: string }[]>>();
+function flagGraph(projection: MapProjection, work: QueryWork): FlagGraph {
+  return {
+    linked: (node, kind, reverse = false) => connected(projection, new Set([node.id]), kind, work, reverse),
+    sensitiveBindings: tool => {
+      if (projection.wildcardSensitivity)
+        return Object.hasOwn(projection.wildcardSensitivity, tool) ? projection.wildcardSensitivity[tool]! : [];
+      let index = sensitiveIndex.get(projection);
+      if (!index) {
+        work.step(projection.nodes.length);
+        index = new Map();
+        for (const node of projection.nodes) {
+          const name = string(node, 'tool'),
+            sensitivity = string(node, 'sensitivity');
+          if (node.label !== 'GuardResourceBinding' || name === null) continue;
+          if (sensitivity !== 'confidential' && sensitivity !== 'restricted') continue;
+          index.set(name, [...(index.get(name) ?? []), { id: node.entityId, sensitivity }]);
+        }
+        for (const [name, items] of index)
+          index.set(name, items.sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).slice(0, 5));
+        sensitiveIndex.set(projection, index);
+      }
+      return index.get(tool) ?? [];
+    },
+    step: amount => work.step(amount),
+  };
+}
+/** Task expiry is judged at the snapshot's own capture time, so list and detail agree. */
+function agentFlags(projection: MapProjection, agent: MapNode, scope: ReadScope, work: QueryWork) {
+  return dangerousThree(
+    flagGraph(projection, work),
+    agent,
+    Date.parse(projection.generatedAt),
+    scope.allTeams,
+    projection.ancestorsNotLoaded === true,
+  );
+}
+
+/**
+ * The detail flag with its own work budget: a very large lineage degrades the flag to
+ * `unknown`, it never fails the rest of get_agent_access.
+ */
+function detailFlags(
+  projection: MapProjection,
+  agent: MapNode,
+  scope: ReadScope,
+  remaining: number,
+  maxBytes: number,
+): JsonObject {
+  try {
+    return agentFlags(
+      projection,
+      agent,
+      scope,
+      new QueryWork(Math.max(1, remaining - 25), maxBytes),
+    ) as unknown as JsonObject;
+  } catch (error) {
+    const code = error instanceof MapQueryError ? error.code : '';
+    if (code !== 'MAP_LIMIT_EXCEEDED' && code !== 'MAP_TIMEOUT') throw error;
+    return {
+      kind: 'dangerous_three',
+      status: 'unknown',
+      taskId: null,
+      legs: { privateData: 'unknown', outsideContent: 'unknown', externalSend: 'unknown' },
+      evidence: [],
+      evidenceTruncated: false,
+      notes: [code === 'MAP_TIMEOUT' ? 'flags_timeout' : 'flags_limit_exceeded'],
+      liveTasks: 0,
+      evidenceKind: 'declared',
+      assessment: 'unknown',
+      limitations: DANGEROUS_THREE_LIMITATIONS,
+    } as unknown as JsonObject;
+  }
+}
+
+/** `data` with each identity-scope list cut to `keep` entries, or null if nothing would change. */
+function shortenIdentityScope(data: JsonObject, keep: number): JsonObject | null {
+  const outside = data.outsideGuard as JsonObject | undefined;
+  const records = outside?.identityScope as readonly MapIdentityScope[] | undefined;
+  if (!Array.isArray(records)) return null;
+  const shortened = records.map(record => shortenScopeList(record, keep));
+  if (shortened.every((record, index) => record === records[index])) return null;
+  return { ...data, outsideGuard: { ...outside, identityScope: shortened as unknown as JsonValue } };
+}
+
+type Reach = 'yes' | 'none_found' | 'unknown';
+interface ReachIndex {
+  readonly undeclaredDeployments: number;
+  /** Declared paths without a target, such as a shell, can touch any resource. */
+  readonly untargetedPaths: number;
+  /** Declared paths whose target matches no resource in this read (perhaps another team's). */
+  readonly unresolvedPaths: number;
+  /** Visible granted tools with no declared execution identity (ambient or unknown). */
+  readonly undeclaredIdentities: number;
+  readonly directByTarget: Map<string, MapNode[]>;
+  readonly identitiesByBucket: Map<string, { record: MapIdentityScope; extra: MapIdentityExtraResource }[]>;
+  readonly identityUnknown: number;
+  readonly identityCollected: boolean;
+  /** AWS accounts of the evaluated identities; a bucket elsewhere was never compared. */
+  readonly identityAccounts: ReadonlySet<string | null>;
+}
+const reachIndex = new WeakMap<MapProjection, ReachIndex>();
+/**
+ * Outside-guard reach over the whole visible projection: any declared direct path or any
+ * evaluated tool identity can touch any resource, so `none_found` needs every visible
+ * deployment to have declared its paths and every visible identity to be evaluated.
+ */
+function outsideGuardIndex(projection: MapProjection, work: QueryWork): ReachIndex {
+  const existing = reachIndex.get(projection);
+  if (existing) return existing;
+  work.step(projection.nodes.length);
+  let undeclaredDeployments = 0,
+    untargetedPaths = 0,
+    undeclaredIdentities = 0;
+  const identityAccounts = new Set<string | null>();
+  const directByTarget = new Map<string, MapNode[]>();
+  // The tools each deployment has an execution binding for, read once per deployment.
+  const executed = new Map<string, Set<string | null>>();
+  const executedTools = (deployment: MapNode): Set<string | null> => {
+    let tools = executed.get(deployment.id);
+    if (!tools) {
+      tools = new Set(
+        connected(projection, new Set([deployment.id]), 'G_EXECUTES_FOR', work, true).map(item => string(item, 'tool')),
+      );
+      executed.set(deployment.id, tools);
+    }
+    return tools;
+  };
+  for (const node of projection.nodes) {
+    if (node.label === 'GuardDeployment') {
+      const status = string(node, 'direct_access_status');
+      // `found` with no entry in the read is inconsistent, so it is not a declaration either.
+      const entries = connected(projection, new Set([node.id]), 'G_DIRECT_ACCESS_FOR', work, true).length;
+      if (!(status === 'none_declared' || (status === 'found' && entries > 0))) undeclaredDeployments++;
+    }
+    if (node.label === 'GuardDirectAccess') {
+      const target = string(node, 'target_ref');
+      if (target === null) untargetedPaths++;
+      else {
+        const paths = directByTarget.get(target);
+        if (paths) paths.push(node);
+        else directByTarget.set(target, [node]);
+      }
+    }
+    if (node.label === 'GuardTask') {
+      // A granted tool runs under some identity; without an execution binding it is undeclared.
+      const granted = connected(projection, new Set([node.id]), 'G_HAS_GRANT', work).map(item => string(item, 'tool'));
+      if (!granted.length) continue;
+      const deployments = connected(projection, new Set([node.id]), 'G_ASSIGNED_TO', work);
+      if (!deployments.length || granted.some(tool => !deployments.some(item => executedTools(item).has(tool))))
+        undeclaredIdentities++;
+    }
+  }
+  const identitiesByBucket: ReachIndex['identitiesByBucket'] = new Map();
+  let identityUnknown = 0;
+  // A visible execution binding the reach read never reported on was not evaluated.
+  if (projection.identityReach !== undefined) {
+    const reported = new Set(projection.identityReach.map(record => record.executionBindingId));
+    for (const node of projection.nodes)
+      if (node.label === 'GuardExecutionBinding' && !reported.has(node.entityId)) identityUnknown++;
+  }
+  // A target the read cannot match may be any resource, so it counts like no target.
+  const hostIds = new Set(
+    projection.nodes
+      .filter(node => node.label === 'GuardExternalResource')
+      .map(node => string(node, 'host_resource_id'))
+      .filter((id): id is string => id !== null),
+  );
+  let unresolvedPaths = 0;
+  for (const [target, paths] of directByTarget) if (!hostIds.has(target)) unresolvedPaths += paths.length;
+  for (const record of projection.identityReach ?? []) {
+    work.step(1 + record.extraResources.length);
+    // Only a complete comparison counts: any other status, or a record whose list was cut
+    // (it may reach buckets it no longer names), leaves reach unknown.
+    if (!(record.status === 'matches_grants' || record.status === 'broader_than_grants') || record.truncated)
+      identityUnknown++;
+    identityAccounts.add(record.accountId ?? null);
+    for (const extra of record.extraResources) {
+      const reached = identitiesByBucket.get(extra.bucketName);
+      if (reached) reached.push({ record, extra });
+      else identitiesByBucket.set(extra.bucketName, [{ record, extra }]);
+    }
+  }
+  const result = {
+    undeclaredDeployments,
+    untargetedPaths,
+    unresolvedPaths,
+    undeclaredIdentities,
+    directByTarget,
+    identitiesByBucket,
+    identityUnknown,
+    identityCollected: projection.identityReach !== undefined,
+    identityAccounts,
+  };
+  reachIndex.set(projection, result);
+  return result;
+}
+/** Entries listed per resource in get_resource_access before the list is marked truncated. */
+const REACH_LIST_LIMIT = 100;
+interface ReachResult {
+  status: Reach;
+  unknownReasons: string[];
+  directAccess: JsonObject[];
+  directAccessTruncated: boolean;
+  identities: JsonObject[];
+  identitiesTruncated: boolean;
+}
+/**
+ * `detail` builds the (bounded) lists for one resource; the listing only needs the status,
+ * which comes from index lookups.
+ */
+function outsideGuardReach(
+  projection: MapProjection,
+  resource: MapNode,
+  scope: ReadScope,
+  work: QueryWork,
+  detail = false,
+): ReachResult {
+  const index = outsideGuardIndex(projection, work);
+  const targets = connected(projection, new Set([resource.id]), 'G_MAPS_TO', work);
+  // The collector writes one target per binding; anything else is malformed and never none_found.
+  const malformed = targets.length !== 1;
+  const hosts = targets.map(node => string(node, 'host_resource_id')).filter((id): id is string => id !== null);
+  const accounts = new Set(
+    targets.filter(node => string(node, 'provider') === 'aws').map(node => string(node, 'account_id')),
+  );
+  const buckets = targets
+    .filter(node => string(node, 'provider') === 'aws')
+    .map(node => /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:\/.*)?$/.exec(string(node, 'arn') ?? '')?.[1])
+    .filter((name): name is string => name !== undefined);
+  work.step(1 + hosts.length + buckets.length);
+  const reached =
+    hosts.some(id => index.directByTarget.has(id)) || buckets.some(name => index.identitiesByBucket.has(name));
+  let directAccess: JsonObject[] = [],
+    identities: JsonObject[] = [],
+    directAccessTruncated = false,
+    identitiesTruncated = false;
+  if (detail) {
+    const paths = hosts
+      .flatMap(id => index.directByTarget.get(id) ?? [])
+      .sort((a, b) => compare(a.entityId, b.entityId));
+    const reaching = buckets
+      .flatMap(name => index.identitiesByBucket.get(name) ?? [])
+      .sort(
+        (a, b) =>
+          compare(a.record.executionBindingId, b.record.executionBindingId) ||
+          compare(a.extra.bucketName, b.extra.bucketName) ||
+          compare(a.extra.relationship, b.extra.relationship),
+      );
+    work.step(paths.length + reaching.length);
+    directAccessTruncated = paths.length > REACH_LIST_LIMIT;
+    identitiesTruncated = reaching.length > REACH_LIST_LIMIT;
+    directAccess = paths.slice(0, REACH_LIST_LIMIT).map(node => ({
+      id: node.entityId,
+      accessId: string(node, 'access_id'),
+      deploymentId: string(node, 'deployment_id'),
+      kind: string(node, 'kind'),
+      description: string(node, 'description'),
+      evidenceKind: 'declared',
+    }));
+    identities = reaching.slice(0, REACH_LIST_LIMIT).map(
+      ({ record, extra }) =>
+        ({
+          id: record.executionBindingId,
+          executionBindingId: record.executionBindingId,
+          deploymentId: record.deploymentId,
+          tool: record.tool,
+          identityId: record.identityId,
+          relationship: extra.relationship,
+          hasCondition: extra.hasCondition,
+          conditionKeys: extra.conditionKeys,
+          evidenceKind: 'iam_identity_policy_candidate',
+        }) as unknown as JsonObject,
+    );
+  }
+  const unknownReasons: string[] = [];
+  if (malformed) unknownReasons.push('binding_ambiguous');
+  // Candidates exist only for buckets the AWS collection observed; an unresolved bucket was
+  // never compared with any identity.
+  if (targets.some(node => string(node, 'provider') === 'aws' && string(node, 'cloud_status') !== 'resolved'))
+    unknownReasons.push('resource_not_collected');
+  if (index.undeclaredDeployments) unknownReasons.push('direct_access_undeclared');
+  if (index.untargetedPaths) unknownReasons.push('direct_access_untargeted');
+  if (index.unresolvedPaths) unknownReasons.push('direct_access_target_unresolved');
+  if (!buckets.length) unknownReasons.push('identity_scope_not_collected_for_resource');
+  else if (!index.identityCollected) unknownReasons.push('identity_scope_not_collected');
+  else {
+    if (index.identityUnknown) unknownReasons.push('identity_scope_unknown');
+    // Candidates are collected per account: an identity elsewhere was never compared with
+    // this bucket, and a cross-account bucket policy can still let it in.
+    if ([...index.identityAccounts].some(account => account === null || !accounts.has(account)) || accounts.has(null))
+      unknownReasons.push('identity_scope_other_account');
+    if (index.undeclaredIdentities) unknownReasons.push('execution_identity_undeclared');
+  }
+  // Paths and identities of teams this reader cannot see may reach the resource too.
+  if (!scope.allTeams && projection.outsideVisibleScope !== false) unknownReasons.push('outside_visible_scope');
+  const status: Reach = reached ? 'yes' : unknownReasons.length ? 'unknown' : 'none_found';
+  return { status, unknownReasons, directAccess, directAccessTruncated, identities, identitiesTruncated };
+}
+/**
+ * Reach with its own work budget, shared by every row of one response: if it runs out, the
+ * rows it could not judge read `unknown` (`reach_not_evaluated`) and the response still answers.
+ */
+function boundedReach(remaining: number, maxBytes: number) {
+  const work = new QueryWork(Math.max(1, remaining - 25), maxBytes);
+  let exhausted = false;
+  return (projection: MapProjection, resource: MapNode, scope: ReadScope, detail = false): ReachResult => {
+    if (!exhausted)
+      try {
+        return outsideGuardReach(projection, resource, scope, work, detail);
+      } catch (error) {
+        const code = error instanceof MapQueryError ? error.code : '';
+        if (code !== 'MAP_LIMIT_EXCEEDED' && code !== 'MAP_TIMEOUT') throw error;
+        exhausted = true;
+      }
+    return {
+      status: 'unknown',
+      unknownReasons: ['reach_not_evaluated'],
+      directAccess: [],
+      directAccessTruncated: false,
+      identities: [],
+      identitiesTruncated: false,
+    };
+  };
+}
+const OUTSIDE_GUARD_LIMITATION =
+  'Only S3 identity policies and host declarations of this source are checked, within your visible scope; none_found is not proof that no path exists.';
 
 /**
  * C2 per execution binding in the agent's focus. A store that did not run the reverse identity
@@ -507,8 +882,10 @@ function identityScope(projection: MapProjection, graph: { nodes: MapNode[] }): 
           deploymentId: null,
           tool: string(execution, 'tool'),
           identityId: null,
+          accountId: null,
           status: 'unknown',
-          reason: 'collection_missing',
+          // The store did not evaluate this binding (not run, or more work than allowed).
+          reason: 'not_evaluated',
           observedAt: null,
           boundBuckets: [],
           extraResources: [],
@@ -981,6 +1358,9 @@ const IGNORE_DIFF = new Set([
   'observed_at',
   'capture_observed_at',
   'cloud_observed_at',
+  // Recorded since 0.2.0; they cannot change for a task, so they are never a change.
+  'delegated',
+  'derived',
 ]);
 function nodeState(node: MapNode, projection: MapProjection, work: QueryWork): string {
   const index = work.index(projection);
@@ -1169,7 +1549,12 @@ function inventorySections(
         workloadGeneration: string(node, 'workload_generation'),
         buildRef: string(node, 'build_ref'),
         bindingAuthority: string(node, 'binding_authority'),
-        directAccessStatus: string(node, 'direct_access_status') ?? 'unknown',
+        // The same rule as get_agent_access: `found` needs an entry in the read.
+        directAccessStatus: connected(projection, new Set([node.id]), 'G_DIRECT_ACCESS_FOR', work, true).length
+          ? 'found'
+          : string(node, 'direct_access_status') === 'none_declared'
+            ? 'none_declared'
+            : 'unknown',
         ...hostObservation(node),
       })),
     ),
@@ -1203,7 +1588,12 @@ function inventorySections(
   };
 }
 
-function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonValue>>, work: QueryWork): JsonObject {
+function retainedChanges(
+  source: MapSource,
+  args: Readonly<Record<string, JsonValue>>,
+  scope: ReadScope,
+  work: QueryWork,
+): JsonObject {
   const current = source.current,
     since = args.since ?? 'previous';
   const previous = [current.id, current.snapshotId].includes(since as string)
@@ -1294,10 +1684,28 @@ function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonVa
   const oldOutgoing = outgoing(beforeEdges),
     newOutgoing = outgoing(afterEdges),
     changedOutgoing = outgoing([...relationships.added, ...relationships.removed]);
-  const state = (node: MapNode | undefined, edges: Map<string, JsonObject[]>): JsonObject | null =>
+  // A declared path's target is shown only when that resource is in the reader's scope.
+  const visibleNow = targetVisibility(current, scope, work),
+    visibleBefore = previous ? targetVisibility(previous, scope, work) : visibleNow;
+  const state = (
+    node: MapNode | undefined,
+    edges: Map<string, JsonObject[]>,
+    visible: (target: string) => boolean,
+  ): JsonObject | null =>
     node
       ? {
-          properties: Object.fromEntries(Object.entries(safeProperties(node)).filter(([key]) => !IGNORE_DIFF.has(key))),
+          properties: Object.fromEntries(
+            Object.entries(safeProperties(node)).filter(
+              ([key, value]) =>
+                !IGNORE_DIFF.has(key) &&
+                !(
+                  node.label === 'GuardDirectAccess' &&
+                  key === 'target_ref' &&
+                  typeof value === 'string' &&
+                  !visible(value)
+                ),
+            ),
+          ),
           relationships: edges.get(node.entityId) ?? [],
         }
       : null;
@@ -1309,8 +1717,8 @@ function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonVa
         node = after.get(id),
         display = node ?? old!;
       if (node && old && nodeState(node, current, work) === nodeState(old, previous, work)) continue;
-      const oldState = state(old, oldOutgoing),
-        newState = state(node, newOutgoing);
+      const oldState = state(old, oldOutgoing, visibleBefore),
+        newState = state(node, newOutgoing, visibleNow);
       const oldProps = oldState?.properties as JsonObject | undefined,
         newProps = newState?.properties as JsonObject | undefined;
       const fields = [...new Set([...Object.keys(oldProps ?? {}), ...Object.keys(newProps ?? {})])]
@@ -1339,18 +1747,28 @@ function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonVa
           'GuardExternalResource',
           'GuardExternalIdentity',
           'GuardCredentialReference',
-          'GuardDirectAccess',
           'GuardMcpConnection',
           'GuardMcpOperation',
         ].includes(display.label) ||
         edgeChanges.some(
           edge =>
-            !['G_OWNED_BY', 'G_RESOURCE_OWNED_BY', 'G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS'].includes(
-              edge.kind as string,
-            ),
+            ![
+              'G_OWNED_BY',
+              'G_RESOURCE_OWNED_BY',
+              'G_HAS_GRANT',
+              'G_FOR_TOOL',
+              'G_TARGETS',
+              'G_DIRECT_ACCESS_FOR',
+            ].includes(edge.kind as string),
         )
       )
         categories.push('bindings');
+      // Host-declared paths around the guard, and a deployment's declaration status.
+      const outsideGuard =
+        display.label === 'GuardDirectAccess' ||
+        fields.includes('direct_access_status') ||
+        edgeChanges.some(edge => edge.kind === 'G_DIRECT_ACCESS_FOR');
+      if (outsideGuard) categories.push('outside_guard');
       if (!categories.length) categories.push('inventory');
       const affected = uniqueAgents([
         ...(related.get(current)?.get(id) ?? []),
@@ -1378,6 +1796,7 @@ function retainedChanges(source: MapSource, args: Readonly<Record<string, JsonVa
         ...changeSummary(display),
         kind: !old ? 'added' : !node ? 'removed' : 'changed',
         categories,
+        ...(outsideGuard ? { evidenceKind: 'declared' } : {}),
         changedFields: fields,
         before: oldState,
         after: newState,
@@ -1471,42 +1890,67 @@ export class MapService {
     if (!Number.isSafeInteger(now) || now < 0 || now > 253_402_300_799_999) fail('MAP_UNAVAILABLE');
     const request = {
       ...(args.sourceId ? { sourceId: args.sourceId as string } : {}),
-      ...(operation === 'list_agents' ? { summary: true } : {}),
+      // Filtering by flag needs every agent's flags; showing them needs only the page's.
+      ...(operation === 'list_agents'
+        ? args.flag !== undefined || args.flagStatus !== undefined
+          ? { flags: true }
+          : { summary: true }
+        : {}),
+      ...(['list_resources', 'get_resource_access'].includes(operation) ? { outsideGuard: true } : {}),
       ...(['get_agent_access', 'get_agent_inventory'].includes(operation) ? { agentId: args.agentId as string } : {}),
+      // Boundary evidence (ancestors, `*` bindings, identity scope) only where it is shown.
+      ...(operation === 'get_agent_access' ? { boundary: true } : {}),
       ...(operation === 'get_changes' ? { history: true } : {}),
     };
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    let view: MapView;
-    try {
-      view = await Promise.race([
-        this.#store.read(scope, request),
-        new Promise<never>((_resolve, reject) => {
-          timer = setTimeout(() => reject(new MapQueryError('MAP_TIMEOUT')), this.#timeout);
-        }),
-      ]);
-    } catch (error) {
-      if (
-        error instanceof MapQueryError &&
-        ['MAP_NOT_FOUND', 'MAP_LIMIT_EXCEEDED', 'MAP_UNAVAILABLE', 'MAP_TIMEOUT', 'MAP_SCOPE_INVALID'].includes(
-          error.code,
+    const read = async (input: MapReadRequest, timeout = this.#timeout): Promise<MapView> => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      try {
+        return await Promise.race([
+          this.#store.read(scope, input),
+          new Promise<never>((_resolve, reject) => {
+            timer = setTimeout(() => reject(new MapQueryError('MAP_TIMEOUT')), timeout);
+          }),
+        ]);
+      } catch (error) {
+        if (
+          error instanceof MapQueryError &&
+          ['MAP_NOT_FOUND', 'MAP_LIMIT_EXCEEDED', 'MAP_UNAVAILABLE', 'MAP_TIMEOUT', 'MAP_SCOPE_INVALID'].includes(
+            error.code,
+          )
         )
-      )
-        throw error;
-      return fail('MAP_UNAVAILABLE');
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
+          throw error;
+        return fail('MAP_UNAVAILABLE');
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    };
+    // `flag` lists flagged agents; asking it for the absent ones is a contradiction.
+    if (operation === 'list_agents' && args.flag !== undefined && args.flagStatus === 'absent')
+      fail('MAP_REQUEST_INVALID');
+    const view = await read(request);
     work.step(view.sources.length);
     let data: JsonObject;
     let graph: { nodes: MapNode[]; edges: MapEdge[] } | undefined;
     if (operation === 'list_agents') {
       const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
+      const filtered = args.flag !== undefined || args.flagStatus !== undefined;
+      const statuses: readonly DangerousThreeStatus[] =
+        args.flagStatus !== undefined
+          ? [args.flagStatus as DangerousThreeStatus]
+          : args.flag !== undefined
+            ? ['exposed', 'mitigated', 'unknown']
+            : ['exposed', 'mitigated', 'unknown', 'absent'];
       const agents = view.sources
         .flatMap(source => {
           work.step(source.current.nodes.length);
           return source.current.nodes
             .filter(node => node.label === 'GuardAgent')
-            .map(agent => agentSummary(source, source.current, agent, work));
+            .flatMap(agent => {
+              const summary = agentSummary(source, source.current, agent, work);
+              if (!filtered) return [summary];
+              const status = agentFlags(source.current, agent, scope, work).status;
+              return statuses.includes(status) ? [{ ...summary, boundaryFlags: { dangerousThree: status } }] : [];
+            });
         })
         .filter(
           agent =>
@@ -1524,10 +1968,51 @@ export class MapService {
         // Unnamed agents sort last; code-unit order keeps paging identical on every host and locale.
         .sort((a, b) => compare(agentSortKey(a), agentSortKey(b)));
       const { items, ...pagination } = page(agents, args);
-      data = { agents: items!, ...pagination };
+      let rows = items as JsonObject[];
+      let flagsUnavailable: string | null = null;
+      if (args.includeFlags === true && !filtered && rows.length) {
+        // Flags for this page only: one read of these agents under the one-agent rules, so a
+        // badge here matches get_agent_access and the work follows the page, not the fleet.
+        // If that read is too large or fails, the listing still answers, with every flag unknown.
+        // The page flags get what is left of this query's time, keep a margin for the answer,
+        // and count their work separately: running out degrades flags, not the listing.
+        const budget = work.remaining() - 50;
+        const statuses = new Map<JsonObject, DangerousThreeStatus>();
+        try {
+          if (budget <= 0) fail('MAP_TIMEOUT');
+          const flagged = await read(
+            {
+              ...(args.sourceId ? { sourceId: args.sourceId as string } : {}),
+              flags: true,
+              agentIds: rows.map(agent => agent.id as string),
+            },
+            budget,
+          );
+          const flagWork = new QueryWork(Math.max(1, work.remaining() - 25), this.#maxBytes);
+          for (const agent of rows) {
+            const source = flagged.sources.find(item => item.id === agent.sourceId);
+            const node = source?.current.nodes.find(item => item.label === 'GuardAgent' && item.entityId === agent.id);
+            // An agent gone between the two reads has no evidence now.
+            if (source && node) statuses.set(agent, agentFlags(source.current, node, scope, flagWork).status);
+          }
+        } catch (error) {
+          const code = error instanceof MapQueryError ? error.code : 'MAP_UNAVAILABLE';
+          if (!['MAP_LIMIT_EXCEEDED', 'MAP_TIMEOUT', 'MAP_UNAVAILABLE'].includes(code)) throw error;
+          statuses.clear();
+          flagsUnavailable =
+            code === 'MAP_LIMIT_EXCEEDED'
+              ? 'flags_limit_exceeded'
+              : code === 'MAP_TIMEOUT'
+                ? 'flags_timeout'
+                : 'flags_read_unavailable';
+        }
+        rows = rows.map(agent => ({ ...agent, boundaryFlags: { dangerousThree: statuses.get(agent) ?? 'unknown' } }));
+      }
+      data = { agents: rows, ...pagination, ...(flagsUnavailable ? { flagsUnavailable } : {}) };
     } else if (operation === 'list_owners' || operation === 'list_resources') {
       const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
       const ownerIndex = operation === 'list_owners';
+      const reach = boundedReach(work.remaining(), this.#maxBytes);
       const rows = ordered(
         view.sources
           .flatMap(source => {
@@ -1537,7 +2022,10 @@ export class MapService {
               .map(node =>
                 ownerIndex
                   ? ownerSummary(source, source.current, node, work)
-                  : resourceSummary(source, source.current, node, work),
+                  : {
+                      ...resourceSummary(source, source.current, node, work),
+                      outsideGuard: reach(source.current, node, scope).status,
+                    },
               );
           })
           .filter(
@@ -1560,6 +2048,7 @@ export class MapService {
               resourceCoverage: 'host_bound_resources',
               limitations: [
                 'Declared selectors without a host resource binding are not included; see agent permissions.',
+                OUTSIDE_GUARD_LIMITATION,
               ],
             }
           : {}),
@@ -1606,15 +2095,26 @@ export class MapService {
           .map(agent => agentSummary(source, projection, agent, work)),
       );
       const { items, ...pagination } = page(agents, args);
+      const reach = boundedReach(work.remaining(), this.#maxBytes)(projection, resource, scope, true);
       data = {
         resource: resourceSummary(source, projection, resource, work),
         agents: items!,
         ...pagination,
+        outsideGuard: {
+          status: reach.status,
+          directAccess: reach.directAccess,
+          directAccessTruncated: reach.directAccessTruncated,
+          identities: reach.identities,
+          identitiesTruncated: reach.identitiesTruncated,
+          unknownReasons: reach.unknownReasons,
+          evidenceKind: 'declared',
+        },
         receipt: receipt(source),
         assessment: 'unknown',
         collection,
         limitations: [
           'Agents have a declared selector mapped to this resource; this is not proof of current effective access.',
+          OUTSIDE_GUARD_LIMITATION,
         ],
       };
     } else if (operation === 'get_agent_access') {
@@ -1622,6 +2122,17 @@ export class MapService {
         projection = source.current;
       const agent = findAgent(projection, args.agentId as string);
       graph = focus(projection, agent, work);
+      // The response graph carries node properties too: withhold out-of-scope targets there.
+      const visibleTarget = targetVisibility(projection, scope, work);
+      graph = {
+        ...graph,
+        nodes: graph.nodes.map(node => {
+          const target = node.label === 'GuardDirectAccess' ? string(node, 'target_ref') : null;
+          if (target === null || visibleTarget(target)) return node;
+          const { target_ref: _withheld, ...properties } = node.properties;
+          return { ...node, properties };
+        }),
+      };
       const policy = selectedPolicy(projection, work, { nodes: graph.nodes });
       data = {
         agent: agentSummary(source, projection, agent, work),
@@ -1643,9 +2154,10 @@ export class MapService {
         policyEvidence: policy as unknown as readonly JsonObject[],
         policyCoverage: policyCoverage(policy),
         outsideGuard: {
-          directAccess: directAccess(projection, graph, work),
+          directAccess: directAccess(projection, graph, scope, work),
           identityScope: identityScope(projection, graph),
         },
+        boundaryFlags: [detailFlags(projection, agent, scope, work.remaining(), this.#maxBytes)],
         receipt: receipt(source),
         assessment: 'unknown',
         limitations: [
@@ -1778,7 +2290,7 @@ export class MapService {
       }
       data = { candidates, truncated };
     } else if (operation === 'get_changes') {
-      data = retainedChanges(findSource(view, args.sourceId as string), args, work);
+      data = retainedChanges(findSource(view, args.sourceId as string), args, scope, work);
     } else {
       data = {
         sources: view.sources.map(source => {
@@ -1812,13 +2324,24 @@ export class MapService {
     if (graph && (graph.nodes.length > this.#maxNodes || graph.edges.length > this.#maxEdges))
       fail('MAP_LIMIT_EXCEEDED');
     work.step();
-    const result = { operation, observedAt: new Date(now).toISOString(), data, ...(graph ? { graph } : {}) };
-    let copied: MapResponse;
-    try {
-      copied = immutableJson(result, 32, 100_000, this.#maxBytes) as unknown as MapResponse;
-    } catch {
-      return fail('MAP_LIMIT_EXCEEDED');
+    const observedAt = new Date(now).toISOString();
+    const freeze = (payload: JsonObject): MapResponse | null => {
+      try {
+        const result = { operation, observedAt, data: payload, ...(graph ? { graph } : {}) };
+        return immutableJson(result, 32, 100_000, this.#maxBytes) as unknown as MapResponse;
+      } catch {
+        return null;
+      }
+    };
+    let copied = freeze(data);
+    // The identity-scope bucket lists are optional detail. If the response does not fit with
+    // them, shorten them (marked truncated) before giving up on the whole response.
+    for (const keep of [25, 5, 0]) {
+      if (copied) break;
+      const shortened = shortenIdentityScope(data, keep);
+      if (shortened) copied = freeze(shortened);
     }
+    if (!copied) return fail('MAP_LIMIT_EXCEEDED');
     work.step();
     return copied;
   }

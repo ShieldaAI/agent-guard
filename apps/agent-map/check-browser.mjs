@@ -79,7 +79,9 @@ try {
   await page.getByLabel('Select a node').selectOption('resource');
   const graphGeometry = await page.locator('.graph').evaluate(container => {
     const cy = container._cyreg.cy;
-    const boxes = cy.nodes().map(node => node.renderedBoundingBox({ includeLabels: true, includeOverlays: false }));
+    // Tenant and team boxes enclose their children by design; compare evidence nodes only.
+    const leaves = cy.nodes(':childless');
+    const boxes = leaves.map(node => node.renderedBoundingBox({ includeLabels: true, includeOverlays: false }));
     let overlappingNodeLabels = 0;
     for (let i = 0; i < boxes.length; i++)
       for (let j = i + 1; j < boxes.length; j++) {
@@ -91,7 +93,7 @@ try {
     return {
       viewportWidth: container.clientWidth,
       minimumRenderedNodeFont: Math.min(
-        ...cy.nodes().map(node => Number(node.style('font-size').replace('px', '')) * cy.zoom()),
+        ...leaves.map(node => Number(node.style('font-size').replace('px', '')) * cy.zoom()),
       ),
       overlappingNodeLabels,
     };

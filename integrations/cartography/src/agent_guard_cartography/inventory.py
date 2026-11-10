@@ -345,9 +345,17 @@ def _check_manifest(manifest: dict) -> None:
                 _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
     if manifest["schemaVersion"] == 3:
         _unique_records(manifest["directAccess"], "id")
+        # A target names a declared host resource; anything else is declared with null.
+        host_targets = {
+            binding["target"]["id"]
+            for binding in manifest["resourceBindings"]
+            if binding["target"]["provider"] == "host"
+        }
         per_deployment: dict[str, int] = {}
         for entry in manifest["directAccess"]:
             if entry["deploymentId"] not in deployments:
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            if entry["targetRef"] is not None and entry["targetRef"] not in host_targets:
                 _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
             count = per_deployment.get(entry["deploymentId"], 0) + 1
             if count > MAX_DIRECT_ACCESS_PER_DEPLOYMENT:

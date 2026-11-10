@@ -131,13 +131,17 @@ export async function runBenchmark(agents, sources, tasks) {
     get_resource_access: { sourceId: 'source-0', resourceId: 'b0-0' },
   };
   const results = {};
-  for (const operation of MAP_OPERATIONS) {
+  // The flagged index adds a second read of the returned page; this in-memory store has no
+  // node cap, so it measures computation only (the store tests cover the cap).
+  const runs = [...MAP_OPERATIONS.map(operation => [operation, operation]), ['list_agents_flags', 'list_agents']];
+  args.list_agents_flags = { limit: 100, includeFlags: true };
+  for (const [name, operation] of runs) {
     const started = performance.now();
     try {
-      await service.query(scope, operation, args[operation]);
-      results[operation] = { ok: true, ms: +(performance.now() - started).toFixed(1) };
+      await service.query(scope, operation, args[name]);
+      results[name] = { ok: true, ms: +(performance.now() - started).toFixed(1) };
     } catch (error) {
-      results[operation] = {
+      results[name] = {
         ok: false,
         code: error.code ?? String(error),
         ms: +(performance.now() - started).toFixed(1),

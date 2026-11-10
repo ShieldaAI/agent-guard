@@ -65,6 +65,38 @@ and connected visible agents. Full relationship identifiers remain available in
 expandable text details. The optional graph has an accessible node selector;
 a graph limit does not prevent using the paged inventory sections.
 
+Agent listings request `includeFlags` and show the "dangerous three" flag as a
+text badge beside its colour: red **Exposed**, amber **Mitigated**, grey
+**Unknown**; a known-absent leg shows no badge. A sidebar legend explains them and
+the **Dangerous three flag** filter maps to the service's `flag` / `flagStatus`
+arguments. The Overview reads `get_agent_access` once for its **Boundary flags**
+and **Outside the guard** sections and the optional graph, so they always agree.
+Boundary flags list one row per leg (private data, outside content, can send out)
+with its state, reason, and task, tool and resource-binding identifiers, plus any
+mitigation, notes and limitations. Outside the guard lists host-declared direct
+paths per deployment (`found`, `none_declared` as the host's own claim, or
+`unknown`) and, separately, each tool identity's scope with the extra buckets,
+relationship, unresolved condition keys and truncation. These tables are the
+accessible equivalent of the graph; "Show in graph" selects the matching node.
+
+In the graph, declared direct paths (`G_DIRECT_ACCESS_FOR` and their declared
+targets) are red dashed edges labelled "outside guard"; buckets a tool identity
+reaches beyond its grants are drawn as candidate nodes behind amber dashed edges
+labelled "tool identity reaches this"; the graph draws up to eight buckets per tool (300 edges in all) and
+one "+N more" node for the rest, while the table lists them all. Guarded relationships stay solid. The
+flagged agent node names its flag. **Outside guard only** hides everything except
+those edges, their endpoints and enclosing boxes. Nodes sit in a tenant box (from
+the snapshot receipt) and a team box (from the nearest agent's team); a node
+equally near to several teams stays in the tenant box and provider nodes sit below,
+outside every box. Edges that cross a box border are highlighted and say which
+border they cross. The graph never zooms below a readable size; a larger
+neighborhood opens at its top-left corner, pans, and **Fit graph** shows the whole.
+Resources has a **Reachable outside guard** column (yes / none found / unknown),
+and a resource's detail lists the declared paths and tool identities behind it.
+Changes can filter to declared outside-guard paths, labelled **Declared**. None of
+these statuses means access is safe or ruled out: only S3 identity policies and
+host declarations are checked.
+
 Agent changes and the Changes view compare authorized retained snapshots, with
 before/after fields, relationship additions/removals and affected visible agents.
 Paging applies to change details and their companion summaries. These are net
@@ -126,7 +158,9 @@ node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/firefox fir
 node apps/agent-map/check-browser.mjs "$browser_tools" artifacts/map/webkit webkit
 ```
 
-The check opens the demo from the keyboard, inspects one resource, distinguishes
+The check opens the demo from the keyboard, opens the focused graph (with its
+tenant/team boxes and outside-guard edges; label checks cover evidence nodes, not
+the boxes that enclose them), inspects one resource, distinguishes
 a missing grant from an unknown outcome, checks matching and empty lookups, and
 compares snapshots. It also checks all five navigation views at a 375px viewport. A
 real bearer session loads a synthetic version 2 projection through the actual

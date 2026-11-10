@@ -6,6 +6,8 @@ import { queryDemo } from './demo.mjs';
 import { PolicyEvidence } from './policy-evidence.jsx';
 import { AgentInventory, ChangesView, OwnersBrowse, ResourcesBrowse, Pager } from './inventory.jsx';
 import { ownershipLabel } from './inventory-model.mjs';
+import { FLAG_FILTERS, flagFilterArgs, flagsUnavailableLabel, onlyOutsideGuard } from './boundary-model.mjs';
+import { BoundaryFlags, FlagBadge, FlagLegend, OutsideGuard } from './boundaries.jsx';
 import './style.css';
 
 function Icon({ name, size = 18 }) {
@@ -23,13 +25,15 @@ function Status({ children, tone = 'neutral' }) { return <span className={`statu
 function Notice({ children, error = false }) { return <div className={`notice ${error ? 'error' : ''}`} role={error ? 'alert' : undefined}>{children}</div>; }
 function Empty({ title, children }) { return <div className="empty"><span className="empty-icon"><Icon name="network" size={30}/></span><h3>{title}</h3><p>{children}</p></div>; }
 
-function Graph({ graph, policyEvidence, onSelect }) {
+const READABLE_ZOOM = .75;
+function Graph({ graph, policyEvidence, onSelect, outsideGuard = null, flagStatus = null, tenantId = null, selected = null }) {
   const container = useRef(null), instance = useRef(null);
-  const [labels, setLabels] = useState(true), [error, setError] = useState('');
+  const [labels, setLabels] = useState(true), [outsideOnly, setOutsideOnly] = useState(false), [error, setError] = useState(''), [empty, setEmpty] = useState(false), [clipped, setClipped] = useState(false);
   useEffect(() => {
-    setError('');
+    setError(''); setEmpty(false);
     let elements;
-    try { elements = graphElements(graph, policyEvidence); } catch { setError('This graph could not be displayed safely. Select another agent.'); return; }
+    try { elements = graphElements(graph, policyEvidence, { outsideGuard, flagStatus, tenantId, boxes: true }); if (outsideOnly) elements = onlyOutsideGuard(elements); } catch { setError('This graph could not be displayed safely. Select another agent.'); return; }
+    setEmpty(outsideOnly && !elements.length);
     const cy = cytoscape({ container: container.current, elements, minZoom: .25, maxZoom: 2.5,
       layout: { name: 'preset' },
       style: [
@@ -51,31 +55,63 @@ function Graph({ graph, policyEvidence, onSelect }) {
         { selector: 'edge.unavailable', style: { 'line-style': 'dashed', 'line-color': '#b9934e', 'target-arrow-color': '#b9934e' } },
         { selector: 'edge.conditional', style: { 'line-style': 'dotted', 'line-color': '#ac863d', 'target-arrow-color': '#ac863d' } },
         { selector: 'edge.policy-candidate', style: { 'line-style': 'dashed', 'line-color': '#a37834', 'target-arrow-color': '#a37834', 'width': 2, 'color': '#85632e' } },
+        { selector: 'node.direct-access, node.outside-node', style: { 'background-color': '#fbe9e7', 'border-color': '#b3261e', 'border-style': 'dashed', 'shape': 'round-tag' } },
+        { selector: 'node.outside-node.resource', style: { 'background-color': '#fbf3df', 'border-color': '#a1691b', 'shape': 'round-rectangle' } },
+        // The flag name sits on its own line so the ellipsis never hides it.
+        { selector: 'node.flag-exposed, node.flag-mitigated, node.flag-unknown', style: { 'text-wrap': 'wrap', 'text-max-width': 160 } },
+        { selector: 'node.flag-exposed', style: { 'border-color': '#b3261e', 'border-width': 4, 'color': '#8c1d18' } },
+        { selector: 'node.flag-mitigated', style: { 'border-color': '#c48a1c', 'border-width': 4, 'color': '#6d4c10' } },
+        { selector: 'node.flag-unknown', style: { 'border-color': '#7b8794', 'border-width': 4, 'border-style': 'dashed' } },
+        { selector: 'node.box', style: { 'shape': 'round-rectangle', 'background-color': '#f4f7fa', 'background-opacity': .55, 'border-width': 1.2, 'border-color': '#9fb1c4', 'padding': 18, 'text-max-width': 400,
+          'label': 'data(label)', 'text-valign': 'top', 'text-halign': 'center', 'text-margin-y': -4, 'font-size': 10, 'font-weight': 600, 'color': '#3d5166', 'text-background-opacity': 0 } },
+        { selector: 'node.box-team', style: { 'background-color': '#eaf1f8', 'border-style': 'dashed', 'border-color': '#7f9bb8' } },
+        { selector: 'edge.outside-guard', style: { 'line-style': 'dashed', 'line-color': '#b3261e', 'target-arrow-color': '#b3261e', 'width': 2.2, 'color': '#8c1d18' } },
+        { selector: 'edge.identity-reach', style: { 'line-style': 'dashed', 'line-color': '#c48a1c', 'target-arrow-color': '#c48a1c', 'width': 2.2, 'color': '#6d4c10' } },
+        { selector: 'edge.crosses-box', style: { 'underlay-color': '#6b4fbb', 'underlay-opacity': .22, 'underlay-padding': 4, 'width': 2.6 } },
       ] });
-    const boxes = cy.nodes().map(node => node.boundingBox({ includeLabels: true, includeOverlays: false }));
+    const leaves = cy.nodes(':childless');
+    const boxes = leaves.map(node => node.boundingBox({ includeLabels: true, includeOverlays: false }));
     const height = Math.max(1, ...boxes.map(box => box.h));
     const size = Math.max(height, ...boxes.map(box => box.w));
     // Breadthfirst uses the widest label for both axes. Keep label-aware
     // horizontal clearance, but reserve actual label height plus a row gap
     // vertically so fitting a compact neighborhood does not shrink its text.
     const rowScale = Math.min(1, (height + 12) / size);
-    cy.layout({ name: 'breadthfirst', directed: false, padding: 32, spacingFactor: 1.05, avoidOverlap: true,
+    // Boxes size themselves around their children, so only leaf nodes take part in the layout.
+    cy.elements().not(':parent').layout({ name: 'breadthfirst', directed: false, padding: 32, spacingFactor: 1.05, avoidOverlap: true,
       nodeDimensionsIncludeLabels: true, transform: (_node, point) => ({ x: point.x, y: point.y * rowScale }) }).run();
+    // Nodes outside every box (provider resources, identity-reach buckets) move to a row below the boxes,
+    // so a box never appears to contain them.
+    const loose = leaves.filter(node => node.parent().empty()), parents = cy.nodes(':parent');
+    if (parents.nonempty() && loose.nonempty()) {
+      const area = parents.boundingBox({ includeLabels: true }), widths = loose.map(node => node.boundingBox({ includeLabels: true }).w);
+      const gap = 28, total = widths.reduce((sum, width) => sum + width, 0) + gap * (widths.length - 1);
+      let x = (area.x1 + area.x2) / 2 - total / 2;
+      loose.forEach((node, index) => { node.position({ x: x + widths[index] / 2, y: area.y2 + 70 }); x += widths[index] + gap; });
+    }
+    // Fit, but never below a readable zoom: a larger neighborhood opens at its top-left corner and pans instead.
+    const view = () => { cy.fit(undefined, 40); const clip = cy.zoom() < READABLE_ZOOM; if (clip) { const area = cy.elements().boundingBox(); cy.viewport({ zoom: READABLE_ZOOM, pan: { x: 40 - area.x1 * READABLE_ZOOM, y: 40 - area.y1 * READABLE_ZOOM } }); } setClipped(clip); };
+    view();
     instance.current = cy;
-    cy.on('tap', 'node', event => onSelect(event.target.data('source')));
-    const resize = new ResizeObserver(() => { cy.resize(); cy.fit(undefined, 40); });
+    cy.on('tap', 'node:childless', event => onSelect(event.target.data('source')));
+    const resize = new ResizeObserver(() => { cy.resize(); view(); });
     resize.observe(container.current);
     return () => { resize.disconnect(); cy.destroy(); instance.current = null; };
-  }, [graph, policyEvidence, onSelect]);
-  useEffect(() => { instance.current?.style().selector('node, edge').style('label', labels ? 'data(label)' : '').update(); }, [labels, graph]);
+  }, [graph, policyEvidence, onSelect, outsideGuard, flagStatus, tenantId, outsideOnly]);
+  useEffect(() => { instance.current?.style().selector('node:childless, edge').style('label', labels ? 'data(label)' : '').update(); }, [labels, graph, outsideOnly]);
+  useEffect(() => { const cy = instance.current; if (!cy) return; cy.elements().unselect(); if (selected?.id) cy.getElementById(selected.id).select(); }, [selected, graph, outsideOnly]);
   return <div className="graph-shell">
     <div className="graph-tools"><span>FOCUSED NEIGHBORHOOD</span><div>
+      <button className="small-button" onClick={() => setOutsideOnly(!outsideOnly)} aria-pressed={outsideOnly}>Outside guard only {outsideOnly ? 'on' : 'off'}</button>
       <button className="small-button" onClick={() => setLabels(!labels)} aria-pressed={labels}>Labels {labels ? 'on' : 'off'}</button>
-      <button className="icon-button" title="Fit graph" aria-label="Fit graph" onClick={() => instance.current?.fit(undefined, 40)}><Icon name="fit" size={16}/></button>
+      <button className="icon-button" title="Fit graph" aria-label="Fit graph" onClick={() => { instance.current?.fit(undefined, 40); setClipped(false); }}><Icon name="fit" size={16}/></button>
     </div></div>
     <div className="graph" ref={container} role="img" aria-label="Agent evidence network with shortened display labels. Use the evidence list below for full identifiers and accessible node selection."/>
     {error && <div className="graph-error"><Notice error>{error}</Notice></div>}
-    <div className="graph-legend"><span><i className="legend-agent"/>Agent</span><span><i className="legend-task"/>Task</span><span><i className="legend-mcp"/>MCP</span><span><i className="legend-resource"/>Resource</span><span><i className="legend-unknown"/>Unknown / unavailable</span><span><i className="legend-conditional"/>Conditional</span><span><i className="legend-policy"/>Policy candidate · access unknown</span></div>
+    {clipped && <p className="graph-hint" role="status">Part of this neighborhood is outside the view. Drag to pan, or select Fit graph for an overview with smaller text.</p>}
+    {empty && <div className="graph-error"><Notice>No outside-guard edge in this neighborhood. Undeclared paths and unevaluated identities remain unknown.</Notice></div>}
+    <div className="graph-legend"><span><i className="legend-agent"/>Agent</span><span><i className="legend-task"/>Task</span><span><i className="legend-mcp"/>MCP</span><span><i className="legend-resource"/>Resource</span><span><i className="legend-unknown"/>Unknown / unavailable</span><span><i className="legend-conditional"/>Conditional</span><span><i className="legend-policy"/>Policy candidate · access unknown</span>
+      <span><i className="legend-outside"/>Outside guard · declared direct path</span><span><i className="legend-reach"/>Tool identity reaches this · candidate</span><span><i className="legend-guarded"/>Guarded relationship</span><span><i className="legend-box"/>Tenant / team box</span><span><i className="legend-crossing"/>Crosses a box border</span><span><i className="legend-flag exposed"/>Agent flag: Exposed / Mitigated / Unknown (named on the node)</span></div>
   </div>;
 }
 
@@ -142,27 +178,31 @@ function ResourceLookup({ query, onAgent, reportError }) {
   </section>;
 }
 
+const GRAPH_LIMIT = 'This neighborhood exceeds the graph display limit. All paged inventory sections remain available.';
+/** One get_agent_access read feeds the boundary tables and the optional graph, so they always agree. */
 function OptionalGraph({ agent, query, reportError }) {
-  const [result, setResult] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState(''), [node, setNode] = useState(null);
-  const active = useRef(true), request = useRef(null);
-  useEffect(() => { active.current = true; return () => { active.current = false; request.current?.abort(); }; }, []);
+  const [result, setResult] = useState(null), [status, setStatus] = useState('loading'), [error, setError] = useState(''), [limited, setLimited] = useState(false);
+  const [shown, setShown] = useState(false), [node, setNode] = useState(null), [attempt, setAttempt] = useState(0);
   const select = useCallback(value => setNode(value), []);
-  async function load() {
-    setBusy(true); setError('');
-    const controller = new AbortController(); request.current = controller;
-    try { const next = await query('get_agent_access', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId }, { signal: controller.signal });
-      if (!active.current) return;
+  const showNode = useCallback(value => { setNode(value); setShown(true); }, []);
+  useEffect(() => { let active = true; const controller = new AbortController();
+    setStatus('loading'); setError(''); setLimited(false); setResult(null);
+    query('get_agent_access', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId }, { signal: controller.signal }).then(next => {
+      if (!active) return;
       if (!Array.isArray(next.graph?.nodes) || !Array.isArray(next.graph?.edges)) throw Object.assign(new Error('VIEWER_RESPONSE_INVALID'), { code: 'VIEWER_RESPONSE_INVALID' });
-      setResult(next); setNode(next.graph?.nodes.find(item => item.label === 'GuardAgent') ?? null);
-    } catch (error) { if (!active.current) return; setResult(null); setError(error?.code?.includes('LIMIT') || error?.status === 413
-      ? 'This neighborhood exceeds the graph display limit. All paged inventory sections remain available.' : errorMessage(error));
-      if (![413].includes(error?.status) && !error?.code?.includes('LIMIT')) reportError(error);
-    } finally { if (active.current) setBusy(false); }
-  }
-  return <section className="inventory-card"><h3>Relationship graph</h3><p className="subtle">Optional focused visualization. The full identifiers and relationships remain available in paged tables.</p>
-    <button className="secondary-button" disabled={busy} onClick={result ? () => setResult(null) : load}>{busy ? 'Loading graph…' : result ? 'Hide graph' : 'Show graph'}</button>
-    {error && <Notice>{error}</Notice>}{result && <div className="graph-evidence"><Graph graph={result.graph ?? { nodes: [], edges: [] }} policyEvidence={result.data.policyEvidence} onSelect={select}/><Evidence node={node} graph={result.graph} select={select}/></div>}
-  </section>;
+      setResult(next); setNode(next.graph.nodes.find(item => item.label === 'GuardAgent') ?? null); setStatus('ready');
+    }).catch(error => { if (!active) return; const limit = error?.code?.includes('LIMIT') || error?.status === 413;
+      setStatus('error'); setLimited(limit); setError(limit ? GRAPH_LIMIT : errorMessage(error)); if (!limit) reportError(error); });
+    return () => { active = false; controller.abort(); };
+  }, [agent, query, reportError, attempt]);
+  const data = result?.data;
+  return <>{status === 'loading' ? <section className="inventory-card"><h3>Boundary flags and outside-guard evidence</h3><p role="status">Loading boundary evidence…</p></section>
+    : status === 'error' ? <section className="inventory-card"><h3>Boundary flags and outside-guard evidence</h3><Notice>{limited ? 'Boundary flags and outside-guard evidence are not shown because this neighborhood exceeds the display limit. The paged inventory sections remain available.' : 'Boundary flags and outside-guard evidence could not be loaded. They remain unknown.'}</Notice>{!limited && <button className="secondary-button" onClick={() => setAttempt(value => value + 1)}>Retry boundary evidence</button>}</section>
+    : <><BoundaryFlags flags={data.boundaryFlags} graph={result.graph} onNode={showNode}/><OutsideGuard outsideGuard={data.outsideGuard} graph={result.graph} onNode={showNode}/></>}
+    <section className="inventory-card"><h3>Relationship graph</h3><p className="subtle">Optional focused visualization. The full identifiers and relationships remain available in paged tables.</p>
+      <button className="secondary-button" disabled={status === 'loading'} onClick={() => setShown(!shown)}>{status === 'loading' ? 'Loading graph…' : shown ? 'Hide graph' : 'Show graph'}</button>
+      {shown && error && <Notice>{error}</Notice>}{shown && result && <div className="graph-evidence"><Graph graph={result.graph} policyEvidence={data.policyEvidence} outsideGuard={data.outsideGuard} flagStatus={data.boundaryFlags?.find(flag => flag?.kind === 'dangerous_three')?.status ?? null} tenantId={data.receipt?.tenantId ?? null} selected={node} onSelect={select}/><Evidence node={node} graph={result.graph} select={select}/></div>}
+    </section></>;
 }
 function AgentExplanation({ agent, query, reportError, onExplained }) {
   const [access, setAccess] = useState(null), [error, setError] = useState(''), [attempt, setAttempt] = useState(0);
@@ -190,7 +230,7 @@ function App() {
   const [session, setSession] = useState(null), [credential, setCredential] = useState(''), [connecting, setConnecting] = useState(false);
   const [tab, setTab] = useState('inventory'), [agents, setAgents] = useState([]), [sources, setSources] = useState([]), [truncated, setTruncated] = useState(false);
   const [listingRevision, setListingRevision] = useState(0), [search, setSearch] = useState(''), [owner, setOwner] = useState(''), [environment, setEnvironment] = useState(''), [options, setOptions] = useState({ owners: [], environments: [] });
-  const [listingState, setListingState] = useState('ready');
+  const [listingState, setListingState] = useState('ready'), [flagFilter, setFlagFilter] = useState('');
   const [listingPage, setListingPage] = useState({ offset: 0, limit: 20, total: 0 }), [offset, setOffset] = useState(0);
   const [ownership, setOwnership] = useState(''), [lifecycle, setLifecycle] = useState(''), [sourceFilter, setSourceFilter] = useState(''), [resourceOwner, setResourceOwner] = useState(null), [resourceSelection, setResourceSelection] = useState(null);
   const [selection, setSelection] = useState(null), [access, setAccess] = useState(null), [node, setNode] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
@@ -205,7 +245,7 @@ function App() {
     activeSession.current?.close(); activeSession.current = null;
     pendingConnection.current?.close(); pendingConnection.current = null; generation.current++;
     setSession(null); setCredential(''); setAgents([]); setSources([]); setAccess(null); setSelection(null); setNode(null);
-    setSearch(''); setOwner(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setSourceFilter(''); setResourceOwner(null); setResourceSelection(null); setOffset(0); setListingPage({ offset: 0, limit: 20, total: 0 }); setOptions({ owners: [], environments: [] }); setTruncated(false);
+    setSearch(''); setOwner(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setFlagFilter(''); setSourceFilter(''); setResourceOwner(null); setResourceSelection(null); setOffset(0); setListingPage({ offset: 0, limit: 20, total: 0 }); setOptions({ owners: [], environments: [] }); setTruncated(false);
     setListingState('ready');
     setBusy(false); setConnecting(false); setTab('inventory');
   }, []);
@@ -222,7 +262,7 @@ function App() {
   const openWorkspace = useCallback(async next => {
     pendingConnection.current?.close(); pendingConnection.current = next; setConnecting(true);
     try {
-      const [listing, health] = await Promise.all([next.query('list_agents', { limit: 20, offset: 0 }), next.query('get_inventory_health', {})]);
+      const [listing, health] = await Promise.all([next.query('list_agents', { limit: 20, offset: 0, ...flagFilterArgs('') }), next.query('get_inventory_health', {})]);
       if (pendingConnection.current !== next) return;
       setListingPage(listing.data); setAgents(listing.data.agents ?? []); setOptions(agentOptions(listing.data.agents ?? [])); setTruncated(Boolean(listing.data.truncated));
       setSources(health.data.sources ?? []); setCredential(''); activeSession.current = next; setSession(next);
@@ -315,11 +355,11 @@ function App() {
   useEffect(() => {
     if (!session) return;
     let active = true; const controller = new AbortController();
-    const filters = JSON.stringify([search, owner, environment, ownership, lifecycle, sourceFilter, offset]);
+    const filters = JSON.stringify([search, owner, environment, ownership, lifecycle, flagFilter, sourceFilter, offset]);
     if (listingFilters.current !== filters) { agentRequest.current?.abort(); listingFilters.current = filters; generation.current++; setAccess(null); setSelection(null); setNode(null); setBusy(false); }
     setListingState('loading');
     const timer = setTimeout(() => {
-      query('list_agents', { ...(search ? { search } : {}), ...(owner ? { ownerId: owner } : {}), ...(environment ? { environment } : {}), ...(sourceFilter ? { sourceId: sourceFilter } : {}), ...(ownership ? { ownershipStatus: ownership } : {}), ...(lifecycle ? { lifecycleState: lifecycle } : {}), offset, limit: 20 }, { signal: controller.signal })
+      query('list_agents', { ...(search ? { search } : {}), ...(owner ? { ownerId: owner } : {}), ...(environment ? { environment } : {}), ...(sourceFilter ? { sourceId: sourceFilter } : {}), ...(ownership ? { ownershipStatus: ownership } : {}), ...(lifecycle ? { lifecycleState: lifecycle } : {}), ...flagFilterArgs(flagFilter), offset, limit: 20 }, { signal: controller.signal })
         .then(result => { if (active) {
           setListingPage(result.data); setAgents(result.data.agents ?? []); setTruncated(Boolean(result.data.truncated)); setListingState('ready');
           if (!search && !owner && !environment) setOptions(agentOptions(result.data.agents ?? []));
@@ -327,7 +367,7 @@ function App() {
         .catch(error => { if (active) { setListingState('error'); setAccess(null); setSelection(null); generation.current++; reportError(error); } });
     }, 200);
     return () => { active = false; controller.abort(); clearTimeout(timer); };
-  }, [session, search, owner, environment, ownership, lifecycle, sourceFilter, offset, listingRevision, query, reportError]);
+  }, [session, search, owner, environment, ownership, lifecycle, flagFilter, sourceFilter, offset, listingRevision, query, reportError]);
   async function selectAgent(agent, navigate = true) {
     agentRequest.current?.abort(); const controller = new AbortController(); agentRequest.current = controller;
     const request = ++generation.current;
@@ -347,7 +387,7 @@ function App() {
     } catch (error) { if (stamp === generation.current) reportError(error); }
   }
   const tabs = [['inventory', 'Agent inventory', 'network'], ['owners', 'Owners', 'layers'], ['resources', 'Resources', 'search'], ['changes', 'Changes', 'clock'], ['health', 'Health', 'shield']];
-  function showOwner(owner) { setOwner(owner.ownerId); setSourceFilter(owner.sourceId); setSearch(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setOffset(0); setSelection(null); setAccess(null); setTab('inventory'); }
+  function showOwner(owner) { setOwner(owner.ownerId); setSourceFilter(owner.sourceId); setSearch(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setFlagFilter(''); setOffset(0); setSelection(null); setAccess(null); setTab('inventory'); }
   function showOwnerResources(owner) { setResourceOwner(owner); setResourceSelection(null); setTab('resources'); }
   function showResource(resource) { setResourceSelection(resource); setResourceOwner(null); setTab('resources'); }
   return <div className="app"><header className="topbar"><a className="brand" href="/" onClick={event => { event.preventDefault(); setTab('inventory'); }}><span className="brand-mark"><Icon name="network" size={22}/></span><span>Agent Guard <b> / </b><strong>Map</strong></span></a><div className="topbar-right"><span className="reference-label">REFERENCE WORKSPACE</span>{session && <><Status tone={session.demo ? 'amber' : 'green'}>{session.demo ? 'Synthetic demo' : session.company ? 'Company session' : 'Scoped connection'}</Status><button className="text-button" onClick={logout}><Icon name="logout" size={16}/>{session.company ? 'Sign out' : 'Disconnect'}</button></>}</div></header>
@@ -362,8 +402,8 @@ function App() {
       <nav className="nav-tabs" aria-label="Reference views">{tabs.map(([id, title, icon]) => <button key={id} className={tab === id ? 'active' : ''} onClick={() => { agentRequest.current?.abort(); generation.current++; setBusy(false); setTab(id); setError(''); if (id === 'resources') { setResourceOwner(null); setResourceSelection(null); } }} aria-current={tab === id ? 'page' : undefined}><Icon name={icon} size={17}/>{title}</button>)}{['inventory', 'health'].includes(tab) && <button className="refresh-button" onClick={refresh}><Icon name="refresh" size={16}/>Refresh evidence</button>}</nav>
       <main className="workspace"><div className="page-heading"><div><span className="eyebrow">YOUR AUTHORIZED INVENTORY</span><h1>{tab === 'inventory' ? 'Agent inventory' : tab === 'owners' ? 'Agent ownership' : tab === 'resources' ? 'Resource inventory' : tab === 'changes' ? 'What changed' : 'Collection health'}</h1><p>{tab === 'inventory' ? 'Start with an agent. Explore the relationships that support its declared access.' : 'Scope and evidence stay attached to every result.'}</p></div><div className="summary-metrics"><div><strong>{listingState === 'ready' ? String(listingPage.total ?? agents.length) : '—'}</strong><span>Matching agents</span></div><div><strong>{sources.length}</strong><span>Visible sources</span></div><div><strong className="metric-mode">Read only</strong><span>Reference mode</span></div></div></div>
         {error && <div className="page-error"><Notice error>{error}</Notice><button className="icon-button" aria-label="Dismiss error" onClick={() => setError('')}><Icon name="close" size={16}/></button></div>}
-        {tab === 'inventory' ? <div className="inventory-layout"><aside className="agent-sidebar"><div className="sidebar-title"><h2>Agents</h2><span className="count">{listingState === 'ready' ? agents.length : '—'}</span></div><div className="search-field"><Icon name="search" size={17}/><input aria-label="Search visible agents" placeholder="Search agents…" value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} maxLength={256}/></div><div className="filter-row"><label>Owner ID<input aria-label="Filter by owner ID" placeholder="Owner ID" value={owner} maxLength={4096} onChange={event => { setOwner(event.target.value); setSourceFilter(''); setOffset(0); }}/></label><label>Environment<input aria-label="Filter by environment" placeholder="Environment" list="environment-options" value={environment} maxLength={4096} onChange={event => { setEnvironment(event.target.value); setOffset(0); }}/><datalist id="environment-options">{options.environments.map(value => <option key={value} value={value}/>)}</datalist></label></div><div className="filter-row"><label>Ownership status<select aria-label="Ownership status" value={ownership} onChange={event => { setOwnership(event.target.value); setOffset(0); }}><option value="">All ownership states</option><option value="assigned">Assigned</option><option value="unassigned">Unassigned</option><option value="unknown">Unknown / legacy</option></select></label><label>Agent lifecycle<select aria-label="Agent lifecycle" value={lifecycle} onChange={event => { setLifecycle(event.target.value); setOffset(0); }}><option value="">All lifecycle states</option>{['active', 'inactive', 'retired', 'unknown'].map(v => <option key={v}>{v}</option>)}</select></label></div>{sourceFilter && <p className="fine-print">Owner source filter active. <button className="text-link" onClick={() => { setSourceFilter(''); setOwner(''); setOffset(0); }}>Clear owner filter</button></p>}
-          <div className="agent-list" aria-busy={listingState === 'loading'}>{listingState === 'loading' ? <p className="sidebar-empty" role="status">Loading agents…</p> : listingState === 'error' ? <p className="sidebar-empty" role="status">Inventory could not be loaded. Select Refresh evidence to retry.</p> : agents.length ? agents.map(agent => <button aria-pressed={selection?.id === agent.id && selection?.sourceId === agent.sourceId} className={`agent-card ${selection?.id === agent.id && selection?.sourceId === agent.sourceId ? 'selected' : ''}`} key={`${agent.sourceId}-${agent.id}`} onClick={() => selectAgent(agent)}><span className="agent-avatar"><Icon name="network" size={19}/></span><span className="agent-card-copy"><strong>{agent.name ?? agent.agentId}</strong><small>{agent.teamId ?? 'No team'}<span>·</span>{agent.environments?.[0] ?? 'Environment unknown'}</small><span className="agent-owner">{ownershipLabel(agent)}</span></span><Icon name="arrow" size={14}/></button>) : <p className="sidebar-empty">No agents match these visible filters.</p>}</div>{listingState === 'ready' && <Pager data={listingPage} count={agents.length} onPage={setOffset} label="agents"/>}<div className="sidebar-footer"><Icon name="lock" size={14}/><span>Filtered by server-side access rules</span></div></aside>
+        {tab === 'inventory' ? <div className="inventory-layout"><aside className="agent-sidebar"><div className="sidebar-title"><h2>Agents</h2><span className="count">{listingState === 'ready' ? agents.length : '—'}</span></div><div className="search-field"><Icon name="search" size={17}/><input aria-label="Search visible agents" placeholder="Search agents…" value={search} onChange={event => { setSearch(event.target.value); setOffset(0); }} maxLength={256}/></div><div className="filter-row"><label>Owner ID<input aria-label="Filter by owner ID" placeholder="Owner ID" value={owner} maxLength={4096} onChange={event => { setOwner(event.target.value); setSourceFilter(''); setOffset(0); }}/></label><label>Environment<input aria-label="Filter by environment" placeholder="Environment" list="environment-options" value={environment} maxLength={4096} onChange={event => { setEnvironment(event.target.value); setOffset(0); }}/><datalist id="environment-options">{options.environments.map(value => <option key={value} value={value}/>)}</datalist></label></div><div className="filter-row"><label>Ownership status<select aria-label="Ownership status" value={ownership} onChange={event => { setOwnership(event.target.value); setOffset(0); }}><option value="">All ownership states</option><option value="assigned">Assigned</option><option value="unassigned">Unassigned</option><option value="unknown">Unknown / legacy</option></select></label><label>Agent lifecycle<select aria-label="Agent lifecycle" value={lifecycle} onChange={event => { setLifecycle(event.target.value); setOffset(0); }}><option value="">All lifecycle states</option>{['active', 'inactive', 'retired', 'unknown'].map(v => <option key={v}>{v}</option>)}</select></label></div><div className="filter-row"><label>Dangerous three flag<select aria-label="Dangerous three flag" value={flagFilter} onChange={event => { setFlagFilter(event.target.value); setOffset(0); }}>{FLAG_FILTERS.map(([value, title]) => <option key={value} value={value}>{title}</option>)}</select></label></div><FlagLegend/>{listingPage.flagsUnavailable && <p className="notice" role="status">{flagsUnavailableLabel(listingPage.flagsUnavailable)}</p>}{sourceFilter && <p className="fine-print">Owner source filter active. <button className="text-link" onClick={() => { setSourceFilter(''); setOwner(''); setOffset(0); }}>Clear owner filter</button></p>}
+          <div className="agent-list" aria-busy={listingState === 'loading'}>{listingState === 'loading' ? <p className="sidebar-empty" role="status">Loading agents…</p> : listingState === 'error' ? <p className="sidebar-empty" role="status">Inventory could not be loaded. Select Refresh evidence to retry.</p> : agents.length ? agents.map(agent => <button aria-pressed={selection?.id === agent.id && selection?.sourceId === agent.sourceId} className={`agent-card ${selection?.id === agent.id && selection?.sourceId === agent.sourceId ? 'selected' : ''}`} key={`${agent.sourceId}-${agent.id}`} onClick={() => selectAgent(agent)}><span className="agent-avatar"><Icon name="network" size={19}/></span><span className="agent-card-copy"><strong>{agent.name ?? agent.agentId}</strong><small>{agent.teamId ?? 'No team'}<span>·</span>{agent.environments?.[0] ?? 'Environment unknown'}</small><span className="agent-owner">{ownershipLabel(agent)}</span><FlagBadge value={agent.boundaryFlags}/></span><Icon name="arrow" size={14}/></button>) : <p className="sidebar-empty">No agents match these visible filters.</p>}</div>{listingState === 'ready' && <Pager data={listingPage} count={agents.length} onPage={setOffset} label="agents"/>}<div className="sidebar-footer"><Icon name="lock" size={14}/><span>Filtered by server-side access rules</span></div></aside>
           <div className="agent-content">{busy ? <div className="loading" role="status"><span className="spinner"/>Loading scoped evidence…</div> : access ? <AgentInventory key={`${access.data.agent.sourceId}:${access.data.agent.id}`} response={access} query={query} reportError={reportError} onAgent={selectAgent} onResource={showResource}
             graphView={<OptionalGraph agent={access.data.agent} query={query} reportError={reportError}/>}
             explanation={onExplained => <AgentExplanation agent={access.data.agent} query={query} reportError={reportError} onExplained={onExplained}/>}/> : listingState === 'error' ? <div className="welcome-card"><Empty title="Refresh inventory to continue">Select Refresh evidence to load agents for your current filters.</Empty></div> : <div className="welcome-card"><Empty title="Choose an agent to explore">Select an agent from your visible inventory to inspect its tasks, declared grants, MCP connections and cloud associations.</Empty><div className="welcome-principles"><div><span>01</span><h3>Follow relationships</h3><p>Start with one focused neighborhood.</p></div><div><span>02</span><h3>Inspect the evidence</h3><p>Keep declared and observed state distinct.</p></div><div><span>03</span><h3>Keep unknowns visible</h3><p>A map does not authorize execution.</p></div></div></div>}</div></div> : tab === 'owners' ? <OwnersBrowse query={query} reportError={reportError} onOwner={showOwner} onOwnerResources={showOwnerResources}/> : tab === 'resources' ? <ResourcesBrowse key={resourceSelection ? `resource:${resourceSelection.sourceId}:${resourceSelection.id}` : resourceOwner ? `owner:${resourceOwner.sourceId}:${resourceOwner.ownerId}` : 'all'} query={query} reportError={reportError} onAgent={selectAgent} ownerFilter={resourceOwner} initialResource={resourceSelection} lookup={<ResourceLookup query={query} onAgent={selectAgent} reportError={reportError}/>}/> : tab === 'changes' ? <ChangesView sources={sources} query={query} reportError={reportError} onAgent={selectAgent}/> : <Health sources={sources}/>}

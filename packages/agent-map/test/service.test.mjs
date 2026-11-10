@@ -207,7 +207,7 @@ test('focused graph never expands through shared tools to another execution iden
   assert.equal(serialized.includes('other-execution-identity-canary'), false);
   assert.equal(serialized.includes('writer-agent'), false);
   assert.equal(serialized.includes('provenance-only'), false);
-  assert.deepEqual(reads[0].request, { sourceId: 'source', agentId: 'entity:agent' });
+  assert.deepEqual(reads[0].request, { sourceId: 'source', agentId: 'entity:agent', boundary: true });
   assert.ok(Object.isFrozen(result.graph.nodes[0].properties));
   assert.throws(() => {
     result.data.agent.name = 'changed';

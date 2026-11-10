@@ -23,6 +23,7 @@
   "policyEpoch": 1,
   "profile": "core",
   "schemaVersion": 2,
+  "untrustedContextDefault": "allow",
   "snapshotId": "d8e5d52e-a8a8-4447-af88-5fd35b99bd3c",
   "source": {
     "companyId": "company",

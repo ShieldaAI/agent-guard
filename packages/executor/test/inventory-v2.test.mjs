@@ -65,6 +65,7 @@ test('without outside-content labels the snapshot stays exactly v1', t => {
   const snapshot = plain(executor.inventorySnapshot({ tenantId: 'acme' }));
   assert.equal(snapshot.schemaVersion, 1);
   assert.ok(snapshot.tasks.every(task => !('untrusted' in task)));
+  assert.equal('untrustedContextDefault' in snapshot, false);
   assert.ok(
     snapshot.tools.every(
       tool => !('readsUntrusted' in tool) && !('sendsExternal' in tool) && !('untrustedContext' in tool),
@@ -77,6 +78,7 @@ test('declared labels and the family flag produce a v2 snapshot with every v2 fi
   t.after(() => executor.close());
   let snapshot = plain(executor.inventorySnapshot({ tenantId: 'acme' }));
   assert.equal(snapshot.schemaVersion, 2);
+  assert.equal(snapshot.untrustedContextDefault, 'allow', 'the executor default travels with v2');
   assert.ok(snapshot.tasks.every(task => task.untrusted === false));
   const tools = Object.fromEntries(snapshot.tools.map(tool => [tool.name, tool]));
   assert.deepEqual(
@@ -132,4 +134,51 @@ test('the composers accept v2 and reject a v2 family that disagrees about the fl
   const v1Shape = structuredClone(snapshot);
   v1Shape.schemaVersion = 1;
   assert.equal(probe(v1Shape), 'INVENTORY_SNAPSHOT_INVALID', 'v2 fields under a v1 version are refused');
+});
+
+test('the reported default follows the executor option and a malformed core value is refused', t => {
+  const executor = new DurableExecutor({
+    database: ':memory:',
+    encryptionKey: randomBytes(32),
+    inventory: enrollment,
+    untrustedContextDefault: 'require_approval',
+  });
+  t.after(() => executor.close());
+  executor.approveTool(
+    'mail.read',
+    executor.registerTool({
+      name: 'mail.read',
+      description: 'inbox',
+      readsUntrusted: true,
+      resolve: () => ({ resourceId: 'inbox', tenantId: 'acme' }),
+      execute: () => ({ value: 1 }),
+    }),
+  );
+  // A snapshot lists the tools its tenant's tasks reference.
+  executor.createTask({
+    id: 'reader',
+    principalId: 'agent',
+    tenantId: 'acme',
+    grants: [{ tool: 'mail.read', resources: ['inbox'] }],
+    budget: { maxCalls: 1, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
+  });
+  const snapshot = plain(executor.inventorySnapshot({ tenantId: 'acme' }));
+  assert.equal(snapshot.untrustedContextDefault, 'require_approval');
+  const probe = core => {
+    try {
+      composeInventorySnapshot(core, { not: 'a manifest' });
+    } catch (error) {
+      return error.code;
+    }
+    return 'ACCEPTED';
+  };
+  assert.notEqual(probe(snapshot), 'INVENTORY_SNAPSHOT_INVALID');
+  assert.equal(probe({ ...snapshot, untrustedContextDefault: 'sometimes' }), 'INVENTORY_SNAPSHOT_INVALID');
+  const { untrustedContextDefault: _missing, ...without } = snapshot;
+  assert.equal(probe(without), 'INVENTORY_SNAPSHOT_INVALID');
+  assert.equal(
+    probe({ ...snapshot, schemaVersion: 1, tasks: [], tools: [] }),
+    'INVENTORY_SNAPSHOT_INVALID',
+    'v1 has no default field',
+  );
 });

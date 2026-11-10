@@ -28,6 +28,7 @@ def test_executor_v2_snapshot_validates_and_keeps_outside_content_fields():
     tools = {tool["name"]: tool for tool in value["tools"]}
     assert tools["email.read"]["readsUntrusted"] is True
     assert tools["email.send"]["untrustedContext"] == "require_approval"
+    assert value["untrustedContextDefault"] == "allow"
 
 
 def test_a_v1_only_collector_fails_closed_on_v2():
@@ -37,6 +38,8 @@ def test_a_v1_only_collector_fails_closed_on_v2():
 @pytest.mark.parametrize(
     "mutate",
     [
+        lambda value: value.pop("untrustedContextDefault"),
+        lambda value: value.update(untrustedContextDefault="sometimes"),
         lambda value: value["tasks"][0].pop("untrusted"),
         lambda value: value["tools"][0].pop("sendsExternal"),
         lambda value: value["tools"][0].update(untrustedContext="sometimes"),

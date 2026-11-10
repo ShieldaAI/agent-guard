@@ -407,7 +407,7 @@ for (const allTeams of [false, true])
       for (const { query } of sources) {
         assert.match(query, /s\.company_id=\$companyId AND s\.tenant_id IN \$tenantIds AND s\.id=\$sourceId/);
         assert.equal(query.includes('a.team_id IN $teamIds'), !allTeams);
-        assert.equal(query.includes('a.agent_id=$agentId OR a.entity_id=$agentId'), agentSelected);
+        assert.equal(query.includes('a.agent_id IN $agentIds OR a.entity_id IN $agentIds'), agentSelected);
         assert.equal(query.includes('EXISTS'), !allTeams || agentSelected);
         assert.equal(query.includes('$allTeams'), false);
       }
@@ -431,7 +431,7 @@ for (const allTeams of [false, true])
           }
           if (label === 'GuardAgent') {
             assert.equal(call.query.includes('n.team_id IN $teamIds'), !allTeams);
-            assert.equal(call.query.includes('n.agent_id=$agentId OR n.entity_id=$agentId'), agentSelected);
+            assert.equal(call.query.includes('n.agent_id IN $agentIds OR n.entity_id IN $agentIds'), agentSelected);
           } else assert.equal(call.query.includes('G_ASSIGNED_TO'), !allTeams || agentSelected);
         }
     });
@@ -662,4 +662,411 @@ test('declared direct access attaches only through an authorized deployment and 
     await assert.rejects(new Neo4jMapStore(fake({ nodes: [{ label, node: properties }] }).driver).read(scope), {
       code: 'MAP_UNAVAILABLE',
     });
+});
+
+test('a one-agent read finds delegation ancestors from its own tasks, after its own nodes', async () => {
+  const backend = fake();
+  await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const ancestors = backend.calls.find(call => call.query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16'));
+  assert.ok(ancestors, 'the ancestor query runs');
+  assert.match(ancestors.query, /^MATCH path=\(visible:GuardDeployment\)<-\[:G_ASSIGNED_TO\]-\(child:GuardTask\)/);
+  assert.match(ancestors.query, /ALL\(t IN nodes\(path\)\[2\.\.\] WHERE /, 'every ancestor on the path is checked');
+  assert.match(ancestors.query, /size\(\[label IN labels\(t\) WHERE label IN \$labels\]\)=1/);
+  assert.match(ancestors.query, /size\(\[label IN labels\(d\) WHERE label IN \$labels\]\)=1/);
+  assert.match(ancestors.query, /ag\.team_id IN \$teamIds/);
+  const order = backend.calls.map(call => call.query);
+  assert.ok(
+    order.findIndex(query => query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16')) >
+      order.findIndex(query => query.includes("RETURN 'GuardMcpOperation' AS label")),
+    'ancestors are read after every label of the agent',
+  );
+  const tasks = backend.calls.find(call => call.query.includes("RETURN 'GuardTask' AS label"));
+  assert.doesNotMatch(tasks.query, /G_DELEGATED_FROM\*|ancestorTaskIds/, 'no per-task descendant expansion');
+  const plain = fake();
+  await new Neo4jMapStore(plain.driver).read(scope);
+  assert.equal(
+    plain.calls.some(call => call.query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16')),
+    false,
+    'team-wide reads see ancestors directly',
+  );
+});
+
+test('ancestors that do not fit the remaining node budget are left out, not fatal', async () => {
+  const node = (label, key, extra = {}) => ({
+    label,
+    node: { ...agent, id: key, entity_id: `${key}-entity`, ...extra },
+  });
+  const own = [
+    node('GuardAgent', 'agent'),
+    node('GuardDeployment', 'deployment', { deployment_id: 'deployment' }),
+    ...[1, 2, 3, 4].map(index => node('GuardTask', `task-${index}`, { task_id: `task-${index}`, delegated: true })),
+  ];
+  const backend = fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      const label = /RETURN '(\w+)' AS label/.exec(query)?.[1];
+      if (label && query.includes(' AS node') && !query.includes('$ancestorTaskIds'))
+        return own.filter(item => item.label === label);
+      if (query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16'))
+        return Array.from({ length: 8 }, (_, index) => ({ id: `ancestor-${index}` }));
+      return [];
+    },
+  });
+  const view = await new Neo4jMapStore(backend.driver, { maxNodes: 10 }).read(scope, {
+    agentId: 'agent',
+    boundary: true,
+  });
+  const current = view.sources[0].current;
+  assert.equal(current.ancestorsNotLoaded, true);
+  assert.equal(current.nodes.filter(item => item.label === 'GuardTask').length, 4, 'own tasks kept');
+  assert.equal(
+    backend.calls.some(call => call.query.includes('$ancestorTaskIds')),
+    false,
+  );
+});
+
+test('read modes cannot be combined', async () => {
+  const store = new Neo4jMapStore(fake().driver);
+  for (const request of [
+    { summary: true, flags: true },
+    { history: true, flags: true },
+    { flags: true, outsideGuard: true },
+    { outsideGuard: true, agentId: 'agent' },
+    { agentIds: ['agent'] },
+    { flags: true, agentIds: [] },
+  ])
+    await assert.rejects(store.read(scope, request), { code: 'MAP_REQUEST_INVALID' }, JSON.stringify(request));
+});
+
+test('a boundary read asks only for sensitive in-scope bindings of *-granted tools, not every binding', async () => {
+  const grant = {
+    ...agent,
+    id: 'grant',
+    entity_id: 'grant-entity',
+    task_id: 'task',
+    tool: 's3.read',
+    resources: ['*'],
+  };
+  const backend = fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      if (query.includes("RETURN 'GuardGrant' AS label")) return [{ label: 'GuardGrant', node: grant }];
+      if (query.includes("RETURN 'GuardAgent' AS label")) return [{ label: 'GuardAgent', node: agent }];
+      if (query.includes('$wildcardTools'))
+        return [{ tool: 's3.read', bindings: [{ id: 'binding-entity', sensitivity: 'restricted' }] }];
+      return [];
+    },
+  });
+  const view = await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const wildcard = backend.calls.find(call => call.query.includes('$wildcardTools'));
+  assert.deepEqual(wildcard.params.wildcardTools, ['s3.read']);
+  assert.match(wildcard.query, /a\.team_id IN \$teamIds/, 'only bindings in the team scope');
+  assert.match(wildcard.query, /LIMIT 5/);
+  assert.deepEqual(JSON.parse(JSON.stringify(view.sources[0].current.wildcardSensitivity)), {
+    's3.read': [{ id: 'binding-entity', sensitivity: 'restricted' }],
+  });
+  const bindings = backend.calls.find(call => call.query.includes("RETURN 'GuardResourceBinding' AS label"));
+  assert.doesNotMatch(bindings.query, /resource_id:'\*'/, 'no node read of every binding of the tool');
+  const inventory = fake();
+  await new Neo4jMapStore(inventory.driver).read(scope, { agentId: 'agent' });
+  assert.equal(
+    inventory.calls.some(call => call.query.includes('$wildcardTools')),
+    false,
+  );
+});
+
+/** A store over one or two sources, each with an agent, a deployment, delegated tasks and ancestors. */
+function ancestorBackend({ sources = ['source'], ancestors = 1, ownEdges = [] } = {}) {
+  const node = (sourceId, label, key, extra = {}) => ({
+    label,
+    node: {
+      ...agent,
+      id: `${sourceId}:${key}`,
+      entity_id: `${sourceId}:${key}-entity`,
+      source_id: sourceId,
+      ...extra,
+    },
+  });
+  const own = sourceId => [
+    node(sourceId, 'GuardAgent', 'agent'),
+    node(sourceId, 'GuardDeployment', 'deployment', { deployment_id: 'deployment' }),
+    node(sourceId, 'GuardTask', 'task', { task_id: 'task', delegated: true }),
+  ];
+  const ancestorIds = sourceId => Array.from({ length: ancestors }, (_, index) => `${sourceId}:ancestor-${index}`);
+  return fake({
+    run: async (query, params) => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return sources.map(id => ({ ...source, id }));
+      if (query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16'))
+        return ancestorIds(params.sourceId).map(id => ({ id }));
+      if (query.includes('$ancestorTaskIds'))
+        return params.ancestorTaskIds.map(id => node(params.sourceId, 'GuardTask', id.split(':')[1], { task_id: id }));
+      const label = /RETURN '(\w+)' AS label/.exec(query)?.[1];
+      if (label && query.includes(' AS node')) return own(params.sourceId).filter(item => item.label === label);
+      if (query.includes('$relationships') && params.relationships.length === 2)
+        return ancestorIds(params.sourceId)
+          .slice(0, 1)
+          .map(target => ({ source: `${params.sourceId}:task`, target, kind: 'G_DELEGATED_FROM' }));
+      if (query.includes('$relationships'))
+        return ownEdges.map(edge => ({
+          ...edge,
+          source: `${params.sourceId}:${edge.source}`,
+          target: `${params.sourceId}:${edge.target}`,
+        }));
+      return [];
+    },
+  });
+}
+
+test('ancestors that fit are added with their delegation edges', async () => {
+  const backend = ancestorBackend();
+  const view = await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const current = view.sources[0].current;
+  assert.equal(current.ancestorsNotLoaded, undefined);
+  assert.ok(current.nodes.some(item => item.id === 'source:ancestor-0'));
+  assert.deepEqual(
+    current.edges.filter(edge => edge.kind === 'G_DELEGATED_FROM').map(edge => [edge.source, edge.target]),
+    [['source:task', 'source:ancestor-0']],
+  );
+});
+
+test('ancestors without room for their edges are left out and the read still answers', async () => {
+  const backend = ancestorBackend({ ownEdges: [{ source: 'deployment', target: 'agent', kind: 'G_INSTANCE_OF' }] });
+  const view = await new Neo4jMapStore(backend.driver, { maxEdges: 1 }).read(scope, {
+    agentId: 'agent',
+    boundary: true,
+  });
+  const current = view.sources[0].current;
+  assert.equal(current.ancestorsNotLoaded, true);
+  assert.equal(
+    current.nodes.some(item => item.id.includes('ancestor')),
+    false,
+  );
+});
+
+test("one source's ancestors never crowd out another source's own nodes", async () => {
+  // Six own nodes in all; source one's four ancestors would fit alone but not beside source two.
+  const backend = ancestorBackend({ sources: ['one', 'two'], ancestors: 4 });
+  const view = await new Neo4jMapStore(backend.driver, { maxNodes: 9 }).read(scope, {
+    flags: true,
+    agentIds: ['agent'],
+  });
+  assert.deepEqual(
+    view.sources.map(item => [item.id, item.current.nodes.length, item.current.ancestorsNotLoaded ?? false]),
+    [
+      ['one', 3, true],
+      ['two', 3, true],
+    ],
+  );
+});
+
+test('duplicate ancestor ids are read once, and a second record for one id fails the read', async () => {
+  let requested;
+  const duplicateIds = fake({
+    run: async (query, params) => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      if (query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16')) return [{ id: 'source:a' }, { id: 'source:a' }];
+      if (query.includes('$ancestorTaskIds')) {
+        requested = params.ancestorTaskIds;
+        const record = { ...agent, id: 'source:a', entity_id: 'a-1', task_id: 'a' };
+        return [
+          { label: 'GuardTask', node: record },
+          { label: 'GuardTask', node: { ...record, entity_id: 'a-2' } },
+        ];
+      }
+      const label = /RETURN '(\w+)' AS label/.exec(query)?.[1];
+      if (label === 'GuardAgent' && query.includes(' AS node')) return [{ label, node: agent }];
+      if (label === 'GuardDeployment' && query.includes(' AS node'))
+        return [{ label, node: { ...agent, id: 'deployment', entity_id: 'deployment-entity' } }];
+      return [];
+    },
+  });
+  await assert.rejects(new Neo4jMapStore(duplicateIds.driver).read(scope, { agentId: 'agent', boundary: true }), {
+    code: 'MAP_UNAVAILABLE',
+  });
+  // Checked outside the fake, where the store cannot turn a failed assertion into the rejection.
+  assert.deepEqual(requested, ['source:a'], 'ancestor ids are deduplicated');
+});
+
+test('the wildcard query checks every node on its path', async () => {
+  const grant = {
+    ...agent,
+    id: 'grant',
+    entity_id: 'grant-entity',
+    task_id: 'task',
+    tool: 's3.read',
+    resources: ['*'],
+  };
+  const backend = fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      if (query.includes("RETURN 'GuardGrant' AS label")) return [{ label: 'GuardGrant', node: grant }];
+      if (query.includes("RETURN 'GuardAgent' AS label")) return [{ label: 'GuardAgent', node: agent }];
+      return [];
+    },
+  });
+  await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const wildcard = backend.calls.find(call => call.query.includes('$wildcardTools')).query;
+  for (const variable of ['rb', 'r', 'g', 't', 'd', 'a'])
+    assert.ok(wildcard.includes(`size([label IN labels(${variable}) WHERE label IN $labels])=1`), variable);
+});
+
+test('identity scope that needs more work than allowed is left out; the read still answers', async () => {
+  // One static AWS identity and 1,900 tasks in one delegation chain: within the node and edge
+  // limits, but the per-task liveness walks exceed the identity plan's work budget.
+  const node = (label, key, extra = {}) => ({
+    label,
+    node: { ...agent, id: key, entity_id: `${key}-entity`, ...extra },
+  });
+  const tasks = Array.from({ length: 1900 }, (_, index) =>
+    node('GuardTask', `task-${index}`, {
+      task_id: `task-${index}`,
+      revoked: false,
+      deadline: 4_102_444_800_000,
+      delegated: index > 0,
+      derived: false,
+    }),
+  );
+  const nodes = [
+    node('GuardAgent', 'agent-node'),
+    node('GuardDeployment', 'deployment', { deployment_id: 'deployment' }),
+    node('GuardExecutionBinding', 'execution', { binding_id: 'execution', tool: 't', identity_selection: 'static' }),
+    node('GuardTool', 'tool', { name: 't', registered: true }),
+    node('GuardExternalIdentity', 'identity', {
+      provider: 'aws',
+      partition: 'aws',
+      account_id: '111122223333',
+      region: '',
+      arn: 'arn:aws:iam::111122223333:role/Worker',
+      cloud_status: 'resolved',
+    }),
+    ...tasks,
+  ];
+  const edges = [
+    { source: 'deployment', target: 'agent-node', kind: 'G_INSTANCE_OF' },
+    { source: 'execution', target: 'deployment', kind: 'G_EXECUTES_FOR' },
+    { source: 'execution', target: 'tool', kind: 'G_EXECUTES_TOOL' },
+    { source: 'execution', target: 'identity', kind: 'G_USES_IDENTITY' },
+    ...tasks.flatMap((task, index) => [
+      { source: task.node.id, target: 'deployment', kind: 'G_ASSIGNED_TO' },
+      ...(index ? [{ source: task.node.id, target: `task-${index - 1}`, kind: 'G_DELEGATED_FROM' }] : []),
+    ]),
+  ];
+  const backend = fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      const label = /RETURN '(\w+)' AS label/.exec(query)?.[1];
+      if (label && query.includes(' AS node') && !query.includes('$ancestorTaskIds'))
+        return nodes.filter(item => item.label === label);
+      if (query.includes('$relationships') && query.includes('AS kind')) return edges;
+      return [];
+    },
+  });
+  const view = await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const current = view.sources[0].current;
+  assert.equal(current.nodes.filter(item => item.label === 'GuardTask').length, 1900);
+  assert.equal(current.identityScope, undefined, 'identity scope was not evaluated');
+  assert.equal(
+    backend.calls.some(call => call.query.includes('$scopePairs')),
+    false,
+    'no identity query ran',
+  );
+});
+
+test('a * grant on a tool named __proto__ is answered like any other tool', async () => {
+  const grant = {
+    ...agent,
+    id: 'grant',
+    entity_id: 'grant-entity',
+    task_id: 'task',
+    tool: '__proto__',
+    resources: ['*'],
+  };
+  const backend = fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)')) return [source];
+      if (query.includes("RETURN 'GuardGrant' AS label")) return [{ label: 'GuardGrant', node: grant }];
+      if (query.includes("RETURN 'GuardAgent' AS label")) return [{ label: 'GuardAgent', node: agent }];
+      if (query.includes('$wildcardTools'))
+        return [{ tool: '__proto__', bindings: [{ id: 'binding-entity', sensitivity: 'restricted' }] }];
+      return [];
+    },
+  });
+  const view = await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });
+  const answers = view.sources[0].current.wildcardSensitivity;
+  assert.ok(Object.hasOwn(answers, '__proto__'));
+  assert.equal(answers.__proto__[0].sensitivity, 'restricted');
+});
+
+test('boundary is a read mode like the others, and false means not set', async () => {
+  const store = new Neo4jMapStore(fake().driver);
+  for (const request of [
+    { agentId: 'agent', boundary: true, summary: true },
+    { agentId: 'agent', boundary: true, history: true },
+    { boundary: true },
+    { agentId: 'agent', boundary: 'yes' },
+  ])
+    await assert.rejects(store.read(scope, request), { code: 'MAP_REQUEST_INVALID' }, JSON.stringify(request));
+  const backend = fake();
+  await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: false });
+  assert.equal(
+    backend.calls.some(call => call.query.includes('G_DELEGATED_FROM|G_DERIVED_FROM*1..16')),
+    false,
+    'boundary: false reads like an inventory read',
+  );
+});
+
+/** One agent with one static, resolved AWS execution identity and no grants: a scope-only read. */
+function scopeOnlyBackend({ coverage, scopeRows = [] } = {}) {
+  const node = (label, key, extra = {}) => ({
+    label,
+    node: { ...agent, id: key, entity_id: `${key}-entity`, ...extra },
+  });
+  const nodes = [
+    node('GuardAgent', 'agent-node'),
+    node('GuardDeployment', 'deployment', { deployment_id: 'deployment' }),
+    node('GuardExecutionBinding', 'execution', { binding_id: 'execution', tool: 't', identity_selection: 'static' }),
+    node('GuardTool', 'tool', { name: 't', registered: true }),
+    node('GuardExternalIdentity', 'identity', {
+      provider: 'aws',
+      partition: 'aws',
+      account_id: '111122223333',
+      region: '',
+      arn: 'arn:aws:iam::111122223333:role/Worker',
+      cloud_status: 'resolved',
+    }),
+  ];
+  const edges = [
+    { source: 'deployment', target: 'agent-node', kind: 'G_INSTANCE_OF' },
+    { source: 'execution', target: 'deployment', kind: 'G_EXECUTES_FOR' },
+    { source: 'execution', target: 'tool', kind: 'G_EXECUTES_TOOL' },
+    { source: 'execution', target: 'identity', kind: 'G_USES_IDENTITY' },
+  ];
+  return fake({
+    run: async query => {
+      if (query.startsWith('MATCH (s:GuardSource)'))
+        return [{ ...source, ...(coverage === undefined ? {} : { policyCoverage: coverage }) }];
+      if (query.includes('$scopePairs')) return scopeRows;
+      const label = /RETURN '(\w+)' AS label/.exec(query)?.[1];
+      if (label && query.includes(' AS node') && !query.includes('$ancestorTaskIds'))
+        return nodes.filter(item => item.label === label);
+      if (query.includes('$relationships') && query.includes('AS kind')) return edges;
+      return [];
+    },
+  });
+}
+
+test('a scope-only read with an unreadable age bound or a row fan-out answers without identity scope', async () => {
+  const healthy = scopeOnlyBackend();
+  const view = await new Neo4jMapStore(healthy.driver).read(scope, { agentId: 'agent', boundary: true });
+  assert.equal(view.sources[0].current.identityScope.length, 1, 'the identity is evaluated when it can be');
+  assert.ok(healthy.calls.some(call => call.query.includes('$scopePairs')));
+
+  const unreadable = scopeOnlyBackend({ coverage: '{not json' });
+  const skipped = await new Neo4jMapStore(unreadable.driver).read(scope, { agentId: 'agent', boundary: true });
+  assert.equal(skipped.sources[0].current.identityScope, undefined);
+  assert.equal(skipped.sources[0].current.nodes.length, 5, 'the rest of the read stands');
+
+  const fanOut = scopeOnlyBackend({ scopeRows: Array.from({ length: 9 }, () => ({ key: 0 })) });
+  const degraded = await new Neo4jMapStore(fanOut.driver).read(scope, { agentId: 'agent', boundary: true });
+  assert.equal(degraded.sources[0].current.identityScope, undefined);
 });

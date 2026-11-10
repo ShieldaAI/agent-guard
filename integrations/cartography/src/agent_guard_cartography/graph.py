@@ -279,6 +279,7 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                     "reads_untrusted": tool["readsUntrusted"],
                     "untrusted_context": tool["untrustedContext"],
                     "sends_external": tool["sendsExternal"],
+                    "untrusted_context_default": snapshot["untrustedContextDefault"],
                 }
                 if tool and "readsUntrusted" in tool
                 else {}
@@ -325,6 +326,8 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
             parent_node_id=node_id("GuardTask", task["parentTaskId"])
             if task["parentTaskId"]
             else None,
+            delegated=task["parentTaskId"] is not None,
+            derived=task["sourceTaskId"] is not None,
             source_task_node_id=node_id("GuardTask", task["sourceTaskId"])
             if task["sourceTaskId"]
             else None,

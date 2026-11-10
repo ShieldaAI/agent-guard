@@ -1,3 +1,5 @@
+import { assignBoxes, boxCrossing, flagBadge, outsideGuardElements } from './boundary-model.mjs';
+
 export const OPERATIONS = Object.freeze([
   'list_agents',
   'list_owners',
@@ -26,9 +28,21 @@ const LABELS = Object.freeze({
   GuardMcpOperation: 'MCP operation',
   GuardOwner: 'Owner',
   GuardCredentialReference: 'Credential reference',
+  GuardDirectAccess: 'Direct access (outside guard)',
+});
+// Viewer-drawn nodes for outside-guard evidence; never accepted as graph input labels.
+const SYNTHETIC_LABELS = Object.freeze({
+  OutsideGuardAccess: 'Direct access (outside guard)',
+  OutsideGuardTarget: 'Direct path target',
+  OutsideGuardBucket: 'Bucket reached by tool identity (candidate)',
 });
 
-export const kindName = label => LABELS[label] ?? 'Evidence';
+export const kindName = label =>
+  Object.hasOwn(LABELS, label)
+    ? LABELS[label]
+    : Object.hasOwn(SYNTHETIC_LABELS, label)
+      ? SYNTHETIC_LABELS[label]
+      : 'Evidence';
 export function evidenceState(node) {
   const p = node?.properties ?? {};
   if (p.revoked === true) return { kind: 'blocked', label: 'Revoked at capture' };
@@ -43,6 +57,8 @@ export function evidenceState(node) {
 }
 export function nodeName(node) {
   const p = node.properties ?? {};
+  if (node.label === 'GuardDirectAccess' && (typeof p.description === 'string' || typeof p.access_id === 'string'))
+    return p.description ?? p.access_id;
   const value =
     p.name ??
     p.agent_id ??
@@ -64,7 +80,11 @@ export function graphLabel(value) {
   const characters = Array.from(value);
   return characters.length <= 24 ? value : `${characters.slice(0, 16).join('')}…${characters.slice(-7).join('')}`;
 }
-export function graphElements(graph, policyEvidence = []) {
+/**
+ * Cytoscape elements for a focused graph. Options add the agent's boundary-flag badge,
+ * outside-guard edges (declared direct paths and tool-identity reach) and tenant/team boxes.
+ */
+export function graphElements(graph, policyEvidence = [], options = {}) {
   if (
     !graph ||
     !Array.isArray(graph.nodes) ||
@@ -73,6 +93,8 @@ export function graphElements(graph, policyEvidence = []) {
     graph.edges.length > 5000
   )
     throw new Error('VIEWER_GRAPH_INVALID');
+  const { flagStatus = null, outsideGuard = null, tenantId = null, boxes = false } = options;
+  const badge = flagStatus === null ? null : flagBadge(flagStatus);
   const ids = new Set();
   const nodes = graph.nodes.map(node => {
     if (!node || typeof node.id !== 'string' || !node.id || ids.has(node.id) || !Object.hasOwn(LABELS, node.label))
@@ -84,28 +106,45 @@ export function graphElements(graph, policyEvidence = []) {
         ? 'agent'
         : node.label === 'GuardTask'
           ? 'task'
-          : node.label.includes('Mcp')
-            ? 'mcp'
-            : node.label.includes('Resource')
-              ? 'resource'
-              : node.label.includes('Identity') || node.label === 'GuardPrincipal'
-                ? 'identity'
-                : 'evidence';
+          : node.label === 'GuardDirectAccess'
+            ? 'direct-access'
+            : node.label.includes('Mcp')
+              ? 'mcp'
+              : node.label.includes('Resource')
+                ? 'resource'
+                : node.label.includes('Identity') || node.label === 'GuardPrincipal'
+                  ? 'identity'
+                  : 'evidence';
+    const flagged = badge && node.label === 'GuardAgent';
     return {
       data: {
         id: node.id,
-        label: graphLabel(nodeName(node)),
+        label: `${graphLabel(nodeName(node))}${flagged ? `\n${badge.label}` : ''}`,
         fullLabel: nodeName(node),
         kind: kindName(node.label),
         source: node,
       },
-      classes: `${kind} ${state.kind}`,
+      classes: `${kind} ${state.kind}${flagged ? ` flag-${badge.status}` : ''}`,
     };
   });
+  const byId = new Map(graph.nodes.map(node => [node.id, node]));
   const states = new Map(graph.nodes.map(node => [node.id, evidenceState(node)]));
   const edges = graph.edges.map((edge, index) => {
     if (!edge || !ids.has(edge.source) || !ids.has(edge.target) || typeof edge.kind !== 'string')
       throw new Error('VIEWER_GRAPH_INVALID');
+    if (edge.kind === 'G_DIRECT_ACCESS_FOR') {
+      // A host-declared path that acts without the guard: never styled as a guarded relationship.
+      const kind = byId.get(edge.source)?.properties?.kind;
+      return {
+        data: {
+          id: `edge-${index}`,
+          source: edge.source,
+          target: edge.target,
+          label: `outside guard${typeof kind === 'string' ? ` · ${kind}` : ''}`,
+        },
+        classes: 'outside-guard',
+      };
+    }
     const adjacent = [states.get(edge.source), states.get(edge.target)];
     const unavailable = adjacent.find(state => state.kind === 'unavailable');
     const conditional = adjacent.some(state => state.kind === 'conditional');
@@ -140,7 +179,50 @@ export function graphElements(graph, policyEvidence = []) {
         classes: 'policy-candidate',
       });
     }
-  return [...nodes, ...edges];
+  const extra = outsideGuard ? outsideGuardElements(outsideGuard, graph.nodes, { label: graphLabel }) : null;
+  if (extra) {
+    if (nodes.length + extra.nodes.length > 2000 || edges.length + extra.edges.length > 5000)
+      throw new Error('VIEWER_GRAPH_INVALID');
+    nodes.push(...extra.nodes);
+    edges.push(...extra.edges);
+  }
+  if (!boxes) return [...nodes, ...edges];
+  const { parents, assignment } = assignBoxes(
+    nodes.map(node => ({ ...node.data.source, id: node.data.id })),
+    edges.map(edge => edge.data),
+    {
+      tenantId,
+      outside: nodes
+        .filter(node => ['OutsideGuardBucket', 'OutsideGuardTarget'].includes(node.data.source.label))
+        .map(node => node.data.id),
+    },
+  );
+  if (parents.some(parent => ids.has(parent.id))) throw new Error('VIEWER_GRAPH_INVALID');
+  for (const node of nodes) {
+    const parent = assignment.get(node.data.id);
+    if (parent) node.data.parent = parent;
+  }
+  for (const edge of edges) {
+    const crossing = boxCrossing(edge.data.source, edge.data.target, assignment, parents);
+    if (!crossing) continue;
+    edge.classes += ' crosses-box';
+    edge.data.label += ` · crosses ${crossing} border`;
+  }
+  // Only boxes that hold something; an empty compound node would draw as a stray node.
+  const used = new Set(assignment.values());
+  for (const parent of parents) if (used.has(parent.id) && parent.parent) used.add(parent.parent);
+  const boxElements = parents
+    .filter(parent => used.has(parent.id))
+    .map(parent => ({
+      data: {
+        id: parent.id,
+        label: parent.label,
+        kind: parent.kind === 'tenant' ? 'Tenant' : 'Team',
+        ...(parent.parent ? { parent: parent.parent } : {}),
+      },
+      classes: `box box-${parent.kind}`,
+    }));
+  return [...boxElements, ...nodes, ...edges];
 }
 
 const POLICY_ACTIONS = Object.freeze({

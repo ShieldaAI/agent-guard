@@ -105,6 +105,10 @@ def entry(manifest, index, deployment="deployment-static"):
             "INVENTORY_MANIFEST_REFERENCE_INVALID",
         ),
         (
+            lambda m: m["directAccess"][0].update(targetRef="opaque:" + "e" * 64),
+            "INVENTORY_MANIFEST_REFERENCE_INVALID",
+        ),
+        (
             lambda m: m["directAccess"].append(deepcopy(m["directAccess"][0])),
             "INVENTORY_DUPLICATE_ID",
         ),

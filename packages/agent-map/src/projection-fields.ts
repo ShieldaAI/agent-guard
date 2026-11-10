@@ -48,7 +48,10 @@ export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = O
     'task_id',
     'principal_id',
     'revoked',
+    'delegated',
+    'derived',
     'sensitive',
+    'untrusted',
     'allowed_recipients',
     'allow_control_plane',
     'max_calls',
@@ -72,6 +75,11 @@ export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = O
     'requires_approval',
     'control_plane',
     'max_cost',
+    // Inventory v2 outside-content labels and the executor default; absent for v1.
+    'reads_untrusted',
+    'untrusted_context',
+    'sends_external',
+    'untrusted_context_default',
   ],
   GuardResource: ['resource_id', 'tool', 'selector_kind'],
   GuardResourceBinding: [

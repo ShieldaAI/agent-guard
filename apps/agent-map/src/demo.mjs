@@ -5,6 +5,27 @@ const readTool = 'mcp:documents:read';
 const selector = 'opaque:' + 'd'.repeat(64);
 const reportArn = 'arn:aws:s3:::company-reports/quarterly/summary.pdf';
 const readAction = 's3:GetObject';
+const sendTool = 'mcp:mail:send';
+const recipients = 'opaque:' + '5'.repeat(64);
+const reportHost = 'opaque:' + '7'.repeat(64);
+const sdkPath = 'opaque:' + '6'.repeat(64);
+const shellPath = 'opaque:' + '8'.repeat(64);
+// One agent per "dangerous three" status, with matching outside-guard evidence.
+const profiles = {
+  'agent-research': { flag: 'exposed', sendMode: 'allow', sends: true, direct: 'found', scope: 'broader_than_grants' },
+  'agent-release': {
+    flag: 'mitigated',
+    sendMode: 'require_approval',
+    sends: true,
+    direct: 'none_declared',
+    scope: 'matches_grants',
+  },
+  'agent-finance': { flag: 'unknown', sendMode: null, sends: null, direct: 'unknown', scope: 'unknown' },
+};
+const flagLimitations = [
+  'Declared grants and labels; not proof that data can leave.',
+  'Only sends that the resolver marks external are checked; a tool that does not declare sendsExternal is unknown.',
+];
 const capture = (status, ageSeconds, stale) => ({
   status,
   observedAt: new Date(capturedAt - ageSeconds * 1000).toISOString(),
@@ -110,6 +131,7 @@ const resources = [
     ownershipSource: 'Company service catalog',
     sensitivity: 'confidential',
     approvedDestinations: [],
+    outsideGuard: 'yes',
     targets: [{ id: 'external-resource', provider: 'aws', arn: reportArn, kind: 'object' }],
     dependencies: [],
     authorityId: 'company-catalog',
@@ -151,6 +173,7 @@ function access(agent) {
   const tool = readTool,
     resource = selector;
   const node = (id, label, properties) => ({ id, entityId: id, label, properties });
+  const profile = profiles[agent.id];
   const nodes = [
     node(agent.id, 'GuardAgent', {
       agent_id: agent.agentId,
@@ -167,11 +190,15 @@ function access(agent) {
     node('deployment', 'GuardDeployment', {
       deployment_id: agent.deployments[0].deploymentId,
       environment: agent.environments[0],
+      ...(profile.direct === 'unknown' ? {} : { direct_access_status: profile.direct }),
     }),
     node('task', 'GuardTask', {
       task_id: taskId,
       principal_id: 'application',
       revoked: false,
+      sensitive: false,
+      untrusted: agent.id === 'agent-finance',
+      allowed_recipients: [recipients],
       calls: 12,
       max_calls: 100,
     }),
@@ -182,7 +209,14 @@ function access(agent) {
       assessment: 'unknown',
       evidence_kind: 'declared',
     }),
-    node('tool', 'GuardTool', { name: tool, registered: true, approved: true, requires_approval: false }),
+    node('tool', 'GuardTool', {
+      name: tool,
+      registered: true,
+      approved: true,
+      requires_approval: false,
+      reads_untrusted: agent.id !== 'agent-finance',
+      sends_external: false,
+    }),
     node('resource', 'GuardResource', { resource_id: resource, tool, selector_kind: 'exact' }),
     node('connection', 'GuardMcpConnection', {
       connection_id: 'documents-eu',
@@ -208,17 +242,65 @@ function access(agent) {
       resource_ref: resource,
       actions: [readAction],
       scope: 'exact',
+      sensitivity: 'confidential',
       evidence_kind: 'host_asserted',
       assessment: 'unknown',
     }),
     node('external-resource', 'GuardExternalResource', {
       arn: reportArn,
+      host_resource_id: reportHost,
       kind: 'object',
       cloud_status: 'resolved',
       cloud_match_kind: 'containment',
       assessment: 'unknown',
     }),
+    node('grant-send', 'GuardGrant', {
+      task_id: taskId,
+      tool: sendTool,
+      resources: [recipients],
+      assessment: 'unknown',
+      evidence_kind: 'declared',
+    }),
+    node('tool-send', 'GuardTool', {
+      name: sendTool,
+      registered: true,
+      approved: true,
+      requires_approval: false,
+      reads_untrusted: false,
+      ...(profile.sends === null ? {} : { sends_external: profile.sends }),
+      ...(profile.sendMode ? { untrusted_context: profile.sendMode } : {}),
+    }),
   ];
+  const direct =
+    profile.direct === 'found'
+      ? [
+          {
+            id: 'direct-sdk',
+            accessId: sdkPath,
+            kind: 'sdk',
+            targetRef: reportHost,
+            description: 'Direct S3 SDK client in the worker',
+          },
+          {
+            id: 'direct-shell',
+            accessId: shellPath,
+            kind: 'shell',
+            targetRef: null,
+            description: 'Ops shell for debugging',
+          },
+        ]
+      : [];
+  for (const entry of direct)
+    nodes.push(
+      node(entry.id, 'GuardDirectAccess', {
+        access_id: entry.accessId,
+        deployment_id: agent.deployments[0].deploymentId,
+        kind: entry.kind,
+        target_ref: entry.targetRef,
+        description: entry.description,
+        evidence_kind: 'declared',
+      }),
+    );
   const edges = [
     ['deployment', agent.id, 'G_INSTANCE_OF'],
     ['task', 'deployment', 'G_ASSIGNED_TO'],
@@ -233,7 +315,89 @@ function access(agent) {
     ['binding', 'identity', 'G_USES_IDENTITY'],
     ['resource-binding', 'resource', 'G_BINDS_SELECTOR'],
     ['resource-binding', 'external-resource', 'G_MAPS_TO'],
+    ['task', 'grant-send', 'G_HAS_GRANT'],
+    ['grant-send', 'tool-send', 'G_FOR_TOOL'],
+    ...direct.map(entry => [entry.id, 'deployment', 'G_DIRECT_ACCESS_FOR']),
   ].map(([source, target, kind]) => ({ source, target, kind }));
+  const evidence = [
+    {
+      leg: 'privateData',
+      taskId: 'task',
+      reason: 'binding_confidential',
+      tool,
+      resourceBindingId: 'resource-binding',
+    },
+    agent.id === 'agent-finance'
+      ? { leg: 'outsideContent', taskId: 'task', reason: 'task_untrusted' }
+      : { leg: 'outsideContent', taskId: 'task', reason: 'tool_reads_untrusted', tool },
+    ...(profile.sends ? [{ leg: 'externalSend', taskId: 'task', reason: 'tool_sends_external', tool: sendTool }] : []),
+    ...(profile.flag === 'mitigated'
+      ? [{ leg: 'mitigation', taskId: 'task', reason: 'untrusted_context_require_approval', tool: sendTool }]
+      : []),
+  ];
+  const boundaryFlags = [
+    {
+      kind: 'dangerous_three',
+      status: profile.flag,
+      legs: {
+        privateData: 'present',
+        outsideContent: 'present',
+        externalSend: profile.sends ? 'present' : 'unknown',
+      },
+      evidence,
+      notes: [],
+      liveTasks: 1,
+      evidenceKind: 'declared',
+      assessment: 'unknown',
+      limitations: flagLimitations,
+    },
+  ];
+  const outsideGuard = {
+    directAccess: [
+      {
+        id: 'deployment',
+        deploymentId: agent.deployments[0].deploymentId,
+        status: profile.direct,
+        evidenceKind: 'declared',
+        entries: direct,
+      },
+    ],
+    identityScope: [
+      {
+        id: 'binding',
+        executionBindingId: 'binding',
+        deploymentId: 'deployment',
+        tool,
+        identityId: profile.scope === 'unknown' ? null : 'identity',
+        status: profile.scope,
+        reason: profile.scope === 'unknown' ? 'boundary_unresolved' : null,
+        observedAt: profile.scope === 'unknown' ? null : sources[0].coverage.policy.observedAt,
+        boundBuckets: profile.scope === 'unknown' ? [] : ['company-reports'],
+        extraResources:
+          profile.scope === 'broader_than_grants'
+            ? [
+                {
+                  resourceId: 'arn:aws:s3:::company-payroll',
+                  bucketName: 'company-payroll',
+                  relationship: 'CAN_READ',
+                  hasCondition: false,
+                  conditionKeys: [],
+                },
+                {
+                  resourceId: 'arn:aws:s3:::company-hr-exports',
+                  bucketName: 'company-hr-exports',
+                  relationship: 'CAN_WRITE',
+                  hasCondition: true,
+                  conditionKeys: ['aws:SourceVpce'],
+                },
+              ]
+            : [],
+        truncated: false,
+        evidenceKind: 'iam_identity_policy_candidate',
+        assessment: 'unknown',
+      },
+    ],
+  };
   const policyEvidence = [
     {
       taskId: 'task',
@@ -276,15 +440,21 @@ function access(agent) {
           budget: { maxCalls: 100, maxConcurrent: 2, maxCost: 0, deadline: Date.now() + 3_600_000 },
         },
       ],
-      grants: [{ id: 'grant', taskId, tool, resources: [resource], evidenceKind: 'declared' }],
+      grants: [
+        { id: 'grant', taskId, tool, resources: [resource], evidenceKind: 'declared' },
+        { id: 'grant-send', taskId, tool: sendTool, resources: [recipients], evidenceKind: 'declared' },
+      ],
       connections: [nodes[6]],
       bindings: [nodes[8], nodes[10]],
       policyEvidence,
+      outsideGuard,
+      boundaryFlags,
       receipt: sources[0],
       assessment: 'unknown',
       limitations: [
         'A declared grant is evidence, not an execution decision.',
         'Live policy, arguments and backend authorization still apply.',
+        'Only S3 identity policies and host declarations are checked. Bucket policies, SCPs and permission boundaries are not, so identity-scope buckets are candidates and a deny elsewhere can remove the access. none_declared is the host claim, not a check, and no status means safe.',
       ],
     },
     graph: { nodes, edges },
@@ -299,13 +469,22 @@ export async function queryDemo(operation, args = {}) {
         (!args.ownerId || agent.ownerId === args.ownerId) &&
         (!args.environment || agent.environments.includes(args.environment)),
     );
+    const withFlags = args.includeFlags === true || args.flag !== undefined || args.flagStatus !== undefined;
+    const statuses = args.flagStatus
+      ? [args.flagStatus]
+      : args.flag
+        ? ['exposed', 'mitigated', 'unknown']
+        : ['exposed', 'mitigated', 'unknown', 'absent'];
     const page = paged(
-      filtered.filter(
-        agent =>
-          (!args.sourceId || args.sourceId === sourceId) &&
-          (!args.ownershipStatus || agent.ownershipStatus === args.ownershipStatus) &&
-          (!args.lifecycleState || agent.lifecycleState === args.lifecycleState),
-      ),
+      filtered
+        .filter(
+          agent =>
+            (!args.sourceId || args.sourceId === sourceId) &&
+            (!args.ownershipStatus || agent.ownershipStatus === args.ownershipStatus) &&
+            (!args.lifecycleState || agent.lifecycleState === args.lifecycleState) &&
+            (!withFlags || statuses.includes(profiles[agent.id].flag)),
+        )
+        .map(agent => (withFlags ? { ...agent, boundaryFlags: { dangerousThree: profiles[agent.id].flag } } : agent)),
       args,
     );
     result = { data: { ...page, agents: page.items } };
@@ -343,8 +522,32 @@ export async function queryDemo(operation, args = {}) {
     const resource = resources.find(x => x.id === args.resourceId);
     if (!resource || args.sourceId !== sourceId) throw new Error('REFERENCE_NOT_FOUND');
     const page = paged(agents, args);
+    const outsideGuard = {
+      status: resource.outsideGuard,
+      directAccess: [
+        {
+          id: 'direct-sdk',
+          accessId: sdkPath,
+          deploymentId: 'research-eu-1',
+          kind: 'sdk',
+          description: 'Direct S3 SDK client in the worker',
+          evidenceKind: 'declared',
+        },
+      ],
+      identities: [],
+      unknownReasons: ['direct_access_undeclared'],
+      evidenceKind: 'declared',
+    };
     result = {
-      data: { ...page, resource, agents: page.items, receipt: sources[0], assessment: 'unknown', collection },
+      data: {
+        ...page,
+        resource,
+        agents: page.items,
+        outsideGuard,
+        receipt: sources[0],
+        assessment: 'unknown',
+        collection,
+      },
     };
   } else if (operation === 'get_agent_inventory') {
     const agent = agents.find(x => x.id === args.agentId || x.agentId === args.agentId);
@@ -488,6 +691,18 @@ export async function queryDemo(operation, args = {}) {
         changedFields: ['state'],
         before: { properties: { state: 'ready' }, relationships: [] },
         after: { properties: { state: 'quarantined' }, relationships: [] },
+        affectedAgents: [agents[0]],
+      },
+      {
+        entityId: 'direct-sdk',
+        label: 'GuardDirectAccess',
+        name: 'Direct S3 SDK client in the worker',
+        kind: 'added',
+        categories: ['outside_guard'],
+        evidenceKind: 'declared',
+        changedFields: ['kind', 'target_ref'],
+        before: null,
+        after: { properties: { kind: 'sdk', target_ref: reportHost }, relationships: [] },
         affectedAgents: [agents[0]],
       },
     ].filter(

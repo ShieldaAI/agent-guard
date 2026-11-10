@@ -71,10 +71,21 @@ test('declared paths are listed per deployment with status found', async () => {
   assert.equal(deployment.deploymentId, 'deployment-found');
   assert.equal(deployment.status, 'found');
   assert.equal(deployment.evidenceKind, 'declared');
-  assert.deepEqual(deployment.entries.map(entry => [entry.kind, entry.targetRef]).sort(), [
-    ['database', opaque('c')],
-    ['shell', null],
+  // The database target is not a resource this team reader can see, so it is withheld.
+  assert.deepEqual(deployment.entries.map(entry => [entry.kind, entry.targetRef, entry.targetStatus]).sort(), [
+    ['database', null, 'outside_visible_scope'],
+    ['shell', null, 'none'],
   ]);
+  const all = await map.query({ ...scope, allTeams: true }, 'get_agent_access', {
+    sourceId: 'source',
+    agentId: 'agent-found',
+  });
+  const database = all.data.outsideGuard.directAccess[0].entries.find(entry => entry.kind === 'database');
+  assert.deepEqual([database.targetRef, database.targetStatus], [opaque('c'), 'visible']);
+  assert.doesNotMatch(
+    JSON.stringify(await map.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'agent-found' })),
+    new RegExp(opaque('c').slice(7)),
+  );
 });
 
 test('an empty v3 declaration reads as none_declared', async () => {
