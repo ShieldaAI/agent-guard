@@ -11,11 +11,12 @@ import {
   mkdtempSync,
   openSync,
   readFileSync,
+  readdirSync,
   realpathSync,
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { DurableExecutor } from '../dist/index.js';
 
@@ -133,7 +134,8 @@ test('an absent, stale, substituted or shared witness never bootstraps an existi
   }
   rmSync(a.witness);
   assert.throws(() => a.open('resume'), { code: 'STORE_WITNESS_UNAVAILABLE' });
-  assert.equal(existsSync(a.witness), false);
+  // A failed resume must not recreate the witness; the exclusive create below proves it too.
+  assert.equal(readdirSync(dirname(a.witness)).includes(basename(a.witness)), false);
   const witnessFd = openSync(a.witness, 'wx', 0o600);
   try {
     writeFileSync(witnessFd, matching);

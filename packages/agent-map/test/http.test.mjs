@@ -308,3 +308,22 @@ test('strict parser bounds depth, node count, duplicate decoded keys and prototy
   assert.equal(Object.getPrototypeOf(value), null);
   assert.equal({}.polluted, undefined);
 });
+
+test('strict JSON keeps hostile member names as plain data on null-prototype objects', async () => {
+  const { parseRequest, fields } = await import('../dist/boundary.js');
+  const parse = text => parseRequest(new TextEncoder().encode(text));
+  const parsed = parse('{"__proto__":{"a":1},"x":[1,{"toString":2}],"constructor":3}');
+  assert.equal(Object.getPrototypeOf(parsed), null);
+  assert.deepEqual(Object.keys(parsed), ['__proto__', 'x', 'constructor']);
+  assert.equal(parsed.__proto__.a, 1);
+  assert.equal(Object.getPrototypeOf(parsed.x[1]), null);
+  assert.equal(parsed.x[1].toString, 2);
+  assert.equal(Object.getPrototypeOf(parse('{}')), null);
+  for (const text of ['{"a":1,"a":2}', '{"a":1,"\\u0061":2}', '{"a":1,}'])
+    assert.throws(() => parse(text), { code: 'MAP_REQUEST_INVALID' });
+  const copied = fields({ b: 2, a: 1 }, ['a', 'b'], ['a']);
+  assert.equal(Object.getPrototypeOf(copied), null);
+  assert.deepEqual({ ...copied }, { a: 1, b: 2 });
+  for (const value of [{ c: 1 }, { b: 1 }, Object.defineProperty({}, 'a', { get: () => 1, enumerable: true })])
+    assert.throws(() => fields(value, ['a', 'b'], ['a']), { code: 'MAP_CONFIG_INVALID' });
+});

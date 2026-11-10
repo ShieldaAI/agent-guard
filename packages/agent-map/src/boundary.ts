@@ -27,10 +27,13 @@ export function fields(
     Object.getOwnPropertySymbols(value).length
   )
     fail('MAP_CONFIG_INVALID');
+  if (Object.getOwnPropertyNames(value).some(key => !allowed.includes(key))) fail('MAP_CONFIG_INVALID');
+  // Copy by the allowed names, never by a name the input supplied.
   const result: Record<string, unknown> = Object.create(null);
-  for (const key of Object.getOwnPropertyNames(value)) {
-    const descriptor = Object.getOwnPropertyDescriptor(value, key)!;
-    if (!allowed.includes(key) || !descriptor.enumerable || !('value' in descriptor)) fail('MAP_CONFIG_INVALID');
+  for (const key of allowed) {
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (!descriptor) continue;
+    if (!descriptor.enumerable || !('value' in descriptor)) fail('MAP_CONFIG_INVALID');
     result[key] = descriptor.value;
   }
   if (required.some(key => !Object.hasOwn(result, key))) fail('MAP_CONFIG_INVALID');
@@ -70,23 +73,29 @@ export function parseRequest(bytes: Uint8Array, maximum = 65_536): unknown {
       if (char === '{') {
         offset++;
         space();
-        const object: Record<string, unknown> = Object.create(null);
+        // Members are collected first and become own data properties of a null-prototype
+        // object in one step, so a name from the text is never used as a write target.
+        const members: [string, unknown][] = [];
+        const names = new Set<string>();
+        const object = (): Record<string, unknown> =>
+          Object.assign(Object.create(null) as Record<string, unknown>, Object.fromEntries(members));
         if (text[offset] === '}') {
           offset++;
-          return object;
+          return object();
         }
         while (true) {
           space();
           if (text[offset] !== '"') throw new Error();
           const key = string();
-          if (Object.hasOwn(object, key)) throw new Error();
+          if (names.has(key)) throw new Error();
+          names.add(key);
           space();
           if (text[offset++] !== ':') throw new Error();
-          object[key] = value(depth + 1);
+          members.push([key, value(depth + 1)]);
           space();
           if (text[offset] === '}') {
             offset++;
-            return object;
+            return object();
           }
           if (text[offset++] !== ',') throw new Error();
         }

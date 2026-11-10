@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as root from '@shieldaai/agent-guard';
 import * as internal from '@shieldaai/agent-guard/internal';
@@ -52,10 +52,11 @@ test('first-party packages import the internal SPI from /internal, not the root'
   const repo = fileURLToPath(new URL('../../../', import.meta.url));
   const sources = [];
   const walk = directory => {
-    for (const name of readdirSync(directory)) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const name = entry.name;
       if (name === 'node_modules' || name === 'dist' || name === 'test') continue;
       const path = join(directory, name);
-      if (statSync(path).isDirectory()) walk(path);
+      if (entry.isDirectory()) walk(path);
       else if (/\.(ts|mts|mjs)$/.test(name) && !name.endsWith('.d.ts')) sources.push(path);
     }
   };

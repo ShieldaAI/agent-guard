@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import * as root from '@shieldaai/agent-guard-executor';
 import * as sandbox from '@shieldaai/agent-guard-executor/sandbox';
@@ -87,10 +87,11 @@ test("application sources import packages by name, never another package's dist/
   const repo = fileURLToPath(new URL('../../../', import.meta.url));
   const offenders = [];
   const walk = directory => {
-    for (const name of readdirSync(directory)) {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const name = entry.name;
       if (['node_modules', 'test', 'dist', 'public'].includes(name)) continue;
       const path = join(directory, name);
-      if (statSync(path).isDirectory()) walk(path);
+      if (entry.isDirectory()) walk(path);
       else if (
         /\.(mjs|js|ts)$/.test(name) &&
         /['"](?:\.\.\/)+packages\/[a-z-]+\/dist\//.test(readFileSync(path, 'utf8'))
