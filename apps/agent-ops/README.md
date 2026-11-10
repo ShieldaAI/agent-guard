@@ -278,7 +278,7 @@ the service verifies the explicitly configured fixture CA. Runtime TLS validatio
 is not disabled. The [verification review](../../docs/archive/production-p0-review.md)
 records measured results and their scope.
 
-The [production plan](../../docs/archive/production-plan.md) also adds an agent inventory
-to Agent Map/Cartography: owners, identities, tools, permission evidence, resources,
-credential references, drift and freshness. Those graph extensions are planned;
-inventory observations never grant execution authority.
+Agent Map and Cartography provide the agent inventory: owners, identities, tools,
+permission evidence, resources, credential references, drift and freshness. See the
+[agent cartography guide](../../docs/guides/agent-cartography.md). Inventory
+observations never grant execution authority.

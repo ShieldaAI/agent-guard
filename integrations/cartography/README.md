@@ -107,7 +107,7 @@ checks graph references and cross-record invariants that JSON Schema cannot expr
 
 | Field | Contract |
 | --- | --- |
-| `schemaVersion`, `profile` | Exactly `1`; profile `core`, `host` or `host-mcp`. |
+| `schemaVersion`, `profile` | `1` or `2`; profile `core`, `host` or `host-mcp`. |
 | `source` | Exact company, source, enrollment generation, ledger instance and tenant identity. |
 | `snapshotId`, `generatedAt` | Immutable snapshot identifier and valid UTC timestamp. |
 | `ledgerRevision`, `policyEpoch` | Nonnegative JavaScript-safe integers. |

@@ -418,7 +418,7 @@ the fixed global retention limits and deployment-wide `ledgerBytes` and
 SQLite or external-history disk usage. Maintenance reference scans stop at 100,000
 records with `LIFECYCLE_LIMIT_EXCEEDED`; they never return a partial safe preview.
 
-### Executor inventory (unreleased)
+### Executor inventory (experimental)
 
 The optional executor package exposes `inventorySnapshot({ tenantId })` only on
 the trusted `DurableExecutor` host object. Enable it with constructor
@@ -475,7 +475,7 @@ data minimization, limits and lifecycle requirements.
 Store errors such as `STORE_CLOSED` or `STORE_CORRUPT` are preserved. Error messages
 contain stable codes, not source values. Failure never returns a truncated snapshot.
 
-### Observer HTTP (unreleased)
+### Observer HTTP (experimental)
 
 `startInventoryServer({ executor, observers, ...limits })` returns a loopback `url`,
 the Node `server` and an idempotent async `close()`. Each `InventoryObserverCredential`
@@ -526,7 +526,7 @@ synchronous generation and serialization before success; they cannot interrupt
 JavaScript work. Snapshot byte-limit failures send no partial snapshot. A collector
 must reject incomplete responses and unexpected redirects.
 
-### Host manifest (unreleased)
+### Host manifest (experimental)
 
 `validateInventoryManifest(value: unknown): InventoryManifest` returns a detached,
 deeply frozen configuration. The standalone
@@ -563,7 +563,7 @@ Manifest validation uses `INVENTORY_MANIFEST_INVALID`,
 [host binding guide](../packages/executor/README.md#host-owned-manifest-and-bindings)
 for supported reference syntax, numeric/size limits and enrollment lifecycle.
 
-### MCP inventory (unreleased)
+### MCP inventory (experimental)
 
 `ManagedMcpConnection.inventory(): McpConnectionInventory` exposes a closed
 version-1 observation: host identity with opaque transport reference, manager
@@ -595,6 +595,8 @@ for the full allowlist.
 - `@shieldaai/agent-guard`: core above.
 - `@shieldaai/agent-guard-mcp`: thin registered-tool adapter for a host-supplied MCP client, without a separate policy engine or automatic metadata approval.
 - `@shieldaai/agent-guard-scenarios`: versioned scenario catalog plus executable conformance checks over the public core API. Synthetic effects only.
+- `@shieldaai/agent-guard-executor`: experimental durable executor with an encrypted ledger, task and inventory HTTP servers, and Docker workload isolation.
+- `@shieldaai/agent-map`: experimental read-only reference service over Cartography inventory.
 
 The trusted resolver runs during preparation. Execution checks its bound resource and tenant context; it does not query changing ownership again. A handler/resource service must revalidate mutable ownership or resource versions before performing an effect.
 
@@ -604,7 +606,7 @@ Each normalized JSON value is limited to 1 MiB of canonical UTF-8 JSON, 100,000 
 
 `@shieldaai/agent-map` consumes published Cartography inventory independently of
 executor admission. Its [public contract](../packages/agent-map/README.md) defines
-six read-only operations, shared by `POST /v1/query` and the official SDK MCP
+ten read-only operations, shared by `POST /v1/query` and the official SDK MCP
 endpoint at `POST /mcp`. The host maps distinct `agm_v1` credentials to immutable
 company, tenant and team scope; request arguments cannot select a broader scope.
 The local viewer uses the same operations and retains its credential only in
@@ -708,9 +710,9 @@ that tool's own grants bind for that deployment. `get_agent_access` returns it a
 `data.outsideGuard.identityScope`, one record per execution binding with `status`
 `broader_than_grants`, `matches_grants` or `unknown` (with a `reason`), the bound
 bucket names, and `extraResources` (bucket, relationship, condition flag and keys).
-More than 500 candidate buckets for one identity, or an identity row too large to keep,
-leaves the comparison incomplete: `unknown` with reason `truncated`, `truncated: true`
-and no bucket list. Only identity policies are
+More than 500 candidate buckets for one identity leaves the comparison incomplete:
+`unknown` with reason `truncated` and `truncated: true`, still listing the first 100
+buckets. An identity row too large to keep reads the same, with no bucket list. Only identity policies are
 evaluated, so extra buckets are candidates; a bucket policy, SCP or permission
 boundary can still remove the access, and `matches_grants` does not mean safe. The
 comparison is per bucket, not per action: an identity that can write a bucket the tool

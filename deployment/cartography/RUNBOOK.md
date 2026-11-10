@@ -278,7 +278,7 @@ Native quota-only runs still failed at 14.89% and 13.31% overhead; neither was
 discarded or relabeled as a pass. Earlier diagnostic, control and 10 ms-period
 attempts remain separate failed/unqualified evidence. A single native placement
 pass does not certify Colima or arbitrary CPU/host placement. Use the
-[release checklist](../../docs/releasing.md#node-update-checklist-for-010) for the
+[release checklist](../../docs/archive/releasing-0.1.md#node-update-checklist-for-010) for the
 pending exact final candidate and Node-update verification; the security hold remains.
 
 The current public task HTTP server yields once on prepare/execute after bounded

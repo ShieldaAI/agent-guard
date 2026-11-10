@@ -1,8 +1,8 @@
 # Security policy
 
 The latest published version is the experimental `0.1.0-alpha.3`. This checkout
-prepares an **unpublished 0.1.0 candidate**; production release remains held for
-the Node HIGH security review and candidate acceptance gates in the
+holds **0.1.0, approved and not yet published**; the Node HIGH security review is a
+post-release follow-up recorded in the
 [release notes](docs/releases/0.1.0.md). It is not a production certification.
 Security fixes target the current maintained release/candidate; older versions
 have no long-term support commitment. A version without an alpha suffix does

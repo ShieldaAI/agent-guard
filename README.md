@@ -155,7 +155,7 @@ This checkout prepares `0.1.0` for all five npm packages, with the intended
 `latest` tag only after release approval. Build and install its local tarballs
 together to evaluate candidate features. The private viewer and Python
 Cartography integration are separate source components. See the
-[candidate notes](docs/releases/0.1.0.md) for open gates and the
+[release notes](docs/releases/0.1.0.md) for the recorded scope decisions and the
 [alpha.3 notes](docs/releases/0.1.0-alpha.3.md) for the published verification record.
 
 ## Run locally

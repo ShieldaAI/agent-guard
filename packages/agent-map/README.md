@@ -219,7 +219,8 @@ have the same arguments and use the same service as HTTP. Supply the reference
 bearer in the client's HTTP headers. The host-only `createMapMcpServer(service,
 scope)` factory also supports embedding; only trusted host code chooses scope.
 There are no subscriptions, arbitrary resources or mutation methods. MCP tool
-results contain the common JSON envelope as text; clients should treat all
+results return the common JSON envelope as `structuredContent` with an output schema,
+and as text; clients should treat all
 imported names and identifiers as data, never instructions.
 
 The company endpoint exposes the same `/v1/query` envelope with session cookies

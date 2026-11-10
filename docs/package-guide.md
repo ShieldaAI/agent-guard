@@ -18,7 +18,7 @@ without a Shielda account. Start with the package that solves your current task.
 | Monitor dependency advisories against an inventory with local evidence and alerts | [Security Watch](https://github.com/ShieldaAI/security-watch#readme), `@shieldaai/security-watch` | Node.js 24.10+; experimental advisory monitoring, with human review of applicability |
 
 The published Agent Guard packages remain experimental `0.1.0-alpha.3`; this
-checkout prepares an unpublished `0.1.0` candidate with open release gates.
+checkout holds `0.1.0`, approved and not yet published.
 Security Watch has its separate experimental release policy. Read
 their boundaries before deploying them. Agent Guard controls calls routed through
 it; it is not an OS sandbox. SafeCall's known-pattern filters do not establish
@@ -43,7 +43,7 @@ For MCP tools, add `@shieldaai/agent-guard-mcp@alpha`. For persistent authority
 state, add `@shieldaai/agent-guard-executor@alpha`. Install matching Guard package
 versions. The install commands above select the published alpha. This checkout
 targets unpublished `0.1.0`; build and install its local tarballs together for
-candidate features. See the [candidate notes](releases/0.1.0.md) for open gates
+candidate features. See the [release notes](releases/0.1.0.md) for the recorded scope decisions
 and the [alpha.3 notes](releases/0.1.0-alpha.3.md) for publication verification.
 
 To evaluate the existing synthetic fixtures without a model provider:

@@ -140,25 +140,24 @@ Use a controllable clock for expiry tests and explicit synchronization for concu
 
 **Integration requirement:** the core does not fetch, refresh or lock external state. A real handler must use the bound version in an atomic conditional operation, transaction or equivalent service control. Refreshing a version immediately before dispatch and substituting it into the approved action defeats this boundary. A version mismatch may occur after handler admission, so a generic execution error must not trigger an automatic retry.
 
+## S13 — Limit sends after the task read outside content
+
+**Boundary:** A tool labelled `readsUntrusted` marks its task family `untrusted` when it
+runs. Send tools in `require_approval` mode then need a review given after that point,
+and tools in `deny` mode are refused even with an approval.
+
+**Hostile case:** An email reader returns text asking to forward data. A send right after
+it fails with `APPROVAL_REQUIRED`; a `deny` send fails with `UNTRUSTED_CONTEXT_DENIED`;
+an approval issued before the read fails with `APPROVAL_CONTEXT_CHANGED`. Nothing is sent.
+
+**Benign case:** An internal document read leaves the family clean, and one send to an
+allowed recipient runs without an extra review.
+
+**Integration requirement:** Labels are the host's claim. Nothing detects prompt injection, and an
+unlabelled tool that returns attacker text does not mark the family.
+
 ## Reading test results
 
 Passing an individual case means the exercised adapter and configuration prevented that fixture's unauthorized effect while permitting its benign pair. It does not validate other adapters, arbitrary shell execution or all encodings and concurrency schedules.
 
 Keep assertions about handler invocation separate from policy decisions, and report untested/unsupported variants. Add regression cases when an integration exposes a new path. For deployment guarantees beyond one trusted process, test the surrounding authentication, storage, isolation and service enforcement as well.
-
-## S13 — Limit sends after the task read outside content
-
-**Boundary.** A tool labelled `readsUntrusted` marks its task family `untrusted` when it
-runs. Send tools in `require_approval` mode then need a review given after that point,
-and tools in `deny` mode are refused even with an approval.
-
-**Malicious.** An email reader returns text asking to forward data. A send right after
-it fails with `APPROVAL_REQUIRED`; a `deny` send fails with `UNTRUSTED_CONTEXT_DENIED`;
-an approval issued before the read fails with `APPROVAL_CONTEXT_CHANGED`. Nothing is sent.
-
-**Benign.** An internal document read leaves the family clean, and one send to an
-allowed recipient runs without an extra review.
-
-**Limitation.** Labels are the host's claim. Nothing detects prompt injection, and an
-unlabelled tool that returns attacker text does not mark the family.
-
