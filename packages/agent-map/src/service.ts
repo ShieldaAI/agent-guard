@@ -682,12 +682,17 @@ function outsideGuardIndex(projection: MapProjection, work: QueryWork): ReachInd
       }
     }
     if (node.label === 'GuardTask') {
-      // A granted tool runs under some identity; without an execution binding it is undeclared.
-      const granted = connected(projection, new Set([node.id]), 'G_HAS_GRANT', work).map(item => string(item, 'tool'));
-      if (!granted.length) continue;
-      const deployments = connected(projection, new Set([node.id]), 'G_ASSIGNED_TO', work);
-      if (!deployments.length || granted.some(tool => !deployments.some(item => executedTools(item).has(tool))))
-        undeclaredIdentities++;
+      // A granted tool runs under some identity on every deployment the task is assigned to;
+      // a deployment without an execution binding for it leaves that identity undeclared.
+      const granted = new Set(
+        connected(projection, new Set([node.id]), 'G_HAS_GRANT', work).map(item => string(item, 'tool')),
+      );
+      if (granted.size) {
+        const deployments = connected(projection, new Set([node.id]), 'G_ASSIGNED_TO', work);
+        work.step(granted.size * deployments.length);
+        if (!deployments.length || deployments.some(item => [...granted].some(tool => !executedTools(item).has(tool))))
+          undeclaredIdentities++;
+      }
     }
   }
   const identitiesByBucket: ReachIndex['identitiesByBucket'] = new Map();
@@ -837,8 +842,9 @@ function outsideGuardReach(
   return { status, unknownReasons, directAccess, directAccessTruncated, identities, identitiesTruncated };
 }
 /**
- * Reach with its own work budget, shared by every row of one response: if it runs out, the
- * rows it could not judge read `unknown` (`reach_not_evaluated`) and the response still answers.
+ * Reach with its own work budget, shared by every row of one response: if it runs out, that
+ * row and every later one read `unknown` (`reach_not_evaluated`) and the response still
+ * answers. Rows judged before that keep their status: each used a complete index.
  */
 function boundedReach(remaining: number, maxBytes: number) {
   const work = new QueryWork(Math.max(1, remaining - 25), maxBytes);
@@ -2012,7 +2018,7 @@ export class MapService {
     } else if (operation === 'list_owners' || operation === 'list_resources') {
       const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
       const ownerIndex = operation === 'list_owners';
-      const reach = boundedReach(work.remaining(), this.#maxBytes);
+      const reach = ownerIndex ? null : boundedReach(work.remaining(), this.#maxBytes);
       const rows = ordered(
         view.sources
           .flatMap(source => {
@@ -2024,7 +2030,7 @@ export class MapService {
                   ? ownerSummary(source, source.current, node, work)
                   : {
                       ...resourceSummary(source, source.current, node, work),
-                      outsideGuard: reach(source.current, node, scope).status,
+                      outsideGuard: reach!(source.current, node, scope).status,
                     },
               );
           })

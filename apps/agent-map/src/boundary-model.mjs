@@ -195,8 +195,11 @@ const UNKNOWN_REASONS = Object.freeze({
   direct_access_target_unresolved: 'A declared direct path names a resource this view cannot match',
   execution_identity_undeclared: 'A granted tool has no declared execution identity',
   outside_visible_scope: 'Deployments or tasks outside your scope may reach it',
-  reach_not_evaluated: 'This source is too large to judge reach in one read',
+  reach_not_evaluated: 'Reach was not judged: the source is too large, or the read ran out of time',
 });
+/** True when reach was never judged, so its empty lists say nothing about the resource. */
+export const reachNotEvaluated = value =>
+  Array.isArray(value?.unknownReasons) && value.unknownReasons.includes('reach_not_evaluated');
 export const unknownReasonLabel = value => lookup(UNKNOWN_REASONS, value, 'Unknown reason');
 
 /** A change row about a declared direct path carries the `outside_guard` category or `declared` kind. */

@@ -708,8 +708,9 @@ that tool's own grants bind for that deployment. `get_agent_access` returns it a
 `data.outsideGuard.identityScope`, one record per execution binding with `status`
 `broader_than_grants`, `matches_grants` or `unknown` (with a `reason`), the bound
 bucket names, and `extraResources` (bucket, relationship, condition flag and keys).
-More than 500 candidate buckets for one identity leaves the comparison incomplete:
-`truncated` and `unknown`. Only identity policies are
+More than 500 candidate buckets for one identity, or an identity row too large to keep,
+leaves the comparison incomplete: `unknown` with reason `truncated`, `truncated: true`
+and no bucket list. Only identity policies are
 evaluated, so extra buckets are candidates; a bucket policy, SCP or permission
 boundary can still remove the access, and `matches_grants` does not mean safe. The
 comparison is per bucket, not per action: an identity that can write a bucket the tool
@@ -805,10 +806,12 @@ longer names. Each resource row gets `outsideGuard`:
   could still let it in), `identity_scope_not_collected[_for_resource]` (always for a
   non-S3 resource), `outside_visible_scope` and `reach_not_evaluated`. A team reader gets
   `outside_visible_scope` whenever any deployment or task of the source is outside its
-  scope, so `none_found` is mostly an all-teams answer. Reach has its own work budget:
-  when judging it would exceed that budget or the time left, the rest of the response is
-  still returned and reach reads `unknown` with the single reason `reach_not_evaluated`
-  and empty lists. Reach is judged within the resource's own source: identities and
+  scope, so `none_found` is mostly an all-teams answer. A task assigned to several
+  deployments needs an execution binding for each granted tool on every one of them.
+  Reach has its own work budget, shared by the rows of one response: when judging a
+  resource would exceed that budget or the time left, the rest of the response is still
+  returned, and that resource and every later row read `unknown` with the single reason
+  `reach_not_evaluated` and empty lists; rows judged earlier keep their status. Reach is judged within the resource's own source: identities and
   paths of other sources are not compared. It is never proof that no path exists.
 
 A manifest v3 `targetRef` must name a host resource declared in `resourceBindings`;

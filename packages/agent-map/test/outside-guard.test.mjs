@@ -371,8 +371,10 @@ test('a deployment with many tasks and many execution bindings is judged within 
   const listing = await map(source).query(scope, 'list_resources', {});
   assert.equal(listing.data.resources.length, 2);
   const detail = await map(source).query(scope, 'get_resource_access', { sourceId: 'source', resourceId: 'reports' });
-  assert.ok(['unknown', 'none_found'].includes(detail.data.outsideGuard.status));
-  assert.equal(plain(detail.data.outsideGuard.unknownReasons).includes('reach_not_evaluated'), false);
+  // Every granted tool has an execution binding, so none is undeclared; the bulk bindings
+  // have no reach record, which is the only reason left.
+  assert.equal(detail.data.outsideGuard.status, 'unknown');
+  assert.deepEqual(plain(detail.data.outsideGuard.unknownReasons), ['identity_scope_unknown']);
 });
 
 test('reach that needs more work than allowed reads unknown; the listing still answers', async () => {
@@ -395,4 +397,44 @@ test('reach that needs more work than allowed reads unknown; the listing still a
 test('a reach record with an unrecognised status never lets none_found stand', async () => {
   const odd = { ...record('matches_grants'), status: 'fine' };
   assert.deepEqual(await column({ reach: [odd] }), { reports: 'unknown', database: 'unknown' });
+});
+
+test('a task on two deployments needs an execution binding for its tools on both', async () => {
+  const second = bound => {
+    const source = build({
+      reach: [record('matches_grants'), { ...record('matches_grants'), executionBindingId: 'e:execution-b' }],
+    });
+    const { nodes, edges } = source.current;
+    const add = (key, label, properties) =>
+      nodes.push({
+        id: `n:${key}`,
+        entityId: `e:${key}`,
+        sourceId: 'source',
+        projectionId: 'current',
+        label,
+        properties,
+      });
+    add('deployment-b', 'GuardDeployment', { deployment_id: 'deployment-b', direct_access_status: 'none_declared' });
+    edges.push(
+      { source: 'n:deployment-b', target: 'n:agent', kind: 'G_INSTANCE_OF' },
+      { source: 'n:task', target: 'n:deployment-b', kind: 'G_ASSIGNED_TO' },
+    );
+    if (bound) {
+      add('execution-b', 'GuardExecutionBinding', {
+        binding_id: 'execution-b',
+        tool: 'read',
+        identity_selection: 'static',
+      });
+      edges.push({ source: 'n:execution-b', target: 'n:deployment-b', kind: 'G_EXECUTES_FOR' });
+    }
+    return source;
+  };
+  const detail = async source =>
+    (await map(source).query(scope, 'get_resource_access', { sourceId: 'source', resourceId: 'reports' })).data
+      .outsideGuard;
+  const both = await detail(second(true));
+  assert.equal(both.status, 'none_found');
+  const one = await detail(second(false));
+  assert.equal(one.status, 'unknown');
+  assert.deepEqual(plain(one.unknownReasons), ['execution_identity_undeclared']);
 });

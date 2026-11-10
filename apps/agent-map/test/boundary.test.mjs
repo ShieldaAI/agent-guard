@@ -439,7 +439,9 @@ test('boundary sections render accessible tables with text labels and inert iden
       ],
     },
   });
-  assert.doesNotMatch(hostile, /<script>|<img/);
+  // Hostile text is rendered escaped: no tag opens, in any letter case.
+  const lowered = hostile.toLowerCase();
+  for (const tag of ['<script', '<img']) assert.equal(lowered.includes(tag), false, tag);
 });
 
 test('identity scope rows flag withheld out-of-scope buckets without naming them', async () => {
@@ -593,4 +595,14 @@ test('the flag model carries the evidence-truncated marker', async () => {
   const flag = { kind: 'dangerous_three', status: 'mitigated', legs: {}, evidence: [] };
   assert.equal(boundaryFlagRows([{ ...flag, evidenceTruncated: true }]).evidenceTruncated, true);
   assert.equal(boundaryFlagRows([flag]).evidenceTruncated, false);
+});
+
+test('reach that was never judged is told apart from an empty result', async () => {
+  const { reachNotEvaluated, unknownReasonLabel } = await import('../src/boundary-model.mjs');
+  assert.equal(reachNotEvaluated({ status: 'unknown', unknownReasons: ['reach_not_evaluated'] }), true);
+  assert.equal(reachNotEvaluated({ status: 'unknown', unknownReasons: ['identity_scope_unknown'] }), false);
+  assert.equal(reachNotEvaluated({ status: 'none_found', unknownReasons: [] }), false);
+  for (const value of [null, undefined, {}, { unknownReasons: 'reach_not_evaluated' }])
+    assert.equal(reachNotEvaluated(value), false);
+  assert.notEqual(unknownReasonLabel('reach_not_evaluated'), 'reach_not_evaluated');
 });

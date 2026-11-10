@@ -2,7 +2,7 @@ import React, { useEffect, useId, useState } from 'react';
 import { displayTime, errorMessage, kindName } from './view-model.mjs';
 import { ownershipLabel, pageInfo, relationshipLabel, shownValue, sourceOptionLabel } from './inventory-model.mjs';
 import { PolicyEvidence } from './policy-evidence.jsx';
-import { changeIsDeclared, outsideGuardLabel, relationshipName, unknownReasonLabel } from './boundary-model.mjs';
+import { changeIsDeclared, outsideGuardLabel, reachNotEvaluated, relationshipName, unknownReasonLabel } from './boundary-model.mjs';
 
 function Note({ children, error = false }) { return <p className={`notice ${error ? 'error' : ''}`} role={error ? 'alert' : undefined}>{children}</p>; }
 const text = value => shownValue(value);
@@ -111,8 +111,8 @@ function ResourceDetail({ resource, query, reportError, onAgent, onBack }) {
 function ResourceOutsideGuard({ value }) {
   const direct = Array.isArray(value.directAccess) ? value.directAccess : [], identities = Array.isArray(value.identities) ? value.identities : [], reasons = Array.isArray(value.unknownReasons) ? value.unknownReasons : [];
   return <section className="outside-guard-resource" aria-label="Reachable outside the guard"><h3>Reachable outside the guard</h3><p><span className={`reach-label ${value.status === 'yes' ? 'yes' : value.status === 'none_found' ? 'none' : 'unknown'}`}>{outsideGuardLabel(value.status)}</span> <span className="pill">Declared and candidate evidence</span></p>
-    <DataTable title="Declared direct paths to this resource" rows={direct} columns={[['Kind', x => text(x.kind)], ['Description', x => text(x.description)], ['Deployment', x => ref(x.deploymentId)], ['Access reference', x => ref(x.accessId)], ['Evidence', () => 'Declared by host']]} empty="No declared direct path targets this resource."/>
-    <DataTable title="Tool identities that reach this resource without a binding" rows={identities} columns={[['Tool', x => ref(x.tool)], ['Identity', x => ref(x.identityId)], ['Execution binding', x => ref(x.executionBindingId)], ['Relationship', x => relationshipName(x.relationship)], ['Condition', x => x.hasCondition ? <>Condition unresolved<br/>{ref(x.conditionKeys)}</> : 'No condition on candidate']]} empty="No tool identity candidate reaches this resource outside its bindings."/>
+    {reachNotEvaluated(value) ? <p className="notice" role="note">Reach was not judged in this read, so no paths or identities are listed. This does not mean none exist.</p> : <><DataTable title="Declared direct paths to this resource" rows={direct} columns={[['Kind', x => text(x.kind)], ['Description', x => text(x.description)], ['Deployment', x => ref(x.deploymentId)], ['Access reference', x => ref(x.accessId)], ['Evidence', () => 'Declared by host']]} empty="No declared direct path targets this resource."/>
+    <DataTable title="Tool identities that reach this resource without a binding" rows={identities} columns={[['Tool', x => ref(x.tool)], ['Identity', x => ref(x.identityId)], ['Execution binding', x => ref(x.executionBindingId)], ['Relationship', x => relationshipName(x.relationship)], ['Condition', x => x.hasCondition ? <>Condition unresolved<br/>{ref(x.conditionKeys)}</> : 'No condition on candidate']]} empty="No tool identity candidate reaches this resource outside its bindings."/></>}
     {(value.directAccessTruncated === true || value.identitiesTruncated === true) && <p className="notice" role="note">More entries reach this resource than are listed: each table shows the first 100.</p>}
     {reasons.length > 0 && <><h4>Why parts remain unknown</h4><ul>{reasons.map(reason => <li key={reason}>{unknownReasonLabel(reason)}</li>)}</ul></>}
     <Note>Only S3 identity policies and host declarations are checked. A none-found result is not a check of the host and does not mean the resource is unreachable.</Note></section>;
