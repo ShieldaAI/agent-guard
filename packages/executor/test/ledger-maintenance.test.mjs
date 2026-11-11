@@ -635,10 +635,12 @@ test('CLI policy configuration and status expose only safe metadata and validate
   assert.equal(run('configure', ...ringArgs, '--max-keys', '4', '--max-keys', '8').status, 1);
   assert.equal(run('status', ...ringArgs, '--max-bytes', '1024').status, 1);
   // An unknown flag is reported like a repeated one: as an argument error, not a generic failure.
+  // The code is the first line of stderr; Node 22 appends an experimental-SQLite warning after it.
+  const code = result => result.stderr.split('\n')[0];
   const unknown = run('status', ...ringArgs, '--no-such-flag', 'x');
-  assert.deepEqual([unknown.status, unknown.stderr.trim()], [1, 'MAINTENANCE_ARGUMENT_INVALID']);
+  assert.deepEqual([unknown.status, code(unknown)], [1, 'MAINTENANCE_ARGUMENT_INVALID']);
   const repeated = run('configure', ...ringArgs, '--max-keys', '4', '--max-keys', '8');
-  assert.equal(repeated.stderr.trim(), 'MAINTENANCE_ARGUMENT_INVALID');
+  assert.equal(code(repeated), 'MAINTENANCE_ARGUMENT_INVALID');
   assert.deepEqual(readLedgerKeyringPolicy(f.options), { keyCount: 2, maxKeys: 8 });
   assert.equal((configured.stdout + selected.stdout).includes('keyBase64'), false);
 });
