@@ -11,57 +11,115 @@ import { runMapCli } from '../dist/cli.js';
 
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const supported = typeof constants.O_NONBLOCK === 'number';
-const onSupportedHost = name => supported ? name : `${name}: rejects unsupported nonblocking opens`;
+const onSupportedHost = name => (supported ? name : `${name}: rejects unsupported nonblocking opens`);
 async function unsupportedHost() {
   if (supported) return false;
   // Assert rejection before opening a path, rather than silently skipping the
   // POSIX-only runtime cases in the native Windows CI job.
-  await assert.rejects(runMapCli(['--config', 'unused-input-on-unsupported-host.json']), { code: 'MAP_CONFIG_INVALID' });
-  const result = spawnSync(process.execPath, [cli, '--config', 'unused-input-on-unsupported-host.json'], {
-    encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL',
+  await assert.rejects(runMapCli(['--config', 'unused-input-on-unsupported-host.json']), {
+    code: 'MAP_CONFIG_INVALID',
   });
-  assert.equal(result.error, undefined); assert.equal(result.status, 1);
-  assert.equal(result.stdout, ''); assert.equal(result.stderr, 'MAP_START_FAILED\n');
+  const result = spawnSync(process.execPath, [cli, '--config', 'unused-input-on-unsupported-host.json'], {
+    encoding: 'utf8',
+    timeout: 3000,
+    killSignal: 'SIGKILL',
+  });
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr, 'MAP_START_FAILED\n');
   return true;
 }
 async function validConfig(t, { linked = false, padded = false } = {}) {
   if (await unsupportedHost()) return;
   const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const token = createMapToken(), password = 'private-test-password';
+  const token = createMapToken(),
+    password = 'private-test-password';
   const config = join(dir, 'host.json');
-  let contents = JSON.stringify({ neo4j: { uri: 'bolt://127.0.0.1:1', username: 'reader', passwordEnv: 'MAP_TEST_PASSWORD' },
-    credentials: [{ tokenEnv: 'MAP_TEST_TOKEN', scope: { subject: 'cli', companyId: 'company', tenantIds: ['tenant'], teamIds: ['team'], allTeams: false } }], port: 0 });
+  let contents = JSON.stringify({
+    neo4j: { uri: 'bolt://127.0.0.1:1', username: 'reader', passwordEnv: 'MAP_TEST_PASSWORD' },
+    credentials: [
+      {
+        tokenEnv: 'MAP_TEST_TOKEN',
+        scope: { subject: 'cli', companyId: 'company', tenantIds: ['tenant'], teamIds: ['team'], allTeams: false },
+      },
+    ],
+    port: 0,
+  });
   if (padded) contents = contents.padEnd(128 * 1024, ' ');
   await writeFile(config, contents);
   const input = linked ? join(dir, 'config-link.json') : config;
   if (linked) await symlink(config, input);
   const child = spawn(process.execPath, [cli, '--config', input], {
-    env: { ...process.env, MAP_TEST_PASSWORD: password, MAP_TEST_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'],
+    env: { ...process.env, MAP_TEST_PASSWORD: password, MAP_TEST_TOKEN: token },
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   t.after(() => child.kill('SIGKILL'));
-  let out = '', error = ''; child.stdout.on('data', data => { out += data; }); child.stderr.on('data', data => { error += data; });
+  let out = '',
+    error = '';
+  child.stdout.on('data', data => {
+    out += data;
+  });
+  child.stderr.on('data', data => {
+    error += data;
+  });
   const exited = new Promise(resolve => child.once('exit', (code, signal) => resolve({ code, signal })));
   const line = await new Promise((resolve, reject) => {
     const timer = setTimeout(() => reject(new Error('CLI did not start')), 5000);
-    child.once('error', reject); child.once('exit', () => { clearTimeout(timer); reject(new Error('CLI exited before startup')); });
-    child.stdout.on('data', () => { if (out.includes('\n')) { clearTimeout(timer); resolve(out.trim()); } });
+    child.once('error', reject);
+    child.once('exit', () => {
+      clearTimeout(timer);
+      reject(new Error('CLI exited before startup'));
+    });
+    child.stdout.on('data', () => {
+      if (out.includes('\n')) {
+        clearTimeout(timer);
+        resolve(out.trim());
+      }
+    });
   });
-  const announced = JSON.parse(line); assert.equal(announced.mode, 'read-only');
+  const announced = JSON.parse(line);
+  assert.equal(announced.mode, 'read-only');
   assert.match(announced.url, /^http:\/\/127\.0\.0\.1:\d+$/);
-  const response = await fetch(announced.url + '/v1/query', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"operation":"list_agents","args":{}}' });
+  const response = await fetch(announced.url + '/v1/query', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: '{"operation":"list_agents","args":{}}',
+  });
   assert.equal(response.status, 401);
-  child.kill('SIGTERM'); assert.deepEqual(await exited, { code: 0, signal: null });
-  assert.equal(error, ''); assert.ok(!out.includes(token)); assert.ok(!out.includes(password));
+  child.kill('SIGTERM');
+  assert.deepEqual(await exited, { code: 0, signal: null });
+  assert.equal(error, '');
+  assert.ok(!out.includes(token));
+  assert.ok(!out.includes(password));
 }
-test(onSupportedHost('CLI reads host scope and secrets from named environment variables, logs no credentials and shuts down'), validConfig);
-test(onSupportedHost('CLI retains symlinks to regular configuration files'), async t => validConfig(t, { linked: true }));
-test(onSupportedHost('CLI accepts a complete configuration at the exact byte limit'), async t => validConfig(t, { padded: true }));
+test(
+  onSupportedHost(
+    'CLI reads host scope and secrets from named environment variables, logs no credentials and shuts down',
+  ),
+  validConfig,
+);
+test(onSupportedHost('CLI retains symlinks to regular configuration files'), async t =>
+  validConfig(t, { linked: true }),
+);
+test(onSupportedHost('CLI accepts a complete configuration at the exact byte limit'), async t =>
+  validConfig(t, { padded: true }),
+);
 test('CLI startup failures produce only a stable safe error', async () => {
   const child = spawn(process.execPath, [cli, '--unexpected', 'private-value'], { stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '', error = ''; child.stdout.on('data', data => { out += data; }); child.stderr.on('data', data => { error += data; });
+  let out = '',
+    error = '';
+  child.stdout.on('data', data => {
+    out += data;
+  });
+  child.stderr.on('data', data => {
+    error += data;
+  });
   const code = await new Promise(resolve => child.once('exit', resolve));
-  assert.equal(code, 1); assert.equal(out, ''); assert.equal(error, 'MAP_START_FAILED\n');
+  assert.equal(code, 1);
+  assert.equal(out, '');
+  assert.equal(error, 'MAP_START_FAILED\n');
 });
 
 test(onSupportedHost('shared-writable host configuration cannot choose credential destinations'), async t => {
@@ -69,8 +127,13 @@ test(onSupportedHost('shared-writable host configuration cannot choose credentia
   const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-mode-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
   const config = join(dir, 'config.json');
-  await writeFile(config, JSON.stringify({ neo4j: { uri: 'bolt+s://untrusted.invalid', username: 'reader',
-    passwordEnv: 'MAP_TEST_MISSING_PASSWORD' }, credentials: [] }));
+  await writeFile(
+    config,
+    JSON.stringify({
+      neo4j: { uri: 'bolt+s://untrusted.invalid', username: 'reader', passwordEnv: 'MAP_TEST_MISSING_PASSWORD' },
+      credentials: [],
+    }),
+  );
   for (const mode of [0o664, 0o646]) {
     await chmod(config, mode);
     await assert.rejects(runMapCli(['--config', config]), { code: 'MAP_CONFIG_INVALID' });
@@ -83,10 +146,14 @@ test(onSupportedHost('CLI rejects FIFO configuration without waiting for a write
   const fifo = join(dir, 'config.fifo');
   assert.equal(spawnSync('mkfifo', [fifo], { encoding: 'utf8' }).status, 0);
   const result = spawnSync(process.execPath, [cli, '--config', fifo], {
-    encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL',
+    encoding: 'utf8',
+    timeout: 3000,
+    killSignal: 'SIGKILL',
   });
-  assert.equal(result.error, undefined); assert.equal(result.status, 1);
-  assert.equal(result.stdout, ''); assert.equal(result.stderr, 'MAP_START_FAILED\n');
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 1);
+  assert.equal(result.stdout, '');
+  assert.equal(result.stderr, 'MAP_START_FAILED\n');
 });
 
 test('CLI rejects nonregular and oversized inputs with stable diagnostics', async t => {
@@ -97,10 +164,14 @@ test('CLI rejects nonregular and oversized inputs with stable diagnostics', asyn
   for (const input of [dir, oversized]) {
     const result = spawnSync(process.execPath, [cli, '--config', input], {
       // Include cold Node startup under parallel suite load. The exit code and diagnostic prove rejection.
-      encoding: 'utf8', timeout: 15_000, killSignal: 'SIGKILL',
+      encoding: 'utf8',
+      timeout: 15_000,
+      killSignal: 'SIGKILL',
     });
-    assert.equal(result.error, undefined); assert.equal(result.status, 1);
-    assert.equal(result.stdout, ''); assert.equal(result.stderr, 'MAP_START_FAILED\n');
+    assert.equal(result.error, undefined);
+    assert.equal(result.status, 1);
+    assert.equal(result.stdout, '');
+    assert.equal(result.stderr, 'MAP_START_FAILED\n');
   }
 });
 
@@ -108,7 +179,8 @@ test(onSupportedHost('CLI bounds growing configuration reads and closes the chec
   if (await unsupportedHost()) return;
   const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-growth-'));
   t.after(() => rm(dir, { recursive: true, force: true }));
-  const config = join(dir, 'growing.json'); await writeFile(config, '{}');
+  const config = join(dir, 'growing.json');
+  await writeFile(config, '{}');
   // Grow a real file after metadata is returned, without timing a concurrent writer.
   const script = `
     import fs from 'node:fs/promises';
@@ -135,8 +207,12 @@ test(onSupportedHost('CLI bounds growing configuration reads and closes the chec
     process.stdout.write(JSON.stringify({ code, bytes, closed }));
   `;
   const result = spawnSync(process.execPath, ['--input-type=module', '-e', script, config, cli], {
-    encoding: 'utf8', timeout: 3000, killSignal: 'SIGKILL',
+    encoding: 'utf8',
+    timeout: 3000,
+    killSignal: 'SIGKILL',
   });
-  assert.equal(result.error, undefined); assert.equal(result.status, 0); assert.equal(result.stderr, '');
+  assert.equal(result.error, undefined);
+  assert.equal(result.status, 0);
+  assert.equal(result.stderr, '');
   assert.deepEqual(JSON.parse(result.stdout), { code: 'MAP_CONFIG_INVALID', bytes: 128 * 1024 + 1, closed: true });
 });

@@ -393,3 +393,14 @@ def test_a_second_ingestion_owner_cannot_reach_aws_or_guard(configured):
     with cli.ingestion_lock(configured.lock):
         assert cli.main(configured.arguments) != 0
     assert configured.events == []
+
+
+def test_interrupted_one_shot_collection_is_not_reported_as_success(
+    configured, monkeypatch, capsys
+):
+    def capture(_enrollment):
+        raise KeyboardInterrupt()
+
+    monkeypatch.setattr(cli, "capture_aws", capture)
+    assert cli.main(configured.arguments) == 130
+    assert "INTERRUPTED" in capsys.readouterr().err

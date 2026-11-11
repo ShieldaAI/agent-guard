@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "status": "reviewed-unit-tested-and-one-hosted-validation-passed",
+  "parentCommit": "1a612c9c5be97add0eb33a28c1414e666f18273e",
+  "sourceSha256": "4d390fb0c8bcded592c14364e99611d1fe3150a463ee2957cf40f00115b67314",
+  "sourceFiles": 411,
+  "triggerEvidence": "cartography-readiness-failure-2026-11-06-1a612c9.json",
+  "originalFailureCause": "Unproven beyond child Neo4j readiness timeout; no backend recovery assertion was reached. No OOM, resource contention or authentication cause is inferred.",
+  "changes": [
+    "Emit fixed stage/readiness/ownership-verified running-OOM-exit diagnostics; omit raw exception messages, logs, credentials and connection details.",
+    "Retain only the uniquely owned integration fixture until finally cleanup so exited-state evidence remains available.",
+    "Require label ownership, exact-ID removal and bounded absence verification; unknown cleanup cannot pass.",
+    "Reject readiness probes completing at or after the existing deadline.",
+    "Preserve nonzero status after post-test temporary-directory cleanup failures and reporting failures.",
+    "Map Neo4j and driver exceptions at the marker boundary to a fixed database-error category; no raw driver traceback or URI is printed."
+  ],
+  "unchanged": [
+    "120-second readiness deadline",
+    "240-second outer nested-runner deadline",
+    "Docker resource and network controls",
+    "Recovery test assertions and required test counts",
+    "Production application and public package code",
+    "Admission performance workload and numeric gates"
+  ],
+  "review": "Independent source/test review approved; root additionally identified uncaught Neo4j marker exceptions, now covered with six redaction/cleanup cases.",
+  "verification": {
+    "focusedTests": {
+      "passed": 36,
+      "failed": 0,
+      "reportedBy": "executor agent; core reviewed test source"
+    },
+    "fullPythonUnitSuite": {
+      "command": ".venv/bin/python -m pytest tests/unit -q",
+      "workingDirectory": "integrations/cartography",
+      "passed": 950,
+      "failed": 0,
+      "seconds": 16.97,
+      "logSha256": "39262dd4ff80935e76b54528bca71f956605f68c67cee8465338e8fb3f198a93"
+    },
+    "lintFormatDiff": "passed",
+    "hostedIntegration": {
+      "status": "passed",
+      "evidence": "cartography-readiness-followup-2026-11-06-a8c2d16.json",
+      "evidenceSha256": "e5517b5490c040db188290fcd2be820c76591bcf7d52fd4f9709b5d47555ed98",
+      "unitPassed": 950,
+      "integrationPassed": 143,
+      "failed": 0,
+      "skipped": 0,
+      "packagingAndInstalledConsumer": "passed",
+      "ownedCleanup": "confirmed"
+    }
+  },
+  "inputSha256": {
+    "integrations/cartography/scripts/test-disposable-neo4j.py": "261c9d1c3bde8b435b270f024d3e98806bfddb9c8ae1aed1117975c437e7ac0a",
+    "integrations/cartography/tests/unit/test_disposable_neo4j.py": "de795ce38ba698709b95026a18e86fba51f4c9ee4157f1bf5be491d924dbe313"
+  },
+  "validationProtocol": {
+    "plannedHostedValidations": 1,
+    "mechanism": "Ordinary PR-triggered workflow after this reviewed harness change; no retry of the unchanged failed run.",
+    "required": "950 unit tests, all143 authenticated integration tests, packaging and installed-consumer checks, confirmed owned fixture cleanup.",
+    "noGateOrResourceRelaxation": true
+  },
+  "limits": [
+    "An arbitrary blocked database call cannot be preempted by the post-probe clock check; the existing parent process deadline remains the outer termination bound.",
+    "The existing240-second outer deadline is not the sum of all maximum child stage budgets; it did not cause the recorded failure and is unchanged.",
+    "An uncatchable process kill can leave an owned fixture; cleanup is never reported confirmed without successful removal/absence verification.",
+    "One successful new validation would not establish the cause of the earlier unobserved readiness timeout."
+  ],
+  "productionAcceptance": "Held for unpublished Node HIGH applicability. Current required candidate checks passed; the earlier fixture readiness timeout remains recorded with an unknown cause. No aggregate production score or new release is asserted.",
+  "implementationCommit": "a8c2d16413ce2b06518b791d18340a97a6d0e464"
+}

@@ -1,0 +1,10 @@
+# Check out text as LF on every host. Git for Windows defaults to core.autocrlf=true,
+# which rewrites every text file to CRLF: Prettier (endOfLine "lf") then rejects each
+# source file, and tests that compare committed text byte for byte fail.
+* text=auto eol=lf
+
+# Preserve the exact compiled bytes used by the differential oracle on every host.
+packages/executor/test/fixtures/inventory-before-finalizer.mjs text eol=lf
+
+# Compatibility fixtures: ledgers written by released builds, byte for byte.
+packages/executor/test/fixtures/ledgers/**/*.sqlite binary

@@ -1,0 +1,412 @@
+{
+  "schemaVersion": 1,
+  "status": "passed",
+  "runId": 42145228499,
+  "runUrl": "https://github.com/ShieldaAI/agent-guard/actions/runs/42145228499",
+  "provenance": {
+    "headSha": "b677a744b4303f4d40098369cd41f584e78a8605",
+    "checkoutSha": "f271b67d2969566dff9eb1b03292626482227c7e",
+    "headToCheckoutChangedFiles": 0,
+    "comparisonUrl": "https://github.com/ShieldaAI/agent-guard/compare/b677a744b4303f4d40098369cd41f584e78a8605...f271b67d2969566dff9eb1b03292626482227c7e"
+  },
+  "runner": "Ubuntu 24.04.5 amd64, ubuntu24/20261101.360.1",
+  "allBrowserGatesPassed": true,
+  "counts": {
+    "engines": 3,
+    "passedSuiteGates": 9,
+    "skippedSuiteGates": 0,
+    "scenarioSnapshotsPerEngine": 52,
+    "totalAxeSnapshots": 156,
+    "axeViolations": 0,
+    "pageErrors": 0,
+    "reportedMobileViewChecks": 39
+  },
+  "jobs": [
+    {
+      "id": 127654976003,
+      "engine": "chromium",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Use signed Ubuntu archive for browser dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps chromium",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain browser evidence",
+          "conclusion": "success"
+        }
+      ],
+      "acquisition": {
+        "executedSignedArchiveConfirmation": true,
+        "ubuntuPackageEndpoints": [
+          "https://archive.ubuntu.com/ubuntu"
+        ],
+        "packageFetch": "Fetched 21.1 MB in 3s (6140 kB/s)"
+      },
+      "reports": [
+        {
+          "kind": "synthetic-operator-ui-contract",
+          "browserEngine": "chromium",
+          "browserVersion": "153.0.8010.12",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "pagedTickets": 505,
+          "pagedRequests": 506,
+          "preparations": 1,
+          "approvals": 1,
+          "denials": 1,
+          "reconciliations": 2,
+          "backendWrites": 1,
+          "archives": 1,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 25
+        },
+        {
+          "kind": "disposable-real-operator-service",
+          "node": "v24.22.2",
+          "browserEngine": "chromium",
+          "browserVersion": "153.0.8010.12",
+          "axe": "4.14.0",
+          "mobileViews": 5,
+          "oidcExchange": "local fixture",
+          "storage": "real encrypted and witnessed SQLite",
+          "recoveryMirrors": "schema3 exact-current, verified after writes",
+          "approvals": 2,
+          "backendWrites": 2,
+          "denials": 1,
+          "receiptOnlyReconciliations": 1,
+          "archives": 1,
+          "pagedTenantTickets": 505,
+          "emptySeed": true,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 14
+        },
+        {
+          "kind": "synthetic-inventory-real-map-gateways",
+          "browserEngine": "chromium",
+          "browserVersion": "153.0.8010.12",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "failedFilterHidesStaleResults": true,
+          "inventoryRetrySucceeded": true,
+          "bearerDenialClearedEvidence": true,
+          "oidcExchange": "local signed fixture",
+          "companyRevocationClearedEvidence": true,
+          "companySignoutClearedEvidence": true,
+          "scenarioSnapshotCount": 13
+        }
+      ],
+      "artifact": {
+        "id": 13469223075,
+        "name": "browser-chromium",
+        "sha256": "sha256:4b194b52c82a6e831c22d8c9de3c9e3656ec815da9b7bb535a1aa63fbb70821e",
+        "headSha": "b677a744b4303f4d40098369cd41f584e78a8605"
+      }
+    },
+    {
+      "id": 127654976002,
+      "engine": "firefox",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Use signed Ubuntu archive for browser dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps firefox",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain browser evidence",
+          "conclusion": "success"
+        }
+      ],
+      "acquisition": {
+        "executedSignedArchiveConfirmation": true,
+        "ubuntuPackageEndpoints": [
+          "https://archive.ubuntu.com/ubuntu"
+        ],
+        "packageFetch": "Fetched 48.8 MB in 3s (16.3 MB/s)"
+      },
+      "reports": [
+        {
+          "kind": "synthetic-operator-ui-contract",
+          "browserEngine": "firefox",
+          "browserVersion": "155.0",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "pagedTickets": 505,
+          "pagedRequests": 506,
+          "preparations": 1,
+          "approvals": 1,
+          "denials": 1,
+          "reconciliations": 2,
+          "backendWrites": 1,
+          "archives": 1,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 25
+        },
+        {
+          "kind": "disposable-real-operator-service",
+          "node": "v24.22.2",
+          "browserEngine": "firefox",
+          "browserVersion": "155.0",
+          "axe": "4.14.0",
+          "mobileViews": 5,
+          "oidcExchange": "local fixture",
+          "storage": "real encrypted and witnessed SQLite",
+          "recoveryMirrors": "schema3 exact-current, verified after writes",
+          "approvals": 2,
+          "backendWrites": 2,
+          "denials": 1,
+          "receiptOnlyReconciliations": 1,
+          "archives": 1,
+          "pagedTenantTickets": 505,
+          "emptySeed": true,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 14
+        },
+        {
+          "kind": "synthetic-inventory-real-map-gateways",
+          "browserEngine": "firefox",
+          "browserVersion": "155.0",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "failedFilterHidesStaleResults": true,
+          "inventoryRetrySucceeded": true,
+          "bearerDenialClearedEvidence": true,
+          "oidcExchange": "local signed fixture",
+          "companyRevocationClearedEvidence": true,
+          "companySignoutClearedEvidence": true,
+          "scenarioSnapshotCount": 13
+        }
+      ],
+      "artifact": {
+        "id": 13469642457,
+        "name": "browser-firefox",
+        "sha256": "sha256:c5a4ab37b7e24444d905d701ddb407c7da247f92d3892741b1ee6dde98678957",
+        "headSha": "b677a744b4303f4d40098369cd41f584e78a8605"
+      }
+    },
+    {
+      "id": 127654975994,
+      "engine": "webkit",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Use signed Ubuntu archive for browser dependencies",
+          "conclusion": "success"
+        },
+        {
+          "name": "Run tools/browser/node_modules/.bin/playwright install --with-deps webkit",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify operator states and accessibility",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify signed OIDC, approvals and receipt recovery in the browser",
+          "conclusion": "success"
+        },
+        {
+          "name": "Verify agent inventory and policy explanations",
+          "conclusion": "success"
+        },
+        {
+          "name": "Retain browser evidence",
+          "conclusion": "success"
+        }
+      ],
+      "acquisition": {
+        "executedSignedArchiveConfirmation": true,
+        "ubuntuPackageEndpoints": [
+          "https://archive.ubuntu.com/ubuntu"
+        ],
+        "packageFetch": "Fetched 114 MB in 16s (6974 kB/s)"
+      },
+      "reports": [
+        {
+          "kind": "synthetic-operator-ui-contract",
+          "browserEngine": "webkit",
+          "browserVersion": "26.6",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "pagedTickets": 505,
+          "pagedRequests": 506,
+          "preparations": 1,
+          "approvals": 1,
+          "denials": 1,
+          "reconciliations": 2,
+          "backendWrites": 1,
+          "archives": 1,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 25
+        },
+        {
+          "kind": "disposable-real-operator-service",
+          "node": "v24.22.2",
+          "browserEngine": "webkit",
+          "browserVersion": "26.6",
+          "axe": "4.14.0",
+          "mobileViews": 5,
+          "oidcExchange": "local fixture",
+          "storage": "real encrypted and witnessed SQLite",
+          "recoveryMirrors": "schema3 exact-current, verified after writes",
+          "approvals": 2,
+          "backendWrites": 2,
+          "denials": 1,
+          "receiptOnlyReconciliations": 1,
+          "archives": 1,
+          "pagedTenantTickets": 505,
+          "emptySeed": true,
+          "automaticResubmissions": 0,
+          "pageErrors": 0,
+          "scenarioSnapshotCount": 14
+        },
+        {
+          "kind": "synthetic-inventory-real-map-gateways",
+          "browserEngine": "webkit",
+          "browserVersion": "26.6",
+          "axe": "4.14.0",
+          "mobileViews": 4,
+          "graphGeometry": {
+            "viewportWidth": 660,
+            "minimumRenderedNodeFont": 10.02726131038074,
+            "overlappingNodeLabels": 0
+          },
+          "failedFilterHidesStaleResults": true,
+          "inventoryRetrySucceeded": true,
+          "bearerDenialClearedEvidence": true,
+          "oidcExchange": "local signed fixture",
+          "companyRevocationClearedEvidence": true,
+          "companySignoutClearedEvidence": true,
+          "scenarioSnapshotCount": 13
+        }
+      ],
+      "artifact": {
+        "id": 13469129674,
+        "name": "browser-webkit",
+        "sha256": "sha256:cda4cfc140959dbc1e9d0083f153cfdd551e2cb6164a262944c1506b0bbc5250",
+        "headSha": "b677a744b4303f4d40098369cd41f584e78a8605"
+      }
+    }
+  ],
+  "scenarioCatalog": [
+    {
+      "kind": "synthetic-operator-ui-contract",
+      "scenarioSnapshots": [
+        "sign-in",
+        "exact-review",
+        "interrupted-response",
+        "confirmed-receipt",
+        "denied-request",
+        "unconfirmed-outcome",
+        "archive-blocked",
+        "maintenance",
+        "activity-snapshot",
+        "history-capacity-warning",
+        "history-capacity-critical",
+        "history-capacity-full",
+        "self-hosted-setup",
+        "legacy-recovery-setup",
+        "unverified-recovery-setup",
+        "empty-company-setup",
+        "later-ticket-page",
+        "later-request-page",
+        "configured-capacity-reached",
+        "mobile-setup",
+        "mobile-maintenance",
+        "expired-review",
+        "restart-requires-review",
+        "service-unavailable",
+        "permission-ended"
+      ]
+    },
+    {
+      "kind": "disposable-real-operator-service",
+      "scenarioSnapshots": [
+        "service-empty",
+        "service-setup",
+        "service-review",
+        "service-completed",
+        "service-unconfirmed",
+        "service-archive-review",
+        "service-activity-snapshot",
+        "service-mobile-setup",
+        "service-mobile-maintenance",
+        "service-empty-tickets",
+        "service-empty-onboarding",
+        "service-later-ticket-page",
+        "service-sign-in-failure",
+        "service-mobile-sign-in-failure"
+      ]
+    },
+    {
+      "kind": "synthetic-inventory-real-map-gateways",
+      "scenarioSnapshots": [
+        "sign-in",
+        "inventory",
+        "agent explanation",
+        "observed blocker",
+        "matching resource",
+        "unmatched resource",
+        "snapshot comparison",
+        "collection health",
+        "mobile health",
+        "inventory unavailable",
+        "company signed in",
+        "company session revoked",
+        "company signed out"
+      ]
+    }
+  ],
+  "capacityFixture": "Final source includes consistent synthetic operational status and 80%/95%/full-capacity assertions, pending reservation visibility and no contradictory all-clear message.",
+  "acquisitionAssessment": "The signed official HTTPS Ubuntu archive step passed on all three actual hosted runners. Chromium and Firefox package acquisition each completed in 3 seconds; WebKit in 16 seconds. This run verifies acquisition improvement over the preceding Azure-mirror transfers (Chromium 8 minutes 38 seconds, Firefox 18 minutes 21 seconds); it does not guarantee future network availability. All signing/source guards, engines, suites and the 20-minute timeout remained enabled.",
+  "fullArtifactDirectory": "artifacts/production-readiness/ci-42145228499",
+  "priorEvidencePreserved": "ci-53acbde.json",
+  "humanUsability": "Unmeasured. These are 52 automated scenario snapshots repeated across 3 browser engines, with axe WCAG 2.0 A/AA and 2.1 A/AA checks, selected keyboard actions and 375px mobile layout checks. They do not establish full WCAG conformance, representative assistive-technology/operator comprehension, customer IdP or live-provider validation."
+}

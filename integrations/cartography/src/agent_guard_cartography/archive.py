@@ -726,6 +726,7 @@ class SnapshotArchive:
         for receipt in receipts:
             if receipt["status"] == "published":
                 groups.setdefault(receipt["sourceId"], []).append(receipt)
+        protected_projections = frozenset(protected_projection_ids)
         protected = {
             value["receiptId"]
             for values in groups.values()
@@ -738,7 +739,7 @@ class SnapshotArchive:
             if (
                 receipt["status"] != "published"
                 or receipt["receiptId"] in protected
-                or receipt["projectionId"] in protected_projection_ids
+                or receipt["projectionId"] in protected_projections
                 or now - receipt["createdAt"] < retention_seconds
             ):
                 continue

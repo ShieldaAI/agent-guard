@@ -30,7 +30,12 @@ test('pilot review launcher has explicit arguments and rejects repeats without d
   const help = launch(tmpdir(), ['--help']);
   assert.equal(help.status, 0);
   assert.match(help.stdout, /agent-guard-pilot-review --policy/);
-  for (const input of [[], [...args, '--policy', 'SECRET_PATH'], [...args, '--unknown=SECRET_PATH'], [...args, 'SECRET_PATH']]) {
+  for (const input of [
+    [],
+    [...args, '--policy', 'SECRET_PATH'],
+    [...args, '--unknown=SECRET_PATH'],
+    [...args, 'SECRET_PATH'],
+  ]) {
     const child = launch(tmpdir(), input);
     assert.equal(child.status, 1);
     assert.equal(child.stdout, '');
@@ -52,7 +57,11 @@ test('pilot review launcher rejects invalid UTF-8 and duplicate decoded keys bef
 
 test('pilot review launcher bounds regular files and rejects hard links', t => {
   const dir = files(t);
-  for (const [name, limit] of [['candidate', 64 * 1024 * 1024], ['policy', 32 * 1024], ['bundle', 1024 * 1024]]) {
+  for (const [name, limit] of [
+    ['candidate', 64 * 1024 * 1024],
+    ['policy', 32 * 1024],
+    ['bundle', 1024 * 1024],
+  ]) {
     truncateSync(join(dir, name), limit + 1);
     expectInputFailure(dir);
     writeFileSync(join(dir, name), '{}');
@@ -61,55 +70,73 @@ test('pilot review launcher bounds regular files and rejects hard links', t => {
   expectInputFailure(dir);
 });
 
-test('pilot review launcher enforces POSIX permissions and refuses symlinks and FIFOs', { skip: process.platform === 'win32' }, t => {
-  const dir = files(t);
-  chmodSync(join(dir, 'policy'), 0o620);
-  expectInputFailure(dir);
-  chmodSync(join(dir, 'policy'), 0o600);
-  chmodSync(join(dir, 'bundle'), 0o640);
-  expectInputFailure(dir);
-  chmodSync(join(dir, 'bundle'), 0o600);
-  rmSync(join(dir, 'candidate'));
-  symlinkSync(join(dir, 'bundle'), join(dir, 'candidate'));
-  expectInputFailure(dir);
-  rmSync(join(dir, 'candidate'));
-  const fifo = spawnSync('mkfifo', [join(dir, 'candidate')]);
-  assert.equal(fifo.status, 0);
-  expectInputFailure(dir);
-});
+test(
+  'pilot review launcher enforces POSIX permissions and refuses symlinks and FIFOs',
+  { skip: process.platform === 'win32' },
+  t => {
+    const dir = files(t);
+    chmodSync(join(dir, 'policy'), 0o620);
+    expectInputFailure(dir);
+    chmodSync(join(dir, 'policy'), 0o600);
+    chmodSync(join(dir, 'bundle'), 0o640);
+    expectInputFailure(dir);
+    chmodSync(join(dir, 'bundle'), 0o600);
+    rmSync(join(dir, 'candidate'));
+    symlinkSync(join(dir, 'bundle'), join(dir, 'candidate'));
+    expectInputFailure(dir);
+    rmSync(join(dir, 'candidate'));
+    const fifo = spawnSync('mkfifo', [join(dir, 'candidate')]);
+    assert.equal(fifo.status, 0);
+    expectInputFailure(dir);
+  },
+);
 
-test('an unsafe policy directory cannot substitute another signed deployment', { skip: process.platform === 'win32' }, t => {
-  const dir = files(t);
-  const enrolled = join(dir, 'enrolled');
-  mkdirSync(enrolled, { mode: 0o700 });
-  const f = createPilotReviewFixture({ policy(p) { p.mode = 'company-pilot'; } });
-  writeFileSync(join(enrolled, 'policy'), JSON.stringify(f.policy), { mode: 0o600 });
-  writeFileSync(join(dir, 'candidate'), f.candidateBytes);
-  writeFileSync(join(dir, 'bundle'), JSON.stringify(f.bundle), { mode: 0o600 });
-  const run = policy => launch(dir, ['--candidate', 'candidate', '--policy', policy, '--bundle', 'bundle']);
-  assert.equal(run('enrolled/policy').status, 0);
-  const denied = path => {
-    const child = run(path);
-    assert.equal(child.status, 1);
-    assert.equal(child.stdout, '');
-    assert.equal(child.stderr.trim(), readFailure);
-  };
-  chmodSync(enrolled, 0o777);
-  denied('enrolled/policy');
-  chmodSync(enrolled, 0o700);
-  symlinkSync('enrolled', join(dir, 'link'));
-  denied('link/policy');
-});
+test(
+  'an unsafe policy directory cannot substitute another signed deployment',
+  { skip: process.platform === 'win32' },
+  t => {
+    const dir = files(t);
+    const enrolled = join(dir, 'enrolled');
+    mkdirSync(enrolled, { mode: 0o700 });
+    const f = createPilotReviewFixture({
+      policy(p) {
+        p.mode = 'company-pilot';
+      },
+    });
+    writeFileSync(join(enrolled, 'policy'), JSON.stringify(f.policy), { mode: 0o600 });
+    writeFileSync(join(dir, 'candidate'), f.candidateBytes);
+    writeFileSync(join(dir, 'bundle'), JSON.stringify(f.bundle), { mode: 0o600 });
+    const run = policy => launch(dir, ['--candidate', 'candidate', '--policy', policy, '--bundle', 'bundle']);
+    assert.equal(run('enrolled/policy').status, 0);
+    const denied = path => {
+      const child = run(path);
+      assert.equal(child.status, 1);
+      assert.equal(child.stdout, '');
+      assert.equal(child.stderr.trim(), readFailure);
+    };
+    chmodSync(enrolled, 0o777);
+    denied('enrolled/policy');
+    chmodSync(enrolled, 0o700);
+    symlinkSync('enrolled', join(dir, 'link'));
+    denied('link/policy');
+  },
+);
 
 test('pilot review input replacement after opening fails before evidence verification', t => {
   const dir = files(t);
-  const f = createPilotReviewFixture({ policy(p) { p.mode = 'company-pilot'; } });
+  const f = createPilotReviewFixture({
+    policy(p) {
+      p.mode = 'company-pilot';
+    },
+  });
   const contents = { policy: JSON.stringify(f.policy), candidate: f.candidateBytes, bundle: JSON.stringify(f.bundle) };
   for (const [name, bytes] of Object.entries(contents)) writeFileSync(join(dir, name), bytes, { mode: 0o600 });
   assert.equal(launch(dir, args).status, 0);
   for (const selected of Object.keys(contents)) {
     const hook = join(dir, 'replace-after-open.mjs');
-    writeFileSync(hook, `import fs from 'node:fs';
+    writeFileSync(
+      hook,
+      `import fs from 'node:fs';
       import { resolve } from 'node:path'; import { syncBuiltinESMExports } from 'node:module';
       const original = fs.openSync; let replaced = false;
       fs.openSync = function(path, ...rest) {
@@ -120,8 +147,13 @@ test('pilot review input replacement after opening fails before evidence verific
           fs.writeFileSync(path, '{}', { mode: 0o600, flag: 'wx' });
         }
         return fd;
-      }; syncBuiltinESMExports();`);
-    const child = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, cli, ...args], { cwd: dir, encoding: 'utf8', timeout: 5_000 });
+      }; syncBuiltinESMExports();`,
+    );
+    const child = spawnSync(process.execPath, ['--import', pathToFileURL(hook).href, cli, ...args], {
+      cwd: dir,
+      encoding: 'utf8',
+      timeout: 5_000,
+    });
     assert.equal(child.status, 1, child.error?.message);
     assert.equal(child.stdout, '');
     assert.equal(child.stderr.trim(), readFailure);

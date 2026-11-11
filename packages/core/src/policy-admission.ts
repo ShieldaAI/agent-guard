@@ -10,35 +10,54 @@ type Pending = { familyId: string; taskIds: readonly string[]; controller: Abort
 /** One pool per executor, shared by preparations and executions, including delegated tasks. */
 export class PolicyAdmission {
   #pending = new Set<Pending>();
+  readonly #maxPending: number;
+  readonly #maxPerFamily: number;
+  readonly #maxWaitMs: number;
 
-  assertCapacity(familyId: string): void {
-    if (this.#pending.size >= MAX_PENDING ||
-        [...this.#pending].filter(entry => entry.familyId === familyId).length >= MAX_PENDING_PER_FAMILY) {
-      throw new GuardError('POLICY_BUSY');
-    }
+  constructor(limits: { maxPending?: number; maxPendingPerFamily?: number; maxWaitMs?: number } = {}) {
+    this.#maxPending = limits.maxPending ?? MAX_PENDING;
+    this.#maxPerFamily = limits.maxPendingPerFamily ?? MAX_PENDING_PER_FAMILY;
+    this.#maxWaitMs = limits.maxWaitMs ?? MAX_WAIT_MS;
   }
 
-  async evaluate(policy: Policy, action: Readonly<Action>, snapshot: Readonly<TaskSnapshot>,
-    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number }): Promise<'allow' | 'require_approval'> {
+  assertCapacity(familyId: string): void {
+    if (this.#pending.size >= this.#maxPending) throw new GuardError('POLICY_BUSY');
+    let family = 0;
+    for (const entry of this.#pending)
+      if (entry.familyId === familyId && ++family >= this.#maxPerFamily) throw new GuardError('POLICY_BUSY');
+  }
+
+  async evaluate(
+    policy: Policy,
+    action: Readonly<Action>,
+    snapshot: Readonly<TaskSnapshot>,
+    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number },
+  ): Promise<'allow' | 'require_approval'> {
     if (!Number.isFinite(scope.remainingMs) || scope.remainingMs <= 0) throw new GuardError('TASK_EXPIRED');
     this.assertCapacity(scope.familyId);
     const controller = new AbortController();
     const entry = { familyId: scope.familyId, taskIds: scope.taskIds, controller };
     this.#pending.add(entry);
-    const deadlineFirst = scope.remainingMs <= MAX_WAIT_MS;
+    const deadlineFirst = scope.remainingMs <= this.#maxWaitMs;
     const timeoutCode = deadlineFirst ? 'TASK_EXPIRED' : 'POLICY_TIMEOUT';
-    const waitMs = Math.min(scope.remainingMs, MAX_WAIT_MS);
+    const waitMs = Math.min(scope.remainingMs, this.#maxWaitMs);
     const expires = performance.now() + waitMs;
     const timer = setTimeout(() => controller.abort(new GuardError(timeoutCode)), waitMs);
     let rejectWait!: (reason: unknown) => void;
-    const canceled = new Promise<never>((_resolve, reject) => { rejectWait = reject; });
+    const canceled = new Promise<never>((_resolve, reject) => {
+      rejectWait = reject;
+    });
     const onAbort = () => rejectWait(controller.signal.reason);
     controller.signal.addEventListener('abort', onAbort, { once: true });
     const operation = (async () => {
-      try { return await policy(action, snapshot, Object.freeze({ signal: controller.signal })); }
-      catch { throw new GuardError('POLICY_ERROR'); }
-      // A callback that ignores cancellation still occupies its original slot.
-      finally { this.#pending.delete(entry); }
+      try {
+        return await policy(action, snapshot, Object.freeze({ signal: controller.signal }));
+      } catch {
+        throw new GuardError('POLICY_ERROR');
+      } finally {
+        // A callback that ignores cancellation still occupies its original slot.
+        this.#pending.delete(entry);
+      }
     })();
     try {
       const decision = await Promise.race([canceled, operation]);

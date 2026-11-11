@@ -1,7 +1,7 @@
 # Agent Guard Cartography integration
 
 Experimental implementation of the inventory contract and graph milestones in
-[the integration plan](../../docs/cartography-integration-plan.md). It validates
+[the integration plan](../../docs/archive/cartography-integration-plan.md). It validates
 single-tenant inventory files and enrolled observer responses, imports declared grants through Cartography's data
 model, and publishes immutable graph snapshots. Agent Guard's execution path is
 unchanged.
@@ -38,11 +38,21 @@ Then, from this directory:
 
 ```sh
 uv sync --locked
+uv audit --locked
 uv run ruff check .
 uv run ruff format --check .
 uv run pytest tests/unit
 uv run python scripts/test-disposable-neo4j.py -- -q
 ```
+
+The separate **Python dependency audit** workflow checks the exact lock on
+pull requests, main-branch pushes and a weekly schedule. It audits Python 3.13
+Linux x64/ARM64, macOS ARM64 and Windows x64 dependency selections, including
+development groups, without suppressing advisory IDs. Vulnerabilities and lookup
+failures fail the job; JSON findings and the lock digest are retained. Archived
+package notices are also reported by uv and require review, even when no known
+vulnerability is returned. This covers Python dependencies separately from npm
+and container package scans; it does not certify those platforms' runtime behavior.
 
 The unit suite executes the built TypeScript exporter against a temporary encrypted
 ledger and validates its output with the independent Python contract. It covers
@@ -85,14 +95,19 @@ The canonical schema is
 [agent-guard-inventory-v1.schema.json](../../schemas/agent-guard-inventory-v1.schema.json),
 using JSON Schema Draft 2020-12. It is bundled into both the wheel and source
 archive, alongside the standalone
-[manifest schema](../../schemas/agent-guard-inventory-manifest-v1.schema.json) and
+[manifest v1 schema](../../schemas/agent-guard-inventory-manifest-v1.schema.json),
+[manifest v2 schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json),
+[manifest v3 schema](../../schemas/agent-guard-inventory-manifest-v3.schema.json)
+(v2 plus host-declared `directAccess`, projected as `GuardDirectAccess` nodes linked by
+`G_DIRECT_ACCESS_FOR`; inventory v2 tools also carry `untrusted_context_default`, and
+every task carries `delegated` and `derived`), the [inventory v2 schema](../../schemas/agent-guard-inventory-v2.schema.json), and
 [MCP connection schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json);
 installed consumers do not need this repository. Python additionally
 checks graph references and cross-record invariants that JSON Schema cannot express.
 
 | Field | Contract |
 | --- | --- |
-| `schemaVersion`, `profile` | Exactly `1`; profile `core`, `host` or `host-mcp`. |
+| `schemaVersion`, `profile` | `1` or `2`; profile `core`, `host` or `host-mcp`. |
 | `source` | Exact company, source, enrollment generation, ledger instance and tenant identity. |
 | `snapshotId`, `generatedAt` | Immutable snapshot identifier and valid UTC timestamp. |
 | `ledgerRevision`, `policyEpoch` | Nonnegative JavaScript-safe integers. |
@@ -129,11 +144,43 @@ Manifest validation does not contact AWS or accept a manifest as authorization.
 See the [executor guide](../../packages/executor/README.md#host-owned-manifest-and-bindings)
 for the input shape and the runnable `examples/inventory-manifest.mjs`.
 
+Manifest v2 adds accountable owners, agent purpose/lifecycle, deployment/build
+references, credential-reference catalogs, resource ownership/sensitivity,
+approved destinations and explicit resource dependencies. The
+[v2 contract](../../docs/agent-cartography-contract.md) lists the exact fields;
+`node examples/agent-cartography.mjs` at the repository root produces a synthetic
+v2 snapshot through the authenticated observer. Version 1 remains readable;
+metadata it never collected is shown as unknown, without invented catalog nodes.
+Version 2 requires its new fields even when their value is null or an empty list.
+Owners and credentials are limited to 1,000 records each; deployment credential
+references to 32; dependency/destination/audience/recipient arrays to 128.
+These limits also remain subject to the total manifest and snapshot byte bounds.
+
+All v2 records inherit the manifest's authority ID, independent revision and
+observation time. They are host assertions, not signed or verified claims about
+provider ownership. `GuardOwner` and `GuardCredentialReference` nodes and
+`G_OWNED_BY`, `G_RESOURCE_OWNED_BY`, `G_USES_CREDENTIAL` and `G_DEPENDS_ON`
+relationships remain source-, tenant- and projection-local. Relationship-ID
+arrays are internal loader data; the query layer exposes an edge only when both
+endpoints are authorized. Catalog membership never changes viewer team scope.
+
+Generic resources use `provider: host` and an opaque resource ID. Display-name
+changes retain that resource's identity; conflicting definitions of one ID are
+rejected. These resources never join AWS nodes or become IAM candidates. When
+AWS collection is enabled they retain `not_collected`/`unsupported_provider`
+status, and do not consume the AWS-reference limit or invalidate AWS captures.
+Credential IDs, issuer/audience/recipient and build/runtime references are opaque
+host-generated identifiers. There are no secret, token, URL or arbitrary payload
+fields. The trusted host must also keep names and purpose text nonsecret.
+
 The graph adds `GuardAgent`, `GuardDeployment`, `GuardResourceBinding`,
 `GuardExecutionBinding`, `GuardExternalResource` and `GuardExternalIdentity` inside
 the same immutable projection. Every new node carries `evidence_kind='host_asserted'`,
 `assessment='unknown'` and manifest provenance. Task-to-deployment associations are
-optional; unassigned tasks remain visible. Resource mappings include the local
+optional. Unassigned tasks stay in the graph but are not listed under any agent (an
+all-teams reader can see them in `get_changes` or query them by ID), and an agent exists
+only if the manifest declares it (see
+[how agents get onto the map](../../docs/guides/agent-cartography.md#how-agents-get-onto-the-map)). Resource mappings include the local
 tool and exported selector plus the exact target account/partition/ARN, kind,
 scope and explicit actions. Wildcard grants never fan out to mapped cloud resources.
 
@@ -154,6 +201,21 @@ rejected at staging and publication. Capture-time-only refreshes and reordered
 equivalent records are allowed. A manifest update at an unchanged ledger revision
 still must preserve identical core authority content. Failed composition or
 publication leaves the previous current snapshot in place.
+
+A v1-to-v2 upgrade requires a higher manifest revision. After publication, the
+source's persisted schema watermark rejects v2-to-v1 downgrade, including a
+higher-revision downgrade after collector restart. Archive replay preserves the
+complete schema and provenance; an old collector rejects v2 rather than dropping
+new fields. Restored or cloned source instances still require the existing new
+enrollment-generation procedure.
+
+Change views compare authorized retained snapshots: declared grants, host
+bindings, ownership and relationships can change without proving an effective
+permission gain or loss. Current mapped policy candidates retain their separate
+capture times. External policy history, request-time decisions, approval events
+and backend receipts remain explicitly uncollected. Minimized stored reports
+keep only source/projection references and added/removed/changed counts per
+allowlisted label; owner names and credential metadata are not copied into them.
 
 ## MCP observations
 

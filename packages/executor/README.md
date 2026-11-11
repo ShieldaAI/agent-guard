@@ -1,4 +1,12 @@
-# Agent Guard executor (experimental alpha)
+# Agent Guard executor
+
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
+
+The inventory observer (`startInventoryServer()`) is **experimental** in 0.1.0.
+It makes no admission-latency promise under frequent polling; see the release notes.
 
 Persist AI agent tool approvals and budget admission across restarts, with
 authenticated task APIs. For the in-memory core and MCP integration, see the
@@ -7,8 +15,8 @@ authenticated task APIs. For the in-memory core and MCP integration, see the
 An additive Apache-2.0 package for a single trusted host: encrypted transactional
 authorization state, task-scoped HTTP credentials, typed adapters, governed memory,
 and a local Docker sandbox. Requires Node.js 22.13 or newer. No account or hosted
-service is required. Install the explicit prerelease tag with
-`npm install @shieldaai/agent-guard-executor@alpha`, or build the workspace tarballs.
+service is required. Install with
+`npm install @shieldaai/agent-guard-executor`, or build the workspace tarballs.
 
 ```ts
 import { randomBytes } from 'node:crypto';
@@ -41,6 +49,30 @@ await server.close();
 executor.close();
 ```
 
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): what the core covers,
+with budgets, revocation, labels and approval replay protection kept across restarts and
+processes (ASI02, ASI03, ASI07, ASI08, ASI09, ASI10; a restart invalidates pending
+prepared actions and tool approvals);
+unexpected code execution (ASI05), through the optional Docker isolation profile in
+`/sandbox`; memory and context poisoning (ASI06), through governed memory with provenance,
+versions, quarantine and rollback; and supply chain (ASI04), through pinned build
+artifacts. It is a single-owner service: no distributed quotas, revocation or high
+availability.
+
+## Import paths
+
+| Path | Contents |
+| --- | --- |
+| `@shieldaai/agent-guard-executor` | `DurableExecutor`, task server and `ExecutorClient`, tool adapters, network policy, model tools |
+| `…/sandbox` | governed sandbox, artifact broker, build provenance |
+| `…/inventory` | inventory observer, host manifest, MCP inventory (experimental) |
+| `…/pilot` | pilot review verification |
+| `…/ops` | keyring, key custody, recovery, ledger format |
+| `…/internal` | host building blocks used by Agent Ops; no semver guarantees |
+
+The 0.1 root exports of the moved names still work in 0.2. They are marked
+`@deprecated` and will be removed in 0.3.
+
 ## Authority and transport
 
 `DurableExecutor` is an administration object; never expose it to untrusted code.
@@ -61,8 +93,21 @@ retracted. A canceled preparation cannot later dispatch.
 For an `APPROVAL_REQUIRED` response, show the exact prepared action to the authenticated
 reviewer. On a dispatch error or lost response, call `client.execution(action.id)` to
 inspect the task's retained status. If it is `UNKNOWN`, stop and give the action ID to
-the operator for backend reconciliation. Starting a new action can repeat an effect.
-Task responses carry fixed denial codes. Backend exception text stays on the executor side.
+the operator for backend reconciliation. A `PRUNED` receipt carries the settled
+`outcome`. Starting a new action can repeat an effect.
+Task responses carry fixed denial codes and an HTTP status by kind: 401
+unauthenticated, 403 authority denial, 404 unknown action, 409 state change or used
+action, 429 capacity, 503 store, policy or tool failure, and 400 for malformed
+requests. The JSON body is `{ "error": code, "retryable": boolean }`; `retryable` is
+true only when repeating the same request later cannot repeat an effect.
+`ExecutorClient` errors carry the same `code` and `retryable`.
+The task server refuses malformed or unknown bearer tokens from an in-memory index
+before reading the ledger. It limits requests per credential (default 600 a minute)
+and across the server (6,000 a minute), requests in flight (32) and open
+connections (64); over a limit it answers `REQUEST_RATE_LIMITED` (429, retryable).
+Configure these with `requestsPerMinutePerCredential`, `requestsPerMinute`,
+`maxActiveRequests` and `maxConnections`. See the
+[error catalog](../../docs/errors.md). Backend exception text stays on the executor side.
 When the reviewer refuses a prepared action, the trusted host calls
 `executor.cancel(taskId, action.id)` to retire it and prevent dispatch with an
 earlier approval. `recordReviewDecision(action.id, 'denied')` only records the review.
@@ -76,6 +121,11 @@ The executor accepts up to eight unresolved policy checks per task family and 64
 instance. A saturated scope returns `POLICY_BUSY`. Each caller waits up to 30 seconds
 or its task deadline, whichever comes first. Policy code receives an abort signal.
 A callback that keeps running after cancellation occupies its slot until it settles.
+A decision becomes stale only if the task's own snapshot (counters or shared
+sensitivity) changed while the policy ran; writes by other tasks or tenants never
+invalidate it. A stale decision is evaluated again on fresh state. Re-evaluations on
+one task take turns, up to `maxPolicyAttempts` (1–16, default 5); after that the call
+fails with `POLICY_STATE_CHANGED`. Without a custom policy, no decision can be stale.
 
 ## Durable admission and recovery
 
@@ -115,15 +165,71 @@ to open even with the correct encryption key. See the
 for setup, failure handling and the crucial requirement that the witness stay
 outside the data backup/restore domain.
 
-Storage is bounded to 16 MiB. Family-wide pending action/byte and delegated-task
+Live ledger state defaults to 16 MiB. The trusted host may set `maxLedgerBytes`
+to an integer from 1 MiB through 64 MiB. It bounds the decoded full snapshot,
+not SQLite file size; larger snapshots increase synchronous memory and I/O work.
+Opening existing state above the configured bound fails before recovery mutates it.
+Increasing this limit does not raise task, action, family or archive count limits.
+Family-wide pending action/byte and delegated-task
 caps prevent one task from filling shared storage through preparation/delegation.
-Expired or invalidated preparations and approvals are pruned. Terminal records have
-bounded retention; cumulative budgets and unresolved reservations are retained.
-The audit keeps the latest 1,000 metadata events, without arguments, results or raw
-reconciliation evidence. Task and action IDs are host-controlled audit metadata;
-avoid putting secrets in IDs. There is no automatic quota reset, key rotation or
-distributed-worker support. Plan an operator-controlled retention/archival policy
-before reaching capacity; never delete active authority state to recover quota.
+Expired or invalidated preparations and approvals are pruned. Settled receipts are
+kept per task family (`maxReceiptsPerFamily`, default 64). Shared caps prune the
+busiest family first, so one tenant cannot evict another tenant's receipts. A pruned
+receipt reads as `status: 'PRUNED'` with its settled `outcome`. Cumulative budgets
+and unresolved reservations are always retained.
+`audit()` returns recent metadata events, without arguments, results or raw
+reconciliation evidence. Each tenant keeps up to `maxRecentEventsPerTenant` events
+(default 256), and the total stays at 1,000. Events carry a `sequence`; export
+them yourself if you need complete history. Task and action IDs are host-controlled audit metadata;
+avoid putting secrets in IDs. There is no automatic quota reset or distributed-worker
+support. Use the host-only task-family lifecycle APIs below for bounded archival;
+never delete active authority state to recover quota.
+
+Offline Linux/macOS maintenance is available through `agent-guard-ledger` and
+`createLedgerKeyring`, `readLedgerKeyring`, `readLedgerKeyringPolicy`,
+`configureLedgerKeyring`, `loadLedgerKey`, `rotateLedgerKeyring` and `rotateLedgerKey`. The loader authenticates existing state and refuses missing
+or mismatched authority. Rotation preserves the complete plaintext ledger and
+atomically updates its witness. The private keyring stages a new key before rekeying,
+retains old keys for interruption recovery, and defaults to four retained keys.
+An explicit `maxKeys` at creation or `configureLedgerKeyring({ keyringFile, maxKeys })`
+persists a validated limit from 1 through 64. `agent-guard-ledger configure --keyring
+PATH --max-keys N` performs the same atomic offline update. Lowering below the retained
+key count fails; this policy command never removes keys. Legacy schema-1 keyrings keep their four-key
+default until configured. `readLedgerKeyringPolicy` and CLI `status` return only
+`keyCount` and `maxKeys` (plus the selected key ID when a database is specified). Stop
+the sole owner, rotate each store using the same next key ID, verify, then restart.
+Never use first enrollment as recovery. Returned key buffers belong to the trusted
+host caller and should be erased after creating the executor. Maintenance
+`LedgerKeyOptions.maxBytes` and `rotateLedgerKey({ ..., maxBytes })` accept the
+configured store byte cap (default 16 MiB, 1 MiB minimum, 64 MiB ceiling); the CLI
+uses `--max-bytes N`. Set it consistently when loading and rotating larger stores.
+A smaller cap refuses oversized existing state before mutation.
+
+Outer-key-derived inventory and trace references change during rotation; receipts
+report `observationReenrollmentRequired: true`. Use a new inventory
+`enrollmentGeneration` and a new trace collection epoch before resuming exports.
+The [Linux operations runbook](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/README.md)
+includes private key custody, two-store commands, backup/restore, supported bounds
+and interrupted-rotation handling. The CLI prints redacted JSON, never key material.
+
+`manageLedgerCustody` adds reviewed offline enrollment, cold snapshots, full verification,
+current-witness restore, managed rotation, active-ring retirement and interrupted-operation
+recovery. Retirement preserves all historical keys in independently encrypted escrow; it
+never destroys secrets or claims to enumerate off-host backups. Managed source ledgers
+carry a schema-2 custody binding, and runtime key loading rejects a rolled-back unmarked
+ring. Restore never rewrites witnesses or accepts an older snapshot after they advance.
+A host adapter must derive the complete encrypted external-history closure from authenticated
+store heads. See the [custody procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/custody.md)
+for exact preview/apply commands, offline key separation, capacity bounds and recovery limits.
+
+For exact-current primary-storage recovery, `LedgerWitness.recovery: 'mirror'` enables
+schema-3 witnessed state whose encrypted payload, archive/catalog mutations and rekeying
+are mirrored in the paired SQLite transaction. The witness is SQLite's physical main
+database so its super-journal survives primary-directory loss. `manageLedgerRecovery`
+provides exact preview/apply enrollment or repair; repair preserves current witnesses
+and source identities and requires surviving witnesses, keys and the complete external
+history mirror. Mirrored mode cannot be removed or written by schema-1/2 readers.
+See the [native recovery procedure](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/production/custody.md#repair-the-latest-committed-state-after-primary-storage-loss).
 
 For optional diagnostics without raw task/action identifiers, enable
 `decisionTraces` on the executor. `decisionTraceSnapshot()` and
@@ -133,15 +239,65 @@ tool effect. Buffers are volatile and can lose events through expiry, capacity o
 process loss. The [decision trace guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/decision-traces.md)
 describes the pseudonymous fields, access boundary, counters and export guarantees.
 
+## Clock steps and late completion
+
+Deadlines and approval expiries are clock milliseconds, and the ledger records the last
+time it saw. A backward system-clock step makes the next start fail with
+`CLOCK_INVALID`. After checking the host clock, an operator can start once with
+`acceptClockSkewMs` (Agent Ops: `--accept-clock-skew MS`): if the clock is behind by no
+more than that, the executor accepts the current time, records `CLOCK_SKEW_ACCEPTED`
+and continues. Later starts need no override.
+
+A handler that completes after the task was cancelled, revoked or expired is settled
+as `SUCCEEDED` and charged, but its result is withheld: `execute()` fails with
+`EXECUTION_ABORTED` and `detail: 'EFFECT_COMMITTED'`, and `execution()` shows the
+committed receipt. Do not retry it.
+
+## Numbered task IDs
+
+A host that allocates task IDs in sequence can use `numberedTaskId(namespace, n)`,
+which builds `ticket:<namespace UUID>-<n>`. After a task family is exported, the
+ledger keeps one fence per namespace (the highest exported sequence) instead of one
+tombstone per ID, so exported IDs can never be reused and the ledger does not grow
+with history. Agent Ops uses this scheme for its requests. The `ticket:` prefix
+(`NUMBERED_TASK_PREFIX`) is part of persisted fences, so it is fixed.
+
+## Ledger format and compatibility
+
+A ledger carries two markers. `schema` (1, 2 or 3) is the authority mode that 0.1
+readers already check: 2 means lifecycle or history state may be present, 3 means a
+recovery mirror is enrolled. `formatVersion` versions the data layout. The executor
+migrates an older layout forward when it opens the ledger, step by step, inside its
+exclusive startup transaction, so the witness and mirror move in the same commit.
+`executor.ledgerFormat()` reports `{ formatVersion, schema, features }`, where
+`features` lists optional state such as `lifecycle`, `retention` or
+`recovery-mirror`. Agent Ops `check` reports the on-disk format without migrating it.
+
+Policy: every 1.x executor opens every ledger written by `0.1.0-alpha.3` or later and
+migrates it. Downgrade is not supported. A ledger whose `formatVersion` is newer than
+the running build is refused with `STORE_FORMAT_UNSUPPORTED` and left unchanged. A
+0.1 build does not know `formatVersion`, so it is the `schema` marker, not the
+format version, that stops it from opening newer authority modes.
+
+Compatibility tests open committed ledgers written by `0.1.0-alpha.3`, `0.1.0` and
+the pre-format 0.2 build, plain and with a rollback witness. Regenerate one with
+`node scripts/generate-ledger-fixture.mjs <dist/index.js of that build> <out> <label>`.
+
 ## Adapters and integrations
 
 ### Inventory for the trusted host
+
+**Experimental in 0.1.0.** On hosted runners, admission latency during 250 ms
+polling has passed and failed the 10% overhead gate on identical code, so 0.1.0
+makes no latency promise under frequent polling. Keep Cartography's default
+300-second collection interval.
 
 Enable the optional exporter with host-controlled enrollment configuration:
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, type InventorySnapshot } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import type { InventorySnapshot } from '@shieldaai/agent-guard-executor/inventory';
 
 // This in-memory example has no durable identity after close. A real installation
 // uses its existing private SQLite path and persistent protected encryption key.
@@ -200,9 +356,12 @@ selectors, 500,000 JSON values and at most 8 MiB encoded JSON (with small serial
 headroom). Exceeding a limit throws `INVENTORY_LIMIT_EXCEEDED`; nothing is truncated.
 Disabled export, invalid configuration/scope, inconsistent state and invalid
 observation time have stable `INVENTORY_*` error codes without source values.
-The API is synchronous and has no interruptible time limit or measured polling
-latency guarantee yet. See the repository's Cartography integration plan and
-canonical `schemas/agent-guard-inventory-v1.schema.json` for the consumer contract.
+The direct `inventorySnapshot()` API remains synchronous and has no interruptible
+time limit. The HTTP observer described below uses a private worker. Neither API
+provides a per-poll latency guarantee. See the repository's Cartography integration plan and
+canonical `schemas/agent-guard-inventory-v1.schema.json` for the consumer contract. Snapshots
+switch to `agent-guard-inventory-v2.schema.json` only when outside-content labels are in use,
+or when a host snapshot carries a version-3 manifest.
 
 The [Cartography pilot runbook](../../deployment/cartography/RUNBOOK.md) supplies
 an isolated live observer/collector/reference exercise, private archive backup and
@@ -215,7 +374,7 @@ ledger. The Python/Neo4j pilot remains optional and outside execution admission.
 ### Host-owned manifest and bindings
 
 `validateInventoryManifest(value)` checks and freezes host-authored configuration
-against the version-1 manifest contract. `composeInventorySnapshot(core, manifest)`
+against the version-1, version-2 or version-3 manifest contract. `composeInventorySnapshot(core, manifest)`
 validates both inputs and produces a separate `HostInventorySnapshot` with
 `profile: 'host'`. The original core snapshot stays unchanged. The manifest is
 configuration owned by the trusted operator; it is never read from tool metadata,
@@ -223,7 +382,8 @@ model output, request parameters or a request-selected file.
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, validateInventoryManifest, composeInventorySnapshot } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { validateInventoryManifest, composeInventorySnapshot } from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32),
   inventory: { companyId: 'acme', sourceId: 'executor-eu-1', enrollmentGeneration: 'host-enrollment-1' } });
@@ -247,6 +407,8 @@ All five source fields must match exactly, including tenant, enrollment generati
 and persistent ledger identity. Every property is allowlisted. Names, owner/team
 IDs and environment labels are host-reviewed metadata; keep secrets out of them.
 No manifest field can set grants, budgets, sensitivity, revocation or approval.
+Version-2 resource sensitivity is a host inventory label; it cannot change the
+executor's task/family sensitivity or data-handling policy.
 Tasks without a binding remain in the complete inventory, without an inferred
 agent or deployment. Unknown fields, duplicate/conflicting bindings, missing
 references and mismatched source identities fail rather than being discarded.
@@ -258,6 +420,22 @@ references and mismatched source identities fail rather than being discarded.
 | `taskBindings` | One deployment per bound task; the task must exist in this snapshot. |
 | `resourceBindings` | One mapping per `(tool, resourceRef)`, with exact AWS target, actions and scope. |
 | `executionBindings` | One mapping per `(deploymentId, tool)`; optional connection ID and static, dynamic or unknown execution identity. |
+
+Version 2 adds a company authority, a bounded owner directory, agent purpose and
+lifecycle, explicit assigned/unassigned/unknown ownership, deployment/build
+references, resource sensitivity/destination/dependency metadata and an opaque
+credential-reference catalog. A generic host resource may represent a repository,
+database, queue, service or storage resource without requiring AWS. These targets
+are scoped observations and never receive inferred AWS permission edges.
+
+Use the [company cartography guide](../../docs/guides/agent-cartography.md) and
+`node examples/agent-cartography.mjs` for the complete version-2 path through the
+authenticated observer. The exact closed fields and compatibility rules are in
+[`agent-guard-inventory-manifest-v2.schema.json`](../../schemas/agent-guard-inventory-manifest-v2.schema.json).
+Credential, runtime, build and destination references use tenant-scoped opaque
+identifiers, never secret bytes or credential URLs. Keep display names and purpose
+free of secrets. Ownership is metadata; a team name or owner record cannot grant
+Map visibility or executor access.
 
 `resourceRef` is the exact **exported** selector under that tool's grant, including
 its opaque value in the default mode. Obtain it from a trusted core snapshot and
@@ -350,7 +528,12 @@ one permitted tenant and always returns that tenant's complete core inventory.
 profile overrides and duplicate JSON keys are rejected.
 
 For a host-profile credential, supply `manifests: [validatedManifest, ...]` to
-`startInventoryServer()` and set that credential's `profile: 'host'`. Every tenant
+`startInventoryServer()` and set that credential's `profile: 'host'`. To keep the
+manifest in a reviewed file instead of host code, pass
+`loadInventoryManifestFile('/absolute/private/manifest.json')`: the file must be owned by
+the host user with mode `600`, is read once at startup and gets the same validation
+(POSIX only; see the
+[cartography guide](../../docs/guides/agent-cartography.md#declare-agents-from-a-file)). Every tenant
 in its allowlist must have exactly one manifest. Up to 1,024 manifests with an
 aggregate 8 MiB/500,000-value configuration cap are accepted. The listener validates
 and copies them at startup, then checks bindings against each fresh core snapshot.
@@ -360,7 +543,8 @@ without falling back to core or changing authorization state.
 
 ```ts
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, createInventoryObserverToken, startInventoryServer } from '@shieldaai/agent-guard-executor';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { createInventoryObserverToken, startInventoryServer } from '@shieldaai/agent-guard-executor/inventory';
 
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32),
   inventory: { companyId: 'acme', sourceId: 'executor-eu-1', enrollmentGeneration: 'enrollment-1' } });
@@ -413,20 +597,93 @@ request count times the credential count, capped at 10,000. Quota failures retur
 429 with `Retry-After`; full request capacity returns 503. Slow or disconnected
 clients hold a concurrency slot until their response finishes or closes.
 
-The server serializes and checks the entire snapshot before sending success. A
-response cap failure returns 413 with `INVENTORY_RESPONSE_TOO_LARGE`, without a
-partial snapshot. The deadline spans upload, generation, serialization and writing.
-It is checked after synchronous generation: an overdue snapshot returns 408, but
-JavaScript execution itself cannot be interrupted. A stalled response is closed;
-clients must reject incomplete bodies. Inventory's record/work bounds still apply.
+The server waits for a private worker to become ready before opening its listener
+(startup is bounded to five seconds). Observer listeners for one executor share
+one worker and a four-job queue, counting the running job. `maxConcurrentRequests`
+still bounds each listener's HTTP connections doing request/response work; setting
+it above four does not increase the shared observation queue. Queue exhaustion
+returns 503 `INVENTORY_BUSY`. Closing one listener leaves other listeners usable;
+closing the last listener waits for worker termination. An unverified termination
+leaves observation unavailable for that executor instead of starting another worker.
+
+The trusted host can explicitly select a Linux background scheduling policy:
+
+```js
+const observer = await startInventoryServer({
+  executor,
+  observers: [{ token, tenantIds: ['tenant'] }],
+  workerScheduling: 'linux-background',
+});
+```
+
+The default `workerScheduling: 'default'` leaves native priorities unchanged.
+
+An identical poll (same ledger ciphertext, registry, tenant scope, profile and
+manifest) within `reuseUnchangedMs` (off by default; at most 60,000 ms)
+returns the previous observation, including its `snapshotId` and `generatedAt`,
+without running the projection. A collector sees that as no new snapshot, so turn it
+on only when the consumer polls faster than the ledger changes and accepts repeats. `host-mcp` polls are never reused, because live MCP
+connection state is outside the ledger. On an unchanged 500-task ledger this cut a
+poll from about 4.2 ms to 0.25 ms. It does not help a ledger that changes between
+polls, such as the admission stress benchmark.
+`linux-background` synchronously verifies the worker's own Linux native thread
+identity and lowers its priority by up to five nice levels, capped at nice 19
+(`min(19, initial nice + 5)`). This is a fixed policy, not a caller-supplied value.
+It never raises priority or requires `CAP_SYS_NICE`. Startup refuses with
+`INVENTORY_SCHEDULING_UNAVAILABLE` if Linux `/proc` identity, the priority operation,
+or exact readback cannot be verified; there is no fallback to default scheduling.
+Listeners sharing an executor must select the same policy, and replacement workers
+retain it. The policy applies to that native worker thread; it does not promise a
+priority for every V8 helper or GC thread. Lower priority can delay observation,
+so qualify both admission overhead and polling cadence for the selected deployment
+without changing request deadlines, quotas or memory limits. The setting is not an
+observer credential or request option. Qualification must bind the exact runtime
+and policy; historical measurements do not qualify a changed implementation.
+
+Each dispatched request captures fresh encrypted state and verifies its current
+witness and recovery mirror on the owning thread. The worker authenticates and
+decodes that captured state, projects the tenant's inventory, composes the host
+profile and serializes the response. It receives detached key copies and validated
+primitive tool flags, with no database handle or tool callbacks. Key copies are
+zeroed after use. No authority or response is cached between polls unless `reuseUnchangedMs` is set. The snapshot
+and its timestamp describe the capture point; a concurrent later mutation appears
+in a later snapshot. MCP callbacks remain on the owning thread: two full lifecycle
+digests bracket MCP projection, while only manifest-selected operations are
+transferred. Their aggregate transfer is capped at 8 MiB and 10,000 operations,
+in addition to the existing per-connection validation and final snapshot limits.
+
+The worker's V8 old-generation heap ceiling is
+`128 + 32 * ceil(maxLedgerBytes / MiB)` MiB (640 MiB at the default 16 MiB ledger
+limit; 2,176 MiB at 64 MiB), plus a 32 MiB young-generation ceiling. These are
+ceilings, not reserved memory or whole-process RSS limits. Budget for the host,
+one worker, an encrypted state copy, detached registration metadata (bounded to
+four times the ledger byte cap), MCP inputs and response copies together. A small
+container memory limit can terminate the process before a V8 ceiling is reached;
+raising `maxLedgerBytes` requires workload-specific memory validation. A legal
+byte count alone does not guarantee that every adversarial JSON shape fits the
+available memory. The reference Agent Ops service does not start this observer.
+
+The server checks the entire serialized snapshot before sending success. A response
+cap failure returns 413 with `INVENTORY_RESPONSE_TOO_LARGE`, without a partial
+snapshot. The deadline spans upload, capture, queuing, worker generation,
+serialization and writing. Timeout or disconnect discards pending output and
+terminates running worker work; its slot is retained until termination is verified.
+Owning-thread SQLite checks and MCP callbacks remain synchronous and cannot be
+preempted, so elapsed time is checked again after those stages. An overdue snapshot
+returns 408 and a stalled response is closed; clients must reject incomplete bodies.
+Inventory's record/work bounds still apply.
 The [isolated pilot benchmark](../../deployment/cartography/RUNBOOK.md#performance-gate)
 measures admission with and without actual HTTP inventory polling. Its recorded
-100-task/1,000-grant workload passed the provisional 10% p95 admission regression
-target after bounded snapshot-local reference caching: 25.103 ms without
-inventory versus 25.961 ms at a 250 ms polling cadence (+3.42%). Preparation
-p95 increased 25.85% and is recorded separately. This stress cadence is distinct
-from the collector's five-minute default; representative deployment measurements
-are still required. The cache never persists snapshots or changes references.
+[30 October 2026 result](../../deployment/cartography/validation/admission-2026-10-30.json)
+for 100 tasks and 1,000 grants passed the provisional 10% p95 admission regression
+target after bounded snapshot-local reference caching. That historical result
+does not establish acceptance of the current candidate; the
+[6 November candidate record](../../docs/validation/cartography-pilot-2026-11-06.json)
+retains later successes, failures and measurement qualifications. A passing smoke
+check does not certify the separate 10% acceptance target. The 250 ms stress
+cadence is distinct from the collector's five-minute default; representative
+deployment measurements are still required. The cache never persists snapshots
+or changes references.
 
 For a central company collector, use an operator-configured authenticated TLS
 bridge restricted to this route. Preserve the observer's loopback Host header and
@@ -529,6 +786,79 @@ Deployments enroll their own trusted builders, credentials and endpoints and set
 their retention and recovery procedures. An independent security review can inform
 a deployment's assurance decision. Physical storage durability and backup custody
 need validation on the storage and backup system that deployment uses.
+
+## Task-family lifecycle
+
+For a completed workflow, the trusted host can retire and archive its entire task
+family. This includes delegates and roots linked with `sourceTaskId`. Authenticate
+the maintenance operator before choosing the tenant; these methods are not exposed
+through task/admin HTTP or `ExecutorClient`.
+
+```ts
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { randomBytes } from 'node:crypto';
+
+const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32) });
+executor.createTask({
+  id: 'completed-task', principalId: 'operator', tenantId: 'acme', grants: [],
+  budget: { maxCalls: 0, maxConcurrent: 0, maxCost: 0, deadline: Date.now() + 60_000 },
+});
+const scope = { tenantId: 'acme', taskId: 'completed-task' };
+const beforeRetirement = executor.previewTaskFamilyRetirement(scope);
+if (beforeRetirement.retirementBlockers.length) throw new Error('Resolve unfinished work first');
+executor.retireTaskFamily({ ...scope, expectedDigest: beforeRetirement.reviewDigest });
+const beforeArchive = executor.previewTaskFamilyRetirement(scope);
+if (beforeArchive.archiveBlockers.length) throw new Error('Resolve retained references first');
+const receipt = executor.archiveTaskFamily({ ...scope, expectedDigest: beforeArchive.reviewDigest });
+console.log(receipt.archiveId, executor.findTaskFamilyArchive(scope)?.archiveId);
+executor.close();
+```
+
+Use a private on-disk ledger and persistent protected key for actual retention.
+Previews contain bounded counts and blockers, never arguments or keys. An
+intervening ledger write or restart invalidates the digest; the host also owns
+review expiry and user binding. Retirement revokes the whole family and cancels
+preparations. Active or uncertain effects must first end and, when `UNKNOWN`, be
+reconciled using backend evidence. A timeout alone never permits archival.
+
+Archive writes and live-record removal are atomic. Each archive has a fresh
+encryption key held only in the main encrypted ledger, authenticated ciphertext
+and permanent task-ID non-reuse markers. Existing memory names are also retired
+within their tenant so they cannot be recreated with weaker labels. The archive
+retains budgets, counters, provenance and available evidence; it cannot recover
+history previously pruned by normal retention. `verifyTaskFamilyArchive()` returns
+only verified receipt metadata. If the application loses its archive response,
+`findTaskFamilyArchive({ tenantId, taskId })` recovers the receipt from any original
+family member, allowing its separate backend bookkeeping to finish idempotently.
+
+External task/memory references and mixed memory histories block archival. Retire
+and archive independent dependents first; cycles or shared histories remain
+blocked. Linked handoffs are preferable when work should share a lifecycle.
+Archived task APIs and inventory no longer expose those records, and signed
+artifacts referring to archived tasks cannot reopen authority.
+
+Live task/action capacity is reclaimed. Retention remains finite: at most 4,096
+archives, 65,536 combined task/memory markers, 256 MiB of archive ciphertext and
+16 MiB decoded state per archive. The configured main-ledger bound (16 MiB by default) also
+applies. Limits fail closed without evicting identities or resetting spent
+budgets. This is logical archival, not secure erasure or physical SQLite shrinking.
+
+Agent Ops adds a separate, reviewed offline
+[company-history protocol](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/company-history.md)
+for its single-root ticket profile. It exports authenticated evidence before
+reclaiming local archives and uses permanent namespace fences to prevent reuse.
+It does not compact delegated or memory-bearing SDK families. Legacy identities
+and unresolved sequence gaps retain individual markers. Lifecycle mutations
+upgrade authority to schema 2 so old schema-1-only readers cannot ignore these
+protections after a binary downgrade.
+
+For operator recovery, `listExecutions({ tenantId })` lists `UNKNOWN` work with
+bounded metadata and authenticated revision-bound pagination; `statuses` can
+select other states, and `limit` is 1–100 (default 25). A changed revision requires
+restarting pagination. `maintenanceStatistics({ tenantId })` reports scoped live,
+retired and archive counts, plus deployment-wide decoded `ledgerBytes` and
+`ledgerByteLimit`. See the [exact API](https://github.com/ShieldaAI/agent-guard/blob/main/docs/api-contract.md#task-family-retirement-and-archival)
+for shapes, errors and conservative reference rules.
 
 ## Concrete file and HTTP adapters
 

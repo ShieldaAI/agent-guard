@@ -24,7 +24,6 @@ ACCOUNT = "123456789012"
 DATE = datetime(2024, 1, 2, tzinfo=UTC)
 ROLE = f"arn:aws:iam::{ACCOUNT}:role/Reader"
 USER = f"arn:aws:iam::{ACCOUNT}:user/Reader"
-GROUP = f"arn:aws:iam::{ACCOUNT}:group/Readers"
 POLICY = f"arn:aws:iam::{ACCOUNT}:policy/Read"
 BUCKET = "arn:aws:s3:::reports"
 

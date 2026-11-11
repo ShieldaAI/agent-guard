@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-executor",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0",
   "description": "Durable AI agent tool authorization with SQLite state, authenticated task APIs, approvals and budget admission.",
   "license": "Apache-2.0",
   "type": "module",
@@ -10,10 +10,31 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./sandbox": {
+      "types": "./dist/entry-sandbox.d.ts",
+      "import": "./dist/entry-sandbox.js"
+    },
+    "./inventory": {
+      "types": "./dist/entry-inventory.d.ts",
+      "import": "./dist/entry-inventory.js"
+    },
+    "./pilot": {
+      "types": "./dist/entry-pilot.d.ts",
+      "import": "./dist/entry-pilot.js"
+    },
+    "./ops": {
+      "types": "./dist/entry-ops.d.ts",
+      "import": "./dist/entry-ops.js"
+    },
+    "./internal": {
+      "types": "./dist/entry-internal.d.ts",
+      "import": "./dist/entry-internal.js"
     }
   },
   "bin": {
-    "agent-guard-pilot-review": "./dist/pilot-review-cli.js"
+    "agent-guard-pilot-review": "./dist/pilot-review-cli.js",
+    "agent-guard-ledger": "./dist/ledger-maintenance-cli.js"
   },
   "files": [
     "dist",
@@ -24,12 +45,12 @@
     "node": ">=22.13.0"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0-alpha.3",
+    "@shieldaai/agent-guard": "0.1.0",
     "ipaddr.js": "2.5.0"
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",

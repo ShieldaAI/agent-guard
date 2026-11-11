@@ -273,7 +273,7 @@ def test_mcp_edge_validation_and_scoped_cleanup_include_both_new_labels(
         ).consume()
 
     with pytest.raises(GraphImportError, match="^PROJECTION_RELATIONSHIP_MISMATCH$"):
-        import_snapshot(neo4j_session, failed, failed["source"], after_load=remove_operation_link)
+        import_snapshot(neo4j_session, failed, failed["source"], _after_load=remove_operation_link)
     failed_projection = neo4j_session.run(
         "MATCH (p:GuardSnapshot {snapshot_id:$id}) RETURN p.id AS id",
         id=failed["snapshotId"],
@@ -309,7 +309,7 @@ def test_late_mcp_publication_cannot_replace_newer_connection_observations(
         published.append(import_snapshot(neo4j_session, newer, newer["source"]))
 
     with pytest.raises(GraphImportError, match="^PUBLICATION_CONFLICT$"):
-        import_snapshot(neo4j_session, late, late["source"], after_load=publish_newer)
+        import_snapshot(neo4j_session, late, late["source"], _after_load=publish_newer)
     current = source_state(neo4j_session, original.source_id)
     assert current["current_snapshot_id"] == published[0].projection_id
     assert connection_state(neo4j_session, published[0].projection_id)["revision"] == revision + 2

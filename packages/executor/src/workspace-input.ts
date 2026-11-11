@@ -54,9 +54,16 @@ function openPosixInput(root: string, name: string): number {
 
 /** Read only the object opened inside the selected workspace, with a fixed byte ceiling. */
 export function readWorkspaceInput(root: string, name: string, maximum: number): Buffer {
-  if (!isAbsolute(root) || !name || name.includes('\\') || name.includes('\0') ||
-      name.split('/').some(part => !part || part === '.' || part === '..') ||
-      !Number.isSafeInteger(maximum) || maximum < 0 || maximum > 64 * 1024 * 1024) {
+  if (
+    !isAbsolute(root) ||
+    !name ||
+    name.includes('\\') ||
+    name.includes('\0') ||
+    name.split('/').some(part => !part || part === '.' || part === '..') ||
+    !Number.isSafeInteger(maximum) ||
+    maximum < 0 ||
+    maximum > 64 * 1024 * 1024
+  ) {
     throw new Error('Invalid workspace input selection');
   }
   if (process.platform === 'win32') return readWindowsWorkspaceInput(root, name, maximum);
@@ -75,8 +82,13 @@ export function readWorkspaceInput(root: string, name: string, maximum: number):
       length += count;
     }
     const after = fstatSync(fd, { bigint: true });
-    if (BigInt(length) !== before.size || after.size !== before.size || after.nlink !== 1n ||
-        before.ctimeNs !== after.ctimeNs || before.mtimeNs !== after.mtimeNs) {
+    if (
+      BigInt(length) !== before.size ||
+      after.size !== before.size ||
+      after.nlink !== 1n ||
+      before.ctimeNs !== after.ctimeNs ||
+      before.mtimeNs !== after.mtimeNs
+    ) {
       throw new Error('Workspace input changed during its bounded copy');
     }
     return bytes.subarray(0, length);

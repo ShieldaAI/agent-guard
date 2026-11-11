@@ -9,8 +9,13 @@ const fingerprint = guard.registerTool({
   description: 'Archive one synthetic record',
   requiresApproval: true,
   parse(args) {
-    if (!args || typeof args !== 'object' || Array.isArray(args) ||
-        Object.keys(args).length !== 1 || typeof args.recordId !== 'string') {
+    if (
+      !args ||
+      typeof args !== 'object' ||
+      Array.isArray(args) ||
+      Object.keys(args).length !== 1 ||
+      typeof args.recordId !== 'string'
+    ) {
       throw new Error('Expected one recordId');
     }
     return { recordId: args.recordId };
@@ -23,7 +28,9 @@ const fingerprint = guard.registerTool({
 });
 guard.approveTool('records.archive', fingerprint);
 const task = guard.createTask({
-  id: 'archive-demo', principalId: 'demo-operator', tenantId: 'demo-company',
+  id: 'archive-demo',
+  principalId: 'demo-operator',
+  tenantId: 'demo-company',
   grants: [{ tool: 'records.archive', resources: ['record-A'] }],
   budget: { maxCalls: 1, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
 });
@@ -34,16 +41,22 @@ async function expectDenied(label, code, operation, expectedCalls) {
   console.log(`DENIED ${label}: ${code}; handler calls: ${handlerCalls}`);
 }
 
-await expectDenied('ungranted resource', 'GRANT_DENIED', () =>
-  guard.prepare(task, { tool: 'records.archive', args: { recordId: 'record-B' } }), 0);
+await expectDenied(
+  'ungranted resource',
+  'GRANT_DENIED',
+  () => guard.prepare(task, { tool: 'records.archive', args: { recordId: 'record-B' } }),
+  0,
+);
 const prepared = await guard.prepare(task, {
-  tool: 'records.archive', args: { recordId: 'record-A' },
+  tool: 'records.archive',
+  args: { recordId: 'record-A' },
 });
 await expectDenied('without approval', 'APPROVAL_REQUIRED', () => guard.execute(prepared), 0);
 
 // A real host authenticates the reviewer before calling approve().
 const approvalId = guard.approve(prepared, {
-  approverId: 'fixture-reviewer', expiresAt: Date.now() + 30_000,
+  approverId: 'fixture-reviewer',
+  expiresAt: Date.now() + 30_000,
 });
 const result = await guard.execute(prepared, { approvalId });
 assert.equal(result.recordId, 'record-A');

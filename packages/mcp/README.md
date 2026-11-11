@@ -1,10 +1,23 @@
 # @shieldaai/agent-guard-mcp
 
-Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM. Experimental alpha.
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
 
-Install with `npm install @shieldaai/agent-guard-mcp@alpha`. The host supplies
+Authorize MCP tool calls in TypeScript with approved metadata and task-scoped resources, using the same execution boundary as `@shieldaai/agent-guard`. Node.js 22+, ESM.
+
+Install with `npm install @shieldaai/agent-guard-mcp`. The host supplies
 identity, resource resolution and transport policy. For the core API and related
 packages, see the [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
+
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): supply-chain change in
+MCP servers (ASI04), through reviewed tool metadata, quarantine on drift and bounded
+schemas; identity and privilege abuse (ASI03), through verified credentials and refused
+redirects; and, by routing every call through the core guard, the
+core's tool-misuse, approval and budget checks (ASI02, ASI08, ASI09). A connection or
+binding can be marked `readsUntrusted` to limit what a hijacked agent can do next (ASI01).
+It does not sandbox the server or stop a client from using another connection.
 
 ## Managed connections
 
@@ -48,7 +61,10 @@ The transport is exclusively owned by the manager. Do not retain a second client
 - Call `await connection.refresh()` to fetch and validate a fresh bounded registry. Review and approve the new fingerprints. Every refresh, including unchanged descriptors, invalidates prepared calls and previous fingerprint approvals.
 - Outbound operations carry session/revision markers checked immediately before transport dispatch, closing the gap between preparation and asynchronous SDK dispatch. Concurrent refreshes cannot publish stale results.
 - Closing or losing the connection invalidates the registry. Reconnection requires a new manager and new approvals; it cannot inherit a former session's approval.
-- A failed, aborted or invalid-result operation quarantines the connection and is never retried by the manager. A metadata change during execution discards the returned result. Neither action rolls back an effect that already occurred remotely.
+- A failure local to one call fails only that call (`TOOL_FAILED` from the guard, which treats the effect as unknown). This covers an abort or deadline, a request timeout, a JSON-RPC error reply, an invalid or oversized result, a resource mismatch and a throwing `measureCost`. Other tasks keep using the connection. The manager never retries the call.
+- Connection-level failures quarantine every operation until `refresh()` and re-approval. These are: a lost transport, a send failure, a session/revision marker mismatch, a denied capability, active (UI/widget) content, an authorization failure, a `list_changed` notification, an inbound flood above the message rate, and an oversized or malformed message that answers no pending call.
+- An inbound message that reflects a protected host value closes the connection. A new reviewed manager is required.
+- A metadata change during execution discards the returned result. No failure path rolls back an effect that already occurred remotely.
 
 `connection.status`, `revision`, `sessionId`, and immutable `registrations` expose state without granting raw protocol access. Missing/removed operations remain unavailable. Task call/concurrency/cost budgets are enforced by the supplied guard/executor.
 
@@ -93,7 +109,7 @@ and [standalone schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json).
 
 Resource and prompt retrieval are data access, not proof that returned text is safe to follow. Host applications must retain provenance and keep this content out of privileged instruction channels. Descriptor pinning does not detect a malicious implementation whose descriptor never changes.
 
-Defaults: 10-second request deadline, four discovery pages, 64 total registry entries, 10,000 inbound messages per connection. Configurable values have hard upper bounds. JSON envelopes/results are limited to 1 MiB, 10,000 nodes and depth 32. Schema documents are limited to 64 KiB, 2,048 nodes and depth 16; local-reference expansion has separate limits. The bounded structural JSON Schema profile uses maintained AJV, permits acyclic local JSON-pointer references, and rejects external/dynamic/recursive references, custom dialects, regex patterns and formats. Unsupported schemas fail closed; there is no silent validation downgrade. These structural bounds are not an OS CPU quota; run untrusted protocol processing inside the executor isolation boundary.
+Defaults: 10-second request deadline, four discovery pages, 64 total registry entries, at most 10,000 inbound messages per 10-second sliding window (`maxMessages`, `messageWindowMs`; exceeding it quarantines). Configurable values have hard upper bounds. JSON envelopes/results are limited to 1 MiB, 10,000 nodes and depth 32. Schema documents are limited to 64 KiB, 2,048 nodes and depth 16; local-reference expansion has separate limits. The bounded structural JSON Schema profile uses maintained AJV, permits acyclic local JSON-pointer references, and rejects external/dynamic/recursive references, `$id` and unknown dialects. It accepts the draft-07, 2019-09 and 2020-12 dialect URIs. `format` and content keywords are annotations and do not validate, which is the JSON Schema default. `uniqueItems` uses canonical-JSON equality in linear time. `pattern` is accepted only when its backtracking is bounded: at most 512 characters, no backreferences or lookaround, no quantified group containing a quantifier or alternation, and one variable-length quantifier (two when anchored with `^`). Patterned strings longer than 4,096 characters never match, and each validation has a fixed total regex work budget. An operation whose schema falls outside the profile is skipped, and the rest of the registry loads. `connection.skipped` lists each skipped operation with its reason (for example `SCHEMA_UNSUPPORTED`), and it never becomes callable. There is no silent validation downgrade. These structural bounds are not an OS CPU quota; run untrusted protocol processing inside the executor isolation boundary.
 
 ### HTTP and authentication boundary
 

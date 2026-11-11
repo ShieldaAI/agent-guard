@@ -323,11 +323,21 @@ def test_real_queries_filter_hidden_teams_ancestors_shared_operations_and_provid
         "provider-policy-canary",
         "records.delete",
         "family_id",
-        "manifest_revision",
     ]:
         assert forbidden not in serialized
     (source,) = response["view"]["sources"]
     nodes = source["current"]["nodes"]
+    host_nodes = [
+        node for node in nodes if node["properties"].get("evidence_kind") == "host_asserted"
+    ]
+    assert host_nodes and any(node["label"] == "GuardAgent" for node in host_nodes)
+    assert all(
+        node["properties"]["manifest_id"] == reference_snapshot["manifest"]["manifestId"]
+        and node["properties"]["manifest_revision"] == reference_snapshot["manifest"]["revision"]
+        and node["sourceId"] == receipt.source_id
+        and node["projectionId"] == receipt.projection_id
+        for node in host_nodes
+    )
     assert {node["properties"]["task_id"] for node in nodes if node["label"] == "GuardTask"} == {
         "visible-task"
     }
@@ -417,7 +427,7 @@ def test_historical_team_moves_do_not_reveal_old_hidden_ownership(
     snapshot["manifest"]["agents"][0]["teamId"] = "hidden-team"
     receipt = publish(neo4j_session, snapshot)
     response = query(scope(snapshot), {"sourceId": receipt.source_id, "history": True})
-    assert response["ok"]
+    assert response["ok"], response
     for projection in [
         response["view"]["sources"][0]["current"],
         response["view"]["sources"][0]["previous"],

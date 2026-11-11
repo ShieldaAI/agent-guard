@@ -16,7 +16,6 @@ import json
 import os
 import platform
 import re
-import secrets
 import shutil
 import signal
 import subprocess
@@ -78,7 +77,7 @@ def main() -> int:
         parser.error("Neo4j image must match the pinned compatibility baseline")
     run_id = uuid.uuid4().hex
     name = f"agent-guard-pilot-benchmark-{run_id}"
-    password = secrets.token_urlsafe(32)
+    password = runner.neo4j_initial_password()
     docker_env = os.environ.copy()
     docker_env["NEO4J_AUTH"] = f"neo4j/{password}"
     tunnel = None
@@ -88,6 +87,7 @@ def main() -> int:
         "profile": options.profile,
         "startedAt": datetime.now(UTC).isoformat(),
         "passed": False,
+        "stage": "container-preflight",
         "hardware": {
             "os": platform.system(),
             "release": platform.release(),
@@ -120,10 +120,11 @@ def main() -> int:
     signal.signal(signal.SIGINT, interrupted)
     try:
         report["versions"]["docker"] = runner.require_private_port_support()
+        report["stage"] = "container-start"
         container_id = runner.docker(
             "run",
             "--detach",
-            "--rm",
+            # Keep exited state available for safe diagnostics until owned cleanup.
             "--name",
             name,
             "--label",
@@ -160,13 +161,15 @@ def main() -> int:
         )
         if not re.fullmatch(r"[0-9a-f]{64}", container_id):
             raise RuntimeError("PILOT_CONTAINER_INVALID")
+        report["stage"] = "listener-validation"
         address = runner.docker("port", container_id, "7687/tcp")
         if not re.fullmatch(r"127\.0\.0\.1:\d+", address):
             raise RuntimeError("PILOT_LISTENER_INVALID")
         with tempfile.TemporaryDirectory(prefix="agent-guard-pilot-benchmark-") as directory:
             private = Path(directory)
             uri, tunnel = runner.loopback_uri(address, private)
-            runner.wait_ready(uri, password, tunnel)
+            report["stage"] = "database-readiness"
+            report["readiness"] = runner.wait_ready(uri, password, tunnel)
             config = private / "connection.json"
             config.write_text(
                 json.dumps(
@@ -188,6 +191,7 @@ def main() -> int:
             snapshot_sizes = []
             tenant_ids = set()
             batch_start = time.perf_counter()
+            report["stage"] = "publication"
             with (
                 GraphDatabase.driver(
                     uri,
@@ -235,6 +239,7 @@ def main() -> int:
                     "MATCH ()-[r]->() RETURN count(r) AS n"
                 ).single(strict=True)["n"]
             query_env = os.environ.copy()
+            report["stage"] = "http-queries"
             for key in tuple(query_env):
                 if key.startswith("NEO4J_") or key == runner.CONFIG_ENV:
                     query_env.pop(key)
@@ -261,6 +266,7 @@ def main() -> int:
                 env=query_env,
             )
             measurements = json.loads(queried.stdout)
+            report["stage"] = "performance-gates"
             result = gates(options.profile, publications, measurements["samples"], counts)
             report.update(
                 {
@@ -278,7 +284,11 @@ def main() -> int:
     except Exception as error:
         # Imported values, database locations, stderr and credentials never enter reports.
         report["error"] = f"PILOT_FAILED_{type(error).__name__.upper()}"
+        if isinstance(error, runner.ReadinessTimeout):
+            report["readiness"] = error.diagnostics
     finally:
+        if "error" in report:
+            report["containerStateAtFailure"] = runner.owned_container_state(name, run_id)
         if tunnel is not None:
             tunnel.terminate()
             try:

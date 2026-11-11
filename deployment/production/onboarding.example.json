@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "company": { "id": "REPLACE_WITH_COMPANY_ID", "name": "Your company" },
+  "publicOrigin": "https://ops.example.invalid:8443",
+  "oidc": {
+    "issuer": "https://identity.example.invalid",
+    "clientId": "REPLACE_WITH_ENROLLED_CONFIDENTIAL_CLIENT_ID",
+    "clientSecretFile": "/run/company/oidc-client-secret"
+  },
+  "tls": { "keyFile": "/run/company/tls.key", "certFile": "/run/company/tls.pem" },
+  "owner": { "subject": "REPLACE_WITH_EXACT_ISSUER_SUBJECT", "id": "deployment-owner", "name": "Deployment owner" },
+  "storage": { "dataDirectory": "/var/lib/agent-ops", "witnessDirectory": "/var/lib/agent-ops-witness", "historyDirectory": "/var/lib/agent-ops-history", "historyMirrorDirectory": "/var/lib/agent-ops-witness/history-mirror" },
+  "ticketsFile": "/run/company/tickets.json",
+  "limits": { "maxTickets": 500, "maxRequests": 4000, "maxBackendBytes": 16777216, "maxLedgerBytes": 16777216, "maxRetainedKeys": 4 }
+}

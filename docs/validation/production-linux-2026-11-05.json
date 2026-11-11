@@ -1,0 +1,89 @@
+{
+  "schema": 1,
+  "measuredAt": "2026-11-05T22:30:02.657Z",
+  "status": "passed",
+  "verificationImage": "sha256:905c887cc5cd1c3cccb3f05d0e6d9a9bc7a38b954c847bf4c87da57ecde27857",
+  "imagePlatform": "linux/arm64",
+  "docker": {
+    "version": "29.5.2",
+    "os": "linux",
+    "arch": "arm64"
+  },
+  "composeControls": "passed",
+  "maintenance": {
+    "status": "passed",
+    "platform": "linux",
+    "node": "24.22.1",
+    "twoStoreRotation": true,
+    "interruptedReceiptReconciled": true,
+    "duplicateEffectPrevented": true,
+    "archivePersisted": true,
+    "rollbackRejected": true
+  },
+  "cli": {
+    "status": "passed",
+    "platform": "linux",
+    "arch": "arm64",
+    "node": "24.22.1",
+    "signedOidc": true,
+    "reviewedUpdate": true,
+    "processKillRestart": true,
+    "sessionsInvalidated": true,
+    "pendingReviewInvalidated": true,
+    "secondOwnerRejected": true,
+    "coldRestoreWithoutWitnessRollback": true,
+    "partialRotationRecoverable": true,
+    "bothStoresRotated": true,
+    "subsequentUpdate": true,
+    "archiveViaHttps": true,
+    "staleRestoreRejected": true,
+    "healthcheck": true,
+    "hardenedContainer": true
+  },
+  "limits": [
+    "Disposable local Linux containers; no customer deployment",
+    "CLI SIGKILL and cold file recovery; no guest kernel crash or physical host power loss",
+    "Compose configuration and matching hardened container controls verified; production bind-volume provisioning remains operator-owned",
+    "Disposable state uses private container tmpfs; no production disk, bind-volume permissions, cloud IdP, remote backend, or backup automation was certified."
+  ],
+  "baseImage": "node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53",
+  "runtimeEquality": {
+    "scope": "All five compiled package dist trees, application source/public assets and installed node_modules (symlinks recorded, no filesystem metadata)",
+    "equal": true,
+    "images": [
+      {
+        "image": "sha256:5a6b418a6758e59a44de4eea2ef2e23d52e252fbe6f5f514f26748515245fa0a",
+        "files": 4300,
+        "sha256": "d33b092d742f5fd960b4b7d37e7f7671ea46831fec2b4c7ef83e084143017504",
+        "testFixtures": false,
+        "appTests": false,
+        "cliVerifier": false,
+        "license": true
+      },
+      {
+        "image": "sha256:905c887cc5cd1c3cccb3f05d0e6d9a9bc7a38b954c847bf4c87da57ecde27857",
+        "files": 4300,
+        "sha256": "d33b092d742f5fd960b4b7d37e7f7671ea46831fec2b4c7ef83e084143017504",
+        "testFixtures": true,
+        "appTests": false,
+        "cliVerifier": true,
+        "license": true
+      }
+    ],
+    "algorithm": "SHA-256 over sorted per-directory path + NUL + file bytes (or symlink target) + NUL; recursively traversed the listed roots in their listed order, Node localeCompare sorting."
+  },
+  "commands": [
+    "docker build --pull=false --build-arg NODE_IMAGE=node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 --target production -f deployment/production/Dockerfile -t agent-ops-p0-local:production .",
+    "docker build --pull=false --build-arg NODE_IMAGE=node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53 --target verification -f deployment/production/Dockerfile -t agent-ops-p0-local:verification .",
+    "node deployment/production/check-linux.mjs --image sha256:905c887cc5cd1c3cccb3f05d0e6d9a9bc7a38b954c847bf4c87da57ecde27857 --output /tmp/agent-ops-p0-linux-final.json"
+  ],
+  "verifierFiles": {
+    "deployment/production/Dockerfile": "3829e6b12cf1da8d20f7e72e32075b7c6578a660af0e159c98fa9dd317653ee3",
+    "deployment/production/Dockerfile.dockerignore": "95b71af2b46861e5a53ade01da8a7474f19d767995682e0decca43129cad2779",
+    "deployment/production/compose.yaml": "0d0c3332b70a983ac5458c35a6a6a73fb3e0db839d7db0de8c781a7273c5ac42",
+    "deployment/production/check-linux.mjs": "fa6bedb0c7f74f7f56342d0d410a17696d1214504e8bcf420e299e1c7156703f",
+    "deployment/production/verify-cli.mjs": "571d9c9098d5e35335b3147a7e32a8a8c8cdcefa7a218b3fbd7508962a7e426d",
+    "deployment/production/verify-maintenance.mjs": "072234795b720a99cbdd556348625b1763a4c7e383ce7939f3c0f2defa86369d",
+    "deployment/production/healthcheck.mjs": "c01005c3e8e474c87f0093561574ff798fefb1fe1ffd998e2112b4fdebf1707c"
+  }
+}

@@ -41,6 +41,37 @@ def difference():
     }
 
 
+def test_paged_details_do_not_truncate_minimized_complete_change_counts():
+    value = difference()
+    value["data"].update(
+        total=2, offset=0, limit=1, truncated=True, details=[], changeSummaryScope="retained"
+    )
+    value["data"]["changes"]["changed"].append({"label": "GuardOwner", "name": "private-canary"})
+    result = report.minimize_changes(value, SOURCE)
+    assert result["counts"] == {
+        "added": {"GuardTask": 1},
+        "changed": {"GuardOwner": 1},
+        "removed": {},
+    }
+    assert "private-canary" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("total", [True, -1, 0, 2, "1"])
+def test_reports_reject_missing_summaries_in_paginated_change_response(total):
+    value = difference()
+    value["data"]["total"] = total
+    with pytest.raises(ReportError, match="^REFERENCE_REPORT_INVALID$"):
+        report.minimize_changes(value, SOURCE)
+
+
+@pytest.mark.parametrize("summary_scope", ["page", "unknown", None, True])
+def test_reports_refuse_page_scoped_or_unknown_change_summaries(summary_scope):
+    value = difference()
+    value["data"].update(total=1, changeSummaryScope=summary_scope)
+    with pytest.raises(ReportError, match="^REFERENCE_REPORT_INVALID$"):
+        report.minimize_changes(value, SOURCE)
+
+
 def wire(body, status="200 OK", headers=None):
     headers = headers or [("Content-Type", "application/json"), ("Content-Length", str(len(body)))]
     return (
@@ -502,3 +533,10 @@ def test_cumulative_file_and_byte_caps_fail_without_overwrite(tmp_path, fake_que
     with pytest.raises(ReportError, match="REFERENCE_REPORT_LIMIT_EXCEEDED"):
         write_report("endpoint", TOKEN, SOURCE, directory)
     assert existing.exists()
+
+
+def test_report_labels_match_the_projection_labels():
+    # A label added to the graph schema must be added here too, or every report is refused.
+    from agent_guard_cartography.models import PROJECTION_LABELS
+
+    assert report.LABELS == frozenset(PROJECTION_LABELS)

@@ -53,7 +53,7 @@ own contents and baked environment remain part of the trusted image selection.
 import {
   runDockerSandbox,
   writeReviewedExports,
-} from "@shieldaai/agent-guard-executor";
+} from "@shieldaai/agent-guard-executor/sandbox";
 
 const result = await runDockerSandbox({
   profile: { image: process.env.REVIEWED_IMAGE_DIGEST, timeoutMs: 30_000 },

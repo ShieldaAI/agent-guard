@@ -80,6 +80,10 @@ container/tunnel cleanup. Whole-cycle duration is reported separately. A failed
 gate produces a nonzero exit code and an explicit failed report. This measures
 synthetic bounded reads, not company-wide exhaustive graph queries or AWS API
 latency. Hardware and configured limits accompany the measurements.
+Reports identify the last benchmark stage. A startup failure records bounded
+readiness attempts/elapsed time and an allowlisted failure class; owned-container
+running, OOM and exit status are captured before cleanup when available. Container
+logs, environment, database addresses and driver error text are not exported.
 
 The separate admission benchmark measures the observer's effect on the executor.
 Run these commands from the repository root:
@@ -115,6 +119,11 @@ from common-clock completion timestamps within the workload worker's exact measu
 interval; message delivery to the executor does not define that boundary.
 All poll timings, counts, workload,
 hardware and cleanup outcomes are recorded in the private JSON artifact.
+`failureReasons` identifies each failed phase requirement. `effectAccountingPassed`
+separates exact effect/call counts from `stressProfileValid`; the legacy
+`correctnessPassed` field still denotes the complete profile requirements. Valid
+latency samples remain visible after a busy-cadence failure, but diagnostic timings
+do not make that profile or its performance gate pass.
 
 The smoke profile retains 100 measured samples per phase and checks correctness;
 it reports but does not enforce or certify the 10% regression target. A failed
@@ -164,11 +173,186 @@ are both retained in the [validation evidence](validation/README.md), alongside
 the graph/recovery reports and the superseded measurement.
 
 The [pilot CI workflow](../../.github/workflows/cartography-pilot.yml) runs the
-live restore/rollback exercise and graph/admission smoke profiles on relevant
-pull requests. Its manual full-benchmark option runs both acceptance profiles.
+live restore/rollback exercise and the graph smoke profile on relevant pull
+requests. The admission-during-polling profile never runs on pull requests: it
+runs nightly on the default branch with the acceptance profiles, and on manual
+dispatch (smoke by default, acceptance with the full-benchmark option).
 It uploads only safe
 verification reports for 30 days, never config, credentials, archives or database
 volumes. Local measurements do not establish a completed hosted CI run.
+
+## Constrained observer qualification
+
+**Not a 0.1.0 gate.** On 9 November 2026 this profile was removed from the 0.1.0
+release gates. It remains unqualified with unchanged limits; see the
+[scope decision](../../docs/releases/0.1.0.md#scope-decision-single-cpu-observer-profile).
+The procedure below is retained for a later release that requalifies it.
+
+The configured acceptance profile measures the uninstrumented full admission
+workload on native Linux/cgroup v2 with one logical CPU, a one-CPU bandwidth quota,
+512 MiB memory, no extra swap, 128 PIDs, a 100 ms CPU period and zero burst.
+It explicitly selects `workerScheduling: 'linux-background'` with a fixed relative
+nice increase of 5, clamped at 19, for the worker's own native JavaScript thread.
+Default scheduling and owner priority are unchanged; no V8 helper/GC priority or
+real-time guarantee is implied.
+
+**6 November checkpoint: new own-field candidate pending.** The rejected +10
+candidate `b4bf2ce` passed all six ordinary workflows and 11 CI jobs, but all three
+required native runs failed cold-poll cadence: two busy skips each, with zero
+failed polls and all 1,200 effects. Their numerical overheads were 7.356%, 5.527%
+and 11.890%; the third also exceeded the 10% bound. Ordinary full graph/admission
+passed at 6.883%, which does not replace the native failures. Historical +5
+`f28b8e2` passes and the byte-identical `b18b749` 10.667% failure remain retained
+in the [evidence record](../../docs/validation/one-cpu-observer-2026-11-06.json).
+
+The new candidate restores +5 and reduces own-field inspection work only inside
+the private core observer's fresh authenticated JSON projection. Authority reads,
+mirror checks, host/MCP paths and external metadata validation remain unchanged;
+there is no staged priority, synthetic prewarming or authority/response cache.
+A local prototype passed ten differential checks and reduced measured component
+CPU about 8%/9% on two fixtures. It does not establish whole-admission margin,
+cold-poll behavior or the cause of earlier failures.
+
+For the changed implementation, three native runs (automatic plus two manual)
+and one ordinary full graph/admission run are declared before outcomes;
+**all four are required**.
+Keep cold first polls, 250 ms cadence, every sample, original deadlines and the
+10% p95 bound unchanged. Do not retry or substitute results. Later source-bound
+outcomes are retained on [PR #10 checks](https://github.com/ShieldaAI/agent-guard/pull/10/checks).
+The Node security hold and qualification on reviewed fixed Node images remain
+separate publication gates.
+This profile does not replace the graph or ordinary hosted admission gate. Build
+first and execute each declared qualification once, without a competing local workload:
+
+```sh
+export NODE_IMAGE='node@sha256:06d7adf3e0ef61a13f1d28682726366f97a15aa1888c934d3ecec86c33918b53'
+docker pull "$NODE_IMAGE"
+mkdir -p artifacts/constrained-observer-runs
+node scripts/check-constrained-observer.mjs --image "$NODE_IMAGE" --cpu-affinity 0 \
+  --worker-scheduling linux-background \
+  --output artifacts/constrained-observer-runs/REVIEWED_UNIQUE_ATTEMPT
+```
+
+Run from the repository root as a nonroot POSIX user, with built packages and
+dependencies present. The output directory must not exist; its existing canonical
+parent must be available to the Docker daemon. The runner never pulls or builds.
+It stages only allowlisted inputs in a new private sibling of the output directory,
+mounts the stage read-only, uses fresh synthetic authority, verifies real cgroup
+controls and retains `admission.json`, `resources.json`, `staged-inputs.json` and
+`verification.json`. Exact owned-container removal, absence and staging cleanup
+are required for success. It never mounts the whole checkout or company data.
+
+An explicit `--cpu-affinity SINGLE_INDEX` selects the stricter
+`single-logical-cpu` profile. Supply one canonical decimal index in 0–4095 that
+is available to the Docker host. This constrains placement to one logical CPU;
+it does not reserve exclusive capacity or identify a physical core. The one-CPU
+quota, 100 ms period, zero burst, memory/swap/PID limits and all workload/gate
+requirements remain unchanged. Both the kernel effective CPU set and process
+allowed CPU list must match that singleton before and after the workload. Without
+the option the generic runner stays `bandwidth-only`; a pass under one placement
+cannot qualify the other. The [hosted workflow](../../.github/workflows/constrained-observer.yml)
+runs nightly and on manual dispatch, never on pull requests. Scheduled and default
+manual runs explicitly select affinity `0` and execute one full run without
+diagnostics or retries. Manual `none` remains available for
+historical quota-only comparisons; no default resource cap or threshold changes.
+
+Select `--worker-scheduling linux-background` explicitly for configured admission
+qualification. The trusted host option lowers only the observer worker's native
+JavaScript-thread priority by up to five nice points, capped at 19. Startup and private
+before/after evidence verify readback and unchanged owner priority; GC/helper
+thread priorities are not claimed. Unsupported hosts or failed verification refuse
+the mode without fallback. Generic CLI/SDK calls retain `default`, and manual
+historical comparisons select `default` without passing the new flag to old source.
+The ordinary graph-load/host-MCP fixture keeps its existing default policy.
+
+The [6 November evidence](../../docs/validation/one-cpu-observer-2026-11-06.json)
+retains the first setup failure caused by an unshared macOS temporary directory
+and the private-sibling correction. The subsequent bandwidth-only full run
+completed all 1,200 effects and 222 polls but failed with 10 skipped polls and a
+1.239 p95 ratio. The Colima single-logical-CPU-0 run completed 1,200 effects and 116 polls
+but failed with three skipped polls despite a 0.476 ratio and less throttling.
+Lower latency or throttling does not satisfy a failed cadence requirement.
+The later native Linux controlled affinity-0 run passed with the exact same
+`e4e42f` source, 91 staged files and image as the original native quota-only run.
+Native quota-only runs still failed at 14.89% and 13.31% overhead; neither was
+discarded or relabeled as a pass. Earlier diagnostic, control and 10 ms-period
+attempts remain separate failed/unqualified evidence. A single native placement
+pass does not certify Colima or arbitrary CPU/host placement. Use the
+[release checklist](../../docs/archive/releasing-0.1.md#node-update-checklist-for-010) for the
+pending exact final candidate and Node-update verification; the security hold remains.
+
+The current public task HTTP server yields once on prepare/execute after bounded
+JSON parsing and before fresh second authentication. It preserves fresh authority
+reads, the original monotonic body deadline, transport guards and the immutable
+validated route. A fixed `REQUEST_TIMEOUT` does not cause automatic retry. The
+98 focused checks and local 1,283-test full check passed on `1ef859c` with zero skips,
+plus installed consumers. The new serializer/background-policy candidate's second
+local full check passed 1,307/1,307 tests with zero skips plus installed consumers;
+the first copied-fixture omission remains recorded. All 11 hosted CI jobs passed
+on `ba7deb6`. The separate startup correction prefixes generated Neo4j passwords
+without losing random bits and retains safe failure diagnostics before cleanup;
+it does not prove the historical readiness failure's cause. Local validation passed
+lint/formatting, 1,022 unit tests, 150 authenticated integration tests, verified
+cleanup and package/installed-wheel checks. Exact `b82dc4b` passed all six ordinary
+hosted workflows and 11 CI jobs, and CodeQL alert 23 is fixed without dismissal.
+The full graph passed, while its admission failed as recorded above. A new
+private core-worker decoder follow-up preserves fresh authenticated decryption,
+bounds and mirror checks; authority and host/MCP decoding remain unchanged.
+Its 311 focused checks and full local check passed: **1,316/1,316 tests, zero skips,
+plus all installed consumers**. Exact `f28b8e2` then passed the declared hosted
+qualifications above and all six ordinary workflows/11 CI jobs. The
+[source-bound checkpoint](../../docs/validation/one-cpu-observer-2026-11-06.json)
+retains raw evidence, prior failures and the unchanged deployment limits. A
+documentation-only follow-up `b18b749` preserved runtime, staged inputs and package
+payloads; its ordinary workflows passed but its required native gate failed.
+The +10 `b4bf2ce` ordinary checks also passed, while its required native failures
+remain retained above. The separate identifier-cache prototype was rejected and
+is not adopted. The new +5 own-field candidate requires fresh qualification;
+prototype measurements and owner-profile diagnostics cannot qualify it. The
+immediate first poll, cadence, resource limits and acceptance gates are unchanged,
+and no real-time guarantee or change to every SDK embedding is implied.
+
+### Matching the observer-owning service
+
+**0.1.0 does not support this single-CPU configuration with 250 ms polling.**
+The profile below is unqualified. For 0.1.0, do not confine the observer-owning
+service to one logical CPU while polling at 250 ms; keep Cartography's default
+300-second collection interval. The 0.1.0 admission evidence comes from the
+ordinary full graph/admission run, which does not apply these CPU limits. Treat the
+fields below as the target for a later qualified release, not a supported 0.1.0
+configuration.
+
+To match this profile at company rollout, merge these **resource fields only**
+into the company's existing service that owns the executor and its inventory
+observer. They do not define a complete service; identity, storage, networking
+and hardening still belong to that service's reviewed deployment. The reference
+Agent Ops service does not start an inventory observer and is not the target of
+these settings.
+
+Also set `workerScheduling: 'linux-background'` in the service's trusted
+`startInventoryServer()` options. The resource fields alone do not select that
+policy; do not infer it from CPU affinity or expose it as an agent-controlled option.
+
+```yaml
+cpus: 1.0
+cpuset: "${OBSERVER_LOGICAL_CPU:?Set one available logical CPU index}"
+mem_limit: 512m
+memswap_limit: 512m
+pids_limit: 128
+```
+
+Set `OBSERVER_LOGICAL_CPU` to one allowed decimal index, not a range or list.
+Equal memory and memory-plus-swap limits leave no swap allowance; `cpuset`
+restricts eligible CPUs. [Docker Compose resource semantics](https://docs.docker.com/reference/compose-file/services/#cpuset).
+See also [Docker's memory/swap semantics](https://docs.docker.com/reference/compose-file/services/#memswap_limit).
+Keep the original 100 ms CFS period and zero burst. Verify actual cgroup v2 values
+`cpu.max = 100000 100000`, `cpu.max.burst = 0`, `memory.max = 536870912`,
+`memory.swap.max = 0`, `pids.max = 128`, and matching singleton
+`cpuset.cpus.effective`/process allowed CPU lists before claiming the profile.
+The setting grants neither exclusive use nor a physical-core guarantee. Qualify
+the exact installed candidate, image, selected logical CPU and company workload;
+the synthetic fixture is not a universal latency guarantee or completed company
+acceptance. Changing resources or placement requires fresh scoped evidence.
 
 ## Private backups and reconstruction
 

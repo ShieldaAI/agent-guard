@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard",
-  "version": "0.1.0-alpha.3",
+  "version": "0.1.0",
   "description": "TypeScript authorization for AI agent tool calls with scoped resources, tenant checks, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",
@@ -10,6 +10,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./internal": {
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
     }
   },
   "files": [
@@ -23,7 +27,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",

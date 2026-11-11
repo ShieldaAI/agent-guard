@@ -265,7 +265,7 @@ def test_interrupted_staging_keeps_previous_view_and_can_be_discarded(
         raise RuntimeError("synthetic interruption before publication")
 
     with pytest.raises(RuntimeError, match="synthetic interruption"):
-        import_snapshot(neo4j_session, second, second["source"], update_tag=601, after_load=fail)
+        import_snapshot(neo4j_session, second, second["source"], update_tag=601, _after_load=fail)
     assert (
         source_state(neo4j_session, original.source_id)["current_snapshot_id"]
         == original.projection_id
@@ -297,7 +297,7 @@ def test_late_import_cannot_overwrite_newer_publication(neo4j_session, snapshot_
 
     with pytest.raises(GraphImportError, match="PUBLICATION_CONFLICT"):
         import_snapshot(
-            neo4j_session, second, second["source"], update_tag=701, after_load=publish_newer
+            neo4j_session, second, second["source"], update_tag=701, _after_load=publish_newer
         )
     source = source_state(neo4j_session, original.source_id)
     assert source["current_snapshot_id"] == winner[0].projection_id
@@ -324,7 +324,7 @@ def test_missing_required_relationship_prevents_publication(neo4j_session, snaps
             incomplete,
             incomplete["source"],
             update_tag=751,
-            after_load=remove_delegation,
+            _after_load=remove_delegation,
         )
     assert (
         source_state(neo4j_session, original.source_id)["current_snapshot_id"]
@@ -377,7 +377,7 @@ def test_balanced_missing_and_duplicate_edges_prevent_publication(
             neo4j_session,
             incomplete,
             incomplete["source"],
-            after_load=corrupt_relationships,
+            _after_load=corrupt_relationships,
         )
     preserved_state = source_state(neo4j_session, original.source_id)
     # Staging acquires a source lock; no publication state may advance.
@@ -435,7 +435,7 @@ def test_cartography_cleanup_is_scoped_and_preserves_cloud_node(neo4j_session, s
         alpha,
         alpha["source"],
         update_tag=801,
-        after_load=exercise_cleanup,
+        _after_load=exercise_cleanup,
     )
     assert cleaned == [current.projection_id]
     assert node_count(neo4j_session, "GuardTask", other.projection_id) == 3

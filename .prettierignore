@@ -1,0 +1,15 @@
+# Generated, vendored or evidence content keeps its exact bytes.
+**/dist/
+**/node_modules/
+**/*.md
+**/*.json
+**/*.yml
+**/*.yaml
+**/*.py
+**/*.css
+**/*.html
+docs/
+deployment/
+integrations/
+# Hash-pinned compiled fixture: its SHA-256 is asserted by a test.
+packages/executor/test/fixtures/inventory-before-finalizer.mjs

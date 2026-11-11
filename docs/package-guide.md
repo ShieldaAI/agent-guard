@@ -17,7 +17,9 @@ without a Shielda account. Start with the package that solves your current task.
 | Validate model responses with Pydantic and handle retries in Python | [SafeCall Python](https://github.com/GuardianMesh/llm-safecall#readme), `llm-safecall` on PyPI | Python 3.10+; independent Python package with its own version |
 | Monitor dependency advisories against an inventory with local evidence and alerts | [Security Watch](https://github.com/ShieldaAI/security-watch#readme), `@shieldaai/security-watch` | Node.js 24.10+; experimental advisory monitoring, with human review of applicability |
 
-The five Agent Guard packages and Security Watch are experimental alphas. Read
+The published Agent Guard packages remain experimental `0.1.0-alpha.3`; this
+checkout holds `0.1.0`, approved and not yet published.
+Security Watch has its separate experimental release policy. Read
 their boundaries before deploying them. Agent Guard controls calls routed through
 it; it is not an OS sandbox. SafeCall's known-pattern filters do not establish
 that text is safe to follow.
@@ -39,8 +41,10 @@ ownership and authenticates reviewers for actions requiring approval.
 
 For MCP tools, add `@shieldaai/agent-guard-mcp@alpha`. For persistent authority
 state, add `@shieldaai/agent-guard-executor@alpha`. Install matching Guard package
-versions; this checkout targets `0.1.0-alpha.3`. See the
-[release notes](releases/0.1.0-alpha.3.md) for publication verification.
+versions. The install commands above select the published alpha. This checkout
+targets unpublished `0.1.0`; build and install its local tarballs together for
+candidate features. See the [release notes](releases/0.1.0.md) for the recorded scope decisions
+and the [alpha.3 notes](releases/0.1.0-alpha.3.md) for publication verification.
 
 To evaluate the existing synthetic fixtures without a model provider:
 
@@ -49,8 +53,8 @@ npm install @shieldaai/agent-guard-scenarios@alpha
 node --input-type=module -e "import { runConformance } from '@shieldaai/agent-guard-scenarios'; const r = await runConformance(); console.log(r.passed, r.passedCases, r.caseCount); if (!r.passed) process.exitCode = 1;"
 ```
 
-The current catalog runs twelve paired scenarios and prints `true 24 24` when
-all cases pass. The [scenario reference](scenarios.md) explains what they cover.
+The published alpha.3 catalog (1.2.0) runs twelve paired scenarios and prints `true 24 24`
+when all cases pass; this checkout's catalog (1.3.0) runs thirteen and prints `true 26 26`. The [scenario reference](scenarios.md) explains what they cover.
 
 ## Start with model response validation
 

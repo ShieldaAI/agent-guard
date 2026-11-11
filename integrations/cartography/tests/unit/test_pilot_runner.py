@@ -69,17 +69,38 @@ def test_cleanup_refuses_a_foreign_resource_even_if_compose_project_matches(tmp_
 def test_cleanup_checks_each_resource_kind_before_removing_owned_project(tmp_path, monkeypatch):
     database = pilot.Database(tmp_path / "database")
     calls = []
+    removed = False
 
     def docker(*args, **kwargs):
+        nonlocal removed
         calls.append(args)
+        if "down" in args:
+            removed = True
         if "inspect" in args:
             labels = {pilot.LABEL: database.run_id}
             return json.dumps([{"Config": {"Labels": labels}, "Labels": labels}])
-        return "owned-resource" if "ls" in args or "ps" in args else ""
+        return "owned-resource" if not removed and ("ls" in args or "ps" in args) else ""
 
     monkeypatch.setattr(pilot.helpers, "docker", docker)
     database.close()
     inspected = [args[0] for args in calls if "inspect" in args]
     assert inspected == ["container", "volume", "network"]
-    assert calls[-1][-3:] == ("down", "--volumes", "--remove-orphans")
+    assert calls[-4][-3:] == ("down", "--volumes", "--remove-orphans")
+    assert database.cleanup_verified is True
+    assert [args[0] for args in calls[-3:]] == ["ps", "volume", "network"]
     assert os.path.isabs(database.env["PILOT_AUTH_FILE"])
+
+
+def test_cleanup_refuses_to_claim_absence_after_successful_down(tmp_path, monkeypatch):
+    database = pilot.Database(tmp_path / "database")
+
+    def docker(*args, **_kwargs):
+        if "inspect" in args:
+            labels = {pilot.LABEL: database.run_id}
+            return json.dumps([{"Config": {"Labels": labels}, "Labels": labels}])
+        return "still-present" if "ps" in args else ""
+
+    monkeypatch.setattr(pilot.helpers, "docker", docker)
+    with pytest.raises(RuntimeError, match="PILOT_CLEANUP_UNVERIFIED"):
+        database.close()
+    assert database.cleanup_verified is False

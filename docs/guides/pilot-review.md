@@ -31,7 +31,7 @@ Store the actual artifact bytes for verification and the exact [build attestatio
 
 ## 2. Collect and sign the run
 
-Compute `policySha256` with `digestJson(immutableJson(policy))` from `@shieldaai/agent-guard`. This covers the complete policy, including threshold, mode, pins, window and nonce. The boundary, section, statement and observation file digests use SHA-256 over **original bytes**, including whitespace.
+Compute `policySha256` with `digestJson(immutableJson(policy))` from `@shieldaai/agent-guard/internal`. This covers the complete policy, including threshold, mode, pins, window and nonce. The boundary, section, statement and observation file digests use SHA-256 over **original bytes**, including whitespace.
 
 Create three UTF-8 JSON evidence sections. Every section contains `kind` (its section name), `policySha256`, `collectedAt` (epoch milliseconds in the observed run) and `sourceReport` (standard padded base64 of up to 64 KiB of original redacted operator evidence). The following are the additional fields.
 

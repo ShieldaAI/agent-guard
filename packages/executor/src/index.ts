@@ -1,30 +1,50 @@
+/**
+ * The durable executor, its task server and client, tool adapters and network policy.
+ * Subpaths: /sandbox, /inventory (experimental), /pilot, /ops and /internal (no semver).
+ */
 export { DurableExecutor, type ExecutorOptions, type TaskCredential } from './executor.js';
+export { NUMBERED_TASK_PREFIX, numberedTaskId } from './lifecycle.js';
 export type { LedgerWitness } from './store.js';
-export { ExecutorError, type ExecutionReceipt, type ExecutionStatus } from './store.js';
-export type { DecisionTraceOptions, DecisionTraceScope, DecisionTraceEventName, DecisionTraceOutcome,
-  DecisionTraceEvent, DecisionTraceSnapshot, DecisionTraceSink, DecisionTraceExportResult } from './traces.js';
-export type { InventoryOptions, InventoryScope, InventorySnapshot, InventorySourceOptions,
-  InventoryBudget, InventoryGrant, InventoryTask, InventoryTool, InventoryUsage } from './inventory.js';
+export { LEDGER_FORMAT_VERSION, type LedgerFormat, type LedgerFeature } from './ledger-format.js';
+export type {
+  TaskFamilyScope,
+  TaskFamilyDecision,
+  TaskFamilyArchiveScope,
+  TaskFamilyCounts,
+  TaskFamilyRetirementPreview,
+  TaskFamilyRetirementResult,
+  TaskFamilyArchiveReceipt,
+  ExecutionListScope,
+  ExecutionList,
+  MaintenanceStatistics,
+} from './lifecycle.js';
+export { ExecutorError, type ExecutionReceipt, type ExecutionStatus, type ReceiptStatus } from './store.js';
+export type {
+  DecisionTraceOptions,
+  DecisionTraceScope,
+  DecisionTraceEventName,
+  DecisionTraceOutcome,
+  DecisionTraceEvent,
+  DecisionTraceSnapshot,
+  DecisionTraceSink,
+  DecisionTraceExportResult,
+} from './traces.js';
+export type { InventoryOptions, InventorySourceOptions } from './inventory.js';
 export { startExecutorServer, type ExecutorServerOptions } from './http.js';
-export { startInventoryServer, createInventoryObserverToken,
-  type InventoryServerOptions, type InventoryObserverCredential } from './inventory-http.js';
-export { validateInventoryManifest, composeInventorySnapshot,
-  type InventoryManifest, type HostInventorySnapshot, type InventoryAwsReference, type InventoryAwsResourceReference,
-  type InventoryManifestAgent, type InventoryManifestDeployment, type InventoryManifestTaskBinding,
-  type InventoryManifestResourceBinding, type InventoryManifestExecutionBinding } from './inventory-manifest.js';
-export { validateMcpConnectionInventory, validateMcpInventorySources, composeMcpInventorySnapshot,
-  type InventoryMcpConnection, type InventoryMcpSourceBinding, type InventoryMcpConnectionRecord,
-  type McpInventorySnapshot } from './inventory-mcp.js';
 export { createRestrictedFetch, isPublicAddress, type NetworkPolicy } from './network.js';
 export { ExecutorClient } from './client.js';
-export { ArtifactBroker, runGovernedSandbox, createSandboxTool,
-  type ArtifactSensitivity, type ArtifactPayload, type SignedArtifactEnvelope, type ArtifactInput,
-  type GovernedSandboxResult, type GovernedSandboxOptions, type SandboxToolOptions } from './artifacts.js';
-export type { BuildArtifactPolicy, BuildArtifactRule, BuildAttestationEnvelope, BuildProvenanceEvidence } from './build-provenance.js';
-export { createPrivateFileTools, createHttpGetTool, createOutboundJsonTool, publicToolDefinition,
-  type PrivateFileToolsOptions, type HttpReadResource, type HttpGetToolOptions,
-  type OutboundJsonToolOptions, type PublicToolDefinition } from './adapters.js';
+export {
+  createPrivateFileTools,
+  createHttpGetTool,
+  createOutboundJsonTool,
+  publicToolDefinition,
+  type PrivateFileToolsOptions,
+  type HttpReadResource,
+  type HttpGetToolOptions,
+  type OutboundJsonToolOptions,
+  type PublicToolDefinition,
+} from './adapters.js';
 export { createModelTool, createExecutorModelProvider, type ModelToolOptions, type ModelResult } from './model.js';
-export { validateSandboxProfile, buildDockerCreateArgs, runDockerSandbox, readSandboxArchive, writeReviewedExports,
-  type SandboxProfile, type ValidatedSandboxProfile, type SandboxExport, type SandboxResult } from './sandbox.js';
-export { verifyPilotReview, type PilotReviewPolicy, type PilotReviewBundle, type PilotReviewResult } from './pilot-review.js';
+
+// Deprecated root aliases for exports that moved to subpaths.
+export * from './deprecated.js';

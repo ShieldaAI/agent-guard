@@ -1,5 +1,5 @@
 // Checkout evaluation transport for the host-owned synthetic ticket workflow.
-import { canonicalJson, immutableJson } from '@shieldaai/agent-guard';
+import { canonicalJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { createRestrictedFetch } from '@shieldaai/agent-guard-executor';
 import { ticketRequest } from '../examples/providers/workflow.mjs';
 
@@ -8,23 +8,34 @@ const endpoints = {
   anthropic: 'https://api.anthropic.com/v1/messages',
 };
 const MAX_BYTES = 64 * 1024;
-const { parseEvidenceJson } = await import(new URL('./evidence-json.js', import.meta.resolve('@shieldaai/agent-guard-executor')));
+const { parseEvidenceJson } = await import(
+  new URL('./evidence-json.js', import.meta.resolve('@shieldaai/agent-guard-executor'))
+);
 
 export function createLiveEvaluationTransport({ provider, model, apiKey, maxOutputTokens }) {
-  if ((provider !== 'openai' && provider !== 'anthropic') || typeof model !== 'string' ||
-      !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(model) ||
-      typeof apiKey !== 'string' || !/^[!-~]{1,4096}$/.test(apiKey) ||
-      !Number.isSafeInteger(maxOutputTokens) || maxOutputTokens < 16 || maxOutputTokens > 4096) {
+  if (
+    (provider !== 'openai' && provider !== 'anthropic') ||
+    typeof model !== 'string' ||
+    !/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(model) ||
+    typeof apiKey !== 'string' ||
+    !/^[!-~]{1,4096}$/.test(apiKey) ||
+    !Number.isSafeInteger(maxOutputTokens) ||
+    maxOutputTokens < 16 ||
+    maxOutputTokens > 4096
+  ) {
     throw new Error('Invalid provider evaluation transport configuration');
   }
   const endpoint = endpoints[provider];
   const send = createRestrictedFetch({
-    allowedOrigins: [new URL(endpoint).origin], maxRequestBytes: MAX_BYTES, maxResponseBytes: MAX_BYTES,
+    allowedOrigins: [new URL(endpoint).origin],
+    maxRequestBytes: MAX_BYTES,
+    maxResponseBytes: MAX_BYTES,
     timeoutMs: 60_000,
   });
-  const auth = provider === 'openai'
-    ? { authorization: 'Bearer ' + apiKey }
-    : { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+  const auth =
+    provider === 'openai'
+      ? { authorization: 'Bearer ' + apiKey }
+      : { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
   return async (request, { signal }) => {
     try {
       signal.throwIfAborted();
@@ -35,11 +46,16 @@ export function createLiveEvaluationTransport({ provider, model, apiKey, maxOutp
       // An extra hosted tool, a different model, or a change to the output cap invalidates the request.
       if (canonicalJson(captured) !== canonicalJson(expected)) throw new Error();
       const response = await send(endpoint, {
-        method: 'POST', signal, redirect: 'error',
+        method: 'POST',
+        signal,
+        redirect: 'error',
         headers: { ...auth, 'content-type': 'application/json', accept: 'application/json' },
         body: JSON.stringify(captured),
       });
-      if (response.status !== 200 || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') {
+      if (
+        response.status !== 200 ||
+        response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json'
+      ) {
         await response.body?.cancel();
         throw new Error();
       }

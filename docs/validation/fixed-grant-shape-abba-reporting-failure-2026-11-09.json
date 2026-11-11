@@ -1,0 +1,139 @@
+{
+  "schemaVersion": 1,
+  "kind": "fixed-grant-shape-abba-reporting-failure",
+  "sourceCommit": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+  "candidateSha256": "e8e7cfb3ff2f564c727fbebf847aa2b58b4f586c0b1a3b0c6f75515a39d34e9f",
+  "baselineSha256": "b27e81b244caea5133f1044b93ec2a7c6841e2aea80a937cca83baab36f86b7d",
+  "preparationSha256": "9dcfea4edb48ca679345e97d90f7bc115e17cbbc7fbca4991c767d4bfc5ebb57",
+  "predeclaredProtocolSha256": "1bf848f640ad5f5cb703365daa3036b4b39b0227ec3659b89624d0767508658c",
+  "executedProtocolSha256": "bdb326bc748de38e2bb219a443ee3eccd253e62dac952594813334e0e2ab73bf",
+  "correctness": {
+    "command": "node --test artifacts/agent-cartography/serializer-fixed-grant-prototype-1/tests/*.test.mjs",
+    "exitCode": 0,
+    "tests": 64,
+    "passed": 64,
+    "failed": 0,
+    "skipped": 0,
+    "logRetainedInConversation": true
+  },
+  "boundaryProbe": {
+    "path": "docs/validation/fixed-grant-shape-boundary-2026-11-09.json",
+    "sha256": "806a04556c52025fdd9cedc8479da734caeab2a3e1dbd1c4ffb3b9b58a629198",
+    "exitCode": 0,
+    "allShapeHashesMatch": true,
+    "shapes": [
+      {
+        "variant": "baseline",
+        "shape": "bytes",
+        "bytes": 8388576,
+        "sha256": "521c03e604cac235c31b455ecbf8a9d1021258d4d6dec4420938be6b52e90ad4",
+        "maxRssKiB": 133984
+      },
+      {
+        "variant": "candidate",
+        "shape": "bytes",
+        "bytes": 8388576,
+        "sha256": "521c03e604cac235c31b455ecbf8a9d1021258d4d6dec4420938be6b52e90ad4",
+        "maxRssKiB": 117616
+      },
+      {
+        "variant": "baseline",
+        "shape": "values",
+        "bytes": 3874996,
+        "sha256": "6426db9b8a14bc3ff8bf4fd2d8f16661f12c2751f6520aae95cd4c53e3e2b123",
+        "maxRssKiB": 159904
+      },
+      {
+        "variant": "candidate",
+        "shape": "values",
+        "bytes": 3874996,
+        "sha256": "6426db9b8a14bc3ff8bf4fd2d8f16661f12c2751f6520aae95cd4c53e3e2b123",
+        "maxRssKiB": 132752
+      },
+      {
+        "variant": "baseline",
+        "shape": "unique",
+        "bytes": 8388576,
+        "sha256": "9215a880e9aa7c2e6a8bd115b2fc34e5d0e6f6e2fa690c50bd926f5400bcb5b3",
+        "maxRssKiB": 131184
+      },
+      {
+        "variant": "candidate",
+        "shape": "unique",
+        "bytes": 8388576,
+        "sha256": "9215a880e9aa7c2e6a8bd115b2fc34e5d0e6f6e2fa690c50bd926f5400bcb5b3",
+        "maxRssKiB": 126400
+      }
+    ]
+  },
+  "performanceAttempt": {
+    "predeclared": true,
+    "abortedOrIncomplete": false,
+    "processingLoopCompletedInMemory": true,
+    "measuredOperations": 1600,
+    "warmups": 200,
+    "ABBA": true,
+    "retries": 0,
+    "resultReportWritten": false,
+    "rawBlocksPersisted": false,
+    "failure": "Benchmark reporter attempted to hash differential.log, which had not been written; process exited 1 after calculating results and before writing result.json.",
+    "error": "ENOENT: differential.log",
+    "comparisonConclusion": "unknown; do not treat as pass or fail",
+    "reporterSourceSha256": "529015c173904d52b5ad71a465d3fba8335792c14b5cccdaeb322f1c1d57ef43",
+    "missingFileExpectedByReporter": "artifacts/agent-cartography/serializer-fixed-grant-prototype-1/differential.log",
+    "executedMeasuredProfileCount": 1600
+  },
+  "runtimeSourceAndDistUnchanged": true,
+  "productionAdoption": false,
+  "nativeQualification": false,
+  "releaseApprovalChanged": false,
+  "protocol": {
+    "schemaVersion": 1,
+    "kind": "fixed-grant-shape-abba-protocol",
+    "diagnosticOnly": true,
+    "acceptanceEvidenceEligible": false,
+    "head": "bfe656a15e90f0e2dc1fbac67ee2af9af684ebb5",
+    "operation": "fresh-authenticated-decrypt-parse-mirrorcheck-core-projection-json",
+    "fixtures": [
+      {
+        "name": "repeated426660",
+        "plaintextBytes": 426660,
+        "plaintextSha256": "44dfe5b52d6352f86ec2481f84a5a48d65ffe9c3893abb3f062dcd9bf29efe9f"
+      },
+      {
+        "name": "unique1100selectors",
+        "plaintextBytes": 431750,
+        "plaintextSha256": "5b055970d43ea035ef016439f1786d256271a5d57ede92e72369e5dc817522e4"
+      }
+    ],
+    "warmupPerVariantPerFixture": 50,
+    "batch": 50,
+    "order": [
+      "A",
+      "B",
+      "B",
+      "A",
+      "A",
+      "B",
+      "B",
+      "A",
+      "A",
+      "B",
+      "B",
+      "A",
+      "A",
+      "B",
+      "B",
+      "A"
+    ],
+    "measuredPerVariantPerFixture": 400,
+    "totalMeasuredOperations": 1600,
+    "referenceMode": "opaque",
+    "node": "v26.12.0",
+    "platform": "darwin",
+    "architecture": "arm64",
+    "forcedGc": false,
+    "retries": false,
+    "fullSampling": true
+  }
+}

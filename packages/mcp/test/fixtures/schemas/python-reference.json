@@ -1,0 +1,166 @@
+{
+ "source": "Modeled on the published reference/official server tool definitions and the shapes their schema generators emit; not captured from a live server.",
+ "tools": {
+  "fetch": {
+   "properties": {
+    "url": {
+     "description": "URL to fetch",
+     "format": "uri",
+     "minLength": 1,
+     "title": "Url",
+     "type": "string"
+    },
+    "max_length": {
+     "default": 5000,
+     "description": "Maximum number of characters to return.",
+     "exclusiveMaximum": 1000000,
+     "exclusiveMinimum": 0,
+     "title": "Max Length",
+     "type": "integer"
+    },
+    "start_index": {
+     "default": 0,
+     "minimum": 0,
+     "title": "Start Index",
+     "type": "integer"
+    },
+    "raw": {
+     "default": false,
+     "title": "Raw",
+     "type": "boolean"
+    }
+   },
+   "required": [
+    "url"
+   ],
+   "title": "Fetch",
+   "type": "object"
+  },
+  "get_current_time": {
+   "properties": {
+    "timezone": {
+     "title": "Timezone",
+     "type": "string"
+    }
+   },
+   "required": [
+    "timezone"
+   ],
+   "title": "GetCurrentTime",
+   "type": "object"
+  },
+  "convert_time": {
+   "properties": {
+    "source_timezone": {
+     "type": "string"
+    },
+    "time": {
+     "pattern": "^([01]\\d|2[0-3]):[0-5]\\d$",
+     "title": "Time",
+     "type": "string"
+    },
+    "target_timezone": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "source_timezone",
+    "time",
+    "target_timezone"
+   ],
+   "title": "ConvertTime",
+   "type": "object"
+  },
+  "git_log": {
+   "properties": {
+    "repo_path": {
+     "title": "Repo Path",
+     "type": "string"
+    },
+    "max_count": {
+     "default": 10,
+     "title": "Max Count",
+     "type": "integer"
+    },
+    "start_timestamp": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null,
+     "title": "Start Timestamp"
+    }
+   },
+   "required": [
+    "repo_path"
+   ],
+   "title": "GitLog",
+   "type": "object"
+  },
+  "git_add": {
+   "properties": {
+    "repo_path": {
+     "type": "string"
+    },
+    "files": {
+     "items": {
+      "type": "string"
+     },
+     "title": "Files",
+     "type": "array"
+    }
+   },
+   "required": [
+    "repo_path",
+    "files"
+   ],
+   "title": "GitAdd",
+   "type": "object"
+  },
+  "create_entities": {
+   "$defs": {
+    "Entity": {
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "entityType": {
+       "type": "string"
+      },
+      "observations": {
+       "items": {
+        "type": "string"
+       },
+       "type": "array"
+      }
+     },
+     "required": [
+      "name",
+      "entityType",
+      "observations"
+     ],
+     "title": "Entity",
+     "type": "object"
+    }
+   },
+   "properties": {
+    "entities": {
+     "items": {
+      "$ref": "#/$defs/Entity"
+     },
+     "title": "Entities",
+     "type": "array"
+    }
+   },
+   "required": [
+    "entities"
+   ],
+   "title": "CreateEntities",
+   "type": "object"
+  }
+ }
+}

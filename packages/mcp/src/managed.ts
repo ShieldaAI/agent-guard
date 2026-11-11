@@ -1,9 +1,27 @@
 import { randomUUID } from 'node:crypto';
-import { AgentGuard, containsLiteralSecret, digestJson, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
-import { Client, type Transport, type JSONRPCMessage, type TransportSendOptions, type Tool } from '@modelcontextprotocol/client';
+import { createRequire } from 'node:module';
+import { AgentGuard, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+import { containsLiteralSecret, digestJson } from '@shieldaai/agent-guard/internal';
+import {
+  Client,
+  SdkError,
+  SdkErrorCode,
+  type Transport,
+  type JSONRPCMessage,
+  type TransportSendOptions,
+  type Tool,
+} from '@modelcontextprotocol/client';
 import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';
-import { mcpInventorySnapshot, opaqueTransportRef, type McpConnectionInventory, type McpConnectionState } from './inventory.js';
+import {
+  mcpInventorySnapshot,
+  opaqueTransportRef,
+  type McpConnectionInventory,
+  type McpConnectionState,
+} from './inventory.js';
+
+/** Reported MCP client version: the installed package's own version, never a hand-maintained copy. */
+const PACKAGE_VERSION = (createRequire(import.meta.url)('../package.json') as { version: string }).version;
 
 /** Supplied by a trusted executor after transport/credential authorization, never by a model. */
 export interface McpConnectionIdentity {
@@ -20,8 +38,14 @@ export interface McpBinding {
   controlPlane?: boolean;
   maxCost?: number;
   measureCost?: (result: Json) => number;
+  /** Outside-content labels passed to the guard (see ToolDefinition). */
+  readsUntrusted?: boolean;
+  untrustedContext?: 'allow' | 'require_approval' | 'deny';
+  sendsExternal?: boolean;
 }
-export interface McpResourceBinding extends McpBinding { uri: string }
+export interface McpResourceBinding extends McpBinding {
+  uri: string;
+}
 export interface ManagedMcpOptions {
   guard: Pick<AgentGuard, 'registerTool'>;
   identity: McpConnectionIdentity;
@@ -35,7 +59,30 @@ export interface ManagedMcpOptions {
   /** Exact, advertised resource URIs only; no templates or automatic link fetching. */
   resources?: readonly McpResourceBinding[];
   prompts?: readonly McpBinding[];
-  limits?: { requestTimeoutMs?: number; maxEntries?: number; maxMessages?: number; maxPages?: number };
+  /**
+   * Mark every operation on this connection as reading outside content, for a server whose
+   * results people outside the trust boundary can write. A binding's own readsUntrusted wins.
+   * Default false.
+   */
+  readsUntrusted?: boolean;
+  /**
+   * maxMessages is a sliding-window rate: at most this many inbound messages per
+   * messageWindowMs (defaults 10,000 per 10 s). Exceeding it quarantines; refresh() recovers.
+   */
+  limits?: {
+    requestTimeoutMs?: number;
+    maxEntries?: number;
+    maxMessages?: number;
+    messageWindowMs?: number;
+    maxPages?: number;
+  };
+}
+/** A configured binding the server advertised but this manager could not accept. */
+export interface McpSkippedOperation {
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  /** Stable code such as SCHEMA_UNSUPPORTED, SCHEMA_INVALID, SCHEMA_LIMIT or ACTIVE_CONTENT_DENIED. */
+  readonly reason: string;
 }
 export interface ManagedMcpRegistration extends RegisteredMcpTool {
   readonly kind: 'tool' | 'resource' | 'prompt';
@@ -47,27 +94,68 @@ const SESSION_META = 'shielda/connection-session';
 const allowedControlMethods = new Set(['initialize', 'notifications/initialized', 'ping', 'notifications/cancelled']);
 const lists = new Set(['tools/list', 'resources/list', 'prompts/list']);
 const operations = new Set(['tools/call', 'resources/read', 'prompts/get']);
+const listChanged = [
+  'notifications/tools/list_changed',
+  'notifications/resources/list_changed',
+  'notifications/prompts/list_changed',
+];
+/** Outbound request ids remembered for matching an oversized reply to its call. */
+const MAX_TRACKED_REQUESTS = 1024;
+/**
+ * Failures that say something about the connection or server, not one call. Everything
+ * else (abort, timeout, a JSON-RPC error reply, an invalid or oversized result, a resource
+ * mismatch, a throwing measureCost) fails only the call.
+ */
+const connectionFailures = new Set<string>([
+  'CONNECTION_CHANGED',
+  'CONNECTION_UNAVAILABLE',
+  'CAPABILITY_DENIED',
+  'ACTIVE_CONTENT_DENIED',
+  'AUTHORIZATION_DENIED',
+  SdkErrorCode.ConnectionClosed,
+  SdkErrorCode.SendFailed,
+  SdkErrorCode.NotConnected,
+]);
+function connectionFailure(error: unknown): boolean {
+  return (error instanceof McpBoundaryError || error instanceof SdkError) && connectionFailures.has(error.code);
+}
+/** Reads a response id from an unvalidated message without invoking accessors. */
+function responseId(message: unknown): string | number | undefined {
+  if (message === null || typeof message !== 'object' || Array.isArray(message)) return undefined;
+  const own = (key: string) => Object.getOwnPropertyDescriptor(message, key);
+  const id = own('id');
+  if (!id || !('value' in id) || (!own('result') && !own('error'))) return undefined;
+  return typeof id.value === 'string' || (typeof id.value === 'number' && Number.isSafeInteger(id.value))
+    ? id.value
+    : undefined;
+}
 
 function identifier(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 1024) throw new McpBoundaryError('INVALID_CONFIGURATION');
+  if (typeof value !== 'string' || !value.trim() || value.length > 1024)
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
   return value;
 }
 function limit(value: number | undefined, fallback: number, maximum: number): number {
   const result = value ?? fallback;
-  if (!Number.isSafeInteger(result) || result <= 0 || result > maximum) throw new McpBoundaryError('INVALID_CONFIGURATION');
+  if (!Number.isSafeInteger(result) || result <= 0 || result > maximum)
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
   return result;
 }
 function object(value: Json): Record<string, Json> {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) throw new McpBoundaryError('INVALID_ARGUMENTS');
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    throw new McpBoundaryError('INVALID_ARGUMENTS');
   return value as Record<string, Json>;
 }
 function bindings(input: readonly McpBinding[] | undefined): readonly McpBinding[] {
   const seen = new Set<string>();
-  return Object.freeze((input ?? []).map(binding => {
-    const name = identifier(binding.name);
-    if (seen.has(name) || typeof binding.resolve !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
-    seen.add(name); return Object.freeze({ ...binding, name });
-  }));
+  return Object.freeze(
+    (input ?? []).map(binding => {
+      const name = identifier(binding.name);
+      if (seen.has(name) || typeof binding.resolve !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
+      seen.add(name);
+      return Object.freeze({ ...binding, name });
+    }),
+  );
 }
 
 /**
@@ -78,6 +166,7 @@ export class ManagedMcpConnection {
   readonly #guard: Pick<AgentGuard, 'registerTool'>;
   readonly #identity: Readonly<McpConnectionIdentity>;
   readonly #session = randomUUID();
+  readonly #validators = new WeakMap<object, (value: unknown) => boolean>();
   readonly #transportRef: string;
   readonly #client: Client;
   readonly #transport: Transport;
@@ -87,9 +176,15 @@ export class ManagedMcpConnection {
   readonly #timeout: number;
   readonly #maxEntries: number;
   readonly #maxMessages: number;
+  readonly #messageWindow: number;
+  /** Ring of inbound message times; the oldest entry bounds the sliding window. */
+  readonly #messageTimes: Float64Array;
+  #messageHead = 0;
+  #messageCount = 0;
+  readonly #pendingRequests = new Set<string | number>();
   readonly #authorize: (() => void) | undefined;
   readonly #protectedValues: readonly string[];
-  #messages = 0;
+  readonly #readsUntrusted: boolean;
   #epoch = 0;
   // Observation revision includes ready transitions without changing execution epochs.
   #inventoryRevision = 0;
@@ -97,18 +192,32 @@ export class ManagedMcpConnection {
   #metadataDigest: string | undefined;
   #state: McpConnectionState = 'connecting';
   #registrations: readonly ManagedMcpRegistration[] = Object.freeze([]);
+  #skipped: readonly McpSkippedOperation[] = Object.freeze([]);
   #known = new Set<string>();
   #refreshTail: Promise<void> = Promise.resolve();
 
   private constructor(options: ManagedMcpOptions) {
     this.#guard = options.guard;
-    if (options.authorize !== undefined && typeof options.authorize !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
+    if (options.authorize !== undefined && typeof options.authorize !== 'function')
+      throw new McpBoundaryError('INVALID_CONFIGURATION');
     this.#authorize = options.authorize;
     const protectedValues = options.protectedValues ?? [];
-    if (!Array.isArray(protectedValues) || protectedValues.length > 32 ||
-        protectedValues.some(value => typeof value !== 'string' || !value.length || value.length > 16_384)) throw new McpBoundaryError('INVALID_CONFIGURATION');
+    if (
+      !Array.isArray(protectedValues) ||
+      protectedValues.length > 32 ||
+      protectedValues.some(value => typeof value !== 'string' || !value.length || value.length > 16_384)
+    )
+      throw new McpBoundaryError('INVALID_CONFIGURATION');
     this.#protectedValues = Object.freeze([...protectedValues]);
-    this.#identity = Object.freeze({ serverId: identifier(options.identity.serverId), transportIdentity: identifier(options.identity.transportIdentity), principalId: identifier(options.identity.principalId), tenantId: identifier(options.identity.tenantId) });
+    if (options.readsUntrusted !== undefined && typeof options.readsUntrusted !== 'boolean')
+      throw new McpBoundaryError('INVALID_CONFIGURATION');
+    this.#readsUntrusted = options.readsUntrusted === true;
+    this.#identity = Object.freeze({
+      serverId: identifier(options.identity.serverId),
+      transportIdentity: identifier(options.identity.transportIdentity),
+      principalId: identifier(options.identity.principalId),
+      tenantId: identifier(options.identity.tenantId),
+    });
     this.#transportRef = opaqueTransportRef(this.#identity.transportIdentity);
     this.#tools = bindings(options.tools);
     this.#prompts = bindings(options.prompts);
@@ -117,24 +226,45 @@ export class ManagedMcpConnection {
     this.#timeout = limit(options.limits?.requestTimeoutMs, 10_000, 120_000);
     this.#maxEntries = limit(options.limits?.maxEntries, 64, 256);
     this.#maxMessages = limit(options.limits?.maxMessages, 10_000, 100_000);
-    if (this.#tools.length + this.#resources.length + this.#prompts.length > this.#maxEntries) throw new McpBoundaryError('REGISTRY_LIMIT');
-    this.#client = new Client({ name: 'shielda-agent-guard', version: '0.1.0' }, {
-      capabilities: {}, versionNegotiation: { mode: 'legacy' },
-      listMaxPages: limit(options.limits?.maxPages, 4, 16),
-      cachePartition: this.#session,
-      jsonSchemaValidator: { getValidator: <T>(schema: unknown) => {
-        const validate = compileBoundedSchema(schema);
-        return (value: unknown) => validate(value)
-          ? { valid: true as const, data: value as T, errorMessage: undefined }
-          : { valid: false as const, data: undefined, errorMessage: 'SCHEMA_VALIDATION_FAILED' };
-      } },
-    });
+    this.#messageWindow = limit(options.limits?.messageWindowMs, 10_000, 600_000);
+    this.#messageTimes = new Float64Array(this.#maxMessages);
+    if (this.#tools.length + this.#resources.length + this.#prompts.length > this.#maxEntries)
+      throw new McpBoundaryError('REGISTRY_LIMIT');
+    this.#client = new Client(
+      { name: 'shielda-agent-guard', version: PACKAGE_VERSION },
+      {
+        capabilities: {},
+        versionNegotiation: { mode: 'legacy' },
+        listMaxPages: limit(options.limits?.maxPages, 4, 16),
+        cachePartition: this.#session,
+        jsonSchemaValidator: {
+          getValidator: <T>(schema: unknown) => {
+            // The SDK asks again on every call; a schema object is compiled once.
+            const known = typeof schema === 'object' && schema !== null ? this.#validators.get(schema) : undefined;
+            const validate = known ?? compileBoundedSchema(schema);
+            if (!known && typeof schema === 'object' && schema !== null) this.#validators.set(schema, validate);
+            return (value: unknown) =>
+              validate(value)
+                ? { valid: true as const, data: value as T, errorMessage: undefined }
+                : { valid: false as const, data: undefined, errorMessage: 'SCHEMA_VALIDATION_FAILED' };
+          },
+        },
+      },
+    );
     this.#transport = this.#wrap(options.transport);
-    this.#client.onclose = () => { if (this.#state !== 'closed') this.#invalidate('closed'); };
+    this.#client.onclose = () => {
+      if (this.#state !== 'closed') this.#invalidate('closed');
+    };
     // SDK request dispatch rejects unadvertised sampling/elicitation/roots capabilities.
-    this.#client.fallbackRequestHandler = async () => { throw new McpBoundaryError('CAPABILITY_DENIED'); };
-    for (const method of ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'] as const) {
-      this.#client.setNotificationHandler(method, () => { this.#invalidate('quarantined'); });
+    this.#client.fallbackRequestHandler = async () => {
+      throw new McpBoundaryError('CAPABILITY_DENIED');
+    };
+    for (const method of listChanged as (
+      'notifications/tools/list_changed' | 'notifications/resources/list_changed' | 'notifications/prompts/list_changed'
+    )[]) {
+      this.#client.setNotificationHandler(method, () => {
+        this.#invalidate('quarantined');
+      });
     }
   }
 
@@ -153,25 +283,48 @@ export class ManagedMcpConnection {
     }
   }
 
-  get status(): McpConnectionState { return this.#state; }
-  get sessionId(): string { return this.#session; }
-  get revision(): number { return this.#epoch; }
-  get inventoryRevision(): number { return this.#inventoryRevision; }
-  get registrations(): readonly ManagedMcpRegistration[] { return this.#registrations; }
+  get status(): McpConnectionState {
+    return this.#state;
+  }
+  get sessionId(): string {
+    return this.#session;
+  }
+  get revision(): number {
+    return this.#epoch;
+  }
+  get inventoryRevision(): number {
+    return this.#inventoryRevision;
+  }
+  get registrations(): readonly ManagedMcpRegistration[] {
+    return this.#registrations;
+  }
+  /** Advertised bindings skipped by the last successful refresh, with the reason. */
+  get skipped(): readonly McpSkippedOperation[] {
+    return this.#skipped;
+  }
 
   /** A pure observation: no authorization checks, discovery, resolvers or dispatch. */
   inventory(): McpConnectionInventory {
     return mcpInventorySnapshot({
-      identity: { serverId: this.#identity.serverId, transportRef: this.#transportRef,
-        principalId: this.#identity.principalId, tenantId: this.#identity.tenantId },
-      sessionId: this.#session, revision: this.#inventoryRevision, authorizationEpoch: this.#epoch,
-      metadataRevision: this.#metadataRevision, state: this.#state, registrations: this.#registrations,
+      identity: {
+        serverId: this.#identity.serverId,
+        transportRef: this.#transportRef,
+        principalId: this.#identity.principalId,
+        tenantId: this.#identity.tenantId,
+      },
+      sessionId: this.#session,
+      revision: this.#inventoryRevision,
+      authorizationEpoch: this.#epoch,
+      metadataRevision: this.#metadataRevision,
+      state: this.#state,
+      registrations: this.#registrations,
     });
   }
 
   /** Explicit refresh after quarantine. Every successful refresh requires renewed approval. */
   refresh(): Promise<void> {
-    if (this.#state === 'closed' || this.#state === 'connecting') return Promise.reject(new McpBoundaryError('CONNECTION_UNAVAILABLE'));
+    if (this.#state === 'closed' || this.#state === 'connecting')
+      return Promise.reject(new McpBoundaryError('CONNECTION_UNAVAILABLE'));
     this.#invalidate('refreshing');
     const epoch = this.#epoch;
     const pending = this.#refreshTail.catch(() => {}).then(() => this.#load(epoch));
@@ -186,12 +339,22 @@ export class ManagedMcpConnection {
 
   #invalidate(state: McpConnectionState): void {
     if (this.#state === 'closed') return;
-    this.#state = state; this.#epoch++; this.#inventoryRevision++; this.#registrations = Object.freeze([]);
-    for (const name of this.#known) this.#guard.registerTool({
-      name, description: 'Unavailable MCP operation', metadata: { session: this.#session, epoch: this.#epoch },
-      resolve: () => { throw new McpBoundaryError('CONNECTION_UNAVAILABLE'); },
-      execute: () => { throw new McpBoundaryError('CONNECTION_UNAVAILABLE'); },
-    });
+    this.#state = state;
+    this.#epoch++;
+    this.#inventoryRevision++;
+    this.#registrations = Object.freeze([]);
+    for (const name of this.#known)
+      this.#guard.registerTool({
+        name,
+        description: 'Unavailable MCP operation',
+        metadata: { session: this.#session, epoch: this.#epoch },
+        resolve: () => {
+          throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
+        },
+        execute: () => {
+          throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
+        },
+      });
   }
 
   #assertEpoch(epoch: number): void {
@@ -216,25 +379,55 @@ export class ManagedMcpConnection {
   #wrap(inner: Transport): Transport {
     const wrapper: Transport = {
       ...(inner.hasPerRequestStream === undefined ? {} : { hasPerRequestStream: inner.hasPerRequestStream }),
-      get sessionId() { return inner.sessionId; },
+      get sessionId() {
+        return inner.sessionId;
+      },
       setProtocolVersion: version => inner.setProtocolVersion?.(version),
       setSupportedProtocolVersions: versions => inner.setSupportedProtocolVersions?.(versions),
       start: async () => {
         inner.onclose = () => wrapper.onclose?.();
         inner.onerror = error => wrapper.onerror?.(error);
         inner.onmessage = (message, extra) => {
-          try {
-            if (++this.#messages > this.#maxMessages) throw new McpBoundaryError('MESSAGE_BUDGET');
-            const data = boundedJson(message);
-            if (this.#protectedValues.length && containsLiteralSecret(data, this.#protectedValues)) throw new McpBoundaryError('CREDENTIAL_REFLECTED');
-            const safe = data as unknown as JSONRPCMessage;
-            // Quarantine synchronously before SDK async notification dispatch.
-            if ('method' in safe && ['notifications/tools/list_changed', 'notifications/resources/list_changed', 'notifications/prompts/list_changed'].includes(safe.method)) this.#invalidate('quarantined');
-            wrapper.onmessage?.(safe, extra);
-          } catch {
-            this.#invalidate('closed'); wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
-            void inner.close().catch(() => {});
+          if (this.#state === 'closed') return;
+          if (!this.#admitMessage()) {
+            // A flood is a server problem, not a reason to lose the connection for good.
+            this.#invalidate('quarantined');
+            wrapper.onerror?.(new McpBoundaryError('MESSAGE_BUDGET'));
+            return;
           }
+          let data: Json;
+          try {
+            data = boundedJson(message);
+          } catch {
+            // An oversized or malformed reply fails only the call it answers.
+            const id = responseId(message);
+            if (id !== undefined && this.#pendingRequests.delete(id)) {
+              wrapper.onmessage?.(
+                { jsonrpc: '2.0', id, error: { code: -32603, message: 'MESSAGE_REJECTED' } } as JSONRPCMessage,
+                extra,
+              );
+            } else {
+              this.#invalidate('quarantined');
+              wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
+            }
+            return;
+          }
+          try {
+            if (this.#protectedValues.length && containsLiteralSecret(data, this.#protectedValues))
+              throw new McpBoundaryError('CREDENTIAL_REFLECTED');
+          } catch {
+            // A reflected host secret is a hostile server: close, a new reviewed connection is required.
+            this.#invalidate('closed');
+            wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
+            void inner.close().catch(() => {});
+            return;
+          }
+          const safe = data as unknown as JSONRPCMessage;
+          const id = responseId(safe);
+          if (id !== undefined) this.#pendingRequests.delete(id);
+          // Quarantine synchronously before SDK async notification dispatch.
+          if ('method' in safe && listChanged.includes(safe.method)) this.#invalidate('quarantined');
+          wrapper.onmessage?.(safe, extra);
         };
         await inner.start();
       },
@@ -245,12 +438,18 @@ export class ManagedMcpConnection {
         if ('method' in safe) {
           if (operations.has(safe.method)) {
             const meta = (safe.params as { _meta?: Record<string, unknown> } | undefined)?._meta;
-            if (meta?.[SESSION_META] !== this.#session || meta?.[EPOCH_META] !== this.#epoch) throw new McpBoundaryError('CONNECTION_CHANGED');
+            if (meta?.[SESSION_META] !== this.#session || meta?.[EPOCH_META] !== this.#epoch)
+              throw new McpBoundaryError('CONNECTION_CHANGED');
             this.#assertEpoch(this.#epoch);
           } else if (lists.has(safe.method)) {
             if (this.#state !== 'refreshing') throw new McpBoundaryError('CAPABILITY_DENIED');
             this.#checkAuthorization();
           } else if (!allowedControlMethods.has(safe.method)) throw new McpBoundaryError('CAPABILITY_DENIED');
+        }
+        if ('method' in safe && 'id' in safe && (typeof safe.id === 'string' || typeof safe.id === 'number')) {
+          if (this.#pendingRequests.size >= MAX_TRACKED_REQUESTS)
+            this.#pendingRequests.delete(this.#pendingRequests.values().next().value!);
+          this.#pendingRequests.add(safe.id);
         }
         await inner.send(safe, options);
       },
@@ -258,53 +457,108 @@ export class ManagedMcpConnection {
     return wrapper;
   }
 
+  /** Sliding-window inbound rate: at most maxMessages per messageWindowMs. */
+  #admitMessage(): boolean {
+    const now = performance.now();
+    if (this.#messageCount === this.#maxMessages && now - this.#messageTimes[this.#messageHead]! < this.#messageWindow)
+      return false;
+    this.#messageTimes[this.#messageHead] = now;
+    this.#messageHead = (this.#messageHead + 1) % this.#maxMessages;
+    if (this.#messageCount < this.#maxMessages) this.#messageCount++;
+    return true;
+  }
+
   async #load(epoch: number): Promise<void> {
     if (epoch !== this.#epoch || this.#state !== 'refreshing') throw new McpBoundaryError('CONNECTION_CHANGED');
     try {
       const requestOptions = { timeout: this.#timeout, cacheMode: 'bypass' as const };
       const toolList = this.#tools.length ? (await this.#client.listTools(undefined, requestOptions)).tools : [];
-      const resourceList = this.#resources.length ? (await this.#client.listResources(undefined, requestOptions)).resources : [];
-      const promptList = this.#prompts.length ? (await this.#client.listPrompts(undefined, requestOptions)).prompts : [];
-      if (toolList.length + resourceList.length + promptList.length > this.#maxEntries) throw new McpBoundaryError('REGISTRY_LIMIT');
+      const resourceList = this.#resources.length
+        ? (await this.#client.listResources(undefined, requestOptions)).resources
+        : [];
+      const promptList = this.#prompts.length
+        ? (await this.#client.listPrompts(undefined, requestOptions)).prompts
+        : [];
+      if (toolList.length + resourceList.length + promptList.length > this.#maxEntries)
+        throw new McpBoundaryError('REGISTRY_LIMIT');
       const all = boundedJson({ tools: toolList, resources: resourceList, prompts: promptList });
       void all;
-      const tools = this.#unique(toolList, 'name'); const resources = this.#unique(resourceList, 'uri'); const prompts = this.#unique(promptList, 'name');
+      const tools = this.#unique(toolList, 'name');
+      const resources = this.#unique(resourceList, 'uri');
+      const prompts = this.#unique(promptList, 'name');
       const prepared: Array<() => ManagedMcpRegistration> = [];
+      const skipped: McpSkippedOperation[] = [];
+      // A descriptor this profile cannot accept removes only that operation.
+      const accept = (
+        kind: McpSkippedOperation['kind'],
+        remoteName: string,
+        build: () => () => ManagedMcpRegistration,
+      ): void => {
+        try {
+          prepared.push(build());
+        } catch (error) {
+          skipped.push(
+            Object.freeze({
+              kind,
+              remoteName,
+              reason: error instanceof McpBoundaryError ? error.code : 'SCHEMA_INVALID',
+            }),
+          );
+        }
+      };
       for (const binding of this.#tools) {
-        const descriptor = tools.get(binding.name); if (!descriptor) continue;
-        const input = compileBoundedSchema(descriptor.inputSchema);
-        if (descriptor.outputSchema !== undefined) compileBoundedSchema(descriptor.outputSchema);
-        const safe = passiveJson(descriptor) as unknown as Tool;
-        prepared.push(() => this.#register('tool', binding, safe, descriptor.inputSchema as Json, input, epoch));
+        const descriptor = tools.get(binding.name);
+        if (!descriptor) continue;
+        accept('tool', binding.name, () => {
+          const input = compileBoundedSchema(descriptor.inputSchema);
+          if (descriptor.outputSchema !== undefined) compileBoundedSchema(descriptor.outputSchema);
+          const safe = passiveJson(descriptor) as unknown as Tool;
+          return () => this.#register('tool', binding, safe, descriptor.inputSchema as Json, input, epoch);
+        });
       }
       for (const binding of this.#resources) {
-        const descriptor = resources.get(binding.uri); if (!descriptor) continue;
-        const schema = { type: 'object', additionalProperties: false };
-        prepared.push(() => this.#register('resource', binding, descriptor, schema, compileBoundedSchema(schema), epoch));
+        const descriptor = resources.get(binding.uri);
+        if (!descriptor) continue;
+        accept('resource', binding.name, () => {
+          passiveJson(descriptor);
+          const schema = { type: 'object', additionalProperties: false };
+          return () => this.#register('resource', binding, descriptor, schema, compileBoundedSchema(schema), epoch);
+        });
       }
       for (const binding of this.#prompts) {
-        const descriptor = prompts.get(binding.name); if (!descriptor) continue;
-        const args = descriptor.arguments ?? [];
-        if (!Array.isArray(args) || args.length > 64) throw new McpBoundaryError('SCHEMA_INVALID');
-        const properties: Record<string, Json> = Object.create(null); const required: string[] = [];
-        for (const argument of args) {
-          const name = identifier(argument.name); if (Object.hasOwn(properties, name)) throw new McpBoundaryError('SCHEMA_INVALID');
-          properties[name] = { type: 'string', maxLength: 16_384 };
-          if (argument.required === true) required.push(name);
-        }
-        const schema = { type: 'object', properties, required, additionalProperties: false };
-        prepared.push(() => this.#register('prompt', binding, descriptor, schema, compileBoundedSchema(schema), epoch));
+        const descriptor = prompts.get(binding.name);
+        if (!descriptor) continue;
+        accept('prompt', binding.name, () => {
+          passiveJson(descriptor);
+          const args = descriptor.arguments ?? [];
+          if (!Array.isArray(args) || args.length > 64) throw new McpBoundaryError('SCHEMA_INVALID');
+          const properties: Record<string, Json> = Object.create(null);
+          const required: string[] = [];
+          for (const argument of args) {
+            const name = identifier(argument.name);
+            if (Object.hasOwn(properties, name)) throw new McpBoundaryError('SCHEMA_INVALID');
+            properties[name] = { type: 'string', maxLength: 16_384 };
+            if (argument.required === true) required.push(name);
+          }
+          const schema = { type: 'object', properties, required, additionalProperties: false };
+          return () => this.#register('prompt', binding, descriptor, schema, compileBoundedSchema(schema), epoch);
+        });
       }
       if (epoch !== this.#epoch || this.#state !== 'refreshing') throw new McpBoundaryError('CONNECTION_CHANGED');
       const registrations = prepared.map(register => register());
       if (epoch !== this.#epoch || this.#state !== 'refreshing') throw new McpBoundaryError('CONNECTION_CHANGED');
       // Exclude the authorization epoch/session so an unchanged explicit refresh
       // does not masquerade as a change in the accepted remote descriptors.
-      const metadata = registrations.map(({ name, kind, descriptor }) => ({ name, kind, descriptor }))
-        .sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
+      const metadata = registrations
+        .map(({ name, kind, descriptor }) => ({ name, kind, descriptor }))
+        .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       const metadataDigest = digestJson(metadata);
-      if (metadataDigest !== this.#metadataDigest) { this.#metadataDigest = metadataDigest; this.#metadataRevision++; }
+      if (metadataDigest !== this.#metadataDigest) {
+        this.#metadataDigest = metadataDigest;
+        this.#metadataRevision++;
+      }
       this.#registrations = Object.freeze(registrations);
+      this.#skipped = Object.freeze(skipped);
       this.#state = 'ready';
       this.#inventoryRevision++;
     } catch {
@@ -316,24 +570,47 @@ export class ManagedMcpConnection {
   #unique<T extends object>(values: T[], key: keyof T): Map<string, T> {
     const map = new Map<string, T>();
     for (const value of values) {
-      const name = identifier(value[key]); if (map.has(name)) throw new McpBoundaryError('REGISTRY_REJECTED');
+      const name = identifier(value[key]);
+      if (map.has(name)) throw new McpBoundaryError('REGISTRY_REJECTED');
       map.set(name, value);
     }
     return map;
   }
 
-  #register(kind: 'tool' | 'resource' | 'prompt', binding: McpBinding, descriptor: unknown, schema: Json, validate: (input: unknown) => boolean, epoch: number): ManagedMcpRegistration {
-    const name = kind === 'tool' ? mcpToolName(this.#identity.serverId, binding.name) : `mcp-${kind}:${encodeURIComponent(this.#identity.serverId)}:${encodeURIComponent(binding.name)}`;
+  #register(
+    kind: 'tool' | 'resource' | 'prompt',
+    binding: McpBinding,
+    descriptor: unknown,
+    schema: Json,
+    validate: (input: unknown) => boolean,
+    epoch: number,
+  ): ManagedMcpRegistration {
+    const name =
+      kind === 'tool'
+        ? mcpToolName(this.#identity.serverId, binding.name)
+        : `mcp-${kind}:${encodeURIComponent(this.#identity.serverId)}:${encodeURIComponent(binding.name)}`;
     const safe = passiveJson(descriptor);
     const fingerprint = this.#guard.registerTool({
-      name, description: `${kind} ${binding.name}`, inputSchema: schema,
+      name,
+      description: `${kind} ${binding.name}`,
+      inputSchema: schema,
       metadata: { descriptor: safe, identity: { ...this.#identity }, session: this.#session, epoch },
       ...(binding.requiresApproval === undefined ? {} : { requiresApproval: binding.requiresApproval }),
       ...(binding.controlPlane === undefined ? {} : { controlPlane: binding.controlPlane }),
       ...(binding.maxCost === undefined ? {} : { maxCost: binding.maxCost }),
+      // A binding's explicit `false` is kept: the inventory reads only a declared `false` as
+      // "does not read outside content"; an omitted label stays unknown.
+      ...(binding.readsUntrusted !== undefined
+        ? { readsUntrusted: binding.readsUntrusted }
+        : this.#readsUntrusted
+          ? { readsUntrusted: true }
+          : {}),
+      ...(binding.untrustedContext === undefined ? {} : { untrustedContext: binding.untrustedContext }),
+      ...(binding.sendsExternal === undefined ? {} : { sendsExternal: binding.sendsExternal }),
       resolve: (args, task) => {
         this.#assertEpoch(epoch);
-        if (task.principalId !== this.#identity.principalId || task.tenantId !== this.#identity.tenantId) throw new McpBoundaryError('IDENTITY_DENIED');
+        if (task.principalId !== this.#identity.principalId || task.tenantId !== this.#identity.tenantId)
+          throw new McpBoundaryError('IDENTITY_DENIED');
         if (!validate(args)) throw new McpBoundaryError('ARGUMENTS_INVALID');
         return binding.resolve(object(args), task);
       },
@@ -343,19 +620,36 @@ export class ManagedMcpConnection {
         const options = { signal, timeout: this.#timeout };
         let result: unknown;
         try {
-          if (kind === 'tool') result = await this.#client.callTool({ name: binding.name, arguments: object(args), _meta }, { ...options, toolDefinition: safe as unknown as Tool });
-          else if (kind === 'resource') result = await this.#client.readResource({ uri: (binding as McpResourceBinding).uri, _meta }, { ...options, cacheMode: 'bypass' });
-          else result = await this.#client.getPrompt({ name: binding.name, arguments: object(args) as Record<string, string>, _meta }, options);
+          if (kind === 'tool')
+            result = await this.#client.callTool(
+              { name: binding.name, arguments: object(args), _meta },
+              { ...options, toolDefinition: safe as unknown as Tool },
+            );
+          else if (kind === 'resource')
+            result = await this.#client.readResource(
+              { uri: (binding as McpResourceBinding).uri, _meta },
+              { ...options, cacheMode: 'bypass' },
+            );
+          else
+            result = await this.#client.getPrompt(
+              { name: binding.name, arguments: object(args) as Record<string, string>, _meta },
+              options,
+            );
           this.#assertEpoch(epoch);
           const value = passiveJson(result);
           if (kind === 'resource') {
             const contents = object(value).contents;
-            if (!Array.isArray(contents) || contents.some(item => object(item).uri !== (binding as McpResourceBinding).uri)) throw new McpBoundaryError('RESOURCE_MISMATCH');
+            if (
+              !Array.isArray(contents) ||
+              contents.some(item => object(item).uri !== (binding as McpResourceBinding).uri)
+            )
+              throw new McpBoundaryError('RESOURCE_MISMATCH');
           }
           return binding.measureCost ? { value, actualCost: binding.measureCost(value) } : { value };
-        } catch {
-          // A failed/aborted request may still have had a remote effect. Never retry it.
-          this.#invalidate('quarantined');
+        } catch (error) {
+          // A failed/aborted request may still have had a remote effect; the guard records it
+          // as unknown and never retries it. Only connection-level failures quarantine.
+          if (epoch === this.#epoch && connectionFailure(error)) this.#invalidate('quarantined');
           throw new McpBoundaryError('MCP_OPERATION_FAILED');
         }
       },

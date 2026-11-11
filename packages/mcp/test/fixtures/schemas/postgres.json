@@ -1,0 +1,18 @@
+{
+ "source": "Modeled on the published reference/official server tool definitions and the shapes their schema generators emit; not captured from a live server.",
+ "tools": {
+  "query": {
+   "type": "object",
+   "properties": {
+    "sql": {
+     "type": "string"
+    }
+   },
+   "required": [
+    "sql"
+   ],
+   "additionalProperties": false,
+   "$schema": "http://json-schema.org/draft-07/schema#"
+  }
+ }
+}

@@ -1,0 +1,340 @@
+{
+  "schemaVersion": 1,
+  "profile": "host",
+  "source": {
+    "companyId": "example-company",
+    "sourceId": "executor-dev-1",
+    "enrollmentGeneration": "enrollment-1",
+    "inventoryInstanceId": "ledger-1",
+    "tenantId": "alpha"
+  },
+  "snapshotId": "alpha-snapshot-1",
+  "generatedAt": "2026-10-29T12:00:00Z",
+  "ledgerRevision": 1,
+  "policyEpoch": 1,
+  "coverage": {
+    "tasks": {
+      "status": "complete",
+      "observedAt": "2026-10-29T12:00:00Z"
+    },
+    "tools": {
+      "status": "complete",
+      "observedAt": "2026-10-29T12:00:00Z"
+    },
+    "manifest": {
+      "status": "complete",
+      "observedAt": "2026-10-30T00:00:00.000Z"
+    },
+    "mcp": {
+      "status": "not_collected"
+    },
+    "cloud": {
+      "status": "not_collected"
+    }
+  },
+  "tasks": [
+    {
+      "id": "research-root",
+      "tenantId": "alpha",
+      "principalId": "operator-1",
+      "parentTaskId": null,
+      "sourceTaskId": null,
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "records.read",
+          "resources": [
+            "report-A",
+            "report-B"
+          ]
+        },
+        {
+          "tool": "records.delete",
+          "resources": [
+            "report-B"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    },
+    {
+      "id": "review-child",
+      "tenantId": "alpha",
+      "principalId": "operator-1",
+      "parentTaskId": "research-root",
+      "sourceTaskId": null,
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "records.read",
+          "resources": [
+            "report-A"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    },
+    {
+      "id": "handoff-task",
+      "tenantId": "alpha",
+      "principalId": "operator-2",
+      "parentTaskId": null,
+      "sourceTaskId": "research-root",
+      "familyId": "research-root",
+      "grants": [
+        {
+          "tool": "outbound.send",
+          "resources": [
+            "report-C"
+          ]
+        }
+      ],
+      "budget": {
+        "maxCalls": 20,
+        "maxConcurrent": 2,
+        "maxCost": 10000,
+        "deadline": 1794000000000
+      },
+      "allowedRecipients": [
+        "recipient-1"
+      ],
+      "allowControlPlane": false,
+      "revoked": false,
+      "sensitive": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "spent": 0,
+        "reserved": 0
+      }
+    }
+  ],
+  "tools": [
+    {
+      "name": "records.read",
+      "fingerprint": "1111111111111111111111111111111111111111111111111111111111111111",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": false,
+      "controlPlane": false,
+      "maxCost": 0
+    },
+    {
+      "name": "records.delete",
+      "fingerprint": "2222222222222222222222222222222222222222222222222222222222222222",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": true,
+      "controlPlane": false,
+      "maxCost": 0
+    },
+    {
+      "name": "outbound.send",
+      "fingerprint": "3333333333333333333333333333333333333333333333333333333333333333",
+      "revision": 1,
+      "registered": true,
+      "approved": true,
+      "requiresApproval": true,
+      "controlPlane": false,
+      "maxCost": 0
+    }
+  ],
+  "manifest": {
+    "schemaVersion": 2,
+    "evidenceKind": "host_asserted",
+    "source": {
+      "companyId": "example-company",
+      "sourceId": "executor-dev-1",
+      "enrollmentGeneration": "enrollment-1",
+      "inventoryInstanceId": "ledger-1",
+      "tenantId": "alpha"
+    },
+    "manifestId": "host-config",
+    "revision": 5,
+    "observedAt": "2026-10-30T00:00:00.000Z",
+    "agents": [
+      {
+        "id": "agent",
+        "name": "Report agent",
+        "ownerId": "operator",
+        "teamId": "reports",
+        "purpose": "Prepare reviewed company reports",
+        "lifecycleState": "active",
+        "ownershipStatus": "assigned",
+        "ownershipSource": "company-directory"
+      }
+    ],
+    "deployments": [
+      {
+        "id": "deployment",
+        "agentId": "agent",
+        "environment": "staging",
+        "runtimeRef": "opaque:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+        "workloadGeneration": "generation-1",
+        "buildRef": "opaque:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+        "bindingAuthority": "company-deployment-controller",
+        "credentialReferenceIds": [
+          "opaque:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "opaque:9999999999999999999999999999999999999999999999999999999999999999"
+        ]
+      }
+    ],
+    "taskBindings": [
+      {
+        "taskId": "research-root",
+        "deploymentId": "deployment"
+      }
+    ],
+    "resourceBindings": [
+      {
+        "id": "report",
+        "tool": "records.read",
+        "resourceRef": "report-A",
+        "target": {
+          "provider": "aws",
+          "partition": "aws",
+          "accountId": "123456789012",
+          "region": "",
+          "arn": "arn:aws:s3:::reports/report.txt",
+          "kind": "object"
+        },
+        "actions": [
+          "s3:GetObject"
+        ],
+        "scope": "exact",
+        "displayName": "Reviewed report",
+        "ownerId": "operator",
+        "ownershipStatus": "assigned",
+        "ownershipSource": "company-directory",
+        "sensitivity": "internal",
+        "approvedDestinations": [
+          "opaque:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "opaque:6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "dependsOn": []
+      },
+      {
+        "id": "company-database",
+        "tool": "records.read",
+        "resourceRef": "report-B",
+        "target": {
+          "provider": "host",
+          "id": "opaque:5555555555555555555555555555555555555555555555555555555555555555",
+          "name": "Company database",
+          "kind": "database"
+        },
+        "actions": [
+          "read"
+        ],
+        "scope": "exact",
+        "displayName": "Company records",
+        "ownerId": null,
+        "ownershipStatus": "unassigned",
+        "ownershipSource": "company-directory",
+        "sensitivity": "internal",
+        "approvedDestinations": [
+          "opaque:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "opaque:6666666666666666666666666666666666666666666666666666666666666666"
+        ],
+        "dependsOn": [
+          "report"
+        ]
+      }
+    ],
+    "executionBindings": [
+      {
+        "id": "read-runtime",
+        "tool": "records.read",
+        "deploymentId": "deployment",
+        "connectionId": null,
+        "identitySelection": "static",
+        "identity": {
+          "provider": "aws",
+          "partition": "aws",
+          "accountId": "123456789012",
+          "region": "",
+          "arn": "arn:aws:iam::123456789012:role/reporter"
+        }
+      }
+    ],
+    "authorityId": "company-directory",
+    "owners": [
+      {
+        "id": "operator",
+        "name": "Reports team",
+        "kind": "team"
+      },
+      {
+        "id": "unassigned-directory-owner",
+        "name": "Directory owner",
+        "kind": "person"
+      }
+    ],
+    "credentialReferences": [
+      {
+        "id": "opaque:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "Reports workload credential",
+        "issuerRef": "opaque:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "audienceRefs": [
+          "opaque:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "opaque:8888888888888888888888888888888888888888888888888888888888888888"
+        ],
+        "recipientRefs": [
+          "opaque:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "opaque:7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        "lifecycleState": "active",
+        "expiresAt": "2026-12-01T00:00:00Z",
+        "rotationStatus": "current"
+      },
+      {
+        "id": "opaque:9999999999999999999999999999999999999999999999999999999999999999",
+        "name": "Secondary credential",
+        "issuerRef": "opaque:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "audienceRefs": [
+          "opaque:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "opaque:8888888888888888888888888888888888888888888888888888888888888888"
+        ],
+        "recipientRefs": [
+          "opaque:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+          "opaque:7777777777777777777777777777777777777777777777777777777777777777"
+        ],
+        "lifecycleState": "active",
+        "expiresAt": "2026-12-01T00:00:00Z",
+        "rotationStatus": "current"
+      }
+    ]
+  }
+}

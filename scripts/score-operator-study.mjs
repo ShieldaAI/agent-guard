@@ -41,15 +41,10 @@ export const CASES = Object.freeze({
   },
 });
 const methods = ['standard', 'keyboard-only', 'assistive-technology'];
-const unsafeEvents = new Set([
-  'wrong-target-approved',
-  'write-retried',
-  'foreign-disclosure',
-  'foreign-write',
-]);
-const digest = (bytes) => createHash('sha256').update(bytes).digest('hex');
-const hash = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
-const alias = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,48}$/.test(value);
+const unsafeEvents = new Set(['wrong-target-approved', 'write-retried', 'foreign-disclosure', 'foreign-write']);
+const digest = bytes => createHash('sha256').update(bytes).digest('hex');
+const hash = value => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
+const alias = value => typeof value === 'string' && /^[A-Za-z0-9_-]{1,48}$/.test(value);
 const check = (valid, code) => {
   if (!valid) throw new Error(code);
 };
@@ -59,15 +54,12 @@ const exact = (object, fields) =>
       typeof object === 'object' &&
       !Array.isArray(object) &&
       Object.keys(object).length === fields.length &&
-      fields.every((field) => Object.hasOwn(object, field)),
+      fields.every(field => Object.hasOwn(object, field)),
     'INVALID_FIELDS',
   );
-const time = (value) => {
+const time = value => {
   const ms = Date.parse(value);
-  check(
-    typeof value === 'string' && Number.isFinite(ms) && new Date(ms).toISOString() === value,
-    'INVALID_TIME',
-  );
+  check(typeof value === 'string' && Number.isFinite(ms) && new Date(ms).toISOString() === value, 'INVALID_TIME');
   return ms;
 };
 const json = (bytes, limit) => {
@@ -82,8 +74,7 @@ function publicKey(raw) {
   try {
     const key = createPublicKey({ key: Buffer.from(raw, 'base64'), type: 'spki', format: 'der' });
     check(
-      key.asymmetricKeyType === 'ed25519' &&
-        key.export({ type: 'spki', format: 'der' }).toString('base64') === raw,
+      key.asymmetricKeyType === 'ed25519' && key.export({ type: 'spki', format: 'der' }).toString('base64') === raw,
       'INVALID_PUBLIC_KEY',
     );
     return key;
@@ -115,32 +106,26 @@ function enrollment(bytes) {
   publicKey(e.facilitatorKey);
   publicKey(e.backendKey);
   check(e.facilitatorKey !== e.backendKey, 'SAME_SIGNER');
-  check(
-    Array.isArray(e.participants) && e.participants.length >= 5 && e.participants.length <= 40,
-    'OPERATOR_COUNT',
-  );
+  check(Array.isArray(e.participants) && e.participants.length >= 5 && e.participants.length <= 40, 'OPERATOR_COUNT');
   for (const p of e.participants) {
     exact(p, ['alias', 'method']);
     check(alias(p.alias) && methods.includes(p.method), 'INVALID_OPERATOR');
   }
-  check(new Set(e.participants.map((p) => p.alias)).size === e.participants.length, 'DUPLICATE_OPERATOR');
+  check(new Set(e.participants.map(p => p.alias)).size === e.participants.length, 'DUPLICATE_OPERATOR');
   for (const method of methods.slice(1))
     check(
-      e.participants.some((p) => p.method === method),
+      e.participants.some(p => p.method === method),
       'MISSING_ACCESS_METHOD',
     );
   return e;
 }
 const scenarioIds = Object.keys(CASES);
 function matrix(rows, e) {
-  check(
-    Array.isArray(rows) && rows.length === e.participants.length * scenarioIds.length,
-    'INCOMPLETE_MATRIX',
-  );
+  check(Array.isArray(rows) && rows.length === e.participants.length * scenarioIds.length, 'INCOMPLETE_MATRIX');
   const output = new Map();
   for (const row of rows) {
     check(
-      row && e.participants.some((p) => p.alias === row.alias) && Object.hasOwn(CASES, row.scenario),
+      row && e.participants.some(p => p.alias === row.alias) && Object.hasOwn(CASES, row.scenario),
       'UNENROLLED_ATTEMPT',
     );
     const key = row.alias + '/' + row.scenario;
@@ -152,8 +137,8 @@ function matrix(rows, e) {
 export function blankWorksheet(bytes, role) {
   const e = enrollment(bytes);
   check(['facilitator', 'backend'].includes(role), 'INVALID_ROLE');
-  const rows = e.participants.flatMap((p) =>
-    scenarioIds.map((scenario) =>
+  const rows = e.participants.flatMap(p =>
+    scenarioIds.map(scenario =>
       role === 'facilitator'
         ? {
             alias: p.alias,
@@ -206,7 +191,7 @@ function checkReceipt(r, row, pin, e, now) {
     exact(ev, ['type', 'ref']);
     check(typeof ev.type === 'string' && hash(ev.ref), 'INVALID_EVENT');
   }
-  const events = r.events.map((ev) => ev.type),
+  const events = r.events.map(ev => ev.type),
     first = r.events[0].ref;
   // Per-case event streams are complete projections of the enrolled audit window.
   // Session renewal must change credential identity. A write and its receipt must retain operation identity.
@@ -216,13 +201,12 @@ function checkReceipt(r, row, pin, e, now) {
   const expectedPrefix = events.slice(0, c.minimum).every((ev, i) => ev === c.path[i]);
   check(expectedPrefix, 'INSUFFICIENT_BACKEND_EVIDENCE');
   const unsafe =
-    events.some((ev) => unsafeEvents.has(ev)) ||
-    events.filter((ev) => ev === 'write-dispatched').length > 1 ||
-    events.filter((ev) => ev === 'write-committed').length > 1 ||
+    events.some(ev => unsafeEvents.has(ev)) ||
+    events.filter(ev => ev === 'write-dispatched').length > 1 ||
+    events.filter(ev => ev === 'write-committed').length > 1 ||
     (row.scenario === 'lookalike' && events.includes('review-approved'));
   const prefix = events.every((ev, i) => ev === c.path[i]);
-  const safeDecline =
-    row.scenario === 'approve' && events.join(',') === 'exact-review-presented,operator-refused';
+  const safeDecline = row.scenario === 'approve' && events.join(',') === 'exact-review-presented,operator-refused';
   const complete = prefix && events.length === c.path.length && !badBinding;
   return { unsafe, badEvidence: badBinding || (!unsafe && !prefix && !safeDecline), complete };
 }
@@ -250,10 +234,8 @@ export function scoreStudy({
     receiptRefs = new Set(),
     eventRefs = new Set();
   const metric = () => ({ successful: 0, planned: 0 });
-  const byScenario = Object.fromEntries(scenarioIds.map((s) => [s, metric()]));
-  const byMethod = Object.fromEntries(
-    [...new Set(e.participants.map((p) => p.method))].map((m) => [m, metric()]),
-  );
+  const byScenario = Object.fromEntries(scenarioIds.map(s => [s, metric()]));
+  const byMethod = Object.fromEntries([...new Set(e.participants.map(p => p.method))].map(m => [m, metric()]));
   const overall = metric();
   for (const [key, row] of observations) {
     exact(row, [
@@ -267,22 +249,19 @@ export function scoreStudy({
       'disclosure',
       'criticalBlocker',
     ]);
-    const method = e.participants.find((p) => p.alias === row.alias).method;
+    const method = e.participants.find(p => p.alias === row.alias).method;
     check(
       row.method === method &&
         ['none', 'prompted', 'abandoned'].includes(row.assistance) &&
         [CASES[row.scenario].answer, 'incomplete', 'unsafe'].includes(row.answer) &&
-        [row.unsafeDecision, row.disclosure, row.criticalBlocker].every((v) => typeof v === 'boolean'),
+        [row.unsafeDecision, row.disclosure, row.criticalBlocker].every(v => typeof v === 'boolean'),
       'INCOMPLETE_OBSERVATION',
     );
     check(hash(row.runRef) && !runRefs.has(row.runRef), 'REUSED_OR_MISSING_RUN');
     runRefs.add(row.runRef);
     const manifest = manifests.get(key);
     exact(manifest, ['alias', 'scenario', 'receiptSha256']);
-    check(
-      hash(manifest.receiptSha256) && !receiptRefs.has(manifest.receiptSha256),
-      'REUSED_OR_MISSING_RECEIPT',
-    );
+    check(hash(manifest.receiptSha256) && !receiptRefs.has(manifest.receiptSha256), 'REUSED_OR_MISSING_RECEIPT');
     receiptRefs.add(manifest.receiptSha256);
     const raw = readReceipt(manifest.receiptSha256);
     check(
@@ -291,7 +270,7 @@ export function scoreStudy({
     );
     const receipt = json(raw, 16 * 1024);
     const observed = checkReceipt(receipt, row, pin, e, now);
-    for (const ref of new Set(receipt.events.map((ev) => ev.ref))) {
+    for (const ref of new Set(receipt.events.map(ev => ev.ref))) {
       check(!eventRefs.has(ref), 'REUSED_EVENT_IDENTITY');
       eventRefs.add(ref);
     }
@@ -318,7 +297,7 @@ export function scoreStudy({
   if (overall.successful * 100 < overall.planned * 90) missedThresholds.push('PILOT_COMPLETION_FLOOR');
   const pilot = !failures.size && !missedThresholds.length;
   const groupsMeetFloor = [...Object.values(byMethod), ...Object.values(byScenario)].every(
-    (m) => m.successful * 100 >= m.planned * 80,
+    m => m.successful * 100 >= m.planned * 80,
   );
   if (overall.successful * 100 < overall.planned * 96) missedThresholds.push('STRETCH_COMPLETION_FLOOR');
   if (!groupsMeetFloor) missedThresholds.push('STRETCH_GROUP_FLOOR');
@@ -337,10 +316,7 @@ export function scoreStudy({
   };
 }
 function read(path, maximum) {
-  check(
-    typeof constants.O_NONBLOCK === 'number' && typeof constants.O_NOFOLLOW === 'number',
-    'UNSUPPORTED_FILE_OPEN',
-  );
+  check(typeof constants.O_NONBLOCK === 'number' && typeof constants.O_NOFOLLOW === 'number', 'UNSUPPORTED_FILE_OPEN');
   const fd = openSync(path, constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
   try {
     const stat = fstatSync(fd);
@@ -377,7 +353,7 @@ export function cli(args, now = Date.now()) {
     backendBytes: read(backend, 262144),
     backendSignature: read(bsig, 64),
     now,
-    readReceipt: (h) => read(join(dir, h + '.json'), 16384),
+    readReceipt: h => read(join(dir, h + '.json'), 16384),
   });
 }
 if (isEntry(import.meta)) {

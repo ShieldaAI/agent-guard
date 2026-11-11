@@ -1,5 +1,286 @@
 # Changelog
 
+## 0.1.0 — Approved, not yet published
+
+Approved on 9 November 2026 with three recorded scope decisions:
+
+- The Node HIGH security releases are a post-release follow-up.
+- The single-CPU observer stress profile is out of scope.
+- The inventory observer is experimental.
+
+See the [release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
+release is claimed by this entry.
+
+- Add (agent map): two discovery leads for all-teams readers, to help find agents the
+  manifest does not declare. `list_undeclared_activity` lists tasks and caller principals
+  that ran through an enrolled executor and belong to no declared agent, and
+  `get_inventory_health` adds their count per source as `undeclaredActivity`.
+  `list_unclaimed_identities` lists IAM roles and users of the enrolled AWS accounts that
+  no declared agent's execution binding names, as candidates; a missing, stale or
+  inconsistent collection reads `unknown`. A team-scoped reader gets a note without names
+  or counts. A failed count never fails health. The viewer has a Discovery tab. No
+  infrastructure, code or network scanning is added.
+- Add (executor): `loadInventoryManifestFile(path)` on the `/inventory` subpath loads a
+  reviewed host manifest from a private file (owner-only, read once at startup, POSIX
+  only), so declaring an agent is a file change and a restart. See
+  [declare agents from a file](docs/guides/agent-cartography.md#declare-agents-from-a-file).
+- Docs: [risks mapped to the OWASP Top 10 for Agentic Applications](docs/risks.md), with
+  the package that handles each, and a plain statement of
+  [how agents get onto the map](docs/guides/agent-cartography.md#how-agents-get-onto-the-map):
+  only by being declared in a host manifest (the discovery leads above only point at
+  candidates).
+- Fix (mcp): a tool schema `pattern` using a regex modifier group such as `(?i:a)` could
+  hang the host or skip the backtracking check; those forms are refused.
+- Fix (mcp): a binding's explicit `readsUntrusted: false` is passed to the registration
+  instead of being dropped. The tool fingerprint changes for bindings that set it.
+- Fix (core): a clock failure after the handler ran reports `EXECUTION_ABORTED` and is
+  audited as failed, not `CLOCK_INVALID` audited as denied.
+- Fix (executor): archived task families no longer leave token hashes in memory; an
+  unknown maintenance CLI flag reports `MAINTENANCE_ARGUMENT_INVALID`.
+- Fix (agent map): `list_resources` judges outside-guard reach for the returned page only.
+- Fix (Agent Ops): refusing a self-approval answers 409 instead of 403, which signed the
+  reviewer out.
+- Report the installed package version from the MCP client (`agent-guard-mcp`) and
+  the Agent Map MCP server instead of hard-coded strings.
+- Release preflight requires every `release-state.json` evidence entry to be a
+  committed repository file.
+
+- Add (agent map): the "dangerous three" boundary flag. `get_agent_access` returns
+  `boundaryFlags` with whether a live task can read private data, read outside content
+  and send out, each leg `present`, `absent` or `unknown` with evidence, and a status of
+  `exposed`, `mitigated`, `unknown` or `absent`. Only explicit `false` labels rule a tool
+  out; a sensitive task or empty recipients stop only declared external sends.
+  `list_agents` adds the status for the returned page with `includeFlags` (one extra
+  read of those agents), and filters with `flag`/`flagStatus`. `get_agent_access` now also
+  loads the in-scope delegation ancestors of the agent's tasks (after its own nodes, only
+  if they fit) and asks which in-scope bindings of `*`-granted tools are sensitive, so list
+  and detail agree.
+- Add (agent map): outside-guard reach for resources. `list_resources` rows get
+  `outsideGuard` (`yes`, `none_found`, `unknown` with reasons); `get_resource_access`
+  lists the tool identities and declared direct paths that reach the resource. A manifest
+  v3 `targetRef` must now name a declared host resource. A team reader's identity scope
+  names only buckets mapped by in-scope bindings; anything else is a note without a
+  count. `get_changes` reports
+  declared direct paths under the new `outside_guard` change kind, labelled declared.
+- Add (inventory v2): `untrustedContextDefault`, the executor's mode for tools without
+  their own, so readers can work out effective modes. The collector projects it onto
+  `GuardTool`, and adds `delegated` and `derived` to `GuardTask` so a reader knows a
+  parent or handoff source exists without learning which.
+- Upgrade note (agent map): projections imported before this change have no
+  `delegated` or `derived` on tasks. Until the source publishes again, their boundary flags
+  never read `absent` (the status is at most `unknown`) and identity scope reports
+  `grant_lineage_unknown` for every granted tool. The new `untrusted_context_default`
+  appears once as a changed tool field.
+- Fix (agent map): the store's relationship query no longer scans every node in the
+  database; it starts from the snapshot. Neo4j plan tests now check the boundary reads
+  (one-agent, page-of-agents and full flags, outside-guard, summary and history, for team
+  and all-teams readers) for cartesian products and all-node scans.
+- Add (agent map): `get_agent_access.outsideGuard.identityScope` compares what each
+  static tool identity can reach with what that tool's grants bind. For a read
+  focused on one agent, the store reads every bucket in the account the identity has
+  an IAM identity-policy candidate on and lists the unbound ones (`broader_than_grants`),
+  or reports `matches_grants`; anything missing, stale, malformed or over 500 buckets is
+  `unknown` with a reason. Each tool lists at most 100 extra buckets; a cut list is marked
+  `truncated` and keeps its status. Only identity policies are evaluated, so results are
+  candidates. The candidate layer already covers every bucket; the collector adds only the
+  task `delegated` and `derived` facts used to check task liveness.
+- Add (host manifest v3): `agent-guard-inventory-manifest-v3.schema.json` adds a
+  required `directAccess` list, where the host declares paths that act without the
+  guard (shell, database, network, SDK, MCP, other). Entries have opaque ids and target
+  references, a 1,024-character description, and at most 32 per deployment (1,000 in
+  total). `[]` is the host's claim of none, not a check. The executor validates v3 and
+  composes it into a v2 snapshot. The collector projects `GuardDirectAccess` nodes and
+  a per-deployment `direct_access_status`. The map adds
+  `get_agent_access.outsideGuard.directAccess` with status `found`, `none_declared` or
+  `unknown`; an older manifest always reads as `unknown`. The collector's authority
+  hash now ignores neutral v2 fields, so moving a host to manifest v3 at the same
+  ledger revision is not refused as `REVISION_CONTENT_CONFLICT`.
+- Add (inventory schema v2): when outside-content labels are in use, executor
+  snapshots use `agent-guard-inventory-v2.schema.json`, a `$ref` envelope over v1
+  that adds `untrusted` on tasks and the three labels on tools. Otherwise the output
+  stays byte-identical v1. The Cartography collector validates v2 (resolving v1
+  locally, never over the network) and projects the fields onto `GuardTool` and
+  `GuardTask`; a v1-only collector fails closed on v2. A generator and drift test
+  keep the v2 file in sync with v1.
+- Add (scenarios): catalog 1.3.0 adds S13, sends after reading outside content, for
+  thirteen scenarios and twenty-six cases. Adapters must support the outside-content
+  labels to pass it.
+- Add (core, executor, MCP; opt-in): an outside-content flag. Tools can declare
+  `readsUntrusted`, `untrustedContext` (`allow` / `require_approval` / `deny`) and
+  `sendsExternal` (`false` enforced); a resolver can add `untrusted: true` per call. A
+  family that dispatches such a call is marked `untrusted` for good (persisted in the
+  ledger). Then `require_approval` tools need a review, a pre-read approval fails with
+  `APPROVAL_CONTEXT_CHANGED`, and `deny` tools fail with `UNTRUSTED_CONTEXT_DENIED`.
+  `snapshot()`, policies and `onDecision` see the flag; MCP connections can be marked
+  `readsUntrusted`. Defaults are unchanged (`allow`), and tools that set none of the
+  labels keep their fingerprints.
+- Change (executor): the numbered task ID scheme that lifecycle export fences rely on is
+  now a documented executor feature, `numberedTaskId()` and `NUMBERED_TASK_PREFIX`,
+  instead of an Agent Ops convention string-built in two places. Persisted formats
+  are unchanged.
+- Add (Agent Ops): opt-in online retention. With `requests.autoArchiveAfterDays`, the
+  service archives the executor task families of finished requests older than that,
+  10 per minute, through the operator's retire-then-archive path; blocked requests are
+  skipped. History compaction stays offline.
+- Fix (executor): an operator can accept a bounded backward clock step once at
+  startup (`acceptClockSkewMs`, Agent Ops `--accept-clock-skew`), recorded as
+  `CLOCK_SKEW_ACCEPTED`; without it a backward step still fails closed. A handler that
+  completes after cancellation, revocation or its deadline now fails with
+  `EXECUTION_ABORTED` and `detail: 'EFFECT_COMMITTED'`, so the caller knows the effect
+  happened. The executor and the `/ops` key tools share one 1 MiB minimum ledger size.
+- Change (executor exports): the root keeps the executor, task server and client,
+  adapters, network and model tools. Sandbox, inventory (experimental), pilot review
+  and operator tooling move to `/sandbox`, `/inventory`, `/pilot` and `/ops`, and
+  Agent Ops building blocks to `/internal` (no semver). Every 0.1 root export still
+  works through a `@deprecated` alias bound to the same value, removed in 0.3.
+  agent-map adds `/oidc` and `/identity-http`. Application sources now import
+  packages by name only, and a test fails on any `dist/` import from `apps/`.
+- Add (executor ledger format): ledgers carry an explicit `formatVersion` and a
+  `features` list, kept current at each commit. A migration registry brings older
+  layouts forward at open, inside the exclusive startup transaction, so the witness
+  and mirror update in the same commit. A newer layout is refused unchanged
+  (`STORE_FORMAT_UNSUPPORTED`). `executor.ledgerFormat()` and Agent Ops `check`
+  report the format. The optional ledger fields are now real types instead of casts.
+  Committed fixture ledgers written by `0.1.0-alpha.3`, `0.1.0` and the pre-format
+  0.2 build (plain and witnessed) must open, keep counters, receipts and tokens, and
+  still reconcile an uncertain effect. Policy: 1.x opens every ledger from
+  `0.1.0-alpha.3` on; downgrade is not supported.
+- Fix (executor ledger): when `ROLLBACK` itself fails, the store keeps the original
+  transaction error instead of replacing it, and closes so an unknown transaction
+  state is never read.
+- Perf (inventory observer, experimental): an identical poll within
+  `reuseUnchangedMs` (opt-in; off by default) returns the previous observation
+  instead of re-projecting, keyed by the ledger ciphertext, registry, scope, profile
+  and manifest. `host-mcp` is never reused. Unchanged 500-task polls drop from about
+  4.2 ms to 0.25 ms; continuously written ledgers see no change.
+- Perf (executor ledger): `LedgerStore.read()` caches the last verified ciphertext and
+  its decoded state. Each read still fetches the row and runs every witness and mirror
+  check, but when the bytes are unchanged it returns a detached copy without
+  decrypting, parsing or re-walking the ledger. With 1,000 tasks, read-bound calls
+  such as `snapshot()` take about half the time (3.6 ms to 1.8 ms); prepare and
+  execute are unchanged because the write path dominates. Read results stay fresh,
+  detached and mutable as before, and `close()` drops the decrypted cache.
+- Docs: one [Support and limits](docs/support-and-limits.md) page replaces the
+  protection design, assessment, acceptance and production-readiness documents;
+  earlier plans and reviews move to `docs/archive/`; `releasing.md` is cut to a
+  checklist, commands and rollback; the README gains a tested five-minute example
+  and a maturity table (stable / experimental / reference app); the threat model
+  covers Agent Ops; the API contract drops "Alpha". New releases link CI runs
+  instead of committing dated evidence JSON. A test checks every relative Markdown
+  link in the repository.
+- Test: seeded property tests for `canonicalJson`/`digestJson` (stable under key
+  order, round-trip, injective across 3,000 generated values, no cross-type digest
+  collisions) and model-based tests of budgets and reservations under random
+  interleavings, in core (60 seeds) and the durable executor (25 seeds, with
+  reconciliation and restart). Both model tests fail when reservation release is
+  broken. They use a small seeded generator instead of a new dependency.
+- Fix (executor task server): bearer authentication uses an in-memory token index, so
+  malformed and unknown tokens are refused without decrypting the ledger, and a valid
+  one is found in O(1) instead of a scan over every task. The server adds
+  per-credential and server-wide request rates, an in-flight request cap and a
+  connection cap (`REQUEST_RATE_LIMITED`, 429).
+- Fix: scenarios recognize rejections with the new `isGuardError()` brand check
+  instead of `instanceof GuardError`, so a guard from a second installed copy of core
+  passes conformance. `ConformanceReport.catalogVersion` is typed as `string`.
+- Add (core API shape for 1.0): `executeDetailed()` returns `{ value, charged,
+  actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
+  in long-running guards; `unapproveTool()` and `unregisterTool()`; an `onDecision`
+  audit hook (identifiers only; it cannot change an outcome); `snapshot()` adds
+  `budget` and `revoked`; a `limits` option for the previously fixed approval and
+  policy bounds; and `monotonicClock`. The default clock stays `Date.now`.
+- Add: an error catalog. `GuardErrorCatalog` documents every `GuardErrorCode` with its
+  meaning, whether a retry is safe and the typical cause, and `docs/errors.md` is
+  generated from it (a test fails on drift). Flattened adapter errors keep a safe
+  uppercase adapter code as `GuardError.detail` and `cause.code`.
+  `McpBoundaryError.code` is now typed as `McpBoundaryErrorCode`.
+- Change: the durable executor task server returns HTTP statuses by kind (401, 403,
+  404, 409, 429, 503, otherwise 400) instead of 400 for every denial, and the error
+  body adds `retryable`. `ExecutorClient` accepts these statuses and exposes
+  `retryable` on its errors. Older clients see the new statuses as
+  `EXECUTOR_REQUEST_DENIED`; upgrade client and server together.
+- Change: the internal SPI moves to `@shieldaai/agent-guard/internal` (no semver
+  guarantees): `PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
+  `AuthorityPhase`, `AuthorityState`, `canonicalJson`, `digestJson` and
+  `immutableJson`. The root aliases still work, are marked `@deprecated`, and will
+  be removed in 0.3. First-party packages now import from `/internal`. The root
+  entry also exports `InvalidJsonError`.
+- Fix (Agent Ops): anonymous `GET /api/session` no longer creates server-side
+  sessions, so cookieless traffic can't exhaust the session table and block sign-in.
+  Pre-login state is a signed five-minute cookie with a derived CSRF token, and each
+  client address may hold at most four pending sign-ins. The rate limiter keys IPv6
+  by /64 and drops the oldest window when full instead of refusing new clients.
+  New `requests` settings add per-requester (50) and per-tenant (1,000) pending
+  caps, configurable review expiry (default unchanged at 5 minutes) and opt-in
+  `forbidSelfApproval`. `SIGHUP` now also reloads TLS material without a restart.
+- Fix: the MCP schema profile accepts common real-world tool schemas. The 2019-09 and
+  2020-12 dialect URIs are accepted, `format` is an annotation, `uniqueItems` uses
+  linear canonical-JSON equality, and `pattern` is accepted when its backtracking is
+  bounded (with a per-value length cap and a per-validation work budget). A schema
+  outside the profile now skips only that operation, listed in `connection.skipped`
+  with its reason, instead of rejecting the server's whole registry.
+- Fix: a managed MCP connection no longer quarantines on a failure that belongs to
+  one call. An abort, deadline, timeout, JSON-RPC error reply, invalid or oversized
+  result, resource mismatch or throwing `measureCost` now fails only that call.
+  Connection-level failures still quarantine. The inbound message limit is now a
+  sliding window (`maxMessages` per `messageWindowMs`, default 10,000 per 10 s)
+  instead of a lifetime cap, and exceeding it quarantines instead of closing, so
+  `refresh()` recovers. An oversized or malformed message that answers no pending
+  call also quarantines instead of closing. A reflected protected value still
+  closes the connection.
+- Fix: in the durable executor, one tenant's traffic no longer evicts another
+  tenant's receipts or audit events. Settled receipts are kept per task family
+  (`maxReceiptsPerFamily`, default 64), and shared caps prune the busiest family
+  first. A pruned receipt now returns `status: 'PRUNED'` with its settled `outcome`
+  instead of `INVALID_PREPARED`, which resolves the lost-response case. Audit
+  events are kept per tenant (`maxRecentEventsPerTenant`, default 256; total
+  still 1,000) and carry `tenantId` and a gap-detecting `sequence`.
+  `audit({ tenantId })` filters by tenant. The ledger change is additive.
+- Fix: in the durable executor, another task's or tenant's writes no longer make a
+  call fail with `POLICY_STATE_CHANGED` while its policy is awaited. The check now
+  compares the task's own policy inputs (counters, shared sensitivity), as the API
+  contract describes, instead of the global ledger revision. Same-task changes are
+  re-evaluated with the same bounded, turn-taking retry as core
+  (`ExecutorOptions.maxPolicyAttempts`). Without a custom policy, no check applies.
+- Fix: parallel calls on one task now work under a custom policy. A policy decision
+  made on a snapshot that changed while it ran is re-evaluated on fresh state, not
+  rejected outright. Re-evaluations on a task take turns, and the count is bounded by
+  the new `maxPolicyAttempts` option (1–16, default 5; `1` keeps the old behaviour).
+  The final checks and dispatch still run without an intervening await.
+- Fix: a call in flight no longer refuses `prepare()` or `approve()` with
+  `CONCURRENCY_EXCEEDED`/`COST_BUDGET_EXCEEDED`, in core and in the durable
+  executor. Transient capacity (concurrent calls, reserved cost) is enforced at
+  dispatch; permanent capacity (calls, spent cost) still refuses preparation.
+  `assertActionAuthority` gains an optional `phase` (default `dispatch`).
+
+- Make self-hosted ticket/request capacity, live-store byte limits and retained
+  key limits safely configurable through reviewed offline policy changes.
+- Add company onboarding, TLS/OIDC preflight, add-only reviewed ticket imports,
+  an operator Setup view and paging for larger company datasets.
+
+- Add the single-owner Linux Agent Ops service with durable ticket updates,
+  authenticated OIDC approvals, scoped agent proposals and receipt-only recovery.
+- Add whole-family retirement and encrypted archival, scoped execution listing,
+  exact ID tombstones and crash-safe archival receipt discovery.
+- Add offline, retryable ledger key rotation with independent rollback witnesses
+  and a protected multi-key ring.
+- Add hardened Docker Compose deployment, recovery runbooks, real-service browser
+  checks and a Linux production-profile CI job.
+- Add reviewed company-history compaction with permanent retirement fences,
+  independent encrypted history mirrors and exact receipt lookup.
+- Stop history growth before it exceeds the backup/recovery closure limit,
+  reserve capacity for interrupted compaction and expose operator capacity alerts.
+- Add managed offline key escrow, authenticated complete backups, active-key
+  retirement and schema-3 current-state repair without witness rollback.
+- Add authenticated operational status, bounded metrics, minimized activity
+  exports and explicit distinction between readable storage and enrolled recovery.
+- Enforce startup TLS/custody checks, remove unused runtime package managers,
+  and add dependency inventory, production-image comparison and three-browser CI.
+- Patch the Python Cartography OAuthLib dependency and add locked cross-platform
+  advisory checks; retain explicit, secret-free benchmark failure diagnostics.
+- Implement the Agent Map/Cartography catalog for agents, owners, permissions,
+  host-bound resources, opaque credential references, relationships and retained
+  before/after changes, with scoped pagination and accessible browser workflows.
+
 ## 0.1.0-alpha.3 — 2026-11-05
 
 - Harden policy admission, approval expiry, cancellation, task authentication,
@@ -166,7 +447,7 @@ Published all three packages under `@shieldaai` with the `alpha` dist-tag. The [
 - Remove obsolete build output and rebuild packages before packing.
 - Compile packed public types and README examples, execute a packaged MCP consumer, and require a clean committed checkout with aligned versions before publication.
 
-These changes are not included in the earlier `0.1.0-alpha.0` packages. See the [release review](docs/quality-review.md) for test results and registry verification.
+These changes are not included in the earlier `0.1.0-alpha.0` packages. See the [release review](docs/archive/quality-review.md) for test results and registry verification.
 
 ## 0.1.0-alpha.0 — 2026-10-24
 

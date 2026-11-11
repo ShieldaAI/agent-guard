@@ -38,8 +38,10 @@ if (process.platform !== 'win32') {
     return { root, folder, outside, leaf, selected, temp };
   }
 
-  test('Windows pinned workspace read returns exact bytes and rejects junction, hardlink, and alternate-stream inputs',
-    { timeout: 120_000 }, t => {
+  test(
+    'Windows pinned workspace read returns exact bytes and rejects junction, hardlink, and alternate-stream inputs',
+    { timeout: 120_000 },
+    t => {
       const { root, folder, outside, leaf, selected } = fixture(t);
       assert.deepEqual(read(root, 'Documents\\' + leaf, selected.length), selected);
       assert.throws(() => read(root, 'Documents/' + leaf, selected.length - 1), /Workspace input/);
@@ -50,15 +52,18 @@ if (process.platform !== 'win32') {
       assert.throws(() => read(root, 'documents/' + leaf, 64), /Workspace input/);
       linkSync(join(folder, leaf), join(outside, 'also-selected'));
       assert.throws(() => read(root, 'Documents/' + leaf, 64), /Workspace input/);
-    });
+    },
+  );
 
   test('Windows concurrent workspace junction swaps cannot return outside bytes', { timeout: 120_000 }, async t => {
     const { root, folder, outside, leaf, selected, temp } = fixture(t);
-    const junction = join(root, 'spare'), parked = join(temp, 'parked');
+    const junction = join(root, 'spare'),
+      parked = join(temp, 'parked');
     symlinkSync(outside, junction, 'junction');
     const shared = new SharedArrayBuffer(8);
     const state = new Int32Array(shared);
-    const worker = new Worker(`
+    const worker = new Worker(
+      `
       const { renameSync } = require('node:fs');
       const { parentPort, workerData } = require('node:worker_threads');
       const { pinned, spare, parked, shared } = workerData;
@@ -75,14 +80,20 @@ if (process.platform !== 'win32') {
           Atomics.wait(state, 0, 0, 1);
         }
       }
-    `, { eval: true, workerData: { pinned: folder, spare: junction, parked, shared } });
+    `,
+      { eval: true, workerData: { pinned: folder, spare: junction, parked, shared } },
+    );
     try {
       // Keep renaming in an independent thread while the caller synchronously waits for its reader.
       await once(worker, 'message');
       for (let attempt = 0; attempt < 3; attempt++) {
         let actual;
-        try { actual = read(root, 'Documents/' + leaf, 64); }
-        catch (error) { assert.match(error.message, /Workspace input/); continue; }
+        try {
+          actual = read(root, 'Documents/' + leaf, 64);
+        } catch (error) {
+          assert.match(error.message, /Workspace input/);
+          continue;
+        }
         assert.deepEqual(actual, selected);
       }
       assert(Atomics.load(state, 1) > 1);

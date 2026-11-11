@@ -36,7 +36,7 @@ jobs:
       - run: npm ci --ignore-scripts
       - run: npm run check
       - run: node scripts/verify-platform.mjs
-      - run: npm run verify:mcp-isolation -- --output artifacts/mcp-isolation-evidence.json
+      - run: node scripts/verify-mcp-isolation.mjs --output artifacts/mcp-isolation-evidence.json
       - if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:

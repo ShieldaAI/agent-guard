@@ -397,7 +397,7 @@ def test_membership_change_between_cloud_capture_and_publication_drops_new_links
             {"capturedAt": data["capturedAt"] + 1, "roles": [], "users": [], "buckets": []},
         )
 
-    result = import_case(neo4j_session, cloud_snapshot, after_load=remove_membership)
+    result = import_case(neo4j_session, cloud_snapshot, _after_load=remove_membership)
     assert result.published and cloud_edges(neo4j_session, result.projection_id) == []
     assert {n["cloud_reason"] for n in cloud_nodes(neo4j_session, result.projection_id)} == {
         "changed"

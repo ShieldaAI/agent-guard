@@ -1,66 +1,73 @@
 # Releasing the npm packages
 
-The repository contains five ESM package workspaces, versioned together, and a private viewer workspace. Version `0.1.0-alpha.2` introduced the executor and Agent Map to npm alongside updates to the other three packages. The GitHub organization is `ShieldaAI`; npm uses the lowercase scope `@shieldaai`. GitHub membership does not establish npm organization membership.
+Five ESM workspaces (core, MCP, scenarios, executor, Agent Map) are versioned together under `@shieldaai`;
+the private viewer and Python Cartography are not published. Gates: [candidate notes](releases/0.1.0.md),
+root [release state](../release-state.json) (do not publish while blocked), [support and limits](support-and-limits.md).
 
-Publish only the five workspaces listed below. The React/Cytoscape viewer remains
-private, and the Python Cartography integration has its own build and version;
-neither is published by this npm release. Company service deployment is separate
-from publishing the packages.
+## Checklist
 
-## Authentication
+1. Confirm publishing rights in the npm `shieldaai` organization. Never put a token in the repository.
+2. Update the version in the root, all five package and the private viewer manifests, and internal
+   dependency versions together. Set `publishConfig.tag` to `latest` (stable) or `alpha`.
+   Never publish changed source under an existing version.
+3. Run the checks and pack; tarballs in `artifacts/` hold only JS, declarations, metadata, README, license.
+4. Commit `release-state.json` with `schemaVersion: 1`, the exact `version`, `status: "approved"`,
+   an empty `blockers` array and nonempty `evidence`. Never approve from a diagnostic or smoke result.
+5. Merge through the protected branch; require CI and CodeQL on the exact merged commit and a clean checkout.
+6. Publish one package at a time in the order below. Before the next one, wait for the version to
+   appear and verify its `gitHead`, registry integrity and package bytes. Never use `--ignore-scripts` to bypass publish hooks.
+7. Install the exact versions from the registry into a clean project, then tag and create the GitHub release.
 
-Sign in interactively and complete npm's browser and two-factor authentication prompts:
+Release notes link the CI run URLs as evidence. Dated JSON under `docs/validation/` is historical; new releases do not add to it.
+
+Timing signals (admission during polling, and the constrained observer) do not run on pull requests. Both run nightly on the
+default branch and on manual dispatch; the job summary shows the p95 ratio, skipped polls and reasons. They are never a required check.
+
+## Commands
 
 ```sh
 npm login --auth-type=web --registry=https://registry.npmjs.org/
 npm whoami
 npm org ls shieldaai
+npm ci --ignore-scripts
+npm run check
+npm run pack
 ```
 
-The npm account must have publishing rights in the `shieldaai` organization. Keep credentials in npm's user configuration, outside the repository. A publish may open another browser challenge; complete it with the account's security key or authenticator.
-
-## Publish and verify
-
-1. Establish ownership of the npm `shieldaai` organization and publishing rights. Sign in using npm's supported authentication flow; never put a token in this repository.
-2. Update the version in the root manifest, all five package manifests plus the private viewer manifest, and internal dependency versions together. Regenerate the lockfile with `npm install --ignore-scripts`. Never publish changed source under the existing alpha version.
-3. Run `npm ci --ignore-scripts` and `npm run check`. Review the threat model, release notes and package contents. The checks install the actual tarballs in a temporary consumer, compile their public declarations and README TypeScript examples, execute an MCP dispatch, and run the conformance fixtures.
-4. Run `npm run pack` and inspect `artifacts/`. Builds remove old output before compiling; direct workspace `npm pack` commands also rebuild through `prepack`. Only JavaScript, declarations, package metadata, README and license belong in the tarballs.
-5. Commit the reviewed source, manifests, lockfile and release notes. Review the pull request and merge through the protected release branch with passing checks and resolved conversations, then confirm the release checkout is clean. The sole-maintainer policy does not require a second person's approval. Publish core first, then adapters and scenarios, with the `alpha` tag:
+Publish in this order, one command per verified step:
 
 ```sh
-npm publish --workspace packages/core --access public --tag alpha
-npm publish --workspace packages/mcp --access public --tag alpha
-npm publish --workspace packages/scenarios --access public --tag alpha
-npm publish --workspace packages/executor --access public --tag alpha
-npm publish --workspace packages/agent-map --access public --tag alpha
+npm publish --workspace packages/core --access public --tag latest
+npm publish --workspace packages/mcp --access public --tag latest
+npm publish --workspace packages/scenarios --access public --tag latest
+npm publish --workspace packages/executor --access public --tag latest
+npm publish --workspace packages/agent-map --access public --tag latest
 ```
 
-Each workspace's prepublish hook requires the repository root, a clean Git checkout, matching workspace versions, and exact matching versions for internal dependencies. It then runs the root checks and checks the release preconditions again. Ignored build output is allowed. Normal local checks and packing do not require a clean checkout. These instructions require the complete source checkout, not just an extracted tarball. Use a supported npm authentication method with appropriate MFA. If automated publication is added later, use trusted publishing with a restricted release environment.
+Wait for each with `npm view <package>@<version> version dist-tags --json`. Then verify and release (`RELEASE_COMMIT` = verified merged commit):
 
-The executor is experimental until the [deployment profile](../deployment/README.md)
-and complete reference integration pass their declared Linux, macOS and Windows
-gates and independent security review. Package checks alone do not establish that
-release boundary. The manual platform workflow requires provisioned disposable
-Docker/VM runners; retain its unskipped evidence and the review record before making
-protected-deployment claims. SDK releases may ship earlier with these limits stated.
+```sh
+mkdir -p artifacts/registry-0.1.0
+for package in @shieldaai/agent-guard @shieldaai/agent-guard-mcp \
+  @shieldaai/agent-guard-scenarios @shieldaai/agent-guard-executor @shieldaai/agent-map; do
+  npm view "$package@0.1.0" version dist.integrity gitHead --json
+  npm view "$package" dist-tags --json
+  npm pack "$package@0.1.0" --ignore-scripts --pack-destination artifacts/registry-0.1.0
+done
+git tag -a v0.1.0 "$RELEASE_COMMIT" -m 'Agent Guard 0.1.0'
+git push origin refs/tags/v0.1.0
+gh release create v0.1.0 artifacts/registry-0.1.0/*-0.1.0.tgz --verify-tag --latest \
+  --title 'Agent Guard 0.1.0' --notes-file docs/releases/0.1.0.md
+```
 
-An accepted publish can report that the package is still being processed. npm scans uploads before they become installable, so a temporary registry 404 is possible. Wait for each exact version to appear with `npm view <package>@<version> version dist-tags --json`; do not repeat an accepted publish or change the version to work around processing. See [npm's publish-time scanning announcement](https://github.blog/changelog/2026-07-28-npm-publish-time-malware-scanning-and-dual-use-metadata/).
+## Rollback and partial publication
 
-After all versions become available, install their exact versions from the public registry into a clean project, verify the MCP adapter and run the conformance suite. Verify their tarball integrity and recorded `gitHead` against the committed source used for publication. Create release notes and a version tag for that exact commit using an administrator account. Tags matching `v*` are protected against updates and deletion, so verify the commit before creating the tag. Preserve any existing stable `latest` version when publishing a prerelease, and do not imply a production security guarantee.
+npm versions are immutable: never reuse a published version or change source to repair a mismatch.
+Do not move `latest` back from an accepted stable release. If publication stops partway, keep the
+approved commit, reviewed artifacts and each upload result, and reconcile all five versions with the
+registry commands above. A temporary 404 or lost connection does not prove npm rejected an upload;
+await a still-processing upload, never repeat it. Resume, in order, only packages confirmed not accepted.
+Create no tag or GitHub release until all five packages and registry-installed consumers pass.
+Service image rollback: [upgrade and rollback procedure](../deployment/production/upgrades.md).
 
-Inspect the tags after a first publication. npm can also create `latest` even when an explicit prerelease tag is supplied; [npm/cli#8490](https://github.com/npm/cli/issues/8490) describes this behavior. For the initial release, npm assigned both `alpha` and `latest` to `0.1.0-alpha.0` and rejected removal of `latest` with HTTP 400. Document the tags assigned to each release and recommend explicit `@alpha` or exact-version installation while the packages remain experimental.
-
-On 4 November 2026, all five packages were published as `0.1.0-alpha.2` from
-`e8d8e82b31d7e4c60d565d9d37721953cc33c048`. Core, MCP and scenarios kept
-`latest` at `0.1.0-alpha.0`. The new executor and Agent Map packages received
-both `alpha` and `latest` at `0.1.0-alpha.2`. The registry tarballs matched the
-reviewed builds. The release notes record the installed consumer results and
-the macOS Agent Map CLI workaround. [Release notes](releases/0.1.0-alpha.2.md)
-
-GitHub Actions validates Node 22, 24 and 26 and produces tarballs. It has no npm credential and does not publish packages. At the initial release, hosted runs were blocked by the GitHub account's billing lock; the release notes record local checks instead. [Run 40038764852, attempt 2](https://github.com/ShieldaAI/agent-guard/actions/runs/40038764852/attempts/2) subsequently passed on 2026-10-24 for commit `d0df90d730c41ae2fa87ad8792e63a0081bd5324`.
-
-All three `0.1.0-alpha.1` packages were published from commit `86cf5902acbbc029b0872060c1906cc25964ec5d` on 2026-10-24. [CI run 40132729269](https://github.com/ShieldaAI/agent-guard/actions/runs/40132729269) and [CodeQL run 40132729355](https://github.com/ShieldaAI/agent-guard/actions/runs/40132729355) passed on that merge commit; [dependency-review run 40132541222](https://github.com/ShieldaAI/agent-guard/actions/runs/40132541222) passed on the final pull-request head. Registry tarballs, integrity hashes and `gitHead` matched the release artifacts and commit. A fresh registry consumer passed the declaration, README, MCP and conformance checks. The [GitHub prerelease](https://github.com/ShieldaAI/agent-guard/releases/tag/v0.1.0-alpha.1) records the same commit and includes the verified artifacts. The `alpha` tag moved to `0.1.0-alpha.1`; `latest` remains on `0.1.0-alpha.0`.
-
-The sole-maintainer branch policy requires a pull request, successful `check (22)`, `check (24)` and `check (26)` runs, and resolved conversations. It does not require approval from another person. For future releases, check the final pull-request head before merging, then obtain successful CI and CodeQL runs on the merged release commit before publishing. The runs above cover only their recorded revisions.
-
-The initial `0.1.0-alpha.0` packages record `gitHead` `6db7631a1f9ba070b5e5c9b2a5152be0584b0622`, while their package README files match the later release tag at `f7e4c77d675a6ec2fd7ab402858d49038ccc86ea`. The published files and integrity hashes were checked against the local release artifacts, but that first `gitHead` does not identify the exact full package source tree. The clean-checkout preflight applies to subsequent publications. The initial packages have npm registry signatures but no build provenance attestation; integrity verification alone does not establish a trusted build process.
+See [archive/releasing-0.1.md](archive/releasing-0.1.md) for the detailed 0.1 process and evidence rules.

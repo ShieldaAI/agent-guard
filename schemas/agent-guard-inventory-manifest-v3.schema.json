@@ -1,0 +1,156 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-inventory-manifest-v3.schema.json",
+  "title": "Agent Guard host inventory manifest v3",
+  "description": "Manifest v2 plus `directAccess`: host-declared paths that act without the guard. [] means the host declared none; it is not a check. Shared shapes are $refs into v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "source",
+    "manifestId",
+    "revision",
+    "observedAt",
+    "agents",
+    "deployments",
+    "taskBindings",
+    "resourceBindings",
+    "executionBindings",
+    "authorityId",
+    "owners",
+    "credentialReferences",
+    "directAccess"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 3
+    },
+    "evidenceKind": {
+      "const": "host_asserted"
+    },
+    "source": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/source"
+    },
+    "manifestId": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/safeInteger"
+    },
+    "observedAt": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/timestamp"
+    },
+    "agents": {
+      "type": "array",
+      "maxItems": 1000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestAgent"
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "maxItems": 1000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestDeployment"
+      }
+    },
+    "taskBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestTaskBinding"
+      }
+    },
+    "resourceBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestResourceBinding"
+      }
+    },
+    "executionBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestExecutionBinding"
+      }
+    },
+    "authorityId": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+    },
+    "owners": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/owner"
+      }
+    },
+    "credentialReferences": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/credentialReference"
+      }
+    },
+    "directAccess": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/directAccess"
+      }
+    }
+  },
+  "$defs": {
+    "directAccess": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "deploymentId",
+        "kind",
+        "targetRef",
+        "description"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/opaque"
+        },
+        "deploymentId": {
+          "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+        },
+        "kind": {
+          "enum": [
+            "shell",
+            "database",
+            "network",
+            "sdk",
+            "mcp",
+            "other"
+          ]
+        },
+        "targetRef": {
+          "anyOf": [
+            {
+              "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/opaque"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "description": {
+          "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/purpose"
+        }
+      },
+      "description": "At most 32 entries per deployment; deploymentId must name a declared deployment."
+    }
+  }
+}

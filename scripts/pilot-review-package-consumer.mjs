@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { verifyPilotReview } from '@shieldaai/agent-guard-executor';
+import { verifyPilotReview } from '@shieldaai/agent-guard-executor/pilot';
 import { createPilotReviewFixture } from './pilot-review-fixture.mjs';
 
 const { policy, candidateBytes, bundle } = createPilotReviewFixture();
@@ -33,7 +33,11 @@ assert.equal(changed.status, 1);
 assert.equal(changed.stdout, '');
 
 // Exercise the default entry point with separate, disposable enrollment. This directory is removed by the pack check.
-const scoped = createPilotReviewFixture({ policy(enrolled) { enrolled.mode = 'company-pilot'; } });
+const scoped = createPilotReviewFixture({
+  policy(enrolled) {
+    enrolled.mode = 'company-pilot';
+  },
+});
 writeFileSync('policy.json', JSON.stringify(scoped.policy));
 writeFileSync('candidate.bin', scoped.candidateBytes);
 writeFileSync('evidence.json', JSON.stringify(scoped.bundle));
@@ -43,4 +47,6 @@ assert.equal(JSON.parse(accepted.stdout).mode, 'company-pilot');
 const incorrectMode = launch(['--rehearsal']);
 assert.equal(incorrectMode.status, 1);
 assert.equal(incorrectMode.stdout, '');
-console.log('Installed pilot reviewer checked both modes with disposable keys and rejected scope mismatches and altered bytes.');
+console.log(
+  'Installed pilot reviewer checked both modes with disposable keys and rejected scope mismatches and altered bytes.',
+);

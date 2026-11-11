@@ -61,11 +61,43 @@ try {
         connectionId: 'declared-mcp-reference', identitySelection: 'dynamic', identity: null },
     ],
   };
+  const v3 = process.argv.includes('--v3');
+  if (v3 || process.argv.includes('--v2')) {
+    const opaque = character => `opaque:${character.repeat(64)}`;
+    Object.assign(manifest, { schemaVersion: 2, authorityId: 'company-directory',
+      owners: [{ id: 'owner-research', name: 'Research team', kind: 'team' },
+        { id: 'owner-review', name: 'Review team', kind: 'team' }],
+      credentialReferences: ['a', 'b'].map((character, index) => ({ id: opaque(character),
+        name: index ? 'Review credential' : 'Research credential', issuerRef: opaque('c'),
+        audienceRefs: [opaque('d')], recipientRefs: [opaque('e')], lifecycleState: 'active',
+        expiresAt: '2026-12-01T00:00:00Z', rotationStatus: 'current' })) });
+    manifest.agents.forEach(agent => Object.assign(agent, {
+      purpose: 'Reviewed records workflow', lifecycleState: 'active',
+      ownershipStatus: agent.ownerId === null ? 'unassigned' : 'assigned',
+      ownershipSource: 'company-directory' }));
+    manifest.deployments.forEach((deployment, index) => Object.assign(deployment, {
+      runtimeRef: opaque(index ? 'f' : '0'), workloadGeneration: 'generation-1', buildRef: opaque('1'),
+      bindingAuthority: 'deployment-controller', credentialReferenceIds: [opaque(index ? 'b' : 'a')] }));
+    manifest.resourceBindings.forEach((binding, index) => Object.assign(binding, {
+      displayName: index ? 'Company records' : 'Reviewed report', ownerId: index ? 'owner-review' : 'owner-research',
+      ownershipStatus: 'assigned', ownershipSource: 'company-directory', sensitivity: 'internal',
+      approvedDestinations: [opaque('2')], dependsOn: index ? ['object-binding'] : [] }));
+    Object.assign(manifest.resourceBindings[1], {
+      target: { provider: 'host', id: opaque('3'), name: 'Company records', kind: 'database' },
+      actions: ['read'], scope: 'exact' });
+    // v3: one declared path outside the guard for the static deployment, none for the dynamic one.
+    if (v3) Object.assign(manifest, { schemaVersion: 3, directAccess: [{ id: opaque('4'),
+      deploymentId: 'deployment-static', kind: 'database', targetRef: opaque('3'),
+      description: 'Reporting job connects to the records database directly' }] });
+  }
   const validated = validateInventoryManifest(manifest);
   assert.equal(Object.isFrozen(validated.resourceBindings[0].target), true);
   const composed = composeInventorySnapshot(core, validated);
-  assert.deepEqual(composed.tasks, core.tasks);
-  assert.deepEqual(composed.tools, core.tools);
+  // Manifest v3 lifts a v1 core to the v2 snapshot shape; nothing else changes.
+  const lifted = ({ untrusted: _u, readsUntrusted: _r, untrustedContext: _c, sendsExternal: _s, ...rest }) => rest;
+  const plain = value => JSON.parse(JSON.stringify(value));
+  assert.deepEqual(v3 ? plain(composed.tasks.map(lifted)) : composed.tasks, v3 ? plain(core.tasks) : core.tasks);
+  assert.deepEqual(v3 ? plain(composed.tools.map(lifted)) : composed.tools, v3 ? plain(core.tools) : core.tools);
   assert.equal(composed.ledgerRevision, core.ledgerRevision);
   assert.equal(composed.policyEpoch, core.policyEpoch);
   assert.notEqual(composed.snapshotId, core.snapshotId);

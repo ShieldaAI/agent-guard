@@ -28,7 +28,11 @@ async function localWire(t, respond) {
   const local = new URL('http://127.0.0.1:' + server.address().port);
   const stub = t.mock.method(https, 'request', (url, options, onResponse) => {
     observed.push({ url: url.href, verifyTls: options.rejectUnauthorized, lookup: options.lookup });
-    return http.request(local, { method: options.method, headers: options.headers, signal: options.signal, agent: false }, onResponse);
+    return http.request(
+      local,
+      { method: options.method, headers: options.headers, signal: options.signal, agent: false },
+      onResponse,
+    );
   });
   syncBuiltinESMExports();
   t.after(async () => {
@@ -43,7 +47,11 @@ async function localWire(t, respond) {
 for (const provider of ['openai', 'anthropic']) {
   test(provider + ' sends the pinned client-tool request and returns provider-reported usage', async t => {
     let captured;
-    const response = { model: model + '-snapshot', usage: { input_tokens: 31, output_tokens: 9 }, metadata: { score: 0.875 } };
+    const response = {
+      model: model + '-snapshot',
+      usage: { input_tokens: 31, output_tokens: 9 },
+      metadata: { score: 0.875 },
+    };
     const observed = await localWire(t, (request, res) => {
       captured = request;
       res.writeHead(200, { 'content-type': 'application/json; charset=utf-8' });
@@ -54,7 +62,10 @@ for (const provider of ['openai', 'anthropic']) {
     assert.deepEqual(JSON.parse(JSON.stringify(await send(request, context()))), response);
     const body = JSON.parse(captured.body);
     assert.equal(body.model, model);
-    assert.deepEqual(body.tools.map(tool => tool.name), ['tickets_read', 'tickets_update']);
+    assert.deepEqual(
+      body.tools.map(tool => tool.name),
+      ['tickets_read', 'tickets_update'],
+    );
     assert.equal(observed.length, 1);
     assert.equal(observed[0].verifyTls, true);
     assert.equal(typeof observed[0].lookup, 'function');
@@ -82,13 +93,18 @@ test('live evaluation transport rejects changes to pinned request controls befor
   const send = createLiveEvaluationTransport(config('openai'));
   const request = ticketRequest('openai', model, history, 1024);
   for (const change of [
-    { store: true }, { model: 'other' }, { previous_response_id: 'hidden-state' },
-    { max_output_tokens: 2048 }, { tools: [{ type: 'web_search' }] },
+    { store: true },
+    { model: 'other' },
+    { previous_response_id: 'hidden-state' },
+    { max_output_tokens: 2048 },
+    { tools: [{ type: 'web_search' }] },
     { input: [{ role: 'user', content: 'x'.repeat(65536) }] },
   ]) {
     await assert.rejects(send({ ...request, ...change }, context()), { message: 'Live provider request failed' });
   }
-  await assert.rejects(send(request, { signal: AbortSignal.abort(new Error(key)) }), { message: 'Live provider request failed' });
+  await assert.rejects(send(request, { signal: AbortSignal.abort(new Error(key)) }), {
+    message: 'Live provider request failed',
+  });
   assert.equal(observed.length, 0);
   for (const options of [{ provider: '__proto__' }, { model: '' }, { apiKey: key + '\n' }, { maxOutputTokens: 4100 }]) {
     assert.throws(() => createLiveEvaluationTransport({ ...config('openai'), ...options }));
@@ -97,13 +113,35 @@ test('live evaluation transport rejects changes to pinned request controls befor
 
 test('redirects, provider failures and malformed or oversized streamed bodies fail privately without retry', async t => {
   const replies = [
-    res => { res.writeHead(307, { location: 'https://elsewhere.invalid/' }); res.end(); },
-    res => { res.writeHead(429); res.end('private diagnostic ' + key); },
-    res => { res.writeHead(200, { 'content-type': 'text/event-stream' }); res.end('{}'); },
-    res => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('broken' + key); },
-    res => { res.writeHead(200, { 'content-type': 'application/json' }); res.end('{"usage":{"input_tokens":90,"input_tokens":1}}'); },
-    res => { res.writeHead(200, { 'content-type': 'application/json' }); res.end(Buffer.from([0xff])); },
-    res => { res.writeHead(200, { 'content-type': 'application/json' }); res.write('{"large":"'); res.end('x'.repeat(65536) + '"}'); },
+    res => {
+      res.writeHead(307, { location: 'https://elsewhere.invalid/' });
+      res.end();
+    },
+    res => {
+      res.writeHead(429);
+      res.end('private diagnostic ' + key);
+    },
+    res => {
+      res.writeHead(200, { 'content-type': 'text/event-stream' });
+      res.end('{}');
+    },
+    res => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('broken' + key);
+    },
+    res => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end('{"usage":{"input_tokens":90,"input_tokens":1}}');
+    },
+    res => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(Buffer.from([0xff]));
+    },
+    res => {
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.write('{"large":"');
+      res.end('x'.repeat(65536) + '"}');
+    },
   ];
   const observed = await localWire(t, (_, res) => replies.shift()(res));
   const send = createLiveEvaluationTransport(config('anthropic'));

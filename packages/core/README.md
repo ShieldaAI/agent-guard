@@ -1,10 +1,41 @@
 # @shieldaai/agent-guard
 
-Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. Experimental TypeScript library; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
+**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
+compatibility or long-term-support promise. The
+[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
+record the verified scope, known limits and post-release follow-ups.
 
-Install with `npm install @shieldaai/agent-guard@alpha`. For MCP integration,
+Control which tools an AI agent can call and on which resources, with task-scoped grants, tenant checks, approvals and budgets. TypeScript library, stable API target for 1.0; Node.js 22+, ESM, no third-party runtime dependencies. Package scope: `@shieldaai`.
+
+Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
+
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): tool misuse (ASI02),
+identity and privilege abuse (ASI03), tool metadata changes (ASI04), inter-agent authority
+(ASI07), runaway work (ASI08), approval substitution (ASI09) and revocation of rogue tasks
+(ASI10). For goal hijack (ASI01) it limits the effect with opt-in outside-content labels;
+it does not detect prompt injection. It is not a sandbox (ASI05) and has no memory store
+(ASI06): the executor package covers those.
+
+Every `GuardError.code` is documented in the [error catalog](https://github.com/ShieldaAI/agent-guard/blob/main/docs/errors.md)
+and in the exported `GuardErrorCatalog` (meaning, whether a retry is safe, typical cause).
+When core flattens an adapter error into `RESOLUTION_FAILED`, `ARGUMENT_INVALID` or
+`TOOL_FAILED`, a safe uppercase adapter code is kept as `error.detail` (and `cause.code`).
+
+For long-running hosts: `retireTask()` frees a finished task's ID and memory,
+`unapproveTool()`/`unregisterTool()` withdraw a tool, `executeDetailed()` returns the
+charged cost and action ID, `onDecision` observes every prepare/approve/execute
+decision (identifiers only, never arguments or results), and `limits` replaces the
+fixed approval and policy bounds. Deadlines are clock milliseconds; pass
+`clock: monotonicClock` to avoid `CLOCK_INVALID` on a backward system-clock step.
+
+The stable API is the root entry: `AgentGuard`, `GuardError`, `GuardErrorCode`,
+`GuardErrorCatalog`, `isGuardError`, `InvalidJsonError`, `monotonicClock` and the exported types. Building blocks for executor and adapter
+authors (`PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
+`canonicalJson`, `digestJson`, `immutableJson`) live in
+`@shieldaai/agent-guard/internal`, which has no semver guarantees. Their root
+aliases still work but are deprecated and will be removed in 0.3.
 
 Try the [allow, deny and approval walkthrough](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/tool-permissions.md)
 for a complete local example with assertions about actual handler calls.
@@ -32,11 +63,11 @@ console.log(await guard.execute(prepared));
 
 Task identity and resource ownership must come from the host, not model assertions. Child grants can only narrow parent authority. An action can dispatch once, even without a human approval requirement. Errors after a handler starts do not prove that no side effect occurred.
 
-Custom policies receive a frozen task snapshot. If its counters or shared sensitivity change while policy evaluation is pending, preparation/execution rejects with `POLICY_STATE_CHANGED` before dispatch. The host may retry through a fresh evaluation; the rejection consumes neither approval nor budget. Policies that consult external mutable state need their own coordination. Use the built-in budget fields for atomic call, concurrency and cost admission.
+Custom policies receive a frozen task snapshot. If its counters or shared sensitivity change while policy evaluation is pending, the stale decision is discarded and the policy is evaluated again on a fresh snapshot, so parallel calls on one task work under a custom policy. Re-evaluations on one task take turns. After `maxPolicyAttempts` evaluations (constructor option, 1–16, default 5) with continuing changes, the call fails with `POLICY_STATE_CHANGED` before dispatch; that failure consumes neither approval nor budget. Set `maxPolicyAttempts: 1` for the earlier single-evaluation behaviour. Policies that consult external mutable state need their own coordination. Use the built-in budget fields for atomic call, concurrency and cost admission.
 
-Preparations and executions share capacity for eight unresolved policy callbacks per task family and 64 per guard. A full pool rejects with `POLICY_BUSY` and starts no additional callback. Policy waits end at the task deadline (`TASK_EXPIRED`) or after 30 seconds (`POLICY_TIMEOUT`), whichever comes first. Pass the third policy parameter's `context?.signal` to cancellable I/O. Revocation and policy replacement also abort waiting evaluations. A callback that ignores cancellation keeps its slot until it settles. A tenant allowed to create many root families can exhaust the shared pool, so hosts should limit incoming requests and root creation per tenant. Synchronous JavaScript still runs on the host event loop.
+Preparations and executions share capacity for, by default, eight unresolved policy callbacks per task family and 64 per guard. A full pool rejects with `POLICY_BUSY` and starts no additional callback. Policy waits end at the task deadline (`TASK_EXPIRED`) or after the policy time limit, 30 seconds by default (`POLICY_TIMEOUT`), whichever comes first. Pass the third policy parameter's `context?.signal` to cancellable I/O. Revocation and policy replacement also abort waiting evaluations. A callback that ignores cancellation keeps its slot until it settles. A tenant allowed to create many root families can exhaust the shared pool, so hosts should limit incoming requests and root creation per tenant. Synchronous JavaScript still runs on the host event loop.
 
-The host owns the lifetime of prepared action handles. Keep a bounded review queue and discard handles when review ends. Each action holds up to four live approval IDs (`ACTION_APPROVAL_LIMIT`), any one of which authorizes that same action. Expired approvals free space on the next approval, and dispatch clears every approval for the action. The guard keeps a set of all task IDs issued during its lifetime to prevent reuse.
+The host owns the lifetime of prepared action handles. Keep a bounded review queue and discard handles when review ends. Each action holds up to four live approval IDs by default (`ACTION_APPROVAL_LIMIT`), any one of which authorizes that same action. Expired approvals free space on the next approval, and dispatch clears every approval for the action. The guard keeps the IDs of all tasks that have not been retired, to prevent reuse; `retireTask()` frees an ID.
 
 All state is in memory. The library is not a sandbox, distributed permission service or durable budget ledger. Handlers must cooperate with cancellation and enforce any declared maximum provider cost. Literal outbound scanning does not cover arbitrary encodings or split values. JSON Schemas are fingerprinted. Supply a synchronous `parse` to validate and normalize arguments before resource resolution.
 

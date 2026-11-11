@@ -26,7 +26,10 @@ from agent_guard_cartography.collector import _pairs, _response_type
 LABELS = frozenset(
     [
         "GuardAgent",
+        "GuardOwner",
+        "GuardCredentialReference",
         "GuardDeployment",
+        "GuardDirectAccess",
         "GuardTask",
         "GuardPrincipal",
         "GuardGrant",
@@ -279,6 +282,7 @@ def minimize_changes(response: dict, source_id: str) -> dict:
             or data["sourceId"] != source_id
             or not re.fullmatch(r"[a-f0-9]{64}", source_id)
             or type(data["coverageGap"]) is not bool
+            or data.get("changeSummaryScope", "retained") != "retained"
         ):
             raise ValueError()
 
@@ -301,6 +305,13 @@ def minimize_changes(response: dict, source_id: str) -> dict:
                 if label not in LABELS:
                     raise ValueError()
                 counts[kind][label] = counts[kind].get(label, 0) + 1
+        # This client requests the unpaged retained summary. Reject page-scoped
+        # or inconsistent responses rather than silently persisting partial counts.
+        if "total" in data and (
+            type(data["total"]) is not int
+            or data["total"] != sum(sum(labels.values()) for labels in counts.values())
+        ):
+            raise ValueError()
         return {
             "schemaVersion": 1,
             "kind": "agent-map-difference",

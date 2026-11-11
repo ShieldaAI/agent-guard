@@ -110,7 +110,7 @@ def test_missing_or_failed_replacement_preserves_active_predecessor(
             raise RuntimeError("controlled staging failure")
 
         with pytest.raises(RuntimeError, match="controlled staging failure"):
-            import_snapshot(neo4j_session, after, after["source"], after_load=fail_load)
+            import_snapshot(neo4j_session, after, after["source"], _after_load=fail_load)
     for function in (preflight_transition, supersede_source):
         with pytest.raises(LifecycleError, match="^SOURCE_TRANSITION_(NOT_READY|SOURCE_MISSING)$"):
             function(neo4j_session, transition(before, after))
@@ -173,7 +173,7 @@ def test_supersession_between_staging_and_publication_fences_the_inflight_import
             neo4j_session,
             candidate,
             before["source"],
-            after_load=lambda: supersede_source(neo4j_session, transition(before, after)),
+            _after_load=lambda: supersede_source(neo4j_session, transition(before, after)),
         )
     old = state(neo4j_session, previous.source_id)
     assert old["superseded_current_snapshot_id"] == previous.projection_id

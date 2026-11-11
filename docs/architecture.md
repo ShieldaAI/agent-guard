@@ -32,8 +32,8 @@ and has an explicit, limited set of supported methods. The [isolation
 profile](../deployment/README.md) runs selected workloads in a separate,
 network-disabled container. None of these components protects calls that bypass it.
 
-Use the [protection design](protection-design.md) to choose components, and the
-[verification scorecard](protection-assessment.md) for tested profiles and open
+Use the [protection design](support-and-limits.md) to choose components, and the
+[verification scorecard](support-and-limits.md) for tested profiles and open
 work. The host still owns user authentication, credential custody, atomic checks at
 the backend, provider-side spending ceilings and the response to uncertain effects.
 Multiple independent SQLite owners do not implement distributed authorization.

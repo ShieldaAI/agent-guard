@@ -1,0 +1,178 @@
+{
+ "source": "Modeled on the published reference/official server tool definitions and the shapes their schema generators emit; not captured from a live server.",
+ "tools": {
+  "create_issue": {
+   "type": "object",
+   "properties": {
+    "owner": {
+     "type": "string",
+     "description": "Repository owner",
+     "pattern": "^[A-Za-z0-9-]+$"
+    },
+    "repo": {
+     "type": "string",
+     "pattern": "^[A-Za-z0-9._-]+$"
+    },
+    "title": {
+     "type": "string"
+    },
+    "body": {
+     "type": "string"
+    },
+    "assignees": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "uniqueItems": true
+    },
+    "labels": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     },
+     "uniqueItems": true
+    },
+    "milestone": {
+     "type": "number"
+    }
+   },
+   "required": [
+    "owner",
+    "repo",
+    "title"
+   ]
+  },
+  "search_repositories": {
+   "type": "object",
+   "properties": {
+    "query": {
+     "type": "string"
+    },
+    "page": {
+     "type": "number",
+     "minimum": 1
+    },
+    "perPage": {
+     "type": "number",
+     "minimum": 1,
+     "maximum": 100
+    }
+   },
+   "required": [
+    "query"
+   ]
+  },
+  "get_pull_request": {
+   "type": "object",
+   "properties": {
+    "owner": {
+     "type": "string"
+    },
+    "repo": {
+     "type": "string"
+    },
+    "pullNumber": {
+     "type": "number",
+     "minimum": 1
+    }
+   },
+   "required": [
+    "owner",
+    "repo",
+    "pullNumber"
+   ]
+  },
+  "list_commits": {
+   "type": "object",
+   "properties": {
+    "owner": {
+     "type": "string"
+    },
+    "repo": {
+     "type": "string"
+    },
+    "sha": {
+     "type": "string"
+    },
+    "author": {
+     "type": "string"
+    },
+    "since": {
+     "type": "string",
+     "format": "date-time"
+    },
+    "perPage": {
+     "type": "number",
+     "maximum": 100
+    }
+   },
+   "required": [
+    "owner",
+    "repo"
+   ]
+  },
+  "create_or_update_file": {
+   "type": "object",
+   "properties": {
+    "owner": {
+     "type": "string"
+    },
+    "repo": {
+     "type": "string"
+    },
+    "path": {
+     "type": "string"
+    },
+    "content": {
+     "type": "string"
+    },
+    "message": {
+     "type": "string"
+    },
+    "branch": {
+     "type": "string"
+    },
+    "sha": {
+     "type": "string",
+     "pattern": "^[0-9a-f]{40}$"
+    }
+   },
+   "required": [
+    "owner",
+    "repo",
+    "path",
+    "content",
+    "message",
+    "branch"
+   ]
+  },
+  "add_issue_comment": {
+   "$schema": "https://json-schema.org/draft/2020-12/schema",
+   "type": "object",
+   "properties": {
+    "owner": {
+     "type": "string"
+    },
+    "repo": {
+     "type": "string"
+    },
+    "issue_number": {
+     "type": "integer",
+     "minimum": 1
+    },
+    "body": {
+     "type": "string",
+     "minLength": 1
+    }
+   },
+   "required": [
+    "owner",
+    "repo",
+    "issue_number",
+    "body"
+   ],
+   "additionalProperties": false
+  }
+ }
+}

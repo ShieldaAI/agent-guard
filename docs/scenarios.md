@@ -1,6 +1,6 @@
 # Protection scenarios
 
-These twelve scenarios define the acceptance contract for the TypeScript alpha. Catalog version 1.2.0 runs twenty-four malicious and benign cases. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
+These thirteen scenarios define the acceptance contract. Catalog version 1.3.0 runs twenty-six malicious and benign cases. They concern calls made through one registered-tool executor, using task context established by trusted application code. They do not certify all tool paths, prompt-injection attacks or deployment environments. Read the [threat model](threat-model.md) and [API contract](api-contract.md) before relying on a scenario.
 
 The examples use fake data and fixture handlers. They should run without production credentials or external side effects. “Denied” means the handler is not invoked, except where a scenario explicitly tests a service-boundary rejection inside the handler, such as S12's resource-version comparison. “Allowed” means the fixture records exactly the intended effect. An approval request is not permission to execute until the host's reviewer has approved the exact action and the executor has validated that approval. Reviewer authentication belongs to the host, not to an `approverId` string supplied by a caller.
 
@@ -139,6 +139,22 @@ Use a controllable clock for expiry tests and explicit synchronization for concu
 **Benign case:** approve and write an unchanged version once. Prepare and separately approve its successor, then write that version once. The fixture records exactly two version-specific effects.
 
 **Integration requirement:** the core does not fetch, refresh or lock external state. A real handler must use the bound version in an atomic conditional operation, transaction or equivalent service control. Refreshing a version immediately before dispatch and substituting it into the approved action defeats this boundary. A version mismatch may occur after handler admission, so a generic execution error must not trigger an automatic retry.
+
+## S13 — Limit sends after the task read outside content
+
+**Boundary:** A tool labelled `readsUntrusted` marks its task family `untrusted` when it
+runs. Send tools in `require_approval` mode then need a review given after that point,
+and tools in `deny` mode are refused even with an approval.
+
+**Hostile case:** An email reader returns text asking to forward data. A send right after
+it fails with `APPROVAL_REQUIRED`; a `deny` send fails with `UNTRUSTED_CONTEXT_DENIED`;
+an approval issued before the read fails with `APPROVAL_CONTEXT_CHANGED`. Nothing is sent.
+
+**Benign case:** An internal document read leaves the family clean, and one send to an
+allowed recipient runs without an extra review.
+
+**Integration requirement:** Labels are the host's claim. Nothing detects prompt injection, and an
+unlabelled tool that returns attacker text does not mark the family.
 
 ## Reading test results
 

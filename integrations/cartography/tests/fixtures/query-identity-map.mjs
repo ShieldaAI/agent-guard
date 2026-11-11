@@ -1,6 +1,7 @@
 // The Python fixture verifies the owned disposable graph before invoking this bridge.
 // No credentials, cookies or provider tokens are written to stdout/stderr.
 import { readFileSync } from 'node:fs';
+import { text } from 'node:stream/consumers';
 import { createNeo4jMapStore } from '../../../../packages/agent-map/dist/store.js';
 import { MapService } from '../../../../packages/agent-map/dist/service.js';
 import { startMapIdentityServer } from '../../../../packages/agent-map/dist/identity-http.js';
@@ -10,7 +11,8 @@ const cleanup = [];
 let result = { ok: false, error: 'IDENTITY_GRAPH_CHECK_FAILED' };
 try {
   const configuration = JSON.parse(readFileSync(process.env.AGENT_GUARD_TEST_NEO4J_CONFIG, 'utf8'));
-  const input = JSON.parse(readFileSync(0, 'utf8'));
+  // The request comes from the test on standard input, read as a stream rather than as a file.
+  const input = JSON.parse(await text(process.stdin));
   const provider = await createTestIdentityProvider({ after(fn) { cleanup.push(fn); } });
   const store = createNeo4jMapStore({ uri: configuration.uri, username: configuration.username, password: configuration.password });
   cleanup.push(() => store.close());

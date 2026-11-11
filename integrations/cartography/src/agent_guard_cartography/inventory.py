@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator, FormatChecker
+from referencing import Registry, Resource
 
 from agent_guard_cartography.input_files import read_regular_file
 
@@ -28,7 +29,13 @@ MAX_JSON_VALUES = 500_000
 MAX_RESOURCE_SELECTORS = 100_000
 MAX_SAFE_INTEGER = 9_007_199_254_740_991
 SCHEMA_FILENAME = "agent-guard-inventory-v1.schema.json"
+# v2 is a $ref envelope over v1 (outside-content fields); executors emit it only when used.
+SCHEMA_V2_FILENAME = "agent-guard-inventory-v2.schema.json"
 MANIFEST_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v1.schema.json"
+MANIFEST_V2_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v2.schema.json"
+MANIFEST_V3_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v3.schema.json"
+# Manifest v3 directAccess: at most this many declared paths per deployment.
+MAX_DIRECT_ACCESS_PER_DEPLOYMENT = 32
 MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
 UTC_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
 
@@ -45,8 +52,8 @@ def _fail(code: str) -> None:
     raise InventoryValidationError(code)
 
 
-@lru_cache(maxsize=3)
-def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
+@lru_cache(maxsize=8)
+def _schema(filename: str) -> dict[str, Any]:
     # Editable installs can expose both source modules and an older packaged
     # schema. Prefer the canonical schema only in this exact repository layout.
     # Installed wheels always use their bundled resource, independent of cwd.
@@ -72,6 +79,18 @@ def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
             raise InventoryValidationError("INVENTORY_SCHEMA_UNAVAILABLE") from None
     schema = json.loads(schema_text)
     Draft202012Validator.check_schema(schema)
+    return schema
+
+
+@lru_cache(maxsize=8)
+def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
+    schema = _schema(filename)
+    # v2 schemas refer to v1 (and manifest v3 to manifest v2) by $id; resolve those
+    # from the bundled files, never the network.
+    registry = Registry()
+    for name in (SCHEMA_FILENAME, MANIFEST_V2_SCHEMA_FILENAME, MANIFEST_V3_SCHEMA_FILENAME):
+        base = _schema(name)
+        registry = registry.with_resource(base["$id"], Resource.from_contents(base))
     formats = FormatChecker()
 
     @formats.checks("date-time", raises=(ValueError, OverflowError))
@@ -84,7 +103,7 @@ def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
         datetime.fromisoformat(value)
         return True
 
-    return Draft202012Validator(schema, format_checker=formats)
+    return Draft202012Validator(schema, format_checker=formats, registry=registry)
 
 
 def _check_json_shape(
@@ -153,15 +172,17 @@ def _check_graph(snapshot: dict[str, Any]) -> None:
     _unique_records(snapshot["tools"], "name")
     tenant = snapshot["source"]["tenantId"]
     selectors = 0
-    family_sensitivity: dict[str, bool] = {}
+    family_sensitivity: dict[str, tuple[bool, bool]] = {}
 
     for task in tasks.values():
         if task["tenantId"] != tenant:
             _fail("INVENTORY_TENANT_MISMATCH")
         family = task["familyId"]
-        if family in family_sensitivity and family_sensitivity[family] != task["sensitive"]:
+        # sensitive and (v2) untrusted are family-wide: every member reports the same value.
+        flags = (task["sensitive"], task.get("untrusted", False))
+        if family in family_sensitivity and family_sensitivity[family] != flags:
             _fail("INVENTORY_FAMILY_INVALID")
-        family_sensitivity[family] = task["sensitive"]
+        family_sensitivity[family] = flags
         granted_tools: set[str] = set()
         for grant in task["grants"]:
             if grant["tool"] in granted_tools:
@@ -255,7 +276,7 @@ def _check_manifest(manifest: dict) -> None:
     agents = _unique_records(manifest["agents"], "id")
     deployments = _unique_records(manifest["deployments"], "id")
     _unique_records(manifest["taskBindings"], "taskId")
-    _unique_records(manifest["resourceBindings"], "id")
+    bindings = _unique_records(manifest["resourceBindings"], "id")
     _unique_records(manifest["executionBindings"], "id")
     for deployment in deployments.values():
         if deployment["agentId"] not in agents:
@@ -264,11 +285,18 @@ def _check_manifest(manifest: dict) -> None:
         if binding["deploymentId"] not in deployments:
             _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
     resources = set()
+    host_targets = {}
     for binding in manifest["resourceBindings"]:
         pair = (binding["tool"], binding["resourceRef"])
         if pair in resources or binding["resourceRef"] == "*":
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
         resources.add(pair)
+        if binding["target"]["provider"] == "host":
+            target = binding["target"]
+            previous = host_targets.setdefault(target["id"], target)
+            if previous != target:
+                _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+            continue
         service, resource = _aws_reference(binding["target"])
         kind = binding["target"]["kind"]
         if service == "s3":
@@ -299,12 +327,56 @@ def _check_manifest(manifest: dict) -> None:
             _aws_reference(binding["identity"], identity=True)
         elif binding["identity"] is not None:
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+    if manifest["schemaVersion"] >= 2:
+        owners = _unique_records(manifest["owners"], "id")
+        credentials = _unique_records(manifest["credentialReferences"], "id")
+        for item in (*agents.values(), *bindings.values()):
+            owner = item["ownerId"]
+            if item["ownershipStatus"] == "assigned":
+                if owner is None or owner not in owners:
+                    _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            elif owner is not None:
+                _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+        for deployment in deployments.values():
+            if any(ref not in credentials for ref in deployment["credentialReferenceIds"]):
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+        for binding in bindings.values():
+            if any(ref not in bindings or ref == binding["id"] for ref in binding["dependsOn"]):
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+    if manifest["schemaVersion"] == 3:
+        _unique_records(manifest["directAccess"], "id")
+        # A target names a declared host resource; anything else is declared with null.
+        host_targets = {
+            binding["target"]["id"]
+            for binding in manifest["resourceBindings"]
+            if binding["target"]["provider"] == "host"
+        }
+        per_deployment: dict[str, int] = {}
+        for entry in manifest["directAccess"]:
+            if entry["deploymentId"] not in deployments:
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            if entry["targetRef"] is not None and entry["targetRef"] not in host_targets:
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+            count = per_deployment.get(entry["deploymentId"], 0) + 1
+            if count > MAX_DIRECT_ACCESS_PER_DEPLOYMENT:
+                _fail("INVENTORY_MANIFEST_LIMIT_EXCEEDED")
+            per_deployment[entry["deploymentId"]] = count
 
 
 def validate_manifest(value: Any) -> dict[str, Any]:
     """Validate host assertions without interpreting them as runtime authority."""
     manifest = _detached_json(value, MAX_MANIFEST_BYTES, MAX_MANIFEST_VALUES)
-    if next(_validator(MANIFEST_SCHEMA_FILENAME).iter_errors(manifest), None) is not None:
+    version = manifest.get("schemaVersion") if type(manifest) is dict else None
+    # JSON Schema integer semantics include 1.0/2.0; JavaScript has the same
+    # numeric values. Booleans must not dispatch as version 1 in Python.
+    if type(version) not in (int, float) or version not in (1, 2, 3):
+        _fail("INVENTORY_SCHEMA_INVALID")
+    filename = {
+        1: MANIFEST_SCHEMA_FILENAME,
+        2: MANIFEST_V2_SCHEMA_FILENAME,
+        3: MANIFEST_V3_SCHEMA_FILENAME,
+    }[int(version)]
+    if next(_validator(filename).iter_errors(manifest), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
     _check_manifest(manifest)
     return manifest
@@ -388,7 +460,9 @@ def validate_snapshot(value: Any) -> dict[str, Any]:
     snapshot = _detached_json(value, MAX_SNAPSHOT_BYTES, MAX_JSON_VALUES)
     # Do not include jsonschema's exception text: it quotes imported properties,
     # which may contain secrets even though the schema refuses to accept them.
-    if next(_validator().iter_errors(snapshot), None) is not None:
+    version = snapshot.get("schemaVersion") if type(snapshot) is dict else None
+    filename = SCHEMA_V2_FILENAME if version == 2 else SCHEMA_FILENAME
+    if next(_validator(filename).iter_errors(snapshot), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
     _check_graph(snapshot)
     if snapshot["profile"] in ("host", "host-mcp"):

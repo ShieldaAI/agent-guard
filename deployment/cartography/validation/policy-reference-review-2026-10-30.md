@@ -1,7 +1,7 @@
 # Scoped policy reference implementation review
 
 Date: 30 October 2026. Scope: the scoped policy reference milestone in the
-[Cartography integration plan](../../../docs/cartography-integration-plan.md#scoped-policy-reference-projection-milestone).
+[Cartography integration plan](../../../docs/archive/cartography-integration-plan.md#scoped-policy-reference-projection-milestone).
 Validation used synthetic fixtures on macOS arm64, Node 26.12.0, Python 3.13.10,
 locked Cartography 0.144.0 and disposable Neo4j Community 5.26.32 at the digest
 in [neo4j-image.txt](../../../integrations/cartography/neo4j-image.txt).

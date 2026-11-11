@@ -36,7 +36,8 @@ test('approval bookkeeping does not retain dropped invocation payloads', () => {
     assert.equal(guard.snapshot(task).calls, 1);
   `;
   const result = spawnSync(process.execPath, ['--expose-gc', '--input-type=module', '--eval', source], {
-    encoding: 'utf8', timeout: 10_000,
+    encoding: 'utf8',
+    timeout: 10_000,
   });
   assert.equal(result.error, undefined);
   assert.equal(result.status, 0, result.stderr || result.stdout);

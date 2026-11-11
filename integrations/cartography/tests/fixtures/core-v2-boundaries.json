@@ -1,0 +1,147 @@
+{
+  "coverage": {
+    "cloud": {
+      "status": "not_collected"
+    },
+    "manifest": {
+      "status": "not_collected"
+    },
+    "mcp": {
+      "status": "not_collected"
+    },
+    "tasks": {
+      "observedAt": "2026-11-09T19:17:48.318Z",
+      "status": "complete"
+    },
+    "tools": {
+      "observedAt": "2026-11-09T19:17:48.318Z",
+      "status": "complete"
+    }
+  },
+  "generatedAt": "2026-11-09T19:17:48.318Z",
+  "ledgerRevision": 11,
+  "policyEpoch": 1,
+  "profile": "core",
+  "schemaVersion": 2,
+  "untrustedContextDefault": "allow",
+  "snapshotId": "d8e5d52e-a8a8-4447-af88-5fd35b99bd3c",
+  "source": {
+    "companyId": "company",
+    "enrollmentGeneration": "generation",
+    "inventoryInstanceId": "d298dd9e-4173-4dde-aa8a-a78a7583caa8",
+    "sourceId": "installation",
+    "tenantId": "acme"
+  },
+  "tasks": [
+    {
+      "allowControlPlane": false,
+      "allowedRecipients": [
+        "opaque:774ee3e479e552e0c4506188abd162c800ceeb824d961bf8da2e1be1417531a8"
+      ],
+      "budget": {
+        "deadline": 1893456000000,
+        "maxCalls": 9,
+        "maxConcurrent": 1,
+        "maxCost": 0
+      },
+      "familyId": "clean",
+      "grants": [
+        {
+          "resources": [
+            "opaque:b17111737618237f9639df84445837ebcce3b180ca6b85a1ff653d0bfe196458"
+          ],
+          "tool": "email.read"
+        },
+        {
+          "resources": [
+            "opaque:07785258d88610b2bfa4f5eff2af37a6405f5b8ecb3cc325fa38d331b086a32d"
+          ],
+          "tool": "email.send"
+        }
+      ],
+      "id": "clean",
+      "parentTaskId": null,
+      "principalId": "agent",
+      "revoked": false,
+      "sensitive": false,
+      "sourceTaskId": null,
+      "tenantId": "acme",
+      "untrusted": false,
+      "usage": {
+        "calls": 0,
+        "concurrent": 0,
+        "reserved": 0,
+        "spent": 0
+      }
+    },
+    {
+      "allowControlPlane": false,
+      "allowedRecipients": [
+        "opaque:774ee3e479e552e0c4506188abd162c800ceeb824d961bf8da2e1be1417531a8"
+      ],
+      "budget": {
+        "deadline": 1893456000000,
+        "maxCalls": 9,
+        "maxConcurrent": 1,
+        "maxCost": 0
+      },
+      "familyId": "reader",
+      "grants": [
+        {
+          "resources": [
+            "opaque:b17111737618237f9639df84445837ebcce3b180ca6b85a1ff653d0bfe196458"
+          ],
+          "tool": "email.read"
+        },
+        {
+          "resources": [
+            "opaque:07785258d88610b2bfa4f5eff2af37a6405f5b8ecb3cc325fa38d331b086a32d"
+          ],
+          "tool": "email.send"
+        }
+      ],
+      "id": "reader",
+      "parentTaskId": null,
+      "principalId": "agent",
+      "revoked": false,
+      "sensitive": false,
+      "sourceTaskId": null,
+      "tenantId": "acme",
+      "untrusted": true,
+      "usage": {
+        "calls": 1,
+        "concurrent": 0,
+        "reserved": 0,
+        "spent": 0
+      }
+    }
+  ],
+  "tools": [
+    {
+      "approved": true,
+      "controlPlane": false,
+      "fingerprint": "26982af58e71a21eee964fd88449acd74a8c5aaaf9097ffb79d2b1da7292c247",
+      "maxCost": 0,
+      "name": "email.read",
+      "readsUntrusted": true,
+      "registered": true,
+      "requiresApproval": false,
+      "revision": 1,
+      "sendsExternal": false,
+      "untrustedContext": null
+    },
+    {
+      "approved": true,
+      "controlPlane": false,
+      "fingerprint": "5ebb7de5298e9531b84b119de713c8aa4dbe0ed26058004581872689553307df",
+      "maxCost": 0,
+      "name": "email.send",
+      "readsUntrusted": null,
+      "registered": true,
+      "requiresApproval": false,
+      "revision": 1,
+      "sendsExternal": true,
+      "untrustedContext": "require_approval"
+    }
+  ]
+}

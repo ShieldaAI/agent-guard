@@ -1,0 +1,401 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-inventory-v2.schema.json",
+  "title": "Agent Guard inventory snapshot v2",
+  "description": "Same as v1 plus outside-content fields on tasks and tools, and manifest v3. Executors emit v2 only when a tool declares an outside-content label, a task family is untrusted, or the manifest is v3. Shared shapes are $refs into v1.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "profile",
+    "source",
+    "snapshotId",
+    "generatedAt",
+    "ledgerRevision",
+    "policyEpoch",
+    "coverage",
+    "tasks",
+    "tools",
+    "untrustedContextDefault"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 2
+    },
+    "profile": {
+      "enum": [
+        "core",
+        "host",
+        "host-mcp"
+      ]
+    },
+    "source": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/source"
+    },
+    "snapshotId": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+    },
+    "generatedAt": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/timestamp"
+    },
+    "ledgerRevision": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/safeInteger"
+    },
+    "policyEpoch": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/safeInteger"
+    },
+    "coverage": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/coverage"
+    },
+    "tasks": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/task"
+      }
+    },
+    "tools": {
+      "type": "array",
+      "maxItems": 10000,
+      "items": {
+        "$ref": "#/$defs/tool"
+      }
+    },
+    "manifest": {
+      "$ref": "#/$defs/manifest"
+    },
+    "mcp": {
+      "$ref": "agent-guard-inventory-v1.schema.json#/$defs/mcp"
+    },
+    "untrustedContextDefault": {
+      "enum": [
+        "allow",
+        "require_approval",
+        "deny",
+        null
+      ],
+      "description": "The executor mode for tools that declare no untrustedContext; null when unknown (a v1 core lifted by a v3 manifest)."
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "core"
+          }
+        }
+      },
+      "then": {
+        "not": {
+          "required": [
+            "manifest"
+          ]
+        },
+        "properties": {
+          "coverage": {
+            "properties": {
+              "manifest": {
+                "$ref": "agent-guard-inventory-v1.schema.json#/$defs/uncollectedCoverage"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "required": [
+          "manifest"
+        ],
+        "properties": {
+          "coverage": {
+            "properties": {
+              "manifest": {
+                "$ref": "agent-guard-inventory-v1.schema.json#/$defs/completeCoverage"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "profile": {
+            "const": "host-mcp"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "mcp"
+        ],
+        "properties": {
+          "coverage": {
+            "properties": {
+              "mcp": {
+                "$ref": "agent-guard-inventory-v1.schema.json#/$defs/mcpCoverage"
+              }
+            }
+          }
+        }
+      },
+      "else": {
+        "not": {
+          "required": [
+            "mcp"
+          ]
+        },
+        "properties": {
+          "coverage": {
+            "properties": {
+              "mcp": {
+                "$ref": "agent-guard-inventory-v1.schema.json#/$defs/uncollectedCoverage"
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "task": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "tenantId",
+        "principalId",
+        "parentTaskId",
+        "sourceTaskId",
+        "familyId",
+        "grants",
+        "budget",
+        "allowedRecipients",
+        "allowControlPlane",
+        "revoked",
+        "sensitive",
+        "usage",
+        "untrusted"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+        },
+        "tenantId": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+        },
+        "principalId": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+        },
+        "parentTaskId": {
+          "anyOf": [
+            {
+              "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sourceTaskId": {
+          "anyOf": [
+            {
+              "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "familyId": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+        },
+        "grants": {
+          "type": "array",
+          "maxItems": 2048,
+          "items": {
+            "$ref": "agent-guard-inventory-v1.schema.json#/$defs/grant"
+          }
+        },
+        "budget": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/budget"
+        },
+        "allowedRecipients": {
+          "type": "array",
+          "maxItems": 1024,
+          "items": {
+            "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "allowControlPlane": {
+          "type": "boolean"
+        },
+        "revoked": {
+          "type": "boolean"
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "usage": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/usage"
+        },
+        "untrusted": {
+          "type": "boolean",
+          "description": "The task family has read outside content (family-wide, never cleared)."
+        }
+      }
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "fingerprint",
+        "revision",
+        "registered",
+        "approved",
+        "requiresApproval",
+        "controlPlane",
+        "maxCost",
+        "readsUntrusted",
+        "untrustedContext",
+        "sendsExternal"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/identifier"
+        },
+        "fingerprint": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$(?![\\s\\S])",
+          "maxLength": 64
+        },
+        "revision": {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/safeInteger"
+        },
+        "registered": {
+          "type": "boolean"
+        },
+        "approved": {
+          "type": "boolean"
+        },
+        "requiresApproval": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "controlPlane": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "maxCost": {
+          "anyOf": [
+            {
+              "$ref": "agent-guard-inventory-v1.schema.json#/$defs/safeInteger"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "readsUntrusted": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "untrustedContext": {
+          "enum": [
+            "allow",
+            "require_approval",
+            "deny",
+            null
+          ]
+        },
+        "sendsExternal": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      },
+      "description": "When registered is false, live definition flags must be null. Registered flags must be known. A missing tool record is an unresolved grant reference, not a denial.",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "registered": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requiresApproval": {
+                "type": "boolean"
+              },
+              "controlPlane": {
+                "type": "boolean"
+              },
+              "maxCost": {
+                "$ref": "agent-guard-inventory-v1.schema.json#/$defs/safeInteger"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "requiresApproval": {
+                "type": "null"
+              },
+              "controlPlane": {
+                "type": "null"
+              },
+              "maxCost": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "registered": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "readsUntrusted": {
+                "type": "null"
+              },
+              "untrustedContext": {
+                "type": "null"
+              },
+              "sendsExternal": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "manifest": {
+      "oneOf": [
+        {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/manifestV1"
+        },
+        {
+          "$ref": "agent-guard-inventory-v1.schema.json#/$defs/manifestV2"
+        },
+        {
+          "$ref": "agent-guard-inventory-manifest-v3.schema.json"
+        }
+      ]
+    }
+  }
+}

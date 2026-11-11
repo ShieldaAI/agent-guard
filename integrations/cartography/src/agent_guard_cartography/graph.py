@@ -1,4 +1,4 @@
-"""File-backed compatibility spike: versioned projections and atomic publication.
+"""Versioned graph projections and atomic publication.
 
 The caller owns the Neo4j session and must serialize collection in deployment.
 CAS publication additionally prevents an older in-flight import from replacing
@@ -30,6 +30,7 @@ from agent_guard_cartography.cloud import (
 from agent_guard_cartography.inventory import validate_snapshot
 from agent_guard_cartography.models import PROJECTION_LABELS, SCHEMAS
 
+OUTSIDE_CONTENT_TOOL_FIELDS = ("readsUntrusted", "untrustedContext", "sendsExternal")
 MAX_MCP_CONNECTION_RECEIPTS = 128
 MAX_MCP_RETIRED_SESSIONS = 64
 MAX_MCP_WATERMARK_BYTES = 1024 * 1024
@@ -70,6 +71,16 @@ def source_key(source: Mapping[str, str]) -> str:
 def _authority_hash(snapshot: dict) -> str:
     """A ledger revision cannot describe two different core authority states."""
     tasks = deepcopy(snapshot["tasks"])
+    tools = deepcopy(snapshot["tools"])
+    # Neutral inventory v2 fields say nothing a v1 record does not: a v3 manifest lifts a
+    # v1 core to the v2 shape at the same ledger revision without changing authority.
+    for task in tasks:
+        if task.get("untrusted") is False:
+            del task["untrusted"]
+    for tool in tools:
+        if all(tool.get(key, 0) is None for key in OUTSIDE_CONTENT_TOOL_FIELDS):
+            for key in OUTSIDE_CONTENT_TOOL_FIELDS:
+                del tool[key]
     for task in tasks:
         task["allowedRecipients"].sort()
         task["grants"].sort(key=lambda grant: grant["tool"])
@@ -78,7 +89,7 @@ def _authority_hash(snapshot: dict) -> str:
     return _key(
         snapshot["policyEpoch"],
         sorted(tasks, key=lambda task: task["id"]),
-        sorted(snapshot["tools"], key=lambda tool: tool["name"]),
+        sorted(tools, key=lambda tool: tool["name"]),
     )
 
 
@@ -91,6 +102,19 @@ def _manifest_hash(manifest: dict) -> str:
     normalized["taskBindings"].sort(key=lambda item: item["taskId"])
     for binding in normalized["resourceBindings"]:
         binding["actions"].sort()
+    if normalized["schemaVersion"] == 3:
+        normalized["directAccess"].sort(key=lambda item: item["id"])
+    if normalized["schemaVersion"] >= 2:
+        for field in ("owners", "credentialReferences"):
+            normalized[field].sort(key=lambda item: item["id"])
+        for deployment in normalized["deployments"]:
+            deployment["credentialReferenceIds"].sort()
+        for binding in normalized["resourceBindings"]:
+            binding["approvedDestinations"].sort()
+            binding["dependsOn"].sort()
+        for credential in normalized["credentialReferences"]:
+            credential["audienceRefs"].sort()
+            credential["recipientRefs"].sort()
     return _key(normalized)
 
 
@@ -99,6 +123,7 @@ def _manifest_properties(snapshot: dict) -> dict:
     if manifest is None:
         return {}
     return {
+        "manifest_schema_version": manifest["schemaVersion"],
         "manifest_id": manifest["manifestId"],
         "manifest_revision": manifest["revision"],
         "manifest_hash": _manifest_hash(manifest),
@@ -183,6 +208,8 @@ def _check_component_versions(current: Mapping, candidate: Mapping) -> None:
         raise GraphImportError("PROFILE_CONFLICT")
     if candidate["profile"] not in ("host", "host-mcp"):
         return
+    if candidate.get("manifest_schema_version", 1) < current.get("manifest_schema_version", 1):
+        raise GraphImportError("MANIFEST_SCHEMA_ROLLBACK")
     if current.get("manifest_id") not in (None, candidate["manifest_id"]):
         raise GraphImportError("MANIFEST_ID_CONFLICT")
     if candidate["manifest_revision"] < current.get("manifest_revision", -1):
@@ -246,6 +273,17 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
             requires_approval=tool["requiresApproval"] if tool else None,
             control_plane=tool["controlPlane"] if tool else None,
             max_cost=tool["maxCost"] if tool else None,
+            # Inventory v2 only; absent from v1 imports so their nodes are unchanged.
+            **(
+                {
+                    "reads_untrusted": tool["readsUntrusted"],
+                    "untrusted_context": tool["untrustedContext"],
+                    "sends_external": tool["sendsExternal"],
+                    "untrusted_context_default": snapshot["untrustedContextDefault"],
+                }
+                if tool and "readsUntrusted" in tool
+                else {}
+            ),
         )
 
     for task in snapshot["tasks"]:
@@ -288,12 +326,15 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
             parent_node_id=node_id("GuardTask", task["parentTaskId"])
             if task["parentTaskId"]
             else None,
+            delegated=task["parentTaskId"] is not None,
+            derived=task["sourceTaskId"] is not None,
             source_task_node_id=node_id("GuardTask", task["sourceTaskId"])
             if task["sourceTaskId"]
             else None,
             grant_node_ids=grants,
             revoked=task["revoked"],
             sensitive=task["sensitive"],
+            **({"untrusted": task["untrusted"]} if "untrusted" in task else {}),
             allowed_recipients=task["allowedRecipients"],
             allow_control_plane=task["allowControlPlane"],
             max_calls=task["budget"]["maxCalls"],
@@ -305,6 +346,8 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
     if manifest:
         evidence = {
             "evidence_kind": "host_asserted",
+            "authority_id": manifest.get("authorityId"),
+            "manifest_schema_version": manifest["schemaVersion"],
             "manifest_id": manifest["manifestId"],
             "manifest_revision": manifest["revision"],
             "manifest_observed_at": manifest["observedAt"],
@@ -314,6 +357,20 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
         def external(label: str, value: dict) -> dict:
             # Keep account, partition, kind and exact ARN in identity. Host ownership
             # assertions never merge into provider nodes or imply IAM permission.
+            if value["provider"] == "host":
+                return make(
+                    label,
+                    [value["provider"], value["id"]],
+                    provider="host",
+                    partition=None,
+                    account_id=None,
+                    region=None,
+                    arn=None,
+                    kind=value["kind"],
+                    host_resource_id=value["id"],
+                    name=value["name"],
+                    **evidence,
+                )
             return make(
                 label,
                 value,
@@ -322,10 +379,37 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 account_id=value["accountId"],
                 region=value["region"],
                 arn=value["arn"],
-                **({"kind": value["kind"]} if "kind" in value else {}),
+                **(
+                    {"kind": value["kind"], "host_resource_id": None, "name": None}
+                    if "kind" in value
+                    else {}
+                ),
                 **evidence,
             )
 
+        for owner in manifest.get("owners", []):
+            make(
+                "GuardOwner",
+                owner["id"],
+                owner_id=owner["id"],
+                name=owner["name"],
+                kind=owner["kind"],
+                **evidence,
+            )
+        for credential in manifest.get("credentialReferences", []):
+            make(
+                "GuardCredentialReference",
+                credential["id"],
+                credential_id=credential["id"],
+                name=credential["name"],
+                issuer_ref=credential["issuerRef"],
+                audience_refs=sorted(credential["audienceRefs"]),
+                recipient_refs=sorted(credential["recipientRefs"]),
+                lifecycle_state=credential["lifecycleState"],
+                expires_at=credential["expiresAt"],
+                rotation_status=credential["rotationStatus"],
+                **evidence,
+            )
         for agent in manifest["agents"]:
             make(
                 "GuardAgent",
@@ -334,6 +418,29 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 name=agent["name"],
                 owner_id=agent["ownerId"],
                 team_id=agent["teamId"],
+                purpose=agent.get("purpose"),
+                lifecycle_state=agent.get("lifecycleState", "unknown"),
+                ownership_status=agent.get("ownershipStatus", "unknown"),
+                ownership_source=agent.get("ownershipSource"),
+                owner_node_id=node_id("GuardOwner", agent["ownerId"])
+                if manifest["schemaVersion"] >= 2 and agent["ownerId"] is not None
+                else None,
+                **evidence,
+            )
+        # Manifest v3 declares paths that act without the guard. [] is the host's
+        # claim of none, not a check; v1/v2 manifests leave the status absent (unknown).
+        direct = manifest.get("directAccess")
+        declared = {entry["deploymentId"] for entry in direct or []}
+        for entry in direct or []:
+            make(
+                "GuardDirectAccess",
+                entry["id"],
+                access_id=entry["id"],
+                deployment_id=entry["deploymentId"],
+                kind=entry["kind"],
+                target_ref=entry["targetRef"],
+                description=entry["description"],
+                deployment_node_id=node_id("GuardDeployment", entry["deploymentId"]),
                 **evidence,
             )
         for deployment in manifest["deployments"]:
@@ -342,7 +449,24 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 deployment["id"],
                 deployment_id=deployment["id"],
                 environment=deployment["environment"],
+                runtime_ref=deployment.get("runtimeRef"),
+                workload_generation=deployment.get("workloadGeneration"),
+                build_ref=deployment.get("buildRef"),
+                binding_authority=deployment.get("bindingAuthority"),
+                credential_node_ids=[
+                    node_id("GuardCredentialReference", ref)
+                    for ref in deployment.get("credentialReferenceIds", [])
+                ],
                 agent_node_id=node_id("GuardAgent", deployment["agentId"]),
+                **(
+                    {
+                        "direct_access_status": "found"
+                        if deployment["id"] in declared
+                        else "none_declared"
+                    }
+                    if direct is not None
+                    else {}
+                ),
                 **evidence,
             )
         for binding in manifest["resourceBindings"]:
@@ -355,6 +479,18 @@ def build_rows(snapshot: dict, projection_id: str, scoped_source_id: str) -> dic
                 resource_ref=binding["resourceRef"],
                 actions=sorted(binding["actions"]),
                 scope=binding["scope"],
+                display_name=binding.get("displayName"),
+                owner_id=binding.get("ownerId"),
+                ownership_status=binding.get("ownershipStatus", "unknown"),
+                ownership_source=binding.get("ownershipSource"),
+                sensitivity=binding.get("sensitivity", "unknown"),
+                approved_destinations=sorted(binding.get("approvedDestinations", [])),
+                owner_node_id=node_id("GuardOwner", binding["ownerId"])
+                if binding.get("ownerId") is not None
+                else None,
+                dependency_node_ids=[
+                    node_id("GuardResourceBinding", ref) for ref in binding.get("dependsOn", [])
+                ],
                 resource_node_id=node_id(
                     "GuardResource", [binding["tool"], binding["resourceRef"]]
                 ),
@@ -586,6 +722,7 @@ def _publish(
         "s.authority_hash=p.authority_hash, "
         "s.profile=p.profile,s.manifest_id=p.manifest_id,s.manifest_revision=p.manifest_revision, "
         "s.manifest_hash=p.manifest_hash,s.manifest_observed_at=p.manifest_observed_at, "
+        "s.manifest_schema_version=p.manifest_schema_version, "
         "s.mcp_watermarks_json=$mcp_watermarks, "
         "p.status='published',p.published_at_ms=$now",
         source=source_id,
@@ -601,13 +738,14 @@ def import_snapshot(
     expected_source: Mapping[str, str],
     *,
     update_tag: int | None = None,
-    after_load: Callable[[], None] | None = None,
     cloud_scope: CloudScope | dict | None = None,
+    _after_load: Callable[[], None] | None = None,
 ) -> ImportResult:
     """Import one complete core, host or host-mcp snapshot with mandatory source scope.
 
-    ``after_load`` is a host-side fault-injection hook for this compatibility
-    spike. It runs before validation/publication and is never snapshot input.
+    ``_after_load`` is a private test seam, not part of the API: integration tests use
+    it to inject a fault between loading and publication to prove atomicity. It runs
+    before validation/publication and is never snapshot input.
     """
     snapshot = validate_snapshot(snapshot)
     if dict(expected_source) != snapshot["source"]:
@@ -639,8 +777,13 @@ def import_snapshot(
         ("G_DERIVED_FROM", "GuardTask", "GuardTask", "source_task_node_id"),
         ("G_ASSIGNED_TO", "GuardTask", "GuardDeployment", "deployment_node_id"),
         ("G_INSTANCE_OF", "GuardDeployment", "GuardAgent", "agent_node_id"),
+        ("G_OWNED_BY", "GuardAgent", "GuardOwner", "owner_node_id"),
+        ("G_USES_CREDENTIAL", "GuardDeployment", "GuardCredentialReference", "credential_node_ids"),
+        ("G_DIRECT_ACCESS_FOR", "GuardDirectAccess", "GuardDeployment", "deployment_node_id"),
         ("G_BINDS_SELECTOR", "GuardResourceBinding", "GuardResource", "resource_node_id"),
         ("G_MAPS_TO", "GuardResourceBinding", "GuardExternalResource", "external_resource_node_id"),
+        ("G_RESOURCE_OWNED_BY", "GuardResourceBinding", "GuardOwner", "owner_node_id"),
+        ("G_DEPENDS_ON", "GuardResourceBinding", "GuardResourceBinding", "dependency_node_ids"),
         ("G_EXECUTES_FOR", "GuardExecutionBinding", "GuardDeployment", "deployment_node_id"),
         ("G_EXECUTES_TOOL", "GuardExecutionBinding", "GuardTool", "tool_node_id"),
         ("G_USES_IDENTITY", "GuardExecutionBinding", "GuardExternalIdentity", "identity_node_id"),
@@ -672,8 +815,8 @@ def import_snapshot(
             if schema.other_relationships is not None:
                 load(session, schema, rows[label], lastupdated=tag, GuardSnapshotId=projection_id)
         cleanup_projection_rows(session, projection_id, tag)
-        if after_load is not None:
-            after_load()
+        if _after_load is not None:
+            _after_load()
         publication = (
             source_id,
             projection_id,
@@ -735,9 +878,14 @@ def cleanup_projection_rows(session: Session, projection_id: str, update_tag: in
                 cascade_delete=False,
             ).run(session)
     except BaseException:
-        session.run(
-            "MATCH (p:GuardSnapshot {id:$id}) SET p.status='failed'", id=projection_id
-        ).consume()
+        # Never let a broken session replace the original failure.
+        try:
+            session.run(
+                "MATCH (p:GuardSnapshot {id:$id,status:'cleaning'}) SET p.status='failed'",
+                id=projection_id,
+            ).consume()
+        except Exception:
+            pass
         raise
     session.run(
         "MATCH (p:GuardSnapshot {id:$id,status:'cleaning'}) SET p.status='staging'",

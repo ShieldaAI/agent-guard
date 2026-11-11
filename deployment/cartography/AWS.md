@@ -329,7 +329,7 @@ resolution, conservative conditions, boundaries, limits, minimized output,
 atomic replacement/opt-out, rollback and shared-edge preservation.
 Ruff, wheel/source-archive builds, reconstruction of the wheel from the source
 archive, and an isolated installed metadata/policy consumer passed. The
-[milestone record](../../docs/cartography-integration-plan.md#iam-policy-candidate-collection-milestone)
+[milestone record](../../docs/archive/cartography-integration-plan.md#iam-policy-candidate-collection-milestone)
 records scope and remaining deployment limits. No JavaScript source changed in
 this milestone; its existing API contract remains unchanged.
 
