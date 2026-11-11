@@ -44,6 +44,7 @@ test('each subpath exports its own area', () => {
     'composeInventorySnapshot',
     'composeMcpInventorySnapshot',
     'createInventoryObserverToken',
+    'loadInventoryManifestFile',
     'startInventoryServer',
     'validateInventoryManifest',
     'validateMcpConnectionInventory',
@@ -69,7 +70,8 @@ test('each subpath exports its own area', () => {
 test('the root keeps every 0.1 export: its own API plus deprecated aliases bound to the same values', () => {
   const moved = Object.entries(SUBPATHS)
     .flatMap(([, module]) => Object.keys(module))
-    .filter(name => !ROOT.includes(name) && name !== 'describeLedgerFormat');
+    // Added after 0.1, on their subpath only: no deprecated root alias.
+    .filter(name => !ROOT.includes(name) && !['describeLedgerFormat', 'loadInventoryManifestFile'].includes(name));
   assert.deepEqual(Object.keys(root).sort(), [...new Set([...ROOT, ...moved])].sort());
   for (const [name, module] of Object.entries(SUBPATHS)) {
     for (const key of Object.keys(module)) if (key in root) assert.equal(root[key], module[key], `${name}.${key}`);

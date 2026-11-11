@@ -32,6 +32,7 @@ export {
   type InventoryManifestDeploymentV2,
   type InventoryManifestResourceBindingV2,
 } from './inventory-manifest.js';
+export { loadInventoryManifestFile } from './inventory-manifest-file.js';
 export {
   validateMcpConnectionInventory,
   validateMcpInventorySources,

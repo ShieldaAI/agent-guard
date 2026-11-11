@@ -1,0 +1,33 @@
+{
+  "schemaVersion": 2,
+  "evidenceKind": "host_asserted",
+  "source": {
+    "companyId": "example-company",
+    "sourceId": "company-host",
+    "enrollmentGeneration": "catalog-1",
+    "inventoryInstanceId": "00000000-0000-4000-8000-000000000001",
+    "tenantId": "example-tenant"
+  },
+  "authorityId": "platform-team",
+  "manifestId": "company-catalog",
+  "revision": 1,
+  "observedAt": "2026-11-11T00:00:00.000Z",
+  "owners": [{ "id": "finance-team", "name": "Finance team", "kind": "team" }],
+  "credentialReferences": [],
+  "agents": [
+    {
+      "id": "invoice-agent",
+      "name": "Invoice assistant",
+      "ownerId": "finance-team",
+      "teamId": "finance",
+      "purpose": "Drafts supplier invoices for review",
+      "lifecycleState": "active",
+      "ownershipStatus": "assigned",
+      "ownershipSource": "platform-team"
+    }
+  ],
+  "deployments": [],
+  "taskBindings": [],
+  "resourceBindings": [],
+  "executionBindings": []
+}
