@@ -105,7 +105,8 @@ not authorize an action. A verified MCP session closes before decoded strings
 containing the enrolled raw token reach SDK consumers.
 
 **Agent Map.** It is read-only evidence for the viewer's authorized scope, and it lists
-only agents a person declared in a host manifest. It
+only agents a person declared in a host manifest. Its discovery views are leads for an
+all-teams reader, not a scan and not findings. It
 never grants permission, and an observation is never presented as an effective
 grant or a confirmed effect. Authentication loss clears protected data.
 

@@ -49,11 +49,18 @@ sign-out clears local evidence immediately and revokes the Agent Map browser
 session. A failed sign-out shows an explicit retry state without silently
 reconnecting. The identity provider's own session follows its company policy.
 
-The viewer offers five views: Agent inventory, Owners, Resources, Changes and
-Health. Agent, owner and host-bound resource indexes use server-scoped pagination;
+The viewer offers six views: Agent inventory, Owners, Resources, Changes, Discovery
+and Health. Agent, owner and host-bound resource indexes use server-scoped pagination;
 20 rows appear per page and exact totals remain attached to the active filters.
 Owner links preserve the source as well as the owner ID. Environment suggestions
 come from the current page; an exact environment can also be entered directly.
+
+Discovery lists leads to agents the manifest does not declare: tasks and callers that
+ran through an enrolled executor without a declared agent, and IAM roles and users of
+enrolled AWS accounts that no declared agent names. Both are for all-teams readers; a
+team-scoped reader sees one fixed note with no names and no counts. Unknown or stale
+collection is shown as unknown, never as an empty list, and Health shows the
+undeclared-activity count per source under the same rule.
 
 An agent's Overview shows purpose, reported ownership, lifecycle, host assertion
 provenance, deployments and paged tasks. Permissions separates declared grants,
@@ -114,7 +121,7 @@ agent Permissions, and an empty resource index does not establish no access.
 Search and filter changes show a loading state until the scoped query completes.
 An unavailable query hides the previous list and offers **Refresh evidence** to
 retry. Detail sections provide their own retry controls. Mobile navigation keeps
-all five views available, and wide evidence tables scroll within labelled regions.
+all six views available, and wide evidence tables scroll within labelled regions.
 Each workspace dispatches at most two inventory reads concurrently. Navigation
 cancels obsolete queued reads; already started reads keep their slot until they
 settle and their obsolete results are discarded. Sign-out aborts the session and

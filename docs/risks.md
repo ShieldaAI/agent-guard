@@ -19,7 +19,7 @@ outside it.
 | mcp | `@shieldaai/agent-guard-mcp` | Routes MCP tools, resources and prompts through core, with reviewed metadata and bounded schemas. |
 | executor | `@shieldaai/agent-guard-executor` | Durable version of core: encrypted ledger, task tokens, governed memory, isolated workloads, inventory export. |
 | scenarios | `@shieldaai/agent-guard-scenarios` | Thirteen paired hostile and benign test cases (S01 to S13) you run against your own integration. |
-| map | `@shieldaai/agent-map` with the Cartography collector | Read-only inventory of declared agents, their grants, resources and identities. It never grants or blocks anything. |
+| map | `@shieldaai/agent-map` with the Cartography collector | Read-only inventory of declared agents, their grants, resources and identities, plus leads to activity and cloud identities nobody declared. It never grants or blocks anything. |
 
 ## Risk by risk
 
@@ -162,11 +162,16 @@ An agent keeps operating outside what anyone intended, or nobody knows it exists
   executor an acknowledged revocation survives restart. Budgets and deadlines bound what
   a task can do before anyone notices. The map lists declared agents with their owners,
   grants, resources and changes between snapshots, and flags declared paths around the
-  guard.
-- **Package.** core and executor (revocation, budgets); scenarios S08; map (inventory).
-- **What stays with you.** The map shows only agents a person declared (see
+  guard. For an all-teams reader it also gives two leads to agents nobody declared: tasks
+  and callers that ran through an enrolled executor without a declared agent, and IAM
+  roles and users of an enrolled AWS account that no declared agent names.
+- **Package.** core and executor (revocation, budgets); scenarios S08; map (inventory,
+  discovery leads).
+- **What stays with you.** An agent is on the map only after a person declares it (see
   [how agents get onto the map](guides/agent-cartography.md#how-agents-get-onto-the-map)).
-  It does not discover unknown agents, and nothing here detects unusual behaviour.
+  The leads are candidates to review, not findings: they cover only activity through the
+  guard and identities in enrolled AWS accounts. An agent that uses neither is not seen.
+  Nothing here scans infrastructure, code or networks, or detects unusual behaviour.
 
 ## What no package covers
 

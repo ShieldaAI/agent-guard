@@ -555,6 +555,17 @@ bindings fail the host request with a safe availability error; they do not disab
 core observation or mutate authority. Manifests are configuration outside the
 ledger. Replace the observer to install an updated version.
 
+`loadInventoryManifestFile(path: string): InventoryManifest` (from
+`@shieldaai/agent-guard-executor/inventory`) reads one manifest from a private file and
+returns the result of `validateInventoryManifest`. The path must be absolute and come from
+host configuration. The file must be a regular file with one link, owned by the process
+user, with no group or other permission bits, at most 2 MiB of UTF-8 JSON with no
+duplicate object member; a symbolic link is refused. It is read once, synchronously, at
+the call: later edits need a host restart. File problems throw
+`INVENTORY_MANIFEST_FILE_INVALID`; a platform without POSIX ownership and permissions
+throws `INVENTORY_MANIFEST_FILE_UNSUPPORTED`; content problems keep the validation codes
+below. No message includes file content.
+
 Manifest validation uses `INVENTORY_MANIFEST_INVALID`,
 `INVENTORY_MANIFEST_LIMIT_EXCEEDED`, `INVENTORY_MANIFEST_REFERENCE_INVALID` and
 `INVENTORY_MANIFEST_SOURCE_MISMATCH`. Invalid core input uses
@@ -606,7 +617,7 @@ Each normalized JSON value is limited to 1 MiB of canonical UTF-8 JSON, 100,000 
 
 `@shieldaai/agent-map` consumes published Cartography inventory independently of
 executor admission. Its [public contract](../packages/agent-map/README.md) defines
-ten read-only operations, shared by `POST /v1/query` and the official SDK MCP
+twelve read-only operations, shared by `POST /v1/query` and the official SDK MCP
 endpoint at `POST /mcp`. The host maps distinct `agm_v1` credentials to immutable
 company, tenant and team scope; request arguments cannot select a broader scope.
 The local viewer uses the same operations and retains its credential only in
@@ -620,6 +631,21 @@ shared graph nodes do not grant visibility to their other neighbors. Snapshot
 comparisons apply the same scope to historical evidence and expose retention
 gaps. Arbitrary Cypher, database procedures, mutations, executor dispatch and
 subscription methods are unavailable through this interface.
+
+Two of the operations are discovery leads for a reader with `allTeams: true`.
+`list_undeclared_activity {sourceId, kind?, offset?, limit?}` lists the tasks or caller
+principals of one source that no manifest task binding assigns to a declared agent, and
+`get_inventory_health` reports their count per source as `undeclaredActivity`.
+`list_unclaimed_identities {offset?, limit?}` lists the IAM roles and users of the
+enrolled AWS collections whose exact ARN no declared execution binding names, as
+candidates with `assessment: unknown`. A missing, stale or inconsistent collection reads
+`unknown` and lists nothing. Both use their own bounded store reads, load no graph
+nodes, and are subject to the same publication recheck. A team-scoped reader receives
+`{visibility: 'all_teams_required', status: 'not_visible', note}` with no names and no
+counts, and the store is not read. A failed count leaves `get_inventory_health`
+answering with `undeclaredActivity.status: 'unknown'`. Neither operation creates an
+agent or affects admission. The [package contract](../packages/agent-map/README.md#discovery)
+has the fields and limits.
 
 Every access result remains evidence: matching a grant or an exact cloud binding
 does not establish effective permission. Explanations preserve unknown live

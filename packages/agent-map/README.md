@@ -19,8 +19,10 @@ It supplies the same evidence to HTTP, MCP clients and the
 executes an action. Declared grants and cloud associations are not effective
 permission decisions.
 
-The map lists only agents that a person declared in a host manifest. It does not discover
-agents by scanning infrastructure, code, networks or identity providers. See
+The map lists only agents that a person declared in a host manifest. It does not scan
+infrastructure, code, networks or identity providers. For an all-teams reader it lists
+two kinds of [discovery leads](#discovery): activity through the guard, and AWS IAM
+identities, that no declared agent accounts for. See
 [how agents get onto the map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/agent-cartography.md#how-agents-get-onto-the-map)
 and the [risk map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)
 (it supports ASI10, rogue agents, as an inventory, and flags agents that combine private
@@ -132,18 +134,20 @@ Source IDs are the graph source IDs returned by the service, not native source
 names. Native agent/task IDs and returned stable entity IDs are accepted where
 documented by the schemas. No pagination cursor exposes a broader scope.
 
-| Operation                 | Arguments                                                                                                                                                       | Evidence                                                                                                                                                                                                                                                                                                                                            |
-| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_agents`             | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `flag`, `flagStatus`, `includeFlags`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. With a flag argument, also `boundaryFlags.dangerousThree`.                                                                                                                                                                                                                               |
-| `get_agent_access`        | `sourceId`, `agentId`                                                                                                                                           | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `boundaryFlags` (the dangerous-three flag); `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`) and `outsideGuard.identityScope` compares each tool identity's S3 reach with its grants. |
-| `explain_access`          | `sourceId`, `taskId`, `tool`, `resourceId`                                                                                                                      | Visible delegation, declared matches, known blockers and explicit unknown checks.                                                                                                                                                                                                                                                                   |
-| `find_agents_with_access` | `resourceRef`, `action`; optional `sourceId`, `limit`                                                                                                           | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion.                                                                                                                                                                                                                                                     |
-| `get_changes`             | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit`                                                                          | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps.                                                                                                                                                                                                                                               |
-| `get_inventory_health`    | optional `sourceId`                                                                                                                                             | Visible capture times and independently stale or unavailable components.                                                                                                                                                                                                                                                                            |
-| `list_owners`             | optional `sourceId`, `search`, `kind`, `offset`, `limit`                                                                                                        | Declared owners and visible agent/resource counts.                                                                                                                                                                                                                                                                                                  |
-| `list_resources`          | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit`                                                                                      | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies, plus `outsideGuard`: `yes`, `none_found` or `unknown`.                                                                                                                                                                                           |
-| `get_resource_access`     | `sourceId`, `resourceId`; optional `offset`, `limit`                                                                                                            | Agents with an observed declared binding to this resource, plus the identities and declared direct paths that reach it outside the guard; assessment remains unknown.                                                                                                                                                                               |
-| `get_agent_inventory`     | `sourceId`, `agentId`; optional `section`, `offset`, `limit`                                                                                                    | Paged structured evidence without requiring a focused graph.                                                                                                                                                                                                                                                                                        |
+| Operation                   | Arguments                                                                                                                                                       | Evidence                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_agents`               | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `flag`, `flagStatus`, `includeFlags`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. With a flag argument, also `boundaryFlags.dangerousThree`.                                                                                                                                                                                                                               |
+| `get_agent_access`          | `sourceId`, `agentId`                                                                                                                                           | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `boundaryFlags` (the dangerous-three flag); `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`) and `outsideGuard.identityScope` compares each tool identity's S3 reach with its grants. |
+| `explain_access`            | `sourceId`, `taskId`, `tool`, `resourceId`                                                                                                                      | Visible delegation, declared matches, known blockers and explicit unknown checks.                                                                                                                                                                                                                                                                   |
+| `find_agents_with_access`   | `resourceRef`, `action`; optional `sourceId`, `limit`                                                                                                           | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion.                                                                                                                                                                                                                                                     |
+| `get_changes`               | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit`                                                                          | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps.                                                                                                                                                                                                                                               |
+| `get_inventory_health`      | optional `sourceId`                                                                                                                                             | Visible capture times and independently stale or unavailable components. For an all-teams reader, `undeclaredActivity` per source: how many tasks and callers belong to no declared agent.                                                                                                                                                          |
+| `list_owners`               | optional `sourceId`, `search`, `kind`, `offset`, `limit`                                                                                                        | Declared owners and visible agent/resource counts.                                                                                                                                                                                                                                                                                                  |
+| `list_resources`            | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit`                                                                                      | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies, plus `outsideGuard`: `yes`, `none_found` or `unknown`.                                                                                                                                                                                           |
+| `get_resource_access`       | `sourceId`, `resourceId`; optional `offset`, `limit`                                                                                                            | Agents with an observed declared binding to this resource, plus the identities and declared direct paths that reach it outside the guard; assessment remains unknown.                                                                                                                                                                               |
+| `get_agent_inventory`       | `sourceId`, `agentId`; optional `section`, `offset`, `limit`                                                                                                    | Paged structured evidence without requiring a focused graph.                                                                                                                                                                                                                                                                                        |
+| `list_undeclared_activity`  | `sourceId`; optional `kind` (`tasks` or `principals`), `offset`, `limit`                                                                                        | All-teams readers only. Tasks or caller principals that ran through this executor and belong to no declared agent.                                                                                                                                                                                                                                  |
+| `list_unclaimed_identities` | optional `offset`, `limit`                                                                                                                                      | All-teams readers only. IAM roles and users of the enrolled AWS accounts that no declared agent's execution binding names. Candidates, not findings.                                                                                                                                                                                                |
 
 Paged indexes return their named array plus `total`, `offset`, `limit` and
 `truncated`; totals and filters apply only to the authorized view. Defaults are
@@ -174,6 +178,60 @@ AWS policy resolution, and unsupported host actions remain explicitly
 For `get_changes`, `changeKind` is `all`, `permissions`, `ownership`, `bindings` or
 `outside_guard`. Declared direct paths and a deployment's declaration status are
 `outside_guard` changes and carry `evidenceKind: declared`.
+
+### Discovery
+
+The map lists only declared agents. Two operations point at what the manifest may be
+missing; they never create an agent and never grant or block anything. Both are for
+readers with `allTeams: true`, because what they list belongs to no team. A team-scoped
+reader gets `{ visibility: 'all_teams_required', status: 'not_visible', note }` and
+nothing else: no names, no counts, and the same answer whether or not anything would be
+listed. The store is not read for that reader.
+
+**Undeclared activity.** A task is undeclared when no manifest task binding assigns it to
+a deployment of a declared agent; a caller principal is undeclared when none of its tasks
+is assigned.
+
+- `get_inventory_health` adds `undeclaredActivity` to each source:
+  `{ status, tasks, tasksIsMinimum, principals, principalsIsMinimum, manifest }`. `status`
+  is `complete`, or `partial` when counting stopped at 10,000 (the figure is then a
+  minimum). `manifest: not_collected` marks a source enrolled without a manifest, where
+  every task counts. If the count cannot be read it is
+  `{ status: 'unknown', reason }` (`read_unavailable`, `read_timeout`, `limit_exceeded`,
+  `publication_changed` or `not_reported`) and the rest of health still answers. A
+  team-scoped reader gets `{ status: 'not_visible', reason: 'all_teams_required' }`.
+- `list_undeclared_activity` returns `kind`, `items`, `total`, `totalIsMinimum`, `offset`,
+  `limit`, `truncated`, the same `counts`, and a snapshot `receipt`. A task item has
+  `taskId`, `principalId`, `delegated`, `derived`, `revoked`, `parentDeclared`, up to 32
+  `tools` it holds a grant on (`toolsTruncated`), `evidenceKind: observed` and
+  `assessment: unknown`. `parentDeclared: true` means its direct parent is assigned to a
+  declared agent: usually a sub-task that only lacks its own binding. A principal item has
+  `principalId` and `tasks` (counted to 1,000, then `tasksCapped`).
+- Limit: only activity through an enrolled executor is seen.
+
+**Unclaimed cloud identities.** `list_unclaimed_identities` reads the AWS collections
+already in the graph (see the [AWS guide](../../deployment/cartography/AWS.md)).
+
+- `identities` are IAM roles and users whose exact ARN no declared execution binding
+  names in a current snapshot the reader can see. Each has `arn`, `kind` (`role` or
+  `user`), `name`, `path`, `tenantId`, `partition`, `accountId`, `candidate: true`,
+  `evidenceKind: provider_inventory` and `assessment: unknown`. They are ordered by ARN
+  and paged with `total`, `offset`, `limit` and `truncated`.
+- `accounts` has one entry per enrolled account with `status` `complete` or `unknown`, a
+  `reason` (`stale`, `collection_invalid`, `changed`, `limit_exceeded` or
+  `claims_limit_exceeded`), `observedAt`, and for a complete account `observed` and
+  `unclaimed`. An unknown account lists none of its identities.
+- `status` is `complete`, `partial` (some accounts unknown; `total` covers the complete
+  ones) or `unknown`. With `unknown`, `total` is `null` and `identities` is empty; with no
+  collection at all `reason` is `cloud_not_collected`. Unknown is never an empty list.
+- A collection is stale past the enrolled cloud age limit of its tenant's sources, capped
+  by the host's `policyMaxAgeSeconds` (default two hours).
+- `bindingsWithoutIdentity: true` means some declared execution binding names no
+  identity, so a listed identity may be the one it uses. `declaredFrom` names the
+  snapshots whose bindings decided what is claimed.
+- Limits: role assumption, instance profiles and federation are not followed. Only IAM
+  roles and users of enrolled accounts are collected. At most 64 collections, 50,000
+  identities per account and 10,000 declared ARNs are compared per read.
 
 ### Boundary flags
 
@@ -221,7 +279,7 @@ cached observation does not refresh it. Missing observation times remain unknown
 and stale for observed connections. Unavailable connections use the time their
 failure was captured. Historical projections retain their own capture times.
 
-On the loopback service, POST `/mcp` uses the official MCP SDK's stateless HTTP transport. The ten tools
+On the loopback service, POST `/mcp` uses the official MCP SDK's stateless HTTP transport. The twelve tools
 have the same arguments and use the same service as HTTP. Supply the reference
 bearer in the client's HTTP headers. The host-only `createMapMcpServer(service,
 scope)` factory also supports embedding; only trusted host code chooses scope.

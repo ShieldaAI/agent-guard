@@ -11,10 +11,24 @@ Approved on 9 November 2026 with three recorded scope decisions:
 See the [release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Add (agent map): two discovery leads for all-teams readers, to help find agents the
+  manifest does not declare. `list_undeclared_activity` lists tasks and caller principals
+  that ran through an enrolled executor and belong to no declared agent, and
+  `get_inventory_health` adds their count per source as `undeclaredActivity`.
+  `list_unclaimed_identities` lists IAM roles and users of the enrolled AWS accounts that
+  no declared agent's execution binding names, as candidates; a missing, stale or
+  inconsistent collection reads `unknown`. A team-scoped reader gets a note without names
+  or counts. A failed count never fails health. The viewer has a Discovery tab. No
+  infrastructure, code or network scanning is added.
+- Add (executor): `loadInventoryManifestFile(path)` on the `/inventory` subpath loads a
+  reviewed host manifest from a private file (owner-only, read once at startup, POSIX
+  only), so declaring an agent is a file change and a restart. See
+  [declare agents from a file](docs/guides/agent-cartography.md#declare-agents-from-a-file).
 - Docs: [risks mapped to the OWASP Top 10 for Agentic Applications](docs/risks.md), with
   the package that handles each, and a plain statement of
   [how agents get onto the map](docs/guides/agent-cartography.md#how-agents-get-onto-the-map):
-  only by being declared in a host manifest.
+  only by being declared in a host manifest (the discovery leads above only point at
+  candidates).
 - Fix (mcp): a tool schema `pattern` using a regex modifier group such as `(?i:a)` could
   hang the host or skip the backtracking check; those forms are refused.
 - Fix (mcp): a binding's explicit `readsUntrusted: false` is passed to the registration

@@ -105,7 +105,8 @@ explanations, snapshot changes and freshness through the same HTTP/MCP contract.
 The [company cartography guide](docs/guides/agent-cartography.md) connects
 company-owned agents, owners, deployments, permissions, resources, credential
 references and relationships. The map lists only agents a person declared in a host
-manifest; it does not discover agents on its own
+manifest. It never adds an agent on its own, but it points an all-teams reader at
+activity and cloud identities that no declared agent accounts for
 ([how agents get onto the map](docs/guides/agent-cartography.md#how-agents-get-onto-the-map)). Paged indexes and structured details distinguish
 declared access, host assertions, policy candidates and missing evidence.
 See the [viewer](apps/agent-map/README.md) for local preview instructions; the archived

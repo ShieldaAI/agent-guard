@@ -528,7 +528,12 @@ one permitted tenant and always returns that tenant's complete core inventory.
 profile overrides and duplicate JSON keys are rejected.
 
 For a host-profile credential, supply `manifests: [validatedManifest, ...]` to
-`startInventoryServer()` and set that credential's `profile: 'host'`. Every tenant
+`startInventoryServer()` and set that credential's `profile: 'host'`. To keep the
+manifest in a reviewed file instead of host code, pass
+`loadInventoryManifestFile('/absolute/private/manifest.json')`: the file must be owned by
+the host user with mode `600`, is read once at startup and gets the same validation
+(POSIX only; see the
+[cartography guide](../../docs/guides/agent-cartography.md#declare-agents-from-a-file)). Every tenant
 in its allowlist must have exactly one manifest. Up to 1,024 manifests with an
 aggregate 8 MiB/500,000-value configuration cap are accepted. The listener validates
 and copies them at startup, then checks bindings against each fresh core snapshot.
