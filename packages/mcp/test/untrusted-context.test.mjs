@@ -53,3 +53,42 @@ test('a connection marked readsUntrusted taints the family after any call; the d
   assert.equal(await connect(t, {}), false);
   await assert.rejects(connect(t, { readsUntrusted: 'yes' }));
 });
+
+test("a binding's explicit readsUntrusted reaches the registration, including false", async () => {
+  const labels = async (binding, options = {}) => {
+    const server = new McpServer({ name: 'helpdesk', version: '1' });
+    server.registerTool(
+      'ticket',
+      { description: 'Read a ticket', inputSchema: fromJsonSchema({ type: 'object', additionalProperties: false }) },
+      async () => ({ content: [{ type: 'text', text: 'text' }] }),
+    );
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    const guard = new AgentGuard();
+    const seen = [];
+    const connection = await ManagedMcpConnection.connect({
+      guard: {
+        registerTool: definition => {
+          seen.push(definition);
+          return guard.registerTool(definition);
+        },
+      },
+      identity,
+      transport: clientTransport,
+      tools: [{ name: 'ticket', resolve: () => ({ resourceId: 'ticket', tenantId: 'acme' }), ...binding }],
+      ...options,
+    });
+    await connection.close();
+    await server.close();
+    return seen[0].readsUntrusted;
+  };
+  assert.equal(await labels({}), undefined, 'an omitted label stays unknown');
+  assert.equal(await labels({}, { readsUntrusted: true }), true, 'the connection default applies');
+  assert.equal(await labels({ readsUntrusted: false }), false, 'an explicit false is declared, not dropped');
+  assert.equal(
+    await labels({ readsUntrusted: false }, { readsUntrusted: true }),
+    false,
+    "the binding's own label wins",
+  );
+  assert.equal(await labels({ readsUntrusted: true }), true);
+});

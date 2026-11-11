@@ -1,6 +1,6 @@
 # Contributing
 
-Use Node.js 22 or newer and npm. Run `npm ci --ignore-scripts`, make a focused change,
+Use Node.js 22.13 or newer and npm (the executor and Agent Map need `node:sqlite`). Run `npm ci --ignore-scripts`, make a focused change,
 then run `npm run check`. This builds all packages, tests authorization and accounting
 behavior, and installs tarballs into a clean consumer. The consumer compiles the public
 declarations and README TypeScript examples, executes an MCP call through the packed

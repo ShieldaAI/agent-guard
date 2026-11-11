@@ -2020,21 +2020,20 @@ export class MapService {
     } else if (operation === 'list_owners' || operation === 'list_resources') {
       const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
       const ownerIndex = operation === 'list_owners';
-      const reach = ownerIndex ? null : boundedReach(work.remaining(), this.#maxBytes);
+      // Where each resource row came from, so reach can be judged after paging.
+      const origins = new Map<JsonObject, { projection: MapProjection; node: MapNode }>();
       const rows = ordered(
         view.sources
           .flatMap(source => {
             work.step(source.current.nodes.length);
             return source.current.nodes
               .filter(node => node.label === (ownerIndex ? 'GuardOwner' : 'GuardResourceBinding'))
-              .map(node =>
-                ownerIndex
-                  ? ownerSummary(source, source.current, node, work)
-                  : {
-                      ...resourceSummary(source, source.current, node, work),
-                      outsideGuard: reach!(source.current, node, scope).status,
-                    },
-              );
+              .map(node => {
+                if (ownerIndex) return ownerSummary(source, source.current, node, work);
+                const summary = resourceSummary(source, source.current, node, work);
+                origins.set(summary, { projection: source.current, node });
+                return summary;
+              });
           })
           .filter(
             item =>
@@ -2048,8 +2047,17 @@ export class MapService {
           ),
       );
       const { items, ...pagination } = page(rows, args);
+      // Reach is judged for the returned page only: its budget is never spent on rows the
+      // caller does not see, and a filter or a later page costs no more than its own rows.
+      const reach = ownerIndex ? null : boundedReach(work.remaining(), this.#maxBytes);
+      const listed = ownerIndex
+        ? items!
+        : (items as JsonObject[]).map(item => {
+            const origin = origins.get(item)!;
+            return { ...item, outsideGuard: reach!(origin.projection, origin.node, scope).status };
+          });
       data = {
-        [ownerIndex ? 'owners' : 'resources']: items!,
+        [ownerIndex ? 'owners' : 'resources']: listed,
         ...pagination,
         ...(!ownerIndex
           ? {

@@ -702,6 +702,8 @@ export class TaskFamilyLifecycle {
       activeTaskIds(): ReadonlySet<string>;
       quarantine(state: Ledger, tenantId: string, memoryIds: Set<string>): void;
       retired(taskIds: readonly string[]): void;
+      /** After an archive commits: the token hashes of the tasks it removed from the ledger. */
+      archived?(tokenHashes: readonly string[]): void;
       /** Records a recent event; defaults to the standard per-tenant rings. */
       event?(state: Ledger, time: number, event: string, scope: { taskId?: string; tenantId?: string }): void;
     },
@@ -777,7 +779,8 @@ export class TaskFamilyLifecycle {
   }
   archive(scope: TaskFamilyDecision): TaskFamilyArchiveReceipt {
     const selected = input(scope, ['tenantId', 'taskId', 'expectedDigest']);
-    return this.store.transaction((state, archiveStore) => {
+    let tokenHashes: string[] = [];
+    const receipt = this.store.transaction((state, archiveStore) => {
       const current = this.#decision(state, selected);
       if (current.archiveBlockers.length) fail(current.archiveBlockers[0]!);
       const retained = lifecycle(state, true)!,
@@ -787,6 +790,7 @@ export class TaskFamilyLifecycle {
         Object.fromEntries(Object.entries(entries).filter(([id]) => ids.has(id)));
       const tasks = select(state.tasks, current.taskIds),
         actions = select(state.actions, current.actionIds);
+      tokenHashes = Object.values(tasks).map(task => task.tokenHash);
       const approvals = Object.fromEntries(
         Object.entries(state.approvals).filter(([, value]) => current.actionIds.has(value.actionId)),
       );
@@ -871,6 +875,9 @@ export class TaskFamilyLifecycle {
         key.fill(0);
       }
     });
+    // The tasks are gone from the ledger; their tokens can never authenticate again.
+    this.callbacks.archived?.(tokenHashes);
+    return receipt;
   }
   #receipt(archiveId: string, tenantId: string, familyId: string, entry: ArchiveEntry): TaskFamilyArchiveReceipt {
     return snapshot({

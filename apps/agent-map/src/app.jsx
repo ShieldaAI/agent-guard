@@ -228,24 +228,23 @@ function Health({ sources }) {
 
 function App() {
   const [session, setSession] = useState(null), [credential, setCredential] = useState(''), [connecting, setConnecting] = useState(false);
-  const [tab, setTab] = useState('inventory'), [agents, setAgents] = useState([]), [sources, setSources] = useState([]), [truncated, setTruncated] = useState(false);
+  const [tab, setTab] = useState('inventory'), [agents, setAgents] = useState([]), [sources, setSources] = useState([]);
   const [listingRevision, setListingRevision] = useState(0), [search, setSearch] = useState(''), [owner, setOwner] = useState(''), [environment, setEnvironment] = useState(''), [options, setOptions] = useState({ owners: [], environments: [] });
   const [listingState, setListingState] = useState('ready'), [flagFilter, setFlagFilter] = useState('');
   const [listingPage, setListingPage] = useState({ offset: 0, limit: 20, total: 0 }), [offset, setOffset] = useState(0);
   const [ownership, setOwnership] = useState(''), [lifecycle, setLifecycle] = useState(''), [sourceFilter, setSourceFilter] = useState(''), [resourceOwner, setResourceOwner] = useState(null), [resourceSelection, setResourceSelection] = useState(null);
-  const [selection, setSelection] = useState(null), [access, setAccess] = useState(null), [node, setNode] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
+  const [selection, setSelection] = useState(null), [access, setAccess] = useState(null), [busy, setBusy] = useState(false), [error, setError] = useState('');
   const [authentication, setAuthentication] = useState({ mode: 'pending' });
   const generation = useRef(0), authenticationGeneration = useRef(0), listingFilters = useRef('');
   const pendingConnection = useRef(null), activeSession = useRef(null), authenticationRequest = useRef(null), agentRequest = useRef(null);
   const auth = useRef(authentication), logoutToken = useRef(null);
   auth.current = authentication;
   const query = useCallback((operation, args, options) => session.query(operation, args, options), [session]);
-  const selectNode = useCallback(value => setNode(value), []);
   const clearWorkspace = useCallback(() => {
     activeSession.current?.close(); activeSession.current = null;
     pendingConnection.current?.close(); pendingConnection.current = null; generation.current++;
-    setSession(null); setCredential(''); setAgents([]); setSources([]); setAccess(null); setSelection(null); setNode(null);
-    setSearch(''); setOwner(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setFlagFilter(''); setSourceFilter(''); setResourceOwner(null); setResourceSelection(null); setOffset(0); setListingPage({ offset: 0, limit: 20, total: 0 }); setOptions({ owners: [], environments: [] }); setTruncated(false);
+    setSession(null); setCredential(''); setAgents([]); setSources([]); setAccess(null); setSelection(null);
+    setSearch(''); setOwner(''); setEnvironment(''); setOwnership(''); setLifecycle(''); setFlagFilter(''); setSourceFilter(''); setResourceOwner(null); setResourceSelection(null); setOffset(0); setListingPage({ offset: 0, limit: 20, total: 0 }); setOptions({ owners: [], environments: [] });
     setListingState('ready');
     setBusy(false); setConnecting(false); setTab('inventory');
   }, []);
@@ -264,7 +263,7 @@ function App() {
     try {
       const [listing, health] = await Promise.all([next.query('list_agents', { limit: 20, offset: 0, ...flagFilterArgs('') }), next.query('get_inventory_health', {})]);
       if (pendingConnection.current !== next) return;
-      setListingPage(listing.data); setAgents(listing.data.agents ?? []); setOptions(agentOptions(listing.data.agents ?? [])); setTruncated(Boolean(listing.data.truncated));
+      setListingPage(listing.data); setAgents(listing.data.agents ?? []); setOptions(agentOptions(listing.data.agents ?? []));
       setSources(health.data.sources ?? []); setCredential(''); activeSession.current = next; setSession(next);
     } catch (error) { next.close(); if (pendingConnection.current === next) reportError(error); }
     finally { if (pendingConnection.current === next) { pendingConnection.current = null; setConnecting(false); } }
@@ -356,12 +355,12 @@ function App() {
     if (!session) return;
     let active = true; const controller = new AbortController();
     const filters = JSON.stringify([search, owner, environment, ownership, lifecycle, flagFilter, sourceFilter, offset]);
-    if (listingFilters.current !== filters) { agentRequest.current?.abort(); listingFilters.current = filters; generation.current++; setAccess(null); setSelection(null); setNode(null); setBusy(false); }
+    if (listingFilters.current !== filters) { agentRequest.current?.abort(); listingFilters.current = filters; generation.current++; setAccess(null); setSelection(null); setBusy(false); }
     setListingState('loading');
     const timer = setTimeout(() => {
       query('list_agents', { ...(search ? { search } : {}), ...(owner ? { ownerId: owner } : {}), ...(environment ? { environment } : {}), ...(sourceFilter ? { sourceId: sourceFilter } : {}), ...(ownership ? { ownershipStatus: ownership } : {}), ...(lifecycle ? { lifecycleState: lifecycle } : {}), ...flagFilterArgs(flagFilter), offset, limit: 20 }, { signal: controller.signal })
         .then(result => { if (active) {
-          setListingPage(result.data); setAgents(result.data.agents ?? []); setTruncated(Boolean(result.data.truncated)); setListingState('ready');
+          setListingPage(result.data); setAgents(result.data.agents ?? []); setListingState('ready');
           if (!search && !owner && !environment) setOptions(agentOptions(result.data.agents ?? []));
         } })
         .catch(error => { if (active) { setListingState('error'); setAccess(null); setSelection(null); generation.current++; reportError(error); } });
@@ -372,9 +371,9 @@ function App() {
     agentRequest.current?.abort(); const controller = new AbortController(); agentRequest.current = controller;
     const request = ++generation.current;
     if (navigate) setTab('inventory');
-    setSelection(agent); setAccess(null); setNode(null); setBusy(true); setError('');
+    setSelection(agent); setAccess(null); setBusy(true); setError('');
     try { const result = await query('get_agent_inventory', { sourceId: agent.sourceId, agentId: agent.id ?? agent.agentId, section: 'overview' }, { signal: controller.signal });
-      if (request === generation.current) { setAccess(result); setNode(result.graph?.nodes.find(item => item.label === 'GuardAgent') ?? null); }
+      if (request === generation.current) setAccess(result);
     } catch (error) { if (request === generation.current) reportError(error); } finally { if (request === generation.current) setBusy(false); }
   }
   async function refresh() {

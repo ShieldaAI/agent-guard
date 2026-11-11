@@ -62,6 +62,11 @@ const messages = {
     'History exceeds this recovery profile. Stop maintenance changes and ask the deployment owner for a reviewed compatible recovery or migration plan. Preserve all records, history, witnesses and keys.',
   RATE_LIMITED: 'Too many requests. Wait a minute and try again.',
   INVALID_INPUT: 'Check the requested values.',
+  INVALID_STATUS: 'That status is not available for this ticket.',
+  SELF_APPROVAL_FORBIDDEN: 'You created this request, so another reviewer must decide it.',
+  PENDING_LIMIT_REACHED: 'Too many requests are waiting for review. Decide or let some expire, then try again.',
+  RECONCILIATION_UNAVAILABLE: 'This request cannot be reconciled in its current state. Refresh it.',
+  PREVIEW_CAPACITY_REACHED: 'Too many archive previews are open. Wait for some to expire, then preview again.',
 };
 function enroll(values) {
   if (!Array.isArray(values) || !values.length || values.length > 100) fail('IDENTITY_CONFIG_INVALID');

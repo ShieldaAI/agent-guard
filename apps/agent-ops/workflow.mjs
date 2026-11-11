@@ -413,7 +413,8 @@ export class TicketWorkflow {
     let request = this.request(id, operator.tenantId);
     if (this.busy.has(id) || request.state !== 'pending' || request.digest !== input.digest) fail('REVIEW_STALE', 409);
     if (approve && this.requestPolicy.forbidSelfApproval && request.requesterId === operator.id)
-      fail('SELF_APPROVAL_FORBIDDEN', 403);
+      // 409, not 403: the reviewer keeps their role; only this request needs someone else.
+      fail('SELF_APPROVAL_FORBIDDEN', 409);
     if (request.expiresAt <= this.clock()) {
       this.write(data => {
         data.requests[id].state = 'expired';

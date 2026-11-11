@@ -141,6 +141,8 @@ jobs:
           node scripts/check-constrained-observer.mjs "${runner_args[@]}"
       - name: Summarize the timing signal
         if: always()
+        # A summary never fails the job, including on a commit older than the script.
+        continue-on-error: true
         run: node scripts/summarize-admission.mjs artifacts/constrained-observer/admission.json "Constrained observer (one CPU, 250 ms polling)" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain bounded reports, including failed qualification
         if: always()

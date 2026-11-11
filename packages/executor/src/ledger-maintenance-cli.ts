@@ -127,7 +127,14 @@ function main(args: string[]): void {
       );
     } else throw new ExecutorError('MAINTENANCE_ARGUMENT_INVALID');
   } catch (error) {
-    process.stderr.write((error instanceof ExecutorError ? error.code : 'MAINTENANCE_FAILED') + '\n');
+    // An unknown or malformed flag is an argument error, like a missing or repeated one.
+    const parse =
+      typeof (error as { code?: unknown })?.code === 'string' &&
+      (error as { code: string }).code.startsWith('ERR_PARSE_ARGS_');
+    process.stderr.write(
+      (error instanceof ExecutorError ? error.code : parse ? 'MAINTENANCE_ARGUMENT_INVALID' : 'MAINTENANCE_FAILED') +
+        '\n',
+    );
     process.exitCode = 1;
   }
 }

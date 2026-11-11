@@ -205,17 +205,10 @@ async function responseJson(response) {
 
 const errors = {
   REVIEW_EXPIRED: 'This review expired. Prepare a new request from the current ticket.',
-  REQUEST_EXPIRED: 'This review expired. Prepare a new request from the current ticket.',
-  RESOURCE_CHANGED: 'The ticket changed after preparation. Refresh and prepare a new review.',
-  REQUEST_CHANGED: 'The ticket changed after preparation. Refresh and prepare a new review.',
   TICKET_CHANGED: 'The ticket changed after preparation. Refresh and prepare a new review.',
   REVIEW_STALE: 'This review changed or was already used. Refresh the request before continuing.',
   NO_CHANGE: 'The ticket already has this status. Choose a different status to prepare a change.',
-  RECEIPT_UNAVAILABLE: 'A backend receipt is still unavailable. Keep this request unresolved and contact its operator.',
   RECEIPT_NOT_FOUND: 'A backend receipt is still unavailable. Keep this request unresolved and contact its operator.',
-  OUTCOME_UNCONFIRMED: 'The outcome is unconfirmed. Check the existing backend receipt before making another change.',
-  ARCHIVE_BLOCKED: 'This task has records that must be retained. Review the preview blockers.',
-  PREVIEW_EXPIRED: 'The archive preview expired. Generate a new preview before applying it.',
   ARCHIVE_PREVIEW_STALE:
     'The archive preview expired or its records changed. Generate a new preview before applying it.',
   ARCHIVE_UNAVAILABLE: 'This task is currently unavailable for archival. Refresh maintenance to check its state.',
@@ -228,6 +221,11 @@ const errors = {
   HISTORY_MIGRATION_REQUIRED:
     'History exceeds this recovery profile. Stop maintenance changes and ask the deployment owner for a reviewed compatible recovery or migration plan. Preserve all records, history, witnesses and keys.',
   RATE_LIMITED: 'Too many requests. Wait briefly, then refresh current state.',
+  INVALID_STATUS: 'That status is not available for this ticket.',
+  SELF_APPROVAL_FORBIDDEN: 'You created this request, so another reviewer must decide it.',
+  PENDING_LIMIT_REACHED: 'Too many requests are waiting for review. Decide or let some expire, then try again.',
+  RECONCILIATION_UNAVAILABLE: 'This request cannot be reconciled in its current state. Refresh it.',
+  PREVIEW_CAPACITY_REACHED: 'Too many archive previews are open. Wait for some to expire, then preview again.',
 };
 
 async function api(path, { method = 'GET', body, csrfToken = state.session?.csrfToken } = {}) {
@@ -1756,7 +1754,7 @@ function setupView() {
       node(
         'div',
         { class: 'panel-body' },
-        notice(recoveryLabel, mirrored ? 'info' : 'warning'),
+        notice(recoveryLabel, mirrored ? '' : 'warning'),
         node(
           'p',
           { class: 'review-note' },

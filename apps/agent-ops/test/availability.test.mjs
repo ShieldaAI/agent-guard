@@ -109,7 +109,7 @@ test('review expiry is configurable and self-approval can be forbidden', async t
   assert.equal(request.expiresAt - request.createdAt, 60 * 60_000);
   await assert.rejects(fixture.workflow.decide(owner, request.id, { digest: request.digest }, true), {
     code: 'SELF_APPROVAL_FORBIDDEN',
-    status: 403,
+    status: 409,
   });
   const done = await fixture.workflow.decide(
     { ...owner, id: 'reviewer-alice' },

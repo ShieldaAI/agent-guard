@@ -321,6 +321,10 @@ export class DurableExecutor {
       retired: ids => {
         for (const taskId of ids) this.#policyAdmission.revokeTask(taskId);
       },
+      // Without this the token index would keep one entry per archived task for the life of the process.
+      archived: tokenHashes => {
+        for (const tokenHash of tokenHashes) this.#tokenIndex.delete(tokenHash);
+      },
     });
   }
 

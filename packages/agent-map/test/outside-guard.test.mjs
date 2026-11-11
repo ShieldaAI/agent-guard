@@ -438,3 +438,16 @@ test('a task on two deployments needs an execution binding for its tools on both
   assert.equal(one.status, 'unknown');
   assert.deepEqual(plain(one.unknownReasons), ['execution_identity_undeclared']);
 });
+
+test('list_resources judges reach for the returned page, in the same order and shape', async () => {
+  const source = build({ reach: [record('matches_grants')] });
+  const all = (await map(source).query(scope, 'list_resources', {})).data;
+  const first = (await map(source).query(scope, 'list_resources', { limit: 1 })).data;
+  const second = (await map(source).query(scope, 'list_resources', { limit: 1, offset: 1 })).data;
+  assert.equal(all.resources.length, 2);
+  assert.deepEqual(plain([...first.resources, ...second.resources]), plain(all.resources));
+  assert.deepEqual([first.total, first.truncated, second.truncated], [2, true, false]);
+  for (const item of all.resources) assert.ok(['yes', 'none_found', 'unknown'].includes(item.outsideGuard));
+  const filtered = (await map(source).query(scope, 'list_resources', { search: 'reports' })).data;
+  assert.deepEqual(plain(filtered.resources), plain(all.resources.filter(item => item.bindingId === 'reports')));
+});

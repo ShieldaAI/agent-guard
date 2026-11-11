@@ -84,6 +84,7 @@ jobs:
           node scripts/benchmark-admission.mjs --profile "$BENCHMARK_PROFILE" ${{ inputs.admission_diagnostics && '--diagnostics' || '' }} ${{ inputs.admission_cpu_profile && '--cpu-profile' || '' }} "${scheduling_args[@]}" --output "$RUNNER_TEMP/agent-guard-pilot-admission.json"
       - name: Summarize the timing signal
         if: always() && github.event_name != 'pull_request'
+        continue-on-error: true
         run: node scripts/summarize-admission.mjs "$RUNNER_TEMP/agent-guard-pilot-admission.json" "Admission during inventory polling ($BENCHMARK_PROFILE)" >> "$GITHUB_STEP_SUMMARY"
       - name: Retain safe verification reports
         if: always()

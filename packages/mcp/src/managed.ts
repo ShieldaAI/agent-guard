@@ -598,7 +598,13 @@ export class ManagedMcpConnection {
       ...(binding.requiresApproval === undefined ? {} : { requiresApproval: binding.requiresApproval }),
       ...(binding.controlPlane === undefined ? {} : { controlPlane: binding.controlPlane }),
       ...(binding.maxCost === undefined ? {} : { maxCost: binding.maxCost }),
-      ...((binding.readsUntrusted ?? this.#readsUntrusted) ? { readsUntrusted: true } : {}),
+      // A binding's explicit `false` is kept: the inventory reads only a declared `false` as
+      // "does not read outside content"; an omitted label stays unknown.
+      ...(binding.readsUntrusted !== undefined
+        ? { readsUntrusted: binding.readsUntrusted }
+        : this.#readsUntrusted
+          ? { readsUntrusted: true }
+          : {}),
       ...(binding.untrustedContext === undefined ? {} : { untrustedContext: binding.untrustedContext }),
       ...(binding.sendsExternal === undefined ? {} : { sendsExternal: binding.sendsExternal }),
       resolve: (args, task) => {

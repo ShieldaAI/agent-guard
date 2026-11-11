@@ -13,7 +13,7 @@
     "apps/agent-map"
   ],
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -25,7 +25,6 @@
     "demo": "npm run build && node examples/basic.mjs",
     "pack": "npm run build && node scripts/pack.mjs",
     "verify:mcp-isolation": "npm run build && node scripts/verify-mcp-isolation.mjs",
-    "agent-ops": "node apps/agent-ops/cli.mjs",
     "format": "prettier --write \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\"",
     "format:check": "prettier --check \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\""
   },
