@@ -5,6 +5,45 @@ declared permissions, resources, deployments, MCP connections and permission-rel
 changes. Each company operates its own collector, graph and identity provider.
 No hosted maintainer account or customer data submission is required.
 
+## How agents get onto the map
+
+**An agent appears on the map only when a person lists it in the host manifest.** Nothing
+discovers agents automatically. Everything else the collector reads is evidence attached
+to agents that a manifest already declared.
+
+| Way to find an agent | Status | What it gives you |
+| --- | --- | --- |
+| Declare it in the host manifest | **Supported. The only way an agent is created.** | The agent, its owner and team, deployments, resource and execution bindings, credential references and (manifest v3) paths that act without the guard. You can declare an agent that has never run a task. |
+| Runtime observation through the executor | Evidence only | Tasks, grants, tools and caller principals of each enrolled executor. A task is linked to an agent only if the manifest's `taskBindings` names it. |
+| MCP inventory | Evidence only | Connections and operations for execution bindings the manifest declared. It does not list other MCP servers or tools. |
+| AWS collection | Evidence only | IAM roles, IAM users and S3 buckets of one enrolled account, joined to the ARNs your manifest names, plus optional S3 policy candidates. |
+| Snapshot file import | Supported for a sandbox | `agent-guard-cartography --snapshot FILE --expected-source FILE --neo4j-uri URI` (with `NEO4J_PASSWORD` set) imports one prepared snapshot, including the agents its manifest declares. |
+| Scanning infrastructure for agents (Bedrock, SageMaker, Lambda, containers, Kubernetes, other clouds) | Not available | |
+| Scanning code or repositories (agent frameworks, MCP configuration files) | Not available | |
+| Scanning the network or running processes | Not available | |
+| Listing identity-provider or SaaS apps (OAuth apps, service accounts) | Not available | |
+| Importing from a CSV, CMDB or service catalog | Not available | |
+
+What this means in practice:
+
+- **The map is as complete as your manifest.** It is an inventory of declared agents, not
+  a discovery tool. It has no figure for how much of your fleet it covers.
+- **An undeclared agent is not listed as an agent**, even if it runs tasks through the
+  guard. Its tasks, grants and principal are in the graph, but `list_agents`,
+  `list_resources` and the per-agent views do not show them. An all-teams reader can still
+  see such a task as a changed entity in `get_changes`, or query it by ID with
+  `explain_access`.
+- **A declared agent stays listed** until someone edits the manifest, whether or not it
+  still runs.
+- **Declaring is manual and needs host code.** Outside the sandbox snapshot import, there
+  is no command, configuration file or viewer form for it: your trusted host builds the manifest and passes it to
+  `startInventoryServer({ manifests })`, and a change means restarting that host.
+- **Each executor is enrolled by hand**, up to 128 sources per collector.
+
+To keep the map accurate, generate the manifest from the system that deploys your agents,
+review it whenever an agent is added or retired, and compare it now and then with a list
+you trust, such as your IAM roles or your deployment inventory.
+
 ## Connect your catalog
 
 1. Deploy the current collector and Map service using the existing

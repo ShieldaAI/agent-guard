@@ -11,6 +11,13 @@ Install with `npm install @shieldaai/agent-guard`. For MCP integration,
 persistent execution or model response validation, see the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): tool misuse (ASI02),
+identity and privilege abuse (ASI03), tool metadata changes (ASI04), inter-agent authority
+(ASI07), runaway work (ASI08), approval substitution (ASI09) and revocation of rogue tasks
+(ASI10). For goal hijack (ASI01) it limits the effect with opt-in outside-content labels;
+it does not detect prompt injection. It is not a sandbox (ASI05) and has no memory store
+(ASI06): the executor package covers those.
+
 Every `GuardError.code` is documented in the [error catalog](https://github.com/ShieldaAI/agent-guard/blob/main/docs/errors.md)
 and in the exported `GuardErrorCatalog` (meaning, whether a retry is safe, typical cause).
 When core flattens an adapter error into `RESOLUTION_FAILED`, `ARGUMENT_INVALID` or

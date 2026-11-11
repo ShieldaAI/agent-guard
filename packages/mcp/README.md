@@ -11,6 +11,14 @@ Install with `npm install @shieldaai/agent-guard-mcp`. The host supplies
 identity, resource resolution and transport policy. For the core API and related
 packages, see the [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md).
 
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): supply-chain change in
+MCP servers (ASI04), through reviewed tool metadata, quarantine on drift and bounded
+schemas; identity and privilege abuse (ASI03), through verified credentials and refused
+redirects; and, by routing every call through the core guard, the
+core's tool-misuse, approval and budget checks (ASI02, ASI08, ASI09). A connection or
+binding can be marked `readsUntrusted` to limit what a hijacked agent can do next (ASI01).
+It does not sandbox the server or stop a client from using another connection.
+
 ## Managed connections
 
 `ManagedMcpConnection` owns an official MCP SDK client and a single transport lifetime. It binds the registry to a trusted server/transport identity, principal, tenant, random session ID and monotonically increasing revision. The underlying client is not exposed. Every operation still requires a guard task grant and explicit fingerprint approval.

@@ -25,6 +25,9 @@ certify an unknown installation.
 `0.1.0` does not promise a 1.x API contract, long-term support or production
 certification.
 
+[Risks and how Agent Guard handles them](risks.md) maps these protections to the OWASP
+Top 10 for Agentic Applications and names the package for each.
+
 ## Maturity by package
 
 | Package or component | Maturity | Notes |
@@ -101,7 +104,8 @@ builders are pinned. Drift is quarantined until reviewed; approving metadata doe
 not authorize an action. A verified MCP session closes before decoded strings
 containing the enrolled raw token reach SDK consumers.
 
-**Agent Map.** It is read-only evidence for the viewer's authorized scope. It
+**Agent Map.** It is read-only evidence for the viewer's authorized scope, and it lists
+only agents a person declared in a host manifest. It
 never grants permission, and an observation is never presented as an effective
 grant or a confirmed effect. Authentication loss clears protected data.
 

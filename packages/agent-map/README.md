@@ -19,6 +19,13 @@ It supplies the same evidence to HTTP, MCP clients and the
 executes an action. Declared grants and cloud associations are not effective
 permission decisions.
 
+The map lists only agents that a person declared in a host manifest. It does not discover
+agents by scanning infrastructure, code, networks or identity providers. See
+[how agents get onto the map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/agent-cartography.md#how-agents-get-onto-the-map)
+and the [risk map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)
+(it supports ASI10, rogue agents, as an inventory, and flags agents that combine private
+data, outside content and external sends).
+
 Install the service with `npm install @shieldaai/agent-map`. It includes the
 `agent-guard-map` and `agent-guard-map-identity` commands. Viewer assets and the
 Python collector are separate repository components and are not bundled in this

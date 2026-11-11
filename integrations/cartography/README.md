@@ -177,7 +177,10 @@ The graph adds `GuardAgent`, `GuardDeployment`, `GuardResourceBinding`,
 `GuardExecutionBinding`, `GuardExternalResource` and `GuardExternalIdentity` inside
 the same immutable projection. Every new node carries `evidence_kind='host_asserted'`,
 `assessment='unknown'` and manifest provenance. Task-to-deployment associations are
-optional; unassigned tasks remain visible. Resource mappings include the local
+optional. Unassigned tasks stay in the graph but are not listed under any agent (an
+all-teams reader can see them in `get_changes` or query them by ID), and an agent exists
+only if the manifest declares it (see
+[how agents get onto the map](../../docs/guides/agent-cartography.md#how-agents-get-onto-the-map)). Resource mappings include the local
 tool and exported selector plus the exact target account/partition/ARN, kind,
 scope and explicit actions. Wildcard grants never fan out to mapped cloud resources.
 

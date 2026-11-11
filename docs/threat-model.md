@@ -4,6 +4,9 @@ Agent Guard is an authorization layer for tools called by an agent. The `@shield
 
 The security claim is deliberately narrow: given a trusted host, correct tool definitions and trusted task context, the executor applies the configured grants and checks to calls made through it. The [scenario specification](scenarios.md) describes the intended acceptance cases and their limits. Neither the word “firewall” nor a passing test corpus means that all prompt injection or privilege escalation is prevented.
 
+For the same material arranged by the OWASP Top 10 for Agentic Applications, with the
+package that handles each risk, see [Risks and how Agent Guard handles them](risks.md).
+
 ## Protected boundary
 
 ```text

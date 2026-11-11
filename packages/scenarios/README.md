@@ -7,6 +7,12 @@ record the verified scope, known limits and post-release follow-ups.
 
 Test AI agent tool authorization with paired malicious and benign conformance fixtures for the Agent Guard public API. Node.js 22+, ESM.
 
+**Risks tested** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): the thirteen scenarios
+exercise goal hijack limits (ASI01: S13), tool misuse (ASI02: S01, S03, S04, S07, S10,
+S11), identity and delegation (ASI03, ASI07: S02, S09), tool metadata changes (ASI04:
+S06), bounded work (ASI08: S10), exact approval (ASI09: S05, S12) and revocation (ASI10:
+S08). They test your integration's behaviour; they do not certify a deployment.
+
 Install with `npm install @shieldaai/agent-guard-scenarios`. The synthetic
 fixtures need no provider key or external service. See the
 [package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)

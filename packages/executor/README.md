@@ -49,6 +49,16 @@ await server.close();
 executor.close();
 ```
 
+**Risks addressed** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): what the core covers,
+with budgets, revocation, labels and approval replay protection kept across restarts and
+processes (ASI02, ASI03, ASI07, ASI08, ASI09, ASI10; a restart invalidates pending
+prepared actions and tool approvals);
+unexpected code execution (ASI05), through the optional Docker isolation profile in
+`/sandbox`; memory and context poisoning (ASI06), through governed memory with provenance,
+versions, quarantine and rollback; and supply chain (ASI04), through pinned build
+artifacts. It is a single-owner service: no distributed quotas, revocation or high
+availability.
+
 ## Import paths
 
 | Path | Contents |

@@ -104,10 +104,12 @@ without participating in execution. It provides team-scoped evidence, access
 explanations, snapshot changes and freshness through the same HTTP/MCP contract.
 The [company cartography guide](docs/guides/agent-cartography.md) connects
 company-owned agents, owners, deployments, permissions, resources, credential
-references and relationships. Paged indexes and structured details distinguish
+references and relationships. The map lists only agents a person declared in a host
+manifest; it does not discover agents on its own
+([how agents get onto the map](docs/guides/agent-cartography.md#how-agents-get-onto-the-map)). Paged indexes and structured details distinguish
 declared access, host assertions, policy candidates and missing evidence.
-See the [Cartography plan](docs/archive/cartography-integration-plan.md) for milestone
-status and the [viewer](apps/agent-map/README.md) for local preview instructions.
+See the [viewer](apps/agent-map/README.md) for local preview instructions; the archived
+[Cartography plan](docs/archive/cartography-integration-plan.md) is the historical design record.
 The [pilot runbook](deployment/cartography/RUNBOOK.md) adds a real synthetic
 observer-to-viewer deployment, private backups, fresh-graph recovery, operational
 difference reports and reproducible performance/rollback checks.
@@ -246,13 +248,36 @@ const result = await guard.execute(prepared, { approvalId });
 
 The model receives a dispatcher that selects the host-owned task, not the guard instance, task-creation APIs or approval APIs. An `approverId` string records a host-authenticated identity; it does not authenticate the person by itself. Resolve tenants and resources from trusted service data. Tool schemas are fingerprinted but are not automatically validated as JSON Schema: use a trusted `parse` function to validate/normalize arguments before resolution. Bind mutable resources with `resourceVersion` and compare the version again at the actual effect.
 
+## Risks and which package handles them
+
+Mapped to the [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
+[Risks and how Agent Guard handles them](docs/risks.md) gives the detail and what stays
+with you for each row.
+
+| OWASP risk | What Agent Guard does | Package |
+| --- | --- | --- |
+| ASI01 Agent Goal Hijack | Limits the effect: a task can only use what the host granted it. With the opt-in outside-content labels, tools you set to `require_approval` or `deny` need a fresh review or are refused after the task reads outside content. Does not detect injection. | core, executor, mcp |
+| ASI02 Tool Misuse and Exploitation | Default-deny grants per tool and resource, tenant and recipient checks, exact-action approval, budgets, no external send after sensitive data. | core, executor |
+| ASI03 Identity and Privilege Abuse | Host-issued task handles, delegation that can only narrow, revocation down the tree, per-task tokens. | core, executor, mcp |
+| ASI04 Agentic Supply Chain Vulnerabilities | Tool metadata must be approved and is refused when it changes; bounded MCP schemas; pinned build artifacts. | core, mcp, executor |
+| ASI05 Unexpected Code Execution (RCE) | Optional Docker profile with no network, no host credentials and reviewed exports. The guard itself is not a sandbox. | executor |
+| ASI06 Memory and Context Poisoning | Governed memory with provenance, versions, quarantine and rollback; sensitivity that never resets. | executor, core |
+| ASI07 Insecure Inter-Agent Communication | Agent messages carry no authority; only host-created delegation (which narrows) and handoff (which keeps tenant, labels and revocation) do. | core, executor |
+| ASI08 Cascading Failures | Calls, concurrency and cost reserved before dispatch, with deadlines; an unknown outcome is held for reconciliation (executor) and never retried blindly. | core, executor |
+| ASI09 Human-Agent Trust Exploitation | An approval binds one exact action, once, until it expires. | core, executor |
+| ASI10 Rogue Agents | Revocation, budgets and deadlines; a read-only inventory of declared agents. Does not discover unknown agents. | core, executor, map |
+
+Every row applies only to calls routed through the guard. The
+[scenario package](packages/scenarios) tests the core behaviours (ASI01 to ASI04 and
+ASI07 to ASI10) against your own integration; it has no cases for the sandbox, governed
+memory or the map.
+
 ## Protections and boundaries
 
 The source-hosted [Agent Ops ticket workflow](apps/agent-ops/README.md) adds an OIDC
 operator interface, persistent conditional ticket updates, receipt-based recovery,
 safe task archival and offline key rotation. Its [Linux deployment runbook](deployment/production/README.md)
-defines the single-owner Docker Compose profile. The [production plan](docs/archive/production-plan.md)
-tracks the broader agent and permissions inventory for Agent Map/Cartography.
+defines the single-owner Docker Compose profile.
 The [self-hosted onboarding review](docs/archive/self-hosted-onboarding-review.md) covers
 company identity/data enrollment, reviewed imports and safely configurable capacity.
 

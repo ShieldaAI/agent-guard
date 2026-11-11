@@ -11,6 +11,21 @@ Approved on 9 November 2026 with three recorded scope decisions:
 See the [release notes](docs/releases/0.1.0.md). No stable npm version or GitHub
 release is claimed by this entry.
 
+- Docs: [risks mapped to the OWASP Top 10 for Agentic Applications](docs/risks.md), with
+  the package that handles each, and a plain statement of
+  [how agents get onto the map](docs/guides/agent-cartography.md#how-agents-get-onto-the-map):
+  only by being declared in a host manifest.
+- Fix (mcp): a tool schema `pattern` using a regex modifier group such as `(?i:a)` could
+  hang the host or skip the backtracking check; those forms are refused.
+- Fix (mcp): a binding's explicit `readsUntrusted: false` is passed to the registration
+  instead of being dropped. The tool fingerprint changes for bindings that set it.
+- Fix (core): a clock failure after the handler ran reports `EXECUTION_ABORTED` and is
+  audited as failed, not `CLOCK_INVALID` audited as denied.
+- Fix (executor): archived task families no longer leave token hashes in memory; an
+  unknown maintenance CLI flag reports `MAINTENANCE_ARGUMENT_INVALID`.
+- Fix (agent map): `list_resources` judges outside-guard reach for the returned page only.
+- Fix (Agent Ops): refusing a self-approval answers 409 instead of 403, which signed the
+  reviewer out.
 - Report the installed package version from the MCP client (`agent-guard-mcp`) and
   the Agent Map MCP server instead of hard-coded strings.
 - Release preflight requires every `release-state.json` evidence entry to be a
