@@ -50,8 +50,53 @@ const sources = [
       cloud: capture('complete', 300, false),
       policy: capture('partial', 300, false),
     },
+    undeclaredActivity: {
+      status: 'complete',
+      tasks: 2,
+      tasksIsMinimum: false,
+      principals: 1,
+      principalsIsMinimum: false,
+      manifest: 'collected',
+    },
   },
 ];
+// Discovery demo: activity no declared agent accounts for, and IAM identities nobody declared.
+const observed = { evidenceKind: 'observed', assessment: 'unknown' };
+const undeclaredTasks = [
+  {
+    id: 'demo-undeclared-export',
+    taskId: 'nightly-export',
+    principalId: 'batch-scheduler',
+    delegated: false,
+    derived: false,
+    revoked: false,
+    parentDeclared: false,
+    tools: ['reports.read'],
+    toolsTruncated: false,
+    ...observed,
+  },
+  {
+    id: 'demo-undeclared-followup',
+    taskId: 'research-followup-unbound',
+    principalId: 'research-application',
+    delegated: true,
+    derived: false,
+    revoked: false,
+    parentDeclared: true,
+    tools: ['reports.read'],
+    toolsTruncated: false,
+    ...observed,
+  },
+];
+const undeclaredCallers = [
+  { id: 'demo-undeclared-caller', principalId: 'batch-scheduler', tasks: 1, tasksCapped: false, ...observed },
+];
+const candidate = { candidate: true, evidenceKind: 'provider_inventory', assessment: 'unknown' };
+const demoAccount = { tenantId: 'acme-research', partition: 'aws', accountId: '111122223333' };
+const unclaimedIdentities = [
+  { arn: 'arn:aws:iam::111122223333:role/service/batch-runner', kind: 'role', name: 'batch-runner', path: '/service/' },
+  { arn: 'arn:aws:iam::111122223333:user/ci-deployer', kind: 'user', name: 'ci-deployer', path: '/' },
+].map(identity => ({ ...identity, ...demoAccount, ...candidate }));
 const agents = [
   {
     id: 'agent-research',
@@ -730,6 +775,55 @@ export async function queryDemo(operation, args = {}) {
         coverageGap: false,
         policyHistory: 'not_collected',
         limitations: ['Snapshot differences show net changes, not an event history.'],
+      },
+    };
+  } else if (operation === 'list_undeclared_activity') {
+    if (args.sourceId !== sourceId) throw new Error('REFERENCE_NOT_FOUND');
+    const kind = args.kind ?? 'tasks';
+    result = {
+      data: {
+        visibility: 'all_teams',
+        kind,
+        ...paged(kind === 'tasks' ? undeclaredTasks : undeclaredCallers, args),
+        totalIsMinimum: false,
+        counts: sources[0].undeclaredActivity,
+        receipt: sources[0],
+        assessment: 'unknown',
+        limitations: ['Only activity that ran through an enrolled executor is seen.'],
+      },
+    };
+  } else if (operation === 'list_unclaimed_identities') {
+    const { items, ...page } = paged(unclaimedIdentities, args);
+    result = {
+      data: {
+        visibility: 'all_teams',
+        status: 'complete',
+        reason: null,
+        identities: items,
+        ...page,
+        accounts: [
+          {
+            ...demoAccount,
+            status: 'complete',
+            reason: null,
+            observedAt: sources[0].coverage.cloud.observedAt,
+            observed: 6,
+            unclaimed: unclaimedIdentities.length,
+            stale: false,
+            ageSeconds: 300,
+          },
+        ],
+        bindingsWithoutIdentity: false,
+        declaredFrom: [
+          {
+            sourceId,
+            tenantId: 'acme-research',
+            snapshotId: sources[0].snapshotId,
+            generatedAt: sources[0].generatedAt,
+          },
+        ],
+        assessment: 'unknown',
+        limitations: ['Candidates to review, not findings.'],
       },
     };
   } else throw new Error('VIEWER_OPERATION_INVALID');

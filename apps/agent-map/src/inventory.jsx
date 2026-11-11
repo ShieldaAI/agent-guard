@@ -4,7 +4,7 @@ import { ownershipLabel, pageInfo, relationshipLabel, shownValue, sourceOptionLa
 import { PolicyEvidence } from './policy-evidence.jsx';
 import { changeIsDeclared, outsideGuardLabel, reachNotEvaluated, relationshipName, unknownReasonLabel } from './boundary-model.mjs';
 
-function Note({ children, error = false }) { return <p className={`notice ${error ? 'error' : ''}`} role={error ? 'alert' : undefined}>{children}</p>; }
+export function Note({ children, error = false }) { return <p className={`notice ${error ? 'error' : ''}`} role={error ? 'alert' : undefined}>{children}</p>; }
 const text = value => shownValue(value);
 const ref = value => <span className="full-reference">{text(value)}</span>;
 function Endpoint({ name, label, id }) { return <><strong>{name ?? kindName(label)}</strong>{label && <small className="reference-kind">{kindName(label)}</small>}<details className="reference-details"><summary>Full identifier</summary>{ref(id)}</details></>; }
@@ -15,7 +15,7 @@ export function Pager({ data, count, onPage, label = 'results', busy = false }) 
     <button type="button" disabled={busy || page.next === null} aria-label={`Next ${label} page`} onClick={() => onPage(page.next)}>Next</button>
     {page.incomplete && <span className="fine-print">Incomplete results. Narrow the filters.</span>}</div>;
 }
-function usePage(query, operation, args, reportError, enabled = true) {
+export function usePage(query, operation, args, reportError, enabled = true) {
   const key = JSON.stringify(args), [page, setPage] = useState({ key, offset: 0 }), [attempt, setAttempt] = useState(0), [result, setResult] = useState(null);
   const offset = page.key === key ? page.offset : 0;
   const requestKey = `${key}:${offset}:${attempt}`;
@@ -33,7 +33,7 @@ function usePage(query, operation, args, reportError, enabled = true) {
   return { data: current?.data, status: current?.status ?? (enabled ? 'loading' : 'idle'), message: current?.message,
     onPage: value => setPage({ key, offset: value }), retry: () => setAttempt(value => value + 1) };
 }
-function Pending({ page, label }) {
+export function Pending({ page, label }) {
   return page.status === 'error' ? <div><Note error>{page.message}</Note><button type="button" className="secondary-button" onClick={page.retry}>Retry {label}</button></div>
     : <p role="status">Loading {label}…</p>;
 }
@@ -43,7 +43,7 @@ export function DataTable({ title, rows, columns, empty = 'No visible records in
   return <><p id={hintId} className="table-scroll-hint">Scroll horizontally for more columns. Keyboard users can focus the table and use arrow keys.</p><div className="evidence-table-scroll" tabIndex="0" role="region" aria-label={`${title} table`} aria-describedby={hintId}><table className="evidence-table"><caption>{title}</caption><thead><tr>{columns.map(([name]) => <th scope="col" key={name}>{name}</th>)}</tr></thead>
     <tbody>{rows.map((item, index) => <tr key={`${item.id ?? item.entityId ?? index}:${index}`}>{columns.map(([name, read]) => <td key={name}>{read(item)}</td>)}</tr>)}</tbody></table></div></>;
 }
-function Properties({ items }) { return <dl className="inventory-properties">{items.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>; }
+export function Properties({ items }) { return <dl className="inventory-properties">{items.map(([name, value]) => <div key={name}><dt>{name}</dt><dd>{value}</dd></div>)}</dl>; }
 function Provenance({ agent, receipt }) { return <Properties items={[
   ['Host assertion authority', ref(agent.authorityId)], ['Ownership source', text(agent.ownershipSource)],
   ['Host manifest', ref(agent.manifestId)], ['Manifest revision', text(agent.manifestRevision)],

@@ -27,12 +27,83 @@ const agentName = 'Catalog assistant';
 const source = inventoryBrowserFixture();
 let activeReads = 0,
   peakReads = 0;
-const read = async () => {
+// Discovery reads load no nodes: counts, one page of undeclared activity, or IAM candidates.
+const bare = extra => ({ ...source, current: { ...source.current, nodes: [], edges: [], ...extra } });
+const strayTask = {
+  id: 'entity:stray-task',
+  taskId: 'nightly-export',
+  principalId: 'batch-scheduler',
+  delegated: false,
+  derived: false,
+  revoked: false,
+  parentDeclared: false,
+  tools: ['reports.read'],
+  toolsTruncated: false,
+};
+const strayCaller = { id: 'entity:stray-caller', principalId: 'batch-scheduler', tasks: 1, tasksCapped: false };
+const discoveryRead = request => {
+  if (request.undeclared) {
+    const page = request.page && {
+      kind: request.page.kind,
+      items: request.page.kind === 'tasks' ? [strayTask] : [strayCaller],
+    };
+    return {
+      sources: [
+        bare({
+          undeclared: {
+            tasks: 1,
+            tasksCapped: false,
+            principals: 1,
+            principalsCapped: false,
+            ...(page ? { page } : {}),
+          },
+        }),
+      ],
+    };
+  }
+  const account = { tenantId: 'fixture', partition: 'aws', accountId: '111122223333' };
+  return {
+    sources: [bare({})],
+    unclaimedIdentities: {
+      accounts: [
+        {
+          ...account,
+          status: 'complete',
+          reason: null,
+          observedAt: source.current.generatedAt,
+          observed: 3,
+          unclaimed: 1,
+        },
+        {
+          ...account,
+          accountId: '444455556666',
+          status: 'unknown',
+          reason: 'stale',
+          observedAt: null,
+          observed: null,
+          unclaimed: null,
+        },
+      ],
+      identities: [
+        {
+          ...account,
+          arn: 'arn:aws:iam::111122223333:role/service/batch-runner',
+          kind: 'role',
+          name: 'batch-runner',
+          path: '/service/',
+        },
+      ],
+      total: 1,
+      bindingsWithoutIdentity: true,
+    },
+  };
+};
+const read = async (_scope, request = {}) => {
   activeReads++;
   peakReads = Math.max(peakReads, activeReads);
   try {
     await new Promise(resolve => setTimeout(resolve, 100));
-    return { sources: [source] };
+    return request.undeclared || request.unclaimedIdentities ? discoveryRead(request) : { sources: [source] };
   } finally {
     activeReads--;
   }
@@ -129,13 +200,23 @@ try {
   await button('Compare snapshots').click();
   await page.getByText('research-followup', { exact: true }).first().waitFor();
   await scan('snapshot comparison');
+  await button('Discovery').click();
+  await heading('Agent discovery').waitFor();
+  await page.getByText('nightly-export', { exact: true }).waitFor();
+  await page.getByText('batch-runner', { exact: true }).waitFor();
+  await page.getByText('2 candidates to review').waitFor();
+  await scan('discovery');
+  await page.getByRole('combobox', { name: /^Show/ }).selectOption('principals');
+  await page.getByText('Observed caller · agent unknown').waitFor();
+  await scan('discovery callers');
   await button('Health').click();
   await button('Refresh evidence').click();
   await heading('Collection health').waitFor();
+  await page.getByText('2 tasks and 1 caller with no declared agent').waitFor();
   await scan('collection health');
   await page.setViewportSize({ width: 375, height: 812 });
   await scan('mobile health');
-  for (const tab of ['Agent inventory', 'Owners', 'Resources', 'Changes', 'Health']) {
+  for (const tab of ['Agent inventory', 'Owners', 'Resources', 'Changes', 'Discovery', 'Health']) {
     const bounds = await button(tab).boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 375, `${tab} navigation fits the viewport`);
     await button(tab).click();
@@ -206,6 +287,14 @@ try {
   await button('Compare snapshots').click();
   await button('Next changes page').click();
   await page.getByText('21–26 of 26', { exact: true }).waitFor();
+  // Discovery against the real service: one judged account, one stale account.
+  await button('Discovery').click();
+  await page.getByText('nightly-export', { exact: true }).waitFor();
+  await page.getByText('1 task and 1 caller with no declared agent').waitFor();
+  await page.getByText('1 candidate in the accounts that could be judged; the rest are unknown').waitFor();
+  await page.getByText('The last AWS collection is older than the enrolled age limit.').waitFor();
+  await page.getByText('Some declared execution bindings name no identity.', { exact: false }).waitFor();
+  await scan('service discovery');
   await button('Owners').click();
   await page.getByText('Accountable platform team', { exact: true }).waitFor();
   await scan('v2 owner directory');

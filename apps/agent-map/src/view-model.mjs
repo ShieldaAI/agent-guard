@@ -11,6 +11,8 @@ export const OPERATIONS = Object.freeze([
   'find_agents_with_access',
   'get_changes',
   'get_inventory_health',
+  'list_undeclared_activity',
+  'list_unclaimed_identities',
 ]);
 const LABELS = Object.freeze({
   GuardAgent: 'Agent',
