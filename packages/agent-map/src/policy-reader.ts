@@ -91,7 +91,7 @@ function graphIndex(nodes: readonly MapNode[], edges: readonly MapEdge[]) {
 }
 
 /** Python's scope ID uses compact ensure_ascii JSON; preserve that byte contract. */
-function collectionKey(companyId: string, tenantId: string, partition: string, accountId: string): string {
+export function collectionKey(companyId: string, tenantId: string, partition: string, accountId: string): string {
   const encoded = JSON.stringify([companyId, tenantId, partition, accountId]).replace(
     /[\u007f-\uffff]/g,
     char => `\\u${char.charCodeAt(0).toString(16).padStart(4, '0')}`,

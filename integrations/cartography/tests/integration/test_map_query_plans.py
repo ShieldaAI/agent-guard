@@ -12,6 +12,7 @@ import time
 from pathlib import Path
 
 import pytest
+from test_discovery_queries import publish as publish_discovery
 from test_identity_scope_queries import broad, publish
 from test_reference_queries import reference_snapshot as reference_snapshot  # noqa: F401
 from test_reference_queries import scope
@@ -22,13 +23,16 @@ BRIDGE = Path(__file__).parents[1] / "fixtures" / "explain-agent-map.mjs"
 FORBIDDEN = {"CartesianProduct", "AllNodesScan"}
 
 
-def explain(case, request, *, all_teams=False):
+def explain(case, request, *, all_teams=False, one_source=True):
     result = subprocess.run(
         [shutil.which("node"), str(BRIDGE)],
         input=json.dumps(
             {
                 "scope": scope(case["snapshot"], all_teams=all_teams),
-                "request": {"sourceId": case["receipt"].source_id, **request},
+                "request": {
+                    **({"sourceId": case["receipt"].source_id} if one_source else {}),
+                    **request,
+                },
                 "now": int(time.time()) * 1000,
             }
         ),
@@ -123,3 +127,46 @@ def test_boundary_reads_plan_the_wildcard_and_ancestor_queries(case):
             if all_teams:
                 # The hidden root is in scope here, so its record and edges are read too.
                 assert "ancestor_tasks" in kinds
+
+
+@pytest.mark.parametrize(
+    ("request_", "page"),
+    [
+        ({"undeclared": True}, None),
+        ({"undeclared": True, "page": {"kind": "tasks", "offset": 0, "limit": 50}}, "tasks"),
+        (
+            {"undeclared": True, "page": {"kind": "principals", "offset": 20, "limit": 100}},
+            "principals",
+        ),
+    ],
+)
+def test_undeclared_activity_reads_start_at_the_snapshot_and_load_no_nodes(case, request_, page):
+    plans = explain(case, request_, all_teams=True)
+    kinds = [plan["kind"] for plan in plans]
+    # Counts and at most one page; none of the per-label node queries of the other reads.
+    assert sorted(set(kinds) - {"other"}) == sorted(
+        ["undeclared_counts", *([f"undeclared_{page}"] if page else [])]
+    )
+    for plan in plans:
+        assert not FORBIDDEN & set(plan["operators"]), plan
+        if plan["kind"].startswith("undeclared"):
+            # Bounded by one projection: the snapshot is found by its unique id.
+            assert "NodeUniqueIndexSeek" in plan["operators"], plan
+
+
+def test_unclaimed_identity_reads_have_no_cartesian_product_or_all_nodes_scan(
+    neo4j_session, reference_snapshot
+):
+    # An account with identities nobody declared, so the page query runs too.
+    plans = explain(
+        publish_discovery(neo4j_session, reference_snapshot),
+        {"unclaimedIdentities": True, "page": {"offset": 0, "limit": 100}},
+        all_teams=True,
+        one_source=False,
+    )
+    kinds = [plan["kind"] for plan in plans]
+    assert {"claimed_identities", "unclaimed_counts", "unclaimed_page"} <= set(kinds)
+    # The collections are read twice: for the answer, and for the recheck after it.
+    assert kinds.count("aws_collections") == 2
+    for plan in plans:
+        assert not FORBIDDEN & set(plan["operators"]), plan

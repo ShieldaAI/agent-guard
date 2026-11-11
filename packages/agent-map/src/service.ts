@@ -23,6 +23,7 @@ import {
   type MapReadRequest,
   type MapSource,
   type MapStore,
+  type MapUndeclaredActivity,
   type MapView,
   type ReadScope,
 } from './types.js';
@@ -38,6 +39,8 @@ export const MAP_OPERATIONS = [
   'list_resources',
   'get_resource_access',
   'get_agent_inventory',
+  'list_undeclared_activity',
+  'list_unclaimed_identities',
 ] as const;
 export type MapOperation = (typeof MAP_OPERATIONS)[number];
 const idSchema = { type: 'string', minLength: 1, maxLength: 4096 };
@@ -132,6 +135,13 @@ export const MAP_INPUT_SCHEMAS: Readonly<Record<MapOperation, JsonObject>> = Obj
     { sourceId: idSchema, agentId: idSchema, section: choice(...sections), offset: offsetSchema, limit: limitSchema },
     ['sourceId', 'agentId'],
   ),
+  /** Tasks or caller principals of one source that no declared agent accounts for; all-teams readers. */
+  list_undeclared_activity: schema(
+    { sourceId: idSchema, kind: choice('tasks', 'principals'), offset: offsetSchema, limit: limitSchema },
+    ['sourceId'],
+  ),
+  /** IAM roles and users of the enrolled AWS accounts that no declared agent names; all-teams readers. */
+  list_unclaimed_identities: schema({ offset: offsetSchema, limit: limitSchema }),
 });
 
 export interface MapResponse {
@@ -1414,6 +1424,38 @@ const collection = Object.freeze({
   backendReceipts: 'not_collected',
   externalPolicyHistory: 'not_collected',
 });
+// Discovery views list what belongs to no team, so only an all-teams reader sees them. A
+// team-scoped reader gets this fixed answer without any read: no names, no counts, and the
+// same words whether or not anything would be listed.
+const ALL_TEAMS_NOTE =
+  'Shown only to readers with all-teams visibility, because what it lists belongs to no team. This note is the same whether or not anything would be listed.';
+const notVisible = (): JsonObject => ({
+  visibility: 'all_teams_required',
+  status: 'not_visible',
+  note: ALL_TEAMS_NOTE,
+});
+function undeclaredCounts(source: MapSource, activity: MapUndeclaredActivity): JsonObject {
+  return {
+    // Counting stops at 10,000: a minimum is partial, not complete.
+    status: activity.tasksCapped || activity.principalsCapped ? 'partial' : 'complete',
+    tasks: activity.tasks,
+    tasksIsMinimum: activity.tasksCapped,
+    principals: activity.principals,
+    principalsIsMinimum: activity.principalsCapped,
+    // Without a manifest no agent can be declared, so everything the executor saw counts.
+    manifest: source.profile === 'core' ? 'not_collected' : 'collected',
+  };
+}
+const UNDECLARED_LIMITATIONS = [
+  'Only activity that ran through an enrolled executor is seen. An agent that does not use the guard leaves nothing here.',
+  'A task is undeclared when no manifest task binding assigns it to a deployment of a declared agent. parentDeclared marks a task whose direct parent is assigned: usually a sub-task that only lacks its own binding.',
+  'A lead to follow up, not a finding. Listing grants or blocks nothing.',
+];
+const UNCLAIMED_LIMITATIONS = [
+  'Candidates to review, not findings: most IAM roles and users are not agents, and the map cannot tell which are.',
+  'An identity is claimed when a declared execution binding names its exact ARN in a current snapshot you can read. Role assumption, instance profiles and federation are not followed.',
+  'Only IAM roles and users of an enrolled AWS account are collected. An account that is missing, stale or inconsistent reads unknown, and its identities are not listed. Listing grants or blocks nothing.',
+];
 const compare = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 const agentSortKey = (agent: JsonObject): string =>
   JSON.stringify([
@@ -1935,11 +1977,80 @@ export class MapService {
     // `flag` lists flagged agents; asking it for the absent ones is a contradiction.
     if (operation === 'list_agents' && args.flag !== undefined && args.flagStatus === 'absent')
       fail('MAP_REQUEST_INVALID');
-    const view = await read(request);
+    // Discovery operations use their own bounded reads, and none at all for a team-scoped reader.
+    const discovery = operation === 'list_undeclared_activity' || operation === 'list_unclaimed_identities';
+    const view: MapView = discovery ? { sources: [] } : await read(request);
     work.step(view.sources.length);
     let data: JsonObject;
     let graph: { nodes: MapNode[]; edges: MapEdge[] } | undefined;
-    if (operation === 'list_agents') {
+    if (discovery && !scope.allTeams) {
+      data = notVisible();
+    } else if (operation === 'list_undeclared_activity') {
+      const kind = (args.kind ?? 'tasks') as 'tasks' | 'principals';
+      const offset = (args.offset as number | undefined) ?? 0,
+        limit = (args.limit as number | undefined) ?? 50;
+      const found = await read({ sourceId: args.sourceId as string, undeclared: true, page: { kind, offset, limit } });
+      const source = findSource(found, args.sourceId as string);
+      const activity = source.current.undeclared;
+      if (!activity || activity.page?.kind !== kind) fail('MAP_UNAVAILABLE');
+      work.step(activity.page.items.length);
+      const total = kind === 'tasks' ? activity.tasks : activity.principals;
+      const minimum = kind === 'tasks' ? activity.tasksCapped : activity.principalsCapped;
+      data = {
+        visibility: 'all_teams',
+        kind,
+        items: activity.page.items.map(item => ({ ...item, evidenceKind: 'observed', assessment: 'unknown' })),
+        total,
+        totalIsMinimum: minimum,
+        offset,
+        limit,
+        truncated: minimum || offset + limit < total,
+        counts: undeclaredCounts(source, activity),
+        receipt: receipt(source),
+        assessment: 'unknown',
+        limitations: UNDECLARED_LIMITATIONS,
+      };
+    } else if (operation === 'list_unclaimed_identities') {
+      const offset = (args.offset as number | undefined) ?? 0,
+        limit = (args.limit as number | undefined) ?? 50;
+      const found = await read({ unclaimedIdentities: true, page: { offset, limit } });
+      const result = found.unclaimedIdentities;
+      if (!result) fail('MAP_UNAVAILABLE');
+      work.step(result.accounts.length + result.identities.length + found.sources.length);
+      const complete = result.accounts.filter(account => account.status === 'complete').length;
+      // No usable collection: nothing is known, so no total and no list. Some unusable: the
+      // total and the list cover the complete accounts only.
+      const status = !complete ? 'unknown' : complete === result.accounts.length ? 'complete' : 'partial';
+      data = {
+        visibility: 'all_teams',
+        status,
+        reason: result.accounts.length ? null : 'cloud_not_collected',
+        identities: result.identities.map(identity => ({
+          ...identity,
+          candidate: true,
+          evidenceKind: 'provider_inventory',
+          assessment: 'unknown',
+        })),
+        total: status === 'unknown' ? null : result.total,
+        offset,
+        limit,
+        truncated: status !== 'unknown' && offset + limit < result.total,
+        accounts: result.accounts.map(account => ({
+          ...account,
+          ...(account.observedAt ? freshness(account.observedAt, now, this.#staleSeconds) : {}),
+        })),
+        bindingsWithoutIdentity: result.bindingsWithoutIdentity,
+        // The snapshots whose declared bindings decided what counts as claimed.
+        declaredFrom: found.sources.map(source => ({
+          sourceId: source.id,
+          tenantId: source.tenantId,
+          snapshotId: source.current.snapshotId,
+          generatedAt: source.current.generatedAt,
+        })),
+        assessment: 'unknown',
+        limitations: UNCLAIMED_LIMITATIONS,
+      };
+    } else if (operation === 'list_agents') {
       const search = typeof args.search === 'string' ? args.search.toLocaleLowerCase('en-US') : '';
       const filtered = args.flag !== undefined || args.flagStatus !== undefined;
       const statuses: readonly DangerousThreeStatus[] =
@@ -2308,6 +2419,37 @@ export class MapService {
     } else if (operation === 'get_changes') {
       data = retainedChanges(findSource(view, args.sourceId as string), args, scope, work);
     } else {
+      // Activity nobody declared, per source: a second, optional read. If it fails, is too
+      // large or runs out of time, health still answers and the count reads unknown.
+      const activity = new Map<string, MapSource>();
+      let activityUnknown = 'not_reported';
+      if (scope.allTeams && view.sources.length) {
+        const budget = work.remaining() - 50;
+        try {
+          if (budget <= 0) fail('MAP_TIMEOUT');
+          const found = await read(
+            { ...(args.sourceId ? { sourceId: args.sourceId as string } : {}), undeclared: true },
+            budget,
+          );
+          for (const source of found.sources) activity.set(source.id, source);
+        } catch (error) {
+          const code = error instanceof MapQueryError ? error.code : 'MAP_UNAVAILABLE';
+          activityUnknown =
+            code === 'MAP_TIMEOUT'
+              ? 'read_timeout'
+              : code === 'MAP_LIMIT_EXCEEDED'
+                ? 'limit_exceeded'
+                : 'read_unavailable';
+        }
+      }
+      const undeclaredActivity = (source: MapSource): JsonObject => {
+        if (!scope.allTeams) return { status: 'not_visible', reason: 'all_teams_required' };
+        const counted = activity.get(source.id);
+        if (!counted?.current.undeclared) return { status: 'unknown', reason: activityUnknown };
+        // Counted against a newer publication than the one this response describes.
+        if (counted.current.id !== source.current.id) return { status: 'unknown', reason: 'publication_changed' };
+        return undeclaredCounts(source, counted.current.undeclared);
+      };
       data = {
         sources: view.sources.map(source => {
           work.step();
@@ -2331,10 +2473,14 @@ export class MapService {
               ),
               policy: policyCoverage(work.policy(source.current)),
             },
+            undeclaredActivity: undeclaredActivity(source),
           };
         }),
         visibility: scope.allTeams ? 'enrolled_sources' : 'visible_agent_sources',
-        limitations: ['Collection freshness is separate from current execution authority.'],
+        limitations: [
+          'Collection freshness is separate from current execution authority.',
+          'undeclaredActivity counts tasks and caller principals that ran through this executor and belong to no declared agent. It is shown to all-teams readers only, and says nothing about agents that do not use the guard.',
+        ],
       };
     }
     if (graph && (graph.nodes.length > this.#maxNodes || graph.edges.length > this.#maxEdges))

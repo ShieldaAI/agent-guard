@@ -181,6 +181,72 @@ export interface MapProjection {
   readonly wildcardSensitivity?: Readonly<
     Record<string, readonly { readonly id: string; readonly sensitivity: string }[]>
   >;
+  /** `undeclared` reads only: activity in this projection that no declared agent accounts for. */
+  readonly undeclared?: MapUndeclaredActivity;
+}
+/** A task seen through an enrolled executor that no manifest task binding assigns to a declared agent. */
+export interface MapUndeclaredTask {
+  readonly id: string;
+  readonly taskId: string;
+  readonly principalId: string | null;
+  readonly delegated: boolean | null;
+  readonly derived: boolean | null;
+  readonly revoked: boolean | null;
+  /** Its direct parent or source task is assigned to a declared agent: likely that agent's sub-task. */
+  readonly parentDeclared: boolean;
+  /** Tools the task holds a declared grant on, at most 32. */
+  readonly tools: readonly string[];
+  readonly toolsTruncated: boolean;
+}
+/** A caller principal none of whose tasks is assigned to a declared agent. */
+export interface MapUndeclaredPrincipal {
+  readonly id: string;
+  readonly principalId: string;
+  /** Its tasks in this projection, counted up to 1,000. */
+  readonly tasks: number;
+  readonly tasksCapped: boolean;
+}
+/** Only for `undeclared` reads (all-teams readers). Counting stops at 10,000: `*Capped` means "at least". */
+export interface MapUndeclaredActivity {
+  readonly tasks: number;
+  readonly tasksCapped: boolean;
+  readonly principals: number;
+  readonly principalsCapped: boolean;
+  readonly page?:
+    | { readonly kind: 'tasks'; readonly items: readonly MapUndeclaredTask[] }
+    | { readonly kind: 'principals'; readonly items: readonly MapUndeclaredPrincipal[] };
+}
+/** One enrolled AWS account's collection, judged for an `unclaimedIdentities` read. */
+export interface MapCloudAccount {
+  readonly tenantId: string;
+  readonly partition: string;
+  readonly accountId: string;
+  readonly status: 'complete' | 'unknown';
+  readonly reason: 'collection_invalid' | 'stale' | 'changed' | 'limit_exceeded' | 'claims_limit_exceeded' | null;
+  readonly observedAt: string | null;
+  /** IAM roles and users in the collection, and how many of them no declared binding names; null when unknown. */
+  readonly observed: number | null;
+  readonly unclaimed: number | null;
+}
+/** An IAM role or user in a complete, fresh collection whose ARN no declared execution binding names. */
+export interface MapUnclaimedIdentity {
+  readonly arn: string;
+  readonly kind: 'role' | 'user';
+  readonly name: string;
+  readonly path: string;
+  readonly tenantId: string;
+  readonly partition: string;
+  readonly accountId: string;
+}
+/** Only for `unclaimedIdentities` reads (all-teams readers). */
+export interface MapUnclaimedIdentities {
+  readonly accounts: readonly MapCloudAccount[];
+  /** One page over the complete accounts, ordered by ARN. */
+  readonly identities: readonly MapUnclaimedIdentity[];
+  /** Unclaimed identities across the complete accounts. */
+  readonly total: number;
+  /** Some declared execution binding names no identity, so a listed identity may be its own. */
+  readonly bindingsWithoutIdentity: boolean;
 }
 export interface MapSource {
   readonly id: string;
@@ -192,6 +258,8 @@ export interface MapSource {
 }
 export interface MapView {
   readonly sources: readonly MapSource[];
+  /** `unclaimedIdentities` reads only. */
+  readonly unclaimedIdentities?: MapUnclaimedIdentities;
 }
 export interface MapReadRequest {
   readonly sourceId?: string;
@@ -207,6 +275,18 @@ export interface MapReadRequest {
   readonly flags?: boolean;
   /** Full graph plus identity reach limited to the buckets visible bindings map to. */
   readonly outsideGuard?: boolean;
+  /**
+   * All-teams readers only. Per source, counts of tasks and caller principals that no declared
+   * agent accounts for; no nodes are loaded. With `sourceId` and `page`, also one page of them.
+   */
+  readonly undeclared?: boolean;
+  /**
+   * All-teams readers only, never with `sourceId`. IAM roles and users of the enrolled AWS
+   * collections that no declared execution binding names, one `page` at a time.
+   */
+  readonly unclaimedIdentities?: boolean;
+  /** `kind` is required with `undeclared` and refused with `unclaimedIdentities`. */
+  readonly page?: { readonly kind?: 'tasks' | 'principals'; readonly offset: number; readonly limit: number };
 }
 export interface MapStore {
   read(scope: ReadScope, request?: MapReadRequest): Promise<MapView>;

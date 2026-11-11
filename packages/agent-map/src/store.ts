@@ -11,6 +11,7 @@ import {
   type GuardRelation,
   type JsonObject,
   type MapCoverage,
+  type MapCloudAccount,
   type MapEdge,
   type MapIdentityScope,
   type MapNode,
@@ -18,12 +19,18 @@ import {
   type MapReadRequest,
   type MapSource,
   type MapStore,
+  type MapUnclaimedIdentities,
+  type MapUnclaimedIdentity,
+  type MapUndeclaredActivity,
+  type MapUndeclaredPrincipal,
+  type MapUndeclaredTask,
   type MapView,
   type ReadScope,
 } from './types.js';
 import {
   POLICY_COLUMNS,
   POLICY_QUERY,
+  collectionKey,
   policyEvidence,
   policyParameters,
   policyPlan,
@@ -277,6 +284,110 @@ const HIDDEN_SCOPE = `RETURN EXISTS {
   MATCH (n)-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$projectionId})
   WHERE (n:GuardDeployment OR n:GuardTask) AND ${scoped('n')} AND NOT n.id IN $visibleIds
 } AS hidden`;
+// Discovery reads, for all-teams readers only: nothing here belongs to a team, so a team-scoped
+// read is refused before any of these run. A task is declared when a manifest task binding
+// assigns it to a deployment of a declared agent; every hop gets the usual checks.
+const declaredTask = (task: string): string => `EXISTS {
+    MATCH (${task})-[:G_ASSIGNED_TO]->(dd:GuardDeployment)-[:G_INSTANCE_OF]->(da:GuardAgent)
+    WHERE ${checked('dd')} AND ${checked('da')}
+  }`;
+const declaredPrincipal = (principal: string): string => `EXISTS {
+    MATCH (${principal})<-[:G_ACTS_AS]-(pt:GuardTask)
+    WHERE ${checked('pt')} AND ${declaredTask('pt')}
+  }`;
+const SNAPSHOT = `MATCH (p:GuardSnapshot {id:$projectionId,source_id:$sourceId,status:'published'})`;
+// Counting stops one past the limit, so the work is bounded and "at least" is reported honestly.
+const UNDECLARED_COUNT_LIMIT = 10_000;
+const UNDECLARED_COUNTS = `${SNAPSHOT}
+CALL (p) {
+  MATCH (t:GuardTask)-[:G_IN_SNAPSHOT]->(p)
+  WHERE ${checked('t')} AND NOT ${declaredTask('t')}
+  WITH t LIMIT $countLimit
+  RETURN count(t) AS tasks
+}
+CALL (p) {
+  MATCH (c:GuardPrincipal)-[:G_IN_SNAPSHOT]->(p)
+  WHERE ${checked('c')} AND NOT ${declaredPrincipal('c')}
+  WITH c LIMIT $countLimit
+  RETURN count(c) AS principals
+}
+RETURN tasks, principals`;
+// One page of undeclared tasks. `parentDeclared` looks one hop up: a sub-task of a declared
+// agent's task that only lacks its own binding should not read like an unknown caller.
+const UNDECLARED_TASKS = `${SNAPSHOT}
+MATCH (t:GuardTask)-[:G_IN_SNAPSHOT]->(p)
+WHERE ${checked('t')} AND NOT ${declaredTask('t')}
+WITH t ORDER BY t.task_id, t.id SKIP $pageOffset LIMIT $pageLimit
+RETURN substring(t.entity_id,0,4097) AS id,substring(t.task_id,0,4097) AS taskId,
+ substring(t.principal_id,0,4097) AS principalId,t.delegated AS delegated,t.derived AS derived,t.revoked AS revoked,
+ EXISTS {
+   MATCH (t)-[:G_DELEGATED_FROM|G_DERIVED_FROM]->(parent:GuardTask)
+   WHERE ${checked('parent')} AND ${declaredTask('parent')}
+ } AS parentDeclared,
+ [(t)-[:G_HAS_GRANT]->(g:GuardGrant) WHERE ${checked('g')} | substring(g.tool,0,4097)][..33] AS tools
+ORDER BY taskId, id`;
+// One page of caller principals none of whose tasks is declared, with a bounded task count.
+const UNDECLARED_PRINCIPALS = `${SNAPSHOT}
+MATCH (c:GuardPrincipal)-[:G_IN_SNAPSHOT]->(p)
+WHERE ${checked('c')} AND NOT ${declaredPrincipal('c')}
+WITH c ORDER BY c.principal_id, c.id SKIP $pageOffset LIMIT $pageLimit
+CALL (c) {
+  MATCH (c)<-[:G_ACTS_AS]-(t:GuardTask)
+  WHERE ${checked('t')}
+  WITH t LIMIT 1001
+  RETURN count(t) AS tasks
+}
+RETURN substring(c.entity_id,0,4097) AS id,substring(c.principal_id,0,4097) AS principalId,tasks
+ORDER BY principalId, id`;
+// The AWS collections enrolled for the reader's company and tenants: at most one per account.
+const AWS_COLLECTION_LIMIT = 64;
+const AWS_COLLECTION_COLUMNS = [
+  'id',
+  'tenantId',
+  'partition',
+  'accountId',
+  'schemaVersion',
+  'status',
+  'capturedAt',
+  'contentHash',
+] as const;
+const AWS_COLLECTIONS = `MATCH (c:GuardAwsCollection)
+WHERE c.company_id=$companyId AND c.tenant_id IN $tenantIds
+RETURN substring(c.id,0,65) AS id,substring(c.tenant_id,0,4097) AS tenantId,substring(c.partition,0,17) AS partition,
+ substring(c.account_id,0,13) AS accountId,c.schema_version AS schemaVersion,substring(c.status,0,33) AS status,
+ c.captured_at AS capturedAt,substring(c.content_hash,0,65) AS contentHash
+ORDER BY id LIMIT $collectionLimit`;
+// ARNs that a declared agent's execution binding names in this projection. The manifest's
+// ARN is the claim: it stands whether or not the cloud join resolved it.
+const CLAIM_LIMIT = 10_000;
+const CLAIMED_IDENTITIES = `MATCH (i:GuardExternalIdentity)-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$projectionId})
+WHERE ${checked('i')} AND i.arn IS NOT NULL AND EXISTS {
+  MATCH (i)<-[:G_USES_IDENTITY]-(b:GuardExecutionBinding)-[:G_EXECUTES_FOR]->(d:GuardDeployment)-[:G_INSTANCE_OF]->(a:GuardAgent)
+  WHERE ${['b', 'd', 'a'].map(checked).join(' AND ')}
+}
+RETURN DISTINCT substring(i.arn,0,2049) AS arn LIMIT $claimLimit`;
+// Whether some declared execution binding names no identity at all: it may use a listed one.
+const BINDINGS_WITHOUT_IDENTITY = `RETURN EXISTS {
+  MATCH (b:GuardExecutionBinding)-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$projectionId})
+  WHERE ${checked('b')} AND NOT EXISTS { MATCH (b)-[:G_USES_IDENTITY]->() }
+} AS open`;
+// Per collection: its roles and users, how many are unclaimed, and how many members do not
+// carry the collection's own capture receipt (any such member makes the account unknown).
+const AWS_MEMBER_LIMIT = 50_000;
+const UNCLAIMED_COUNTS = `MATCH (c:GuardAwsCollection)-[m:G_AWS_OBSERVED]->(p:AWSPrincipal)
+WHERE c.id=$collectionId AND c.company_id=$companyId AND c.tenant_id=$collectionTenantId
+WITH c,m,p LIMIT $memberLimit
+RETURN count(p) AS observed,
+ sum(CASE WHEN coalesce(p.arn IN $claimed,false) THEN 0 ELSE 1 END) AS unclaimed,
+ sum(CASE WHEN m.capture_hash=c.content_hash AND m.captured_at=c.captured_at AND p.lastupdated=c.captured_at
+   THEN 0 ELSE 1 END) AS inconsistent`;
+const UNCLAIMED_PAGE = `MATCH (c:GuardAwsCollection)-[:G_AWS_OBSERVED]->(p:AWSPrincipal)
+WHERE c.id IN $collectionIds AND c.company_id=$companyId AND c.tenant_id IN $tenantIds
+  AND NOT coalesce(p.arn IN $claimed,false)
+WITH c,p ORDER BY p.arn, c.id SKIP $pageOffset LIMIT $pageLimit
+RETURN substring(c.id,0,65) AS collectionId,substring(p.arn,0,2049) AS arn,p:AWSRole AS role,p:AWSUser AS user,
+ substring(p.name,0,129) AS name,substring(p.path,0,513) AS path
+ORDER BY arn, collectionId`;
 // Start from the snapshot's unique id: an unlabelled `n.id IN $nodeIds` scans every node
 // in the database, while snapshot membership bounds the work to this projection.
 const EDGES = `MATCH (n)-[:G_IN_SNAPSHOT]->(:GuardSnapshot {id:$projectionId})
@@ -573,18 +684,56 @@ export class Neo4jMapStore implements MapStore {
         typeof copied !== 'object' ||
         Object.keys(copied).some(
           key =>
-            !['sourceId', 'agentId', 'agentIds', 'boundary', 'history', 'summary', 'flags', 'outsideGuard'].includes(
-              key,
-            ),
+            ![
+              'sourceId',
+              'agentId',
+              'agentIds',
+              'boundary',
+              'history',
+              'summary',
+              'flags',
+              'outsideGuard',
+              'undeclared',
+              'unclaimedIdentities',
+              'page',
+            ].includes(key),
         )
       )
         throw new Error();
-      for (const key of ['flags', 'outsideGuard', 'boundary'])
+      for (const key of ['flags', 'outsideGuard', 'boundary', 'undeclared', 'unclaimedIdentities'])
         if (copied[key] !== undefined && typeof copied[key] !== 'boolean') throw new Error();
-      // One read mode at a time: summary, history, flags and outside-guard reads differ in
-      // what they load, and no caller needs two.
-      if (['summary', 'history', 'flags', 'outsideGuard', 'boundary'].filter(key => copied[key] === true).length > 1)
+      // One read mode at a time: summary, history, flags, outside-guard and discovery reads
+      // differ in what they load, and no caller needs two.
+      if (
+        ['summary', 'history', 'flags', 'outsideGuard', 'boundary', 'undeclared', 'unclaimedIdentities'].filter(
+          key => copied[key] === true,
+        ).length > 1
+      )
         throw new Error();
+      // Discovery reads: all-teams readers only, never for one agent. Undeclared activity
+      // pages within one source; unclaimed identities span the reader's sources.
+      const discovery = copied.undeclared === true || copied.unclaimedIdentities === true;
+      if (discovery && (!scope.allTeams || copied.agentId !== undefined || copied.agentIds !== undefined))
+        throw new Error();
+      if (copied.unclaimedIdentities === true && copied.sourceId !== undefined) throw new Error();
+      if (copied.page !== undefined) {
+        const page = copied.page as Record<string, unknown>;
+        const whole = (value: unknown, minimum: number, maximum: number): boolean =>
+          typeof value === 'number' && Number.isSafeInteger(value) && value >= minimum && value <= maximum;
+        if (
+          !discovery ||
+          !page ||
+          typeof page !== 'object' ||
+          Array.isArray(page) ||
+          Object.keys(page).some(key => !['kind', 'offset', 'limit'].includes(key)) ||
+          !whole(page.offset, 0, 100_000) ||
+          !whole(page.limit, 1, 100) ||
+          (copied.undeclared === true
+            ? copied.sourceId === undefined || !['tasks', 'principals'].includes(page.kind as string)
+            : page.kind !== undefined)
+        )
+          throw new Error();
+      }
       if (copied.outsideGuard === true && copied.agentId !== undefined) throw new Error();
       // A one-agent flags read must carry boundary evidence; the page read uses agentIds.
       if (copied.flags === true && copied.agentId !== undefined) throw new Error();
@@ -662,6 +811,21 @@ export class Neo4jMapStore implements MapStore {
         };
         const selected = await run(sourceQuery, common);
         if (selected.length > this.#sources) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
+        // Publication may advance while the read transaction is open. Never return mixed generations.
+        const pointers = (items: typeof selected): string =>
+          JSON.stringify(
+            items.map(record => [
+              record.get('id'),
+              record.get('currentId'),
+              record.get('previousId'),
+              record.get('currentCoverage'),
+              record.get('policyCoverage'),
+            ]),
+          );
+        const recheckSources = async (): Promise<void> => {
+          if (pointers(selected) !== pointers(await run(sourceQuery, common)))
+            throw new MapQueryError('MAP_UNAVAILABLE');
+        };
         let nodeCount = 0;
         let edgeCount = 0;
         let materializedBytes = 0;
@@ -789,6 +953,300 @@ export class Neo4jMapStore implements MapStore {
           // expand malformed relationship fan-out before applying its LIMIT.
           return sortedBySerialization(rows);
         };
+        if (selection.undeclared === true || selection.unclaimedIdentities === true) {
+          // Discovery reads load no nodes: fixed, bounded queries per source, then the same
+          // publication recheck as every other read.
+          const malformed = (): never => {
+            throw new MapQueryError('MAP_UNAVAILABLE');
+          };
+          const whole = (value: unknown, maximum: number): number => {
+            const number = converted(value);
+            return typeof number === 'number' && Number.isSafeInteger(number) && number >= 0 && number <= maximum
+              ? number
+              : malformed();
+          };
+          const flag = (value: unknown): boolean | null =>
+            value === null || value === undefined ? null : typeof value === 'boolean' ? value : malformed();
+          const page = selection.page;
+          const listed: MapSource[] = [];
+          const claimed = new Set<string>();
+          let claimsExceeded = false;
+          let bindingsWithoutIdentity = false;
+          // The strictest enrolled cloud age per tenant, under the host ceiling.
+          const maximumAges = new Map<string, number>();
+          for (const record of selected) {
+            const sourceId = text(record.get('id'));
+            const tenantId = text(record.get('tenantId'));
+            const currentId = text(record.get('currentId'));
+            const profile = record.get('profile');
+            if (!scope.tenantIds.includes(tenantId) || !['core', 'host', 'host-mcp'].includes(profile)) malformed();
+            const params = { ...common, sourceId, tenantId, projectionId: currentId, labels: [...MAP_LABELS] };
+            const captures = coreCaptureTimes(record.get('currentCoverage'));
+            let undeclared: MapUndeclaredActivity | undefined;
+            if (selection.undeclared === true) {
+              const counts = await run(UNDECLARED_COUNTS, {
+                ...params,
+                countLimit: neo4j.int(UNDECLARED_COUNT_LIMIT + 1),
+              });
+              if (counts.length !== 1) malformed();
+              const tasks = whole(counts[0]!.get('tasks'), UNDECLARED_COUNT_LIMIT + 1);
+              const principals = whole(counts[0]!.get('principals'), UNDECLARED_COUNT_LIMIT + 1);
+              let listing: MapUndeclaredActivity['page'];
+              if (page !== undefined) {
+                const paging = { ...params, pageOffset: neo4j.int(page.offset), pageLimit: neo4j.int(page.limit) };
+                const seen = new Set<string>();
+                // A second row for one entity is malformed, never a longer list.
+                const once = (id: string): string => {
+                  if (seen.has(id)) malformed();
+                  seen.add(id);
+                  return id;
+                };
+                if (page.kind === 'tasks') {
+                  const items: MapUndeclaredTask[] = [];
+                  await run(UNDECLARED_TASKS, paging, item => {
+                    if (items.length >= page.limit) malformed();
+                    const tools = converted(item.get('tools'));
+                    if (!Array.isArray(tools) || tools.length > 33) malformed();
+                    const names = [...new Set((tools as unknown[]).map(tool => text(tool)))].sort();
+                    const principalId = item.get('principalId');
+                    const parentDeclared = item.get('parentDeclared');
+                    if (typeof parentDeclared !== 'boolean') malformed();
+                    const row: MapUndeclaredTask = {
+                      id: once(text(item.get('id'))),
+                      taskId: text(item.get('taskId')),
+                      principalId: principalId === null || principalId === undefined ? null : text(principalId),
+                      delegated: flag(item.get('delegated')),
+                      derived: flag(item.get('derived')),
+                      revoked: flag(item.get('revoked')),
+                      parentDeclared,
+                      tools: names.slice(0, 32),
+                      toolsTruncated: (tools as unknown[]).length > 32,
+                    };
+                    charge(row);
+                    items.push(row);
+                  });
+                  listing = { kind: 'tasks', items };
+                } else {
+                  const items: MapUndeclaredPrincipal[] = [];
+                  await run(UNDECLARED_PRINCIPALS, paging, item => {
+                    if (items.length >= page.limit) malformed();
+                    const tasks = whole(item.get('tasks'), 1001);
+                    const row: MapUndeclaredPrincipal = {
+                      id: once(text(item.get('id'))),
+                      principalId: text(item.get('principalId')),
+                      tasks: Math.min(tasks, 1000),
+                      tasksCapped: tasks > 1000,
+                    };
+                    charge(row);
+                    items.push(row);
+                  });
+                  listing = { kind: 'principals', items };
+                }
+              }
+              undeclared = {
+                tasks: Math.min(tasks, UNDECLARED_COUNT_LIMIT),
+                tasksCapped: tasks > UNDECLARED_COUNT_LIMIT,
+                principals: Math.min(principals, UNDECLARED_COUNT_LIMIT),
+                principalsCapped: principals > UNDECLARED_COUNT_LIMIT,
+                ...(listing ? { page: listing } : {}),
+              };
+            } else {
+              const enrolled = record.get('policyCoverage');
+              if (enrolled !== null && enrolled !== undefined)
+                maximumAges.set(
+                  tenantId,
+                  Math.min(maximumAges.get(tenantId) ?? this.#policyAge, maximumAgeFor(enrolled)),
+                );
+              if (!claimsExceeded)
+                await run(
+                  CLAIMED_IDENTITIES,
+                  { ...params, claimLimit: neo4j.int(CLAIM_LIMIT - claimed.size + 1) },
+                  item => {
+                    const arn = item.get('arn');
+                    if (typeof arn !== 'string' || !arn || arn.length > 2048) malformed();
+                    claimed.add(arn);
+                    if (claimed.size > CLAIM_LIMIT) claimsExceeded = true;
+                  },
+                );
+              if (!bindingsWithoutIdentity) {
+                const [open] = await run(BINDINGS_WITHOUT_IDENTITY, params);
+                // Only an explicit "none" clears it.
+                bindingsWithoutIdentity = open?.get('open') !== false;
+              }
+            }
+            listed.push({
+              id: sourceId,
+              tenantId,
+              sourceId: text(record.get('nativeSourceId')),
+              profile,
+              current: {
+                id: currentId,
+                snapshotId: text(record.get('currentSnapshotId')),
+                generatedAt: text(record.get('currentGeneratedAt')),
+                status: 'published',
+                nodes: [],
+                edges: [],
+                // Only what this read rests on: when the tasks were captured.
+                coverage: { tasks: { status: 'complete', ...(captures.tasks ? { observedAt: captures.tasks } : {}) } },
+                ...(undeclared ? { undeclared } : {}),
+              },
+              previous: null,
+            });
+          }
+          let unclaimedIdentities: MapUnclaimedIdentities | undefined;
+          if (selection.unclaimedIdentities === true) {
+            const readCollections = async (): Promise<Record<string, unknown>[]> =>
+              (await run(AWS_COLLECTIONS, { ...common, collectionLimit: neo4j.int(AWS_COLLECTION_LIMIT + 1) })).map(
+                item => Object.fromEntries(AWS_COLLECTION_COLUMNS.map(column => [column, converted(item.get(column))])),
+              );
+            const collections = await readCollections();
+            if (collections.length > AWS_COLLECTION_LIMIT) throw new MapQueryError('MAP_LIMIT_EXCEEDED');
+            const stamp = now();
+            const claims = [...claimed].sort();
+            const accounts: MapCloudAccount[] = [];
+            const complete = new Map<string, MapCloudAccount>();
+            let total = 0;
+            for (const collection of collections) {
+              const { tenantId, partition, accountId, capturedAt } = collection;
+              // Without these the account cannot even be named.
+              if (
+                typeof tenantId !== 'string' ||
+                !scope.tenantIds.includes(tenantId) ||
+                typeof partition !== 'string' ||
+                !['aws', 'aws-cn', 'aws-us-gov'].includes(partition) ||
+                typeof accountId !== 'string' ||
+                !/^[0-9]{12}$/.test(accountId)
+              ) {
+                malformed();
+                continue;
+              }
+              const account = (
+                reason: MapCloudAccount['reason'],
+                observedAt: string | null,
+                counts: { observed: number; unclaimed: number } | null = null,
+              ): MapCloudAccount => ({
+                tenantId,
+                partition,
+                accountId,
+                status: reason === null && counts ? 'complete' : 'unknown',
+                reason,
+                observedAt,
+                observed: counts?.observed ?? null,
+                unclaimed: counts?.unclaimed ?? null,
+              });
+              const id = collection.id;
+              if (
+                typeof id !== 'string' ||
+                id !== collectionKey(scope.companyId, tenantId, partition, accountId) ||
+                complete.has(id) ||
+                collection.schemaVersion !== 1 ||
+                collection.status !== 'complete' ||
+                typeof collection.contentHash !== 'string' ||
+                !/^[a-f0-9]{64}$/.test(collection.contentHash) ||
+                typeof capturedAt !== 'number' ||
+                !Number.isSafeInteger(capturedAt) ||
+                capturedAt < 0 ||
+                capturedAt > stamp
+              ) {
+                accounts.push(account('collection_invalid', null));
+                continue;
+              }
+              const observedAt = new Date(capturedAt * 1000).toISOString();
+              if (stamp - capturedAt > (maximumAges.get(tenantId) ?? this.#policyAge)) {
+                accounts.push(account('stale', observedAt));
+                continue;
+              }
+              // Without the full set of claims, "unclaimed" would overstate.
+              if (claimsExceeded) {
+                accounts.push(account('claims_limit_exceeded', observedAt));
+                continue;
+              }
+              const counted = await run(UNCLAIMED_COUNTS, {
+                ...common,
+                collectionId: id,
+                collectionTenantId: tenantId,
+                claimed: claims,
+                memberLimit: neo4j.int(AWS_MEMBER_LIMIT + 1),
+              });
+              if (counted.length !== 1) malformed();
+              const observed = whole(counted[0]!.get('observed'), AWS_MEMBER_LIMIT + 1);
+              const unclaimed = whole(counted[0]!.get('unclaimed') ?? 0, AWS_MEMBER_LIMIT + 1);
+              const inconsistent = whole(counted[0]!.get('inconsistent') ?? 0, AWS_MEMBER_LIMIT + 1);
+              if (observed > AWS_MEMBER_LIMIT) accounts.push(account('limit_exceeded', observedAt));
+              else if (inconsistent) accounts.push(account('changed', observedAt));
+              else {
+                const judged = account(null, observedAt, { observed, unclaimed });
+                accounts.push(judged);
+                complete.set(id, judged);
+                total += unclaimed;
+              }
+            }
+            const identities: MapUnclaimedIdentity[] = [];
+            if (page !== undefined && complete.size && page.offset < total)
+              await run(
+                UNCLAIMED_PAGE,
+                {
+                  ...common,
+                  collectionIds: [...complete.keys()],
+                  claimed: claims,
+                  pageOffset: neo4j.int(page.offset),
+                  pageLimit: neo4j.int(page.limit),
+                },
+                item => {
+                  const account = complete.get(item.get('collectionId'));
+                  const arn = item.get('arn'),
+                    name = item.get('name'),
+                    path = item.get('path');
+                  const role = item.get('role'),
+                    user = item.get('user');
+                  // The same shape the collector accepted: one kind, and an ARN built from its parts.
+                  if (
+                    identities.length >= page.limit ||
+                    !account ||
+                    typeof role !== 'boolean' ||
+                    typeof user !== 'boolean' ||
+                    role === user ||
+                    typeof name !== 'string' ||
+                    !/^[A-Za-z0-9+=,.@_-]{1,128}$/.test(name) ||
+                    typeof path !== 'string' ||
+                    path.length > 512 ||
+                    !/^\/(?:[\x21-\x7e]+\/)?$/.test(path) ||
+                    arn !==
+                      `arn:${account.partition}:iam::${account.accountId}:${role ? 'role' : 'user'}${path}${name}` ||
+                    claimed.has(arn)
+                  ) {
+                    malformed();
+                    return;
+                  }
+                  const row: MapUnclaimedIdentity = {
+                    arn,
+                    kind: role ? 'role' : 'user',
+                    name,
+                    path,
+                    tenantId: account.tenantId,
+                    partition: account.partition,
+                    accountId: account.accountId,
+                  };
+                  charge(row);
+                  identities.push(row);
+                },
+              );
+            // A collection published during the read would mix two captures.
+            if (JSON.stringify(collections) !== JSON.stringify(await readCollections())) malformed();
+            unclaimedIdentities = { accounts, identities, total, bindingsWithoutIdentity };
+          }
+          await recheckSources();
+          try {
+            return immutableJson(
+              { sources: listed, ...(unclaimedIdentities ? { unclaimedIdentities } : {}) },
+              16,
+              200_000,
+              4 * 1024 * 1024,
+            ) as unknown as MapView;
+          } catch {
+            throw new MapQueryError('MAP_LIMIT_EXCEEDED');
+          }
+        }
         const sources: MapSource[] = [];
         for (const record of selected) {
           const sourceId = text(record.get('id'));
@@ -1192,19 +1650,7 @@ export class Neo4jMapStore implements MapStore {
           job.check.scopeBudget = scopeBudget;
           job.check.projection = updated;
         }
-        // Publication may advance while the read transaction is open. Never return mixed generations.
-        const after = await run(sourceQuery, common);
-        const pointers = (items: typeof selected): string =>
-          JSON.stringify(
-            items.map(record => [
-              record.get('id'),
-              record.get('currentId'),
-              record.get('previousId'),
-              record.get('currentCoverage'),
-              record.get('policyCoverage'),
-            ]),
-          );
-        if (pointers(selected) !== pointers(after)) throw new MapQueryError('MAP_UNAVAILABLE');
+        await recheckSources();
         for (const checked of policyChecks) {
           const rows = await readPolicy(checked.plan, checked.params, false);
           if (JSON.stringify(rows) !== JSON.stringify(checked.rows)) throw new MapQueryError('MAP_UNAVAILABLE');

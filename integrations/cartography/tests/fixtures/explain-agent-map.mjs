@@ -41,7 +41,21 @@ try {
       const summary = (await session.run(`EXPLAIN ${query}`, parameters)).summary;
       plans.push({
         head: query.split('\n')[0].slice(0, 120),
-        kind: query.includes('$scopePairs')
+        kind: query.includes('$countLimit')
+          ? 'undeclared_counts'
+          : query.includes('AS parentDeclared')
+          ? 'undeclared_tasks'
+          : query.includes('AS principalId,tasks')
+          ? 'undeclared_principals'
+          : query.includes('$collectionLimit')
+          ? 'aws_collections'
+          : query.includes('$claimLimit')
+          ? 'claimed_identities'
+          : query.includes('$memberLimit')
+          ? 'unclaimed_counts'
+          : query.includes('$collectionIds')
+          ? 'unclaimed_page'
+          : query.includes('$scopePairs')
           ? 'identity_scope'
           : query.includes('$ancestorTaskIds')
             ? 'ancestor_tasks'

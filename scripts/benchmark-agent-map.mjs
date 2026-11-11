@@ -130,6 +130,9 @@ export async function runBenchmark(agents, sources, tasks) {
     explain_access: { sourceId: 'source-0', taskId: 'task-0-0-0', tool: 'reports.read', resourceId: 'r0-0' },
     find_agents_with_access: { resourceRef: 'b0-0', action: 's3:GetObject' },
     get_resource_access: { sourceId: 'source-0', resourceId: 'b0-0' },
+    // Discovery is for all-teams readers: this team-scoped reader gets the fixed note, unread.
+    list_undeclared_activity: { sourceId: 'source-0' },
+    list_unclaimed_identities: {},
   };
   const results = {};
   // The flagged index adds a second read of the returned page; this in-memory store has no
