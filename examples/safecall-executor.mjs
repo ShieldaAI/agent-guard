@@ -1,5 +1,9 @@
-// Build Agent Guard first. Optionally pass the local SafeCall Node dist/index.js path.
-// This integration uses synthetic provider output and an ephemeral ledger; no cloud credentials.
+// An integration check with the separate llm-safecall package, which is not a dependency of
+// this repository. It is not a usage example of Agent Guard on its own.
+//
+// Run: npm run build, then node examples/safecall-executor.mjs [path to llm-safecall's built
+// index.js]. Without the argument, llm-safecall must be installed where Node can resolve it.
+// Synthetic provider output and an in-memory ledger; no cloud credentials.
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
 import { resolve } from 'node:path';
@@ -10,11 +14,15 @@ import {
   startExecutorServer,
   createModelTool,
   createExecutorModelProvider,
-} from '../packages/executor/dist/index.js';
+} from '@shieldaai/agent-guard-executor';
 
 const { SafeCall, PolicyEngine } = await import(
   process.argv[2] ? pathToFileURL(resolve(process.argv[2])).href : 'llm-safecall'
-);
+).catch(error => {
+  if (error?.code !== 'ERR_MODULE_NOT_FOUND') throw error;
+  console.error('This check needs the llm-safecall package: install it, or pass the path to its built index.js.');
+  process.exit(1);
+});
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32) });
 let calls = 0;
 const tool = createModelTool({

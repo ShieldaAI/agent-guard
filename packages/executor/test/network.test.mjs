@@ -65,23 +65,40 @@ test('307/308 responses never forward custom credentials or request bodies', asy
   }
   assert.equal(leaked, 0);
 });
-test('response and time limits terminate upstream streams', async t => {
-  let closed = false;
-  const origin = await collector(t, (req, res) => {
-    req.on('close', () => {
-      closed = true;
+test('response and time limits terminate upstream streams', { timeout: 10_000 }, async t => {
+  // Each case names the limit that must end the exchange and the code the caller sees.
+  for (const [name, respond, limits, code] of [
+    [
+      'body over the byte limit',
+      res => res.write('1234567890'),
+      { maxResponseBytes: 5, timeoutMs: 5000 },
+      'RESPONSE_LIMIT',
+    ],
+    [
+      'body stalls past the time limit',
+      res => res.write('123'),
+      { maxResponseBytes: 50, timeoutMs: 100 },
+      'RESPONSE_FAILED',
+    ],
+    ['no response before the time limit', () => {}, { maxResponseBytes: 50, timeoutMs: 100 }, 'REQUEST_ABORTED'],
+  ]) {
+    let disconnected;
+    const closed = new Promise(resolve => {
+      disconnected = resolve;
     });
-    res.write('1234567890');
-  });
-  const fetch = createRestrictedFetch({
-    allowedOrigins: [origin],
-    allowPrivateOrigins: [origin],
-    maxResponseBytes: 5,
-    timeoutMs: 100,
-  });
-  await assert.rejects(async () => (await fetch(origin)).text());
-  await new Promise(resolve => setTimeout(resolve, 20));
-  assert.equal(closed, true);
+    const origin = await collector(t, (req, res) => {
+      req.socket.once('close', disconnected);
+      respond(res);
+    });
+    const fetch = createRestrictedFetch({ allowedOrigins: [origin], allowPrivateOrigins: [origin], ...limits });
+    await assert.rejects(
+      async () => (await fetch(origin)).text(),
+      { name: 'ExecutorError', code, message: code },
+      name,
+    );
+    // The upstream socket closes; the test timeout bounds the wait if it never does.
+    await closed;
+  }
 });
 
 test('a bodyless response closes its socket even if the peer keeps sending a 205 body', { timeout: 2000 }, async t => {

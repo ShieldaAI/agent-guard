@@ -5,19 +5,21 @@ from __future__ import annotations
 import json
 import os
 import re
-import stat
 from dataclasses import dataclass, fields
 from hashlib import sha256
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
+
+from agent_guard_cartography._files import FileTooLargeError, UnsafePathError, read_private_file
+from agent_guard_cartography._ids import AWS_REGION, is_identifier
+from agent_guard_cartography._json import unique_object
+from agent_guard_cartography.errors import AgentGuardCartographyError
+
+MAX_ENROLLMENT_BYTES = 32_768
 
 
-class AwsCollectionError(RuntimeError):
+class AwsCollectionError(AgentGuardCartographyError, RuntimeError):
     """Stable diagnostics only; never retain provider responses or credential values."""
-
-    def __init__(self, code: str):
-        self.code = code
-        super().__init__(code)
 
 
 @dataclass(frozen=True)
@@ -83,7 +85,7 @@ _LIMITS = {
 }
 
 
-def enrollment_dict(value: AwsEnrollment) -> dict:
+def enrollment_dict(value: AwsEnrollment) -> dict[str, Any]:
     """Non-secret wire representation for a private worker pipe and configuration tests."""
     return {
         "schemaVersion": 1,
@@ -91,7 +93,7 @@ def enrollment_dict(value: AwsEnrollment) -> dict:
     }
 
 
-def _invalid() -> None:
+def _invalid() -> NoReturn:
     raise AwsCollectionError("AWS_CONFIG_INVALID")
 
 
@@ -108,14 +110,7 @@ def validate_aws_enrollment(value: Any) -> AwsEnrollment:
     if type(value["schemaVersion"]) is not int or value["schemaVersion"] != 1:
         _invalid()
     for name in ("companyId", "tenantId"):
-        item = value[name]
-        if (
-            type(item) is not str
-            or len(item) > 4096
-            or not any(character != "\ufeff" and not character.isspace() for character in item)
-            or "\0" in item
-            or any(0xD800 <= ord(char) <= 0xDFFF for char in item)
-        ):
+        if not is_identifier(value[name]):
             _invalid()
     if (
         value["partition"] != "aws"
@@ -123,10 +118,7 @@ def validate_aws_enrollment(value: Any) -> AwsEnrollment:
         or not re.fullmatch(r"[0-9]{12}", value["accountId"])
     ):
         _invalid()
-    if type(value["region"]) is not str or not re.fullmatch(
-        r"(?:af|ap|ca|eu|il|me|mx|sa|us)-(?:central|east|west|north|south|northeast|northwest|southeast|southwest)-[1-9][0-9]?",
-        value["region"],
-    ):
+    if type(value["region"]) is not str or not AWS_REGION.fullmatch(value["region"]):
         _invalid()
     arn = value["expectedCallerArn"]
     if (
@@ -179,39 +171,10 @@ def load_aws_enrollment(path: Path | str) -> AwsEnrollment:
     """Read a bounded private regular file, refusing links, devices and blocking FIFOs."""
     if not hasattr(os, "getuid") or not hasattr(os, "O_NOFOLLOW"):
         raise AwsCollectionError("AWS_PLATFORM_UNSUPPORTED")
-    descriptor = -1
     try:
-        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or metadata.st_nlink != 1
-            or metadata.st_mode & 0o077
-            or metadata.st_size > 32_768
-        ):
-            _invalid()
-        raw = bytearray()
-        while len(raw) <= 32_768:
-            chunk = os.read(descriptor, 32_769 - len(raw))
-            if not chunk:
-                break
-            raw.extend(chunk)
-        if len(raw) > 32_768:
-            _invalid()
-
-        def pairs(items):
-            result = {}
-            for key, item in items:
-                if key in result:
-                    _invalid()
-                result[key] = item
-            return result
-
-        value = json.loads(raw.decode("utf-8"), object_pairs_hook=pairs)
-        return validate_aws_enrollment(value)
-    except (OSError, UnicodeError, ValueError, RecursionError):
+        raw = read_private_file(path, MAX_ENROLLMENT_BYTES)
+        return validate_aws_enrollment(
+            json.loads(raw.decode("utf-8"), object_pairs_hook=unique_object)
+        )
+    except (OSError, UnicodeError, ValueError, RecursionError, UnsafePathError, FileTooLargeError):
         raise AwsCollectionError("AWS_CONFIG_INVALID") from None
-    finally:
-        if descriptor >= 0:
-            os.close(descriptor)

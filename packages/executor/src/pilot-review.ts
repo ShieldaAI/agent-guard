@@ -6,6 +6,7 @@ import { digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { BuildProvenancePolicy, type BuildArtifactRule, type BuildAttestationEnvelope } from './build-provenance.js';
 import { parseEvidenceJson } from './evidence-json.js';
 import { boundedBase64, enrolledSigningKey, verifyEnvelopeBytes } from './signed-evidence.js';
+import { ExecutorError } from './store.js';
 
 type PilotMode = 'company-pilot' | 'rehearsal';
 interface PilotSigner {
@@ -63,8 +64,33 @@ const MAX_WINDOW_MS = 31 * 86_400_000;
 const byteLength = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'byteLength')!.get!;
 const backingBuffer = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(Uint8Array.prototype), 'buffer')!.get!;
 
+/**
+ * The stage that refused the evidence. It is the `detail` of the thrown error: a fixed
+ * name, never a value from the policy, the candidate or the bundle.
+ */
+export type PilotReviewCheck =
+  | 'POLICY'
+  | 'MODE'
+  | 'CANDIDATE'
+  | 'BUNDLE'
+  | 'BOUNDARY'
+  | 'BUILD_ATTESTATION'
+  | 'OBSERVATIONS'
+  | 'REVIEW'
+  | 'ACCESS_EVIDENCE'
+  | 'RECOVERY_EVIDENCE'
+  | 'LOAD_EVIDENCE'
+  | 'VALIDITY_WINDOW';
+const FAILED = 'Pilot review verification failed';
+/** `code` PILOT_REVIEW_INVALID, `detail` the failed check; the message stays the fixed sentence. */
+class PilotReviewError extends ExecutorError {
+  constructor(check: PilotReviewCheck) {
+    super('PILOT_REVIEW_INVALID', { detail: check });
+    this.message = FAILED;
+  }
+}
 function invalid(): never {
-  throw new Error('Pilot review verification failed');
+  throw new Error(FAILED);
 }
 function fields(value: Json | undefined, names: readonly string[]): Row {
   if (
@@ -245,6 +271,8 @@ export function verifyPilotReview(
   bundle: PilotReviewBundle,
   expectedMode: PilotMode = 'company-pilot',
 ): PilotReviewResult {
+  // Each stage names itself before it runs, so a refusal can say which check failed.
+  let check: PilotReviewCheck = 'POLICY';
   try {
     const p = fields(immutableJson(policy, 8, 256, 32 * 1024), [
       'version',
@@ -261,12 +289,10 @@ export function verifyPilotReview(
       'minLoadSamples',
       'maxLatencyP95Ms',
     ]);
-    if (
-      p.version !== 1 ||
-      (expectedMode !== 'company-pilot' && expectedMode !== 'rehearsal') ||
-      p.mode !== expectedMode
-    )
-      invalid();
+    if (p.version !== 1) invalid();
+    check = 'MODE';
+    if ((expectedMode !== 'company-pilot' && expectedMode !== 'rehearsal') || p.mode !== expectedMode) invalid();
+    check = 'POLICY';
     identifier(p.companyId);
     identifier(p.deploymentId);
     sha(p.runId);
@@ -282,6 +308,7 @@ export function verifyPilotReview(
 
     const candidate = p.candidate as unknown as BuildArtifactRule;
     const builds = new BuildProvenancePolicy({ artifacts: [candidate] });
+    check = 'CANDIDATE';
     if (
       !types.isUint8Array(candidateBytes) ||
       types.isSharedArrayBuffer(Reflect.apply(backingBuffer, candidateBytes, [])) ||
@@ -289,6 +316,7 @@ export function verifyPilotReview(
     )
       invalid();
     const candidateSha256 = hash(candidateBytes);
+    check = 'BUNDLE';
     const b = fields(immutableJson(bundle, 8, 128, 1024 * 1024), [
       'version',
       'boundary',
@@ -298,7 +326,11 @@ export function verifyPilotReview(
       'evidence',
     ]);
     if (b.version !== 1) invalid();
+    const names = ['access', 'recovery', 'load'] as const;
+    const attachments = fields(b.evidence, names);
+    check = 'BOUNDARY';
     const boundarySha256 = checkBoundary(b.boundary, p, candidate);
+    check = 'BUILD_ATTESTATION';
     const built = builds.verify({
       tenantId: candidate.tenantId,
       path: candidate.path,
@@ -307,6 +339,7 @@ export function verifyPilotReview(
     });
     if (built.signerSha256 === observer.signerSha256 || built.signerSha256 === reviewer.signerSha256) invalid();
 
+    check = 'OBSERVATIONS';
     const observations = verifyEnvelopeBytes(b.observations, OBSERVATION_TYPE, observer, 16 * 1024);
     const observationSha256 = hash(observations);
     const obs = fields(parseEvidenceJson(observations, 16 * 1024), [
@@ -329,6 +362,8 @@ export function verifyPilotReview(
       invalid();
     const started = integer(obs.startedAt, start, expiry - 1);
     const finished = integer(obs.finishedAt, started, expiry - 1);
+    const refs = fields(obs.evidence, names);
+    check = 'REVIEW';
     const review = verifyEnvelopeBytes(b.review, REVIEW_TYPE, reviewer, 16 * 1024);
     const verdict = fields(parseEvidenceJson(review, 16 * 1024), [
       'policySha256',
@@ -350,9 +385,6 @@ export function verifyPilotReview(
     )
       invalid();
     const reviewed = integer(verdict.reviewedAt, finished, expiry - 1);
-    const names = ['access', 'recovery', 'load'] as const;
-    const refs = fields(obs.evidence, names);
-    const attachments = fields(b.evidence, names);
     const section = (name: Section, keys: string[]): Row => {
       const bytes = boundedBase64(attachments[name], SECTION_BYTES);
       if (refs[name] !== hash(bytes)) invalid();
@@ -369,14 +401,18 @@ export function verifyPilotReview(
       boundedBase64(row.sourceReport, 64 * 1024);
       return row;
     };
+    check = 'ACCESS_EVIDENCE';
     checkAccess(section('access', ['probes']).probes);
+    check = 'RECOVERY_EVIDENCE';
     checkRecovery(section('recovery', ['before', 'restored', 'incident']));
+    check = 'LOAD_EVIDENCE';
     const load = checkLoad(
       section('load', ['totalAttempts', 'failedAttempts', 'latenciesMs']),
       minSamples,
       latencyLimit,
       started,
     );
+    check = 'VALIDITY_WINDOW';
     integer(Date.now(), reviewed, expiry - 1);
     return Object.freeze({
       version: 1,
@@ -392,6 +428,7 @@ export function verifyPilotReview(
       ...load,
     });
   } catch {
-    return invalid();
+    // The inner failure may quote evidence, so only the stage name leaves this function.
+    throw new PilotReviewError(check);
   }
 }

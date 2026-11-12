@@ -1,3 +1,4 @@
+import { isInventoryIdentifier } from './identifiers.js';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import type { Socket } from 'node:net';
@@ -74,16 +75,7 @@ function integer(value: unknown, fallback: number, minimum: number, maximum: num
   return result;
 }
 function identifier(value: unknown, code: string): string {
-  if (
-    typeof value !== 'string' ||
-    value.length > 8192 ||
-    [...value].length > 4096 ||
-    /^[\s\u001c-\u001f\u0085]*$/u.test(value) ||
-    value.includes('\0') ||
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
-  )
-    return fail(code);
-  return value;
+  return isInventoryIdentifier(value) ? value : fail(code);
 }
 
 type Bucket = { started: number; used: number };

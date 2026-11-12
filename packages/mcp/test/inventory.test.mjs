@@ -269,31 +269,66 @@ test('resource and prompt projections expose guarded operation names without rem
     assert.equal(JSON.stringify(inventory).includes(secret), false);
 });
 
-test('initial connecting state is unobserved and malformed inventory identifiers fail safely', async t => {
+test('initial connecting state is unobserved', async t => {
   // JavaScript can construct the TypeScript-private class to inspect the otherwise
   // internal connecting state; the public async factory returns only after refresh.
-  for (const principalId of ['operator', 'PRIVATE\0IDENTITY', '\ud800', '\u0085', '\u001c']) {
-    const [transport] = InMemoryTransport.createLinkedPair();
-    const connection = new ManagedMcpConnection({
-      guard: new AgentGuard(),
-      identity: { ...identity, principalId },
-      transport,
-    });
-    t.after(() => connection.close());
-    if (principalId !== 'operator') {
-      assert.throws(() => connection.inventory(), { code: 'MCP_INVENTORY_INVALID', message: 'MCP_INVENTORY_INVALID' });
-      continue;
+  const [transport] = InMemoryTransport.createLinkedPair();
+  const connection = new ManagedMcpConnection({ guard: new AgentGuard(), identity, transport });
+  t.after(() => connection.close());
+  const inventory = connection.inventory();
+  assert.equal(inventory.state, 'connecting');
+  assert.equal(inventory.metadataState, 'unobserved');
+  assert.equal(inventory.metadataRevision, 0);
+  assert.equal(inventory.revision, 0);
+  assert.equal(inventory.authorizationEpoch, 0);
+  assert.deepEqual(inventory.operations, []);
+  await connection.close();
+  assert.equal(connection.inventory().metadataState, 'unobserved');
+});
+
+test('identifiers the inventory cannot report are refused at construction, before any connection', async () => {
+  const malformed = ['PRIVATE\0IDENTITY', '\ud800', 'a\udc00b', '\u0085', '\u001c', ' \t', '', 'x'.repeat(1025), 7];
+  for (const field of ['serverId', 'transportIdentity', 'principalId', 'tenantId']) {
+    for (const value of malformed) {
+      let started = 0;
+      const [transport] = InMemoryTransport.createLinkedPair();
+      const start = transport.start.bind(transport);
+      transport.start = () => {
+        started++;
+        return start();
+      };
+      await assert.rejects(
+        ManagedMcpConnection.connect({
+          guard: new AgentGuard(),
+          identity: { ...identity, [field]: value },
+          transport,
+        }),
+        { code: 'INVALID_CONFIGURATION', message: 'INVALID_CONFIGURATION' },
+        `${field}: ${JSON.stringify(value)}`,
+      );
+      assert.equal(started, 0);
     }
-    const inventory = connection.inventory();
-    assert.equal(inventory.state, 'connecting');
-    assert.equal(inventory.metadataState, 'unobserved');
-    assert.equal(inventory.metadataRevision, 0);
-    assert.equal(inventory.revision, 0);
-    assert.equal(inventory.authorizationEpoch, 0);
-    assert.deepEqual(inventory.operations, []);
-    await connection.close();
-    assert.equal(connection.inventory().metadataState, 'unobserved');
   }
+  const resolve = () => ({ resourceId: 'report', tenantId: 'acme' });
+  for (const options of [
+    { tools: [{ name: 'read\0', resolve }] },
+    { prompts: [{ name: '\ud800', resolve }] },
+    { resources: [{ name: 'report', uri: 'report://\0', resolve }] },
+  ]) {
+    const [transport] = InMemoryTransport.createLinkedPair();
+    await assert.rejects(ManagedMcpConnection.connect({ guard: new AgentGuard(), identity, transport, ...options }), {
+      code: 'INVALID_CONFIGURATION',
+    });
+  }
+  // Every identifier that constructs can be observed: astral characters and inner spaces are fine.
+  const [transport] = InMemoryTransport.createLinkedPair();
+  const connection = new ManagedMcpConnection({
+    guard: new AgentGuard(),
+    identity: { ...identity, serverId: 'docs \u{1F4C4} eu', principalId: 'opérateur' },
+    transport,
+  });
+  assert.equal(connection.inventory().identity.serverId, 'docs \u{1F4C4} eu');
+  await connection.close();
 });
 
 test('invalid observation clocks and fingerprint values fail with stable, sanitized errors', async t => {
@@ -339,7 +374,7 @@ test('a close during host registration cannot publish ready metadata or stale op
   // the accepted descriptor registration then reenters through a host callback.
   const refresh = connection.refresh();
   armed = true;
-  await assert.rejects(refresh, { code: 'REGISTRY_REJECTED' });
+  await assert.rejects(refresh, { code: 'CONNECTION_CHANGED' });
   const closed = connection.inventory();
   assert.equal(closed.state, 'closed');
   assert.equal(closed.metadataRevision, ready.metadataRevision);

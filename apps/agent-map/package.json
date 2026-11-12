@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-map-viewer",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -8,9 +8,10 @@
     "test": "node --test test/*.test.mjs"
   },
   "dependencies": {
+    "@shieldaai/agent-map": "1.0.0",
+    "cytoscape": "3.34.4",
     "react": "19.3.1",
-    "react-dom": "19.3.1",
-    "cytoscape": "3.34.4"
+    "react-dom": "19.3.1"
   },
   "devDependencies": {
     "esbuild": "0.28.2"

@@ -6,15 +6,11 @@ from copy import deepcopy
 from uuid import uuid4
 
 import pytest
+from faults import import_snapshot
 
 import agent_guard_cartography.cloud as cloud
 from agent_guard_cartography.cloud import CloudJoinError, validate_cloud_scope
-from agent_guard_cartography.graph import (
-    GraphImportError,
-    cleanup_staging,
-    import_snapshot,
-    retire_projection,
-)
+from agent_guard_cartography.graph import GraphImportError, cleanup_staging, retire_projection
 
 pytestmark = pytest.mark.integration
 

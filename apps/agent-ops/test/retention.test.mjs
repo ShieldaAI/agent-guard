@@ -10,11 +10,13 @@ import {
   copyFileSync,
   writeFileSync,
   symlinkSync,
+  linkSync,
+  chmodSync,
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { performance } from 'node:perf_hooks';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash, randomUUID, randomBytes } from 'node:crypto';
 import { createLedgerKeyring } from '../../../packages/executor/dist/ledger-maintenance.js';
 import { verifyTransferredTaskFamilyArchive } from '../../../packages/executor/dist/lifecycle.js';
 import { initializeRuntime, openRuntime, openMaintenance } from '../runtime.mjs';
@@ -27,7 +29,7 @@ import {
   enrollBusinessHistory,
   businessHistoryBackupAdapter,
 } from '../retention.mjs';
-import { decryptHistorySegment } from '../history-files.mjs';
+import { decryptHistorySegment, encryptHistorySegment, readHistoryFile } from '../history-files.mjs';
 
 const test = (name, fn) =>
   nodeTest(
@@ -518,4 +520,81 @@ test('a pending SDK commit can recover after verified history-volume relocation'
   );
   f.live();
   assert.equal(f.runtime.workflow.ticket('T-1', 'acme').version, 2);
+});
+
+test('compaction applies exactly the reviewed batch even when another review expires meanwhile', async t => {
+  const f = fixture(t, { maxRequests: 4 });
+  const done = await complete(f);
+  // Still awaiting review now; it expires five minutes from now.
+  const waiting = (await f.runtime.workflow.propose(owner, { ticketId: 'T-1', status: 'open' })).request;
+  const stores = f.offline({ allowHistoryPending: true }),
+    preview = previewBusinessHistory(stores, f.config, { tenantId: 'acme' });
+  assert.equal(preview.count, 1, 'only the completed request was reviewed');
+  // The clock passes the waiting review's expiry right after the batch is selected for the digest check.
+  const now = Date.now;
+  let calls = 0;
+  t.after(() => {
+    Date.now = now;
+  });
+  Date.now = () => (calls++ === 0 ? now() : now() + 10 * 60_000);
+  const applied = applyBusinessHistory(stores, f.config, { tenantId: 'acme', digest: preview.digest });
+  Date.now = now;
+  assert.ok(calls > 1);
+  assert.equal(applied.requests, 1, 'the request that expired after the review was not swept into the batch');
+  const data = stores.backend.read().ticketService;
+  assert.deepEqual(Object.keys(data.requests), [waiting.id]);
+  assert.equal(data.requests[waiting.id].state, 'pending');
+  assert.equal(lookupBusinessHistory(stores, f.config, { tenantId: 'acme', requestId: done.id }).request.id, done.id);
+  assert.equal(lookupBusinessHistory(stores, f.config, { tenantId: 'acme', requestId: waiting.id }), null);
+});
+
+test('a history file with a wrong mode, an extra link or a symbolic link is a tamper finding, not an outage', t => {
+  const directory = realpathSync(mkdtempSync(join(tmpdir(), 'agent-ops-history-file-')));
+  t.after(() => rmSync(directory, { recursive: true, force: true }));
+  writeFileSync(join(directory, 'segment.agh'), 'ciphertext', { mode: 0o600 });
+  assert.equal(readHistoryFile(directory, 'segment.agh').toString(), 'ciphertext');
+  chmodSync(join(directory, 'segment.agh'), 0o644);
+  assert.throws(() => readHistoryFile(directory, 'segment.agh'), { code: 'HISTORY_EVIDENCE_INVALID' });
+  chmodSync(join(directory, 'segment.agh'), 0o600);
+  linkSync(join(directory, 'segment.agh'), join(directory, 'second-name.agh'));
+  assert.throws(() => readHistoryFile(directory, 'segment.agh'), { code: 'HISTORY_EVIDENCE_INVALID' });
+  rmSync(join(directory, 'second-name.agh'));
+  symlinkSync(join(directory, 'segment.agh'), join(directory, 'alias.agh'));
+  assert.throws(() => readHistoryFile(directory, 'alias.agh'), { code: 'HISTORY_EVIDENCE_INVALID' });
+  // Only a file that cannot be opened at all is reported as unavailable.
+  assert.throws(() => readHistoryFile(directory, 'absent.agh'), { code: 'HISTORY_EVIDENCE_UNAVAILABLE' });
+});
+
+test('a history segment decrypts only with a full 16-byte tag and a 12-byte nonce', () => {
+  const backendId = randomUUID(),
+    pending = {
+      index: 1,
+      keyBase64: randomBytes(32).toString('base64'),
+      ivBase64: randomBytes(12).toString('base64'),
+    },
+    payload = { version: 1, backendInstanceId: backendId, tenantId: 'acme', index: 1, previous: null },
+    bytes = encryptHistorySegment(backendId, 'acme', pending, payload);
+  // The head hash is recomputed for every variant, so only the cipher checks stand between it and acceptance.
+  const open = candidate =>
+    decryptHistorySegment(candidate, backendId, 'acme', {
+      index: 1,
+      hash: createHash('sha256').update(candidate).digest('hex'),
+      keyBase64: pending.keyBase64,
+    });
+  assert.deepEqual(open(bytes), payload);
+  const envelope = JSON.parse(bytes.toString('utf8')),
+    tag = Buffer.from(envelope.tag, 'base64');
+  assert.equal(tag.length, 16);
+  for (const length of [0, 4, 8, 12, 15])
+    assert.throws(
+      () => open(Buffer.from(JSON.stringify({ ...envelope, tag: tag.subarray(0, length).toString('base64') }))),
+      { code: 'HISTORY_EVIDENCE_INVALID' },
+      `a ${length}-byte tag`,
+    );
+  for (const length of [8, 16])
+    assert.throws(
+      () => open(Buffer.from(JSON.stringify({ ...envelope, iv: randomBytes(length).toString('base64') }))),
+      { code: 'HISTORY_EVIDENCE_INVALID' },
+      `a ${length}-byte nonce`,
+    );
 });

@@ -29,8 +29,8 @@ import {
   readHistoryFile,
   publishHistoryFile,
 } from './history-files.mjs';
+import { isSettled, isTerminalState, receiptMatches } from './public/contract.js';
 
-const terminal = new Set(['completed', 'denied', 'expired', 'changed', 'failed', 'review_required']);
 const own = (value, key) => (Object.hasOwn(value, key) ? value[key] : undefined);
 const sha = value => historyHash(historyJson(value));
 function text(value) {
@@ -44,26 +44,13 @@ function current(stores) {
   historyState(backend.ticketService);
   return { backend, guard, data: backend.ticketService };
 }
-function receiptMatches(request, receipt) {
-  return (
-    receipt &&
-    receipt.operationId === request.operationId &&
-    receipt.requestId === request.id &&
-    receipt.digest === request.digest &&
-    receipt.tenantId === request.tenantId &&
-    receipt.ticketId === request.ticketId &&
-    receipt.status === request.afterStatus &&
-    receipt.version === Number(request.resourceVersion) + 1
-  );
-}
 function reviewedRequestDigest(request, now) {
   const { archived: _archive, archiveIntent: _intent, noTask: _missing, ...reviewed } = request;
   if (reviewed.state === 'pending' && reviewed.expiresAt <= now) reviewed.state = 'expired';
   return sha(reviewed);
 }
 function inspectRequest(request, data, guard, now) {
-  if (!terminal.has(request.state) && !(request.state === 'pending' && request.expiresAt <= now))
-    fail('HISTORY_UNRESOLVED_WORK');
+  if (!isSettled(request, now)) fail('HISTORY_UNRESOLVED_WORK');
   const receipt = own(data.receipts, request.operationId);
   if (request.state === 'completed' ? !receiptMatches(request, receipt) : receipt !== undefined)
     fail('HISTORY_RECEIPT_MISMATCH');
@@ -125,9 +112,7 @@ function previewDigest(stores, config, tenantId, ids, pending) {
 }
 function selectedRequests(data, tenantId, limit, now) {
   const all = Object.values(data.requests).filter(request => request.tenantId === tenantId);
-  const eligible = all.filter(
-    request => terminal.has(request.state) || (request.state === 'pending' && request.expiresAt <= now),
-  );
+  const eligible = all.filter(request => isSettled(request, now));
   const archived = eligible.filter(request => request.archived);
   // Empty existing archive slots first: even a full 4096-row SDK archive pool can recover.
   const candidates = archived.length ? archived : eligible;
@@ -165,7 +150,11 @@ function pendingState(data) {
     fail('HISTORY_STATE_INVALID');
   return pending;
 }
-export function previewBusinessHistory(stores, config, { tenantId, limit = 100 }) {
+export function previewBusinessHistory(stores, config, options) {
+  return reviewBusinessHistory(stores, config, options).review;
+}
+/** One selection per review: `rows` is exactly the batch the returned digest covers. */
+function reviewBusinessHistory(stores, config, { tenantId, limit = 100 }) {
   text(tenantId);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 100) fail('HISTORY_SCOPE_INVALID');
   privateHistoryDirectory(config);
@@ -175,12 +164,15 @@ export function previewBusinessHistory(stores, config, { tenantId, limit = 100 }
     if (pending.tenantId !== tenantId) fail('HISTORY_RECOVERY_REQUIRED');
     assertHistorySegmentCapacity(data);
     return {
-      status: 'recovery-required',
-      tenantId,
-      count: pending.requestIds.length,
-      operationId: pending.operationId,
-      digest: previewDigest(stores, config, tenantId, pending.requestIds, pending),
-      blockers: [],
+      review: {
+        status: 'recovery-required',
+        tenantId,
+        count: pending.requestIds.length,
+        operationId: pending.operationId,
+        digest: previewDigest(stores, config, tenantId, pending.requestIds, pending),
+        blockers: [],
+      },
+      rows: [],
     };
   }
   const selected = selectedRequests(data, tenantId, limit, Date.now());
@@ -210,23 +202,26 @@ export function previewBusinessHistory(stores, config, { tenantId, limit = 100 }
     life.close();
   }
   return {
-    status: 'preview',
-    tenantId,
-    count: selected.rows.length,
-    eligible: selected.eligible,
-    excludedUnresolved: selected.excludedUnresolved,
-    digest: previewDigest(
-      stores,
-      config,
+    review: {
+      status: 'preview',
       tenantId,
-      selected.rows.map(request => request.id),
-      null,
-    ),
-    blockers: [...blockers].sort(),
-    effects: [
-      'Preserve exact requests, receipts and SDK evidence in encrypted company history.',
-      'Remove only exported live records and SDK archive rows; retain permanent identity fences.',
-    ],
+      count: selected.rows.length,
+      eligible: selected.eligible,
+      excludedUnresolved: selected.excludedUnresolved,
+      digest: previewDigest(
+        stores,
+        config,
+        tenantId,
+        selected.rows.map(request => request.id),
+        null,
+      ),
+      blockers: [...blockers].sort(),
+      effects: [
+        'Preserve exact requests, receipts and SDK evidence in encrypted company history.',
+        'Remove only exported live records and SDK archive rows; retain permanent identity fences.',
+      ],
+    },
+    rows: selected.rows,
   };
 }
 function ensureArchives(stores, pending, checkpoint) {
@@ -321,7 +316,7 @@ function validatePayload(payload, guardInstanceId, company) {
   for (const request of payload.requests) {
     if (
       request.tenantId !== payload.tenantId ||
-      !terminal.has(request.state) ||
+      !isTerminalState(request.state) ||
       request.taskId !== `${NUMBERED_TASK_PREFIX}${request.id}`
     )
       fail('HISTORY_EVIDENCE_INVALID');
@@ -612,13 +607,14 @@ export function enrollBusinessHistory(stores, config, { apply = false, digest } 
 }
 /** Offline review/apply, including explicit reviewed resumption of an interrupted transition. */
 export function applyBusinessHistory(stores, config, { tenantId, limit = 100, digest, checkpoint } = {}) {
-  const review = previewBusinessHistory(stores, config, { tenantId, limit });
+  const { review, rows } = reviewBusinessHistory(stores, config, { tenantId, limit });
   if (typeof digest !== 'string' || digest !== review.digest) fail('HISTORY_PREVIEW_STALE');
   if (!review.count || review.blockers.length) fail(review.blockers[0] ?? 'HISTORY_EMPTY');
   let { data } = current(stores),
     pending = pendingState(data);
   if (!pending) {
-    const selected = selectedRequests(data, tenantId, limit, Date.now());
+    // Never select again here: a review that expired since the digest was computed must not join the batch.
+    const selected = { rows };
     stores.backend.transaction(state => {
       assertHistorySegmentCapacity(state.ticketService, 1);
       if (state.schema === 1) state.schema = 2;

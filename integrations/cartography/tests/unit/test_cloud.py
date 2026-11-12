@@ -15,6 +15,7 @@ from agent_guard_cartography.cloud import (
     unavailable_cloud,
     validate_cloud_scope,
 )
+from agent_guard_cartography.inventory import InventoryValidationError, _aws_reference
 
 CONFIG = {
     "companyId": "company",
@@ -176,16 +177,25 @@ def test_provider_receipts_require_unique_and_fresh_node_account_and_ownership(
     assert (observed["match"] is not None) == (status == "resolved")
 
 
-def test_region_mismatch_cannot_resolve():
+def test_a_bucket_reference_has_no_region_to_compare_with_the_provider():
+    # S3 ARNs carry no region and a reference's region must equal its ARN's, so the
+    # validator never admits a bucket reference that states one. The join records
+    # the provider's region; it has nothing to compare it with.
+    stated = {
+        "arn": "arn:aws:s3:::reports",
+        "partition": "aws",
+        "accountId": "111122223333",
+        "region": "eu-west-1",
+    }
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_MANIFEST_ARN_INVALID$"):
+        _aws_reference(stated)
+    assert _aws_reference({**stated, "region": ""}) == ("s3", "reports")
     scope = validate_cloud_scope(CONFIG)
-    value = reference(
-        label="GuardExternalResource", arn="arn:aws:s3:::reports", kind="bucket", region="eu-west-1"
-    )
+    value = reference(label="GuardExternalResource", arn="arn:aws:s3:::reports", kind="bucket")
     observed = classify_provider(
         value, provider_target(value, scope), [match(region="eu-west-2")], scope, NOW
     )
-    assert observed["reason"] == "region_mismatch"
-    assert observed["match"] is None
+    assert observed["status"] == "resolved" and observed["match"]["region"] == "eu-west-2"
 
 
 class Transaction:

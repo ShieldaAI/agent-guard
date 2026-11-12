@@ -1,9 +1,9 @@
 // Static differential oracle: inventory.js compiled before the private finalizer change.
 // Source revision a62de06; inventory runtime source unchanged since 53acbde035614f21e74a342ebf0c5010f95686fe.
 // Original compiled SHA256: cc3208d926b91d13cc42d4d40e24cb6408ea022c1c941a0cadf3a566628be62b
-// Only the local store import is relocated for this test fixture. Apache-2.0.
+// Only the store import and the core internal-entry import are relocated for this fixture. Apache-2.0.
 import { createHmac, randomUUID } from 'node:crypto';
-import { immutableJson } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { ExecutorError } from '../../dist/store.js';
 const MAX_BYTES = 8 * 1024 * 1024;
 const MAX_VALUES = 500_000;

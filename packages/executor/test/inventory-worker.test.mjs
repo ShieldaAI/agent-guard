@@ -6,7 +6,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, mkdirSync, rmSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { DurableExecutor, composeInventorySnapshot, composeMcpInventorySnapshot } from '../dist/index.js';
+import { DurableExecutor } from '../dist/index.js';
+import { composeInventorySnapshot, composeMcpInventorySnapshot } from '../dist/entry-inventory.js';
 import {
   createInventoryObservationSession,
   bindLedgerObservation,

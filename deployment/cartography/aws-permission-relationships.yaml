@@ -1,6 +1,12 @@
-# Pilot mapping for Cartography 0.144.0. Pass this trusted file to the separate
-# AWS collector's --permission-relationships-file option; the Agent Guard
-# collector neither invokes AWS APIs nor runs provider ingestion automatically.
+# Reference permission mapping for upstream Cartography 0.144.0.
+#
+# The Agent Guard collector does not read this file. Its opt-in IAM policy evidence
+# (includeIamPolicyEvidence in the AWS enrollment) applies the same three rules from
+# code and writes its own G_AWS_POLICY_CANDIDATE relationships. Use this file only if
+# you also run upstream Cartography's AWS sync against the same graph and want its
+# CAN_READ/CAN_WRITE/CAN_LIST edges to follow the same rules: pass it to that sync's
+# --permission-relationships-file option. A unit test keeps this file and the
+# collector's rules identical.
 #
 # These are policy evidence edges, not effective authorization decisions.
 # Cartography retains has_condition, condition_keys and conditions on each edge.
@@ -10,11 +16,8 @@
 #
 # S3 object/prefix policies are projected onto the parent AWSS3Bucket by this
 # upstream mapper. CAN_READ/CAN_WRITE therefore do not establish permission for
-# every object or for a particular bound object/prefix. Preserve the host binding's
-# original ARN, kind and scope, and keep the access assessment unknown.
+# every object or for a particular bound object/prefix.
 #
-# IAM and S3 inventory plus this mapping must be collected for the explicitly
-# enrolled account before the Agent Guard importer can join their evidence.
 # Do not add wildcards or other labels without extending and testing the consumer.
 - target_label: AWSS3Bucket
   permissions:

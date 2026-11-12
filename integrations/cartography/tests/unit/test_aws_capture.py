@@ -97,6 +97,13 @@ def clients(*, identity=None, roles=None, users=None, buckets=None, locations=No
     }
 
 
+def run_worker(enrollment, credentials, *, command):
+    """The worker protocol against a stand-in child, through the private command hook."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(capture, "_worker_command", lambda: command)
+        return capture._run_worker(enrollment, credentials)
+
+
 def error(code, fn):
     with pytest.raises(AwsCollectionError) as raised:
         fn()
@@ -485,7 +492,7 @@ def test_worker_sanitizes_environment_and_never_places_credentials_in_argv(enrol
     monkeypatch.setenv("AWS_ENDPOINT_URL", "https://untrusted.example")
     monkeypatch.setenv("HTTPS_PROXY", "https://proxy-secret-canary.example")
     script = "import json,sys,os; v=json.load(sys.stdin); assert v['credentials']==['key','secret','token']; assert not any(k in ('AWS_ENDPOINT_URL','AWS_PROFILE','HTTPS_PROXY','HTTP_PROXY','PYTHONPATH') for k in os.environ); assert os.environ['AWS_CONFIG_FILE']==os.devnull; assert os.environ['AWS_SHARED_CREDENTIALS_FILE']==os.devnull; assert os.environ['BOTO_CONFIG']==os.devnull; assert os.environ['AWS_EC2_METADATA_DISABLED']=='true'; print(json.dumps({'ok':True,'capture':{'capturedAt':1,'roles':[],'users':[],'buckets':[]}}))"
-    result = capture._run_worker(
+    result = run_worker(
         enrollment, ["key", "secret", "token"], command=[sys.executable, "-c", script]
     )
     assert result["buckets"] == []
@@ -914,7 +921,7 @@ def test_worker_hard_deadline_kills_owned_process(enrollment, monkeypatch):
     started = time.monotonic()
     error(
         "AWS_TIMEOUT",
-        lambda: capture._run_worker(
+        lambda: run_worker(
             replace(enrollment, timeout_seconds=1, request_timeout_seconds=1),
             ["key", "secret", "token"],
             command=[sys.executable, "-c", "import time; time.sleep(60)"],
@@ -939,7 +946,7 @@ def test_worker_hard_deadline_kills_owned_process(enrollment, monkeypatch):
 def test_worker_output_and_diagnostics_are_bounded(enrollment, script, code):
     error(
         code,
-        lambda: capture._run_worker(
+        lambda: run_worker(
             replace(enrollment, max_capture_bytes=1024),
             ["key", "secret", "token"],
             command=[sys.executable, "-c", script],
@@ -954,9 +961,56 @@ def test_worker_preserves_only_stable_policy_diagnostics(enrollment, code):
     payload = json.dumps({"ok": False, "error": code})
     error(
         code,
-        lambda: capture._run_worker(
+        lambda: run_worker(
             replace(enrollment, include_iam_policy_evidence=True),
             ["key", "secret", "token"],
             command=[sys.executable, "-c", f"import sys; print({payload!r}); sys.exit(2)"],
         ),
     )
+
+
+def test_worker_group_is_signalled_only_while_its_leader_is_unreaped(enrollment, monkeypatch):
+    signalled = []
+    killpg = os.killpg
+
+    def checked(group, signal_number):
+        # Raises ChildProcessError once the leader was reaped: from then on its
+        # process-group ID can belong to an unrelated process.
+        os.waitid(os.P_PID, group, os.WEXITED | os.WNOHANG | os.WNOWAIT)
+        signalled.append(group)
+        return killpg(group, signal_number)
+
+    launched = []
+    popen = subprocess.Popen
+
+    def start(*args, **kwargs):
+        launched.append(popen(*args, **kwargs))
+        return launched[-1]
+
+    monkeypatch.setattr(capture.subprocess, "Popen", start)
+    monkeypatch.setattr(capture.os, "killpg", checked)
+    script = (
+        "import json,subprocess,sys;"
+        "child=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],"
+        "stdin=subprocess.DEVNULL,stdout=subprocess.DEVNULL);"
+        "print(json.dumps({'ok':True,'capture':"
+        "{'capturedAt':1,'roles':[child.pid],'users':[],'buckets':[]}}))"
+    )
+    result = run_worker(
+        enrollment, ["key", "secret", "token"], command=[sys.executable, "-c", script]
+    )
+    assert signalled == [launched[0].pid] and launched[0].returncode == 0
+    # A descendant that outlived the worker was in the owned group and is gone.
+    descendant = int(result["roles"][0])
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        try:
+            os.kill(descendant, 0)
+        except ProcessLookupError:
+            break
+        time.sleep(0.02)
+    else:
+        pytest.fail("a worker descendant outlived the capture")
+    # Once the leader is reaped nothing is signalled again.
+    capture._stop(launched[0])
+    assert signalled == [launched[0].pid]

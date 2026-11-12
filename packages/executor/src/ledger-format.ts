@@ -4,7 +4,7 @@ import { ExecutorError, type Ledger } from './store.js';
  * Durable executor ledger format.
  *
  * Two independent markers describe a ledger:
- * - `schema` (1, 2 or 3) is the authority-mode marker that 0.1 readers already check:
+ * - `schema` (1, 2 or 3) is the authority-mode marker that alpha readers already check:
  *   2 means lifecycle/history state may be present, 3 means a recovery mirror is enrolled.
  *   It stays as the fence that stops older readers from opening newer authority modes.
  * - `formatVersion` (this module) versions the ledger's data layout. Each step is a pure
@@ -39,7 +39,7 @@ interface Migration {
 
 const migrations: readonly Migration[] = Object.freeze([
   {
-    // 0.1.0-alpha.3 through 0.2 pre-release: no explicit version. Record it and the features.
+    // 0.1.0-alpha.3 and pre-1.0 development builds: no explicit version. Record it and the features.
     from: 0,
     to: 1,
     migrate: state => {

@@ -4,7 +4,6 @@ import json
 from copy import deepcopy
 from dataclasses import replace
 from datetime import UTC, datetime
-from importlib.resources import files
 from pathlib import Path
 from urllib.parse import quote
 
@@ -140,15 +139,14 @@ def error(code, callback):
     assert raised.value.code == str(raised.value) == code
 
 
-def test_literal_mapping_matches_packaged_reviewed_rules():
+def test_literal_mapping_matches_the_reference_rules_for_upstream_cartography():
     source = (
         Path(__file__).resolve().parents[4]
         / "deployment/cartography/aws-permission-relationships.yaml"
     )
-    resource = files("agent_guard_cartography").joinpath(
-        "data", "aws-permission-relationships.yaml"
-    )
-    mapping = yaml.safe_load(source.read_text() if source.is_file() else resource.read_text())
+    if not source.is_file():
+        pytest.skip("deployment/cartography is only present in the repository")
+    mapping = yaml.safe_load(source.read_text())
     assert MAPPINGS == tuple(
         (item["relationship_name"], item["permissions"][0]) for item in mapping
     )

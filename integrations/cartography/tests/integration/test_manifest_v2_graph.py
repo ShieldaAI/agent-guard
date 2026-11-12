@@ -8,10 +8,11 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from faults import import_snapshot
 from test_reference_queries import query
 
 from agent_guard_cartography.archive import SnapshotArchive
-from agent_guard_cartography.graph import GraphImportError, import_snapshot, retire_projection
+from agent_guard_cartography.graph import GraphImportError, retire_projection
 from agent_guard_cartography.inventory import validate_snapshot
 
 pytestmark = pytest.mark.integration

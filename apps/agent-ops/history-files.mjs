@@ -100,7 +100,9 @@ export function encryptHistorySegment(backendId, tenantId, pending, payload) {
   if (plain.length > MAX_HISTORY_PLAIN) historyFailure('HISTORY_BATCH_TOO_LARGE');
   const key = Buffer.from(pending.keyBase64, 'base64');
   try {
-    const cipher = createCipheriv('aes-256-gcm', key, Buffer.from(pending.ivBase64, 'base64'));
+    const cipher = createCipheriv('aes-256-gcm', key, Buffer.from(pending.ivBase64, 'base64'), {
+      authTagLength: 16,
+    });
     cipher.setAAD(aad(backendId, tenantId, pending.index));
     const ciphertext = Buffer.concat([cipher.update(plain), cipher.final()]);
     return Buffer.from(
@@ -130,9 +132,13 @@ export function decryptHistorySegment(bytes, backendId, tenantId, head) {
       typeof envelope.ciphertext !== 'string'
     )
       historyFailure('HISTORY_EVIDENCE_INVALID');
-    const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(envelope.iv, 'base64'));
+    const iv = Buffer.from(envelope.iv, 'base64'),
+      tag = Buffer.from(envelope.tag, 'base64');
+    // Exact sizes only: without them Node accepts a truncated tag, which is far easier to forge.
+    if (iv.length !== 12 || tag.length !== 16) historyFailure('HISTORY_EVIDENCE_INVALID');
+    const cipher = createDecipheriv('aes-256-gcm', key, iv, { authTagLength: 16 });
     cipher.setAAD(aad(backendId, tenantId, head.index));
-    cipher.setAuthTag(Buffer.from(envelope.tag, 'base64'));
+    cipher.setAuthTag(tag);
     plain = Buffer.concat([cipher.update(Buffer.from(envelope.ciphertext, 'base64')), cipher.final()]);
     if (plain.length > MAX_HISTORY_PLAIN) historyFailure('HISTORY_EVIDENCE_INVALID');
     const payload = JSON.parse(plain.toString('utf8'));
@@ -189,7 +195,11 @@ export function readHistoryFile(directory, filename) {
     )
       historyFailure('HISTORY_EVIDENCE_INVALID');
     return bytes.subarray(0, length);
-  } catch {
+  } catch (error) {
+    // A wrong mode, owner, link count or type, or a file replaced or changed while it was read
+    // (including by a symbolic link) is a tamper finding, not an outage.
+    if (['HISTORY_EVIDENCE_INVALID', 'ELOOP', 'EMLINK'].includes(error?.code))
+      historyFailure('HISTORY_EVIDENCE_INVALID');
     historyFailure('HISTORY_EVIDENCE_UNAVAILABLE');
   } finally {
     if (fd !== undefined) closeSync(fd);

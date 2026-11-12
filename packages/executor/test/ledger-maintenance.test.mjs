@@ -7,8 +7,8 @@ import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
+import { DurableExecutor } from '../dist/index.js';
 import {
-  DurableExecutor,
   createLedgerKeyring,
   readLedgerKeyring,
   loadLedgerKey,
@@ -16,7 +16,7 @@ import {
   rotateLedgerKeyring,
   readLedgerKeyringPolicy,
   configureLedgerKeyring,
-} from '../dist/index.js';
+} from '../dist/entry-ops.js';
 import { LedgerStore } from '../dist/store.js';
 import { fileURLToPath } from 'node:url';
 
@@ -218,7 +218,7 @@ for (const phase of ['key-staged', 'before-commit', 'after-commit'])
   test(`process loss at ${phase} retains a discoverable key and matching witness`, posix, t => {
     const f = fixture(t),
       before = state(f);
-    const entry = new URL('../dist/index.js', import.meta.url).href;
+    const entry = new URL('../dist/entry-ops.js', import.meta.url).href;
     const script = `import fs from 'node:fs'; import {syncBuiltinESMExports} from 'node:module';
     import {DatabaseSync} from 'node:sqlite'; import {rotateLedgerKeyring} from ${JSON.stringify(entry)};
     const [database,keyringFile,witnessPath,phase]=process.argv.slice(1);
@@ -444,19 +444,23 @@ test('keyring limits reject invalid values, duplicate fields and count mismatche
       assert.equal(fs.existsSync(fresh), false);
     }
     const value = JSON.parse(original);
+    // A stored limit outside 1..64 keeps its own code; other damage is KEYRING_INVALID.
     const malformed = [
-      original.toString().replace('"version":1,', '"version":1,"maxKeys":4,"maxKeys":8,'),
-      ...[0, 1.5, 65, '8', null].map(maxKeys => JSON.stringify({ ...value, maxKeys })),
-      JSON.stringify({
-        ...value,
-        maxKeys: 1,
-        keys: [...value.keys, { id: 'extra', keyBase64: randomBytes(32).toString('base64') }],
-      }),
+      [original.toString().replace('"version":1,', '"version":1,"maxKeys":4,"maxKeys":8,'), 'KEYRING_INVALID'],
+      ...[0, 1.5, 65, '8', null].map(maxKeys => [JSON.stringify({ ...value, maxKeys }), 'KEYRING_LIMIT_INVALID']),
+      [
+        JSON.stringify({
+          ...value,
+          maxKeys: 1,
+          keys: [...value.keys, { id: 'extra', keyBase64: randomBytes(32).toString('base64') }],
+        }),
+        'KEYRING_INVALID',
+      ],
     ];
-    for (const text of malformed) {
+    for (const [text, code] of malformed) {
       fs.writeFileSync(f.options.keyringFile, text);
-      assert.throws(() => readLedgerKeyringPolicy(f.options), { code: 'KEYRING_INVALID' });
-      assert.throws(() => configureLedgerKeyring({ ...f.options, maxKeys: 64 }), { code: 'KEYRING_INVALID' });
+      assert.throws(() => readLedgerKeyringPolicy(f.options), { code });
+      assert.throws(() => configureLedgerKeyring({ ...f.options, maxKeys: 64 }), { code });
       assert.equal(fs.readFileSync(f.options.keyringFile, 'utf8'), text);
     }
   } finally {

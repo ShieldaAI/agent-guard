@@ -1,3 +1,4 @@
+import { isInventoryIdentifier } from './identifiers.js';
 import { randomUUID } from 'node:crypto';
 import { type Json } from '@shieldaai/agent-guard';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
@@ -9,7 +10,9 @@ const LIMIT = 'INVENTORY_MANIFEST_LIMIT_EXCEEDED';
 function fail(code = INVALID): never {
   throw new ExecutorError(code);
 }
-function copy(value: unknown, maximum: number, values = 200_000): Json {
+/** Most JSON values (objects, arrays, strings, numbers, booleans, nulls) one manifest may hold. */
+export const MAX_INVENTORY_MANIFEST_VALUES = 200_000;
+function copy(value: unknown, maximum: number, values = MAX_INVENTORY_MANIFEST_VALUES): Json {
   try {
     return immutableJson(value, 32, values, maximum);
   } catch (error) {
@@ -28,15 +31,7 @@ function object(value: unknown, keys: readonly string[], optional: readonly stri
   return record;
 }
 function identifier(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    /^[\s\u001c-\u001f\u0085]*$/u.test(value) ||
-    value.includes('\0') ||
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) ||
-    [...value].length > 4096
-  )
-    return fail();
-  return value;
+  return isInventoryIdentifier(value) ? value : fail();
 }
 function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return fail();

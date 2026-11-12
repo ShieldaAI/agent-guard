@@ -1,7 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, createInventoryObserverToken, startInventoryServer } from '../dist/index.js';
+import { DurableExecutor } from '../dist/index.js';
+import { createInventoryObserverToken, startInventoryServer } from '../dist/entry-inventory.js';
 import { DatabaseSync } from 'node:sqlite';
 import { LedgerStore } from '../dist/store.js';
 

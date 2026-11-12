@@ -62,3 +62,16 @@ def test_pilot_gates_fail_on_wrong_scale_failure_missing_samples_or_slow_tail():
         "smoke", publications, [{**sample, "seconds": 2.0} for sample in queries], counts
     )["passed"]
     assert not gates("smoke", publications, queries, {**counts, "grants": 399})["passed"]
+
+
+def test_measurement_tooling_is_not_shipped_in_the_wheel():
+    import tomllib
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    wheel = tomllib.loads((root / "pyproject.toml").read_text())["tool"]["hatch"]["build"][
+        "targets"
+    ]["wheel"]
+    assert wheel["exclude"] == ["src/agent_guard_cartography/pilot_benchmark.py"]
+    # The repository's benchmark script and these tests still import it from source.
+    assert (root / wheel["exclude"][0]).is_file()

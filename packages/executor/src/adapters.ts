@@ -19,7 +19,9 @@ import { dirname, join, resolve } from 'node:path';
 import { type Json, type ToolDefinition } from '@shieldaai/agent-guard';
 import { canonicalJson, digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
 import { createRestrictedFetch, type NetworkPolicy } from './network.js';
+import { foldPath, portablePathProblem } from './path-rules.js';
 import { ExecutorError } from './store.js';
+import { builtInExecute, hostCallback } from './tool-errors.js';
 
 export type PublicToolDefinition = Pick<
   ToolDefinition,
@@ -36,6 +38,22 @@ export function publicToolDefinition(tool: ToolDefinition): PublicToolDefinition
     ...(tool.maxCost === undefined ? {} : { maxCost: tool.maxCost }),
   }) as PublicToolDefinition;
 }
+/**
+ * The adapters' own refusals keep their code through execute(): ADAPTER_* and the codes of the
+ * restricted fetch the HTTP adapters build from `network`. Anything else is a tool failure, and so
+ * is any error from the host's `credential` callback.
+ */
+const ADAPTER_CODES = [
+  /^ADAPTER_[A-Z_]+$/,
+  'DESTINATION_DENIED',
+  'DNS_FAILED',
+  'REDIRECT_DENIED',
+  'REQUEST_ABORTED',
+  'REQUEST_TOO_LARGE',
+  'RESPONSE_INVALID',
+  'RESPONSE_LIMIT',
+  'RESPONSE_FAILED',
+];
 function fail(code: string): never {
   throw new ExecutorError(code);
 }
@@ -60,25 +78,9 @@ function object(value: Json, allowed: string[], required: string[]): Record<stri
   return value as Record<string, Json>;
 }
 function relativeFile(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    !value ||
-    value.length > 240 ||
-    value.normalize('NFC') !== value ||
-    /[\\:\u0000-\u001f\u007f]/u.test(value) ||
-    value
-      .split('/')
-      .some(
-        part =>
-          !part ||
-          part === '.' ||
-          part === '..' ||
-          /[. ]$/.test(part) ||
-          /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part),
-      )
-  )
-    fail('ADAPTER_PATH_INVALID');
-  return value;
+  const problem = portablePathProblem(value);
+  if (problem) throw new ExecutorError('ADAPTER_PATH_INVALID', { detail: problem });
+  return value as string;
 }
 function limit(value: number | undefined, fallback: number): number {
   const result = value ?? fallback;
@@ -110,7 +112,7 @@ function privateStat(stat: Stats, directory: boolean): void {
   if (
     stat.isSymbolicLink() ||
     (directory ? !stat.isDirectory() : !stat.isFile() || stat.nlink !== 1) ||
-    (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
+    (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 || stat.uid !== process.geteuid?.()))
   )
     fail('ADAPTER_PRIVATE_PATH_UNSAFE');
 }
@@ -158,7 +160,7 @@ export function createPrivateFileTools(options: PrivateFileToolsOptions): {
     for (let index = 0; index < parts.length; index++) {
       const part = parts[index]!;
       const entries = readdirSync(current);
-      if (entries.some(entry => entry.toLowerCase() === part.toLowerCase() && entry !== part))
+      if (entries.some(entry => entry !== part && foldPath(entry.normalize('NFC')) === foldPath(part)))
         fail('ADAPTER_PATH_ALIAS');
       const next = join(current, part);
       let stat: Stats;
@@ -236,7 +238,7 @@ export function createPrivateFileTools(options: PrivateFileToolsOptions): {
         resourceVersion: snapshot(input.path, false).version,
       };
     },
-    execute: (args, context) => {
+    execute: builtInExecute((args, context) => {
       const input = parse(args, false) as { path: string },
         state = snapshot(input.path, false);
       assertContext(input, context, tenantId, resource(input.path), state.version);
@@ -254,7 +256,7 @@ export function createPrivateFileTools(options: PrivateFileToolsOptions): {
           bytes: state.bytes!.length,
         },
       };
-    },
+    }, ADAPTER_CODES),
   };
   const write: ToolDefinition = {
     name: `${namePrefix}.write`,
@@ -280,7 +282,7 @@ export function createPrivateFileTools(options: PrivateFileToolsOptions): {
         resourceVersion: snapshot(input.path, true).version,
       };
     },
-    execute: (args, context) => {
+    execute: builtInExecute((args, context) => {
       const input = parse(args, true) as { path: string; content: string };
       const state = snapshot(input.path, true);
       assertContext(input, context, tenantId, resource(input.path), state.version);
@@ -330,7 +332,7 @@ export function createPrivateFileTools(options: PrivateFileToolsOptions): {
         if (fd !== undefined) closeSync(fd);
         rmSync(temporary, { force: true });
       }
-    },
+    }, ADAPTER_CODES),
   };
   return { read, write };
 }
@@ -423,7 +425,7 @@ export function createHttpGetTool(options: HttpGetToolOptions): ToolDefinition {
         resourceVersion: item.version,
       };
     },
-    execute: async (args, context) => {
+    execute: builtInExecute(async (args, context) => {
       const item = binding(args);
       assertContext(item.input, context, tenantId, item.resourceId, item.version, item.selected.url);
       const response = await fetch(item.selected.url, {
@@ -457,7 +459,7 @@ export function createHttpGetTool(options: HttpGetToolOptions): ToolDefinition {
           body: value,
         },
       };
-    },
+    }, ADAPTER_CODES),
   };
 }
 
@@ -537,10 +539,11 @@ export function createOutboundJsonTool(options: OutboundJsonToolOptions): ToolDe
         resourceVersion: version,
       };
     },
-    execute: async (args, context) => {
+    execute: builtInExecute(async (args, context) => {
       const input = normalized(args);
       assertContext(input, context, tenantId, resourceId, version, recipient);
-      const token = credential();
+      // The credential source is host code: its error is a tool failure, never an adapter refusal.
+      const token = hostCallback(credential);
       if (
         token.version !== credentialVersion ||
         typeof token.value !== 'string' ||
@@ -571,6 +574,6 @@ export function createOutboundJsonTool(options: OutboundJsonToolOptions): ToolDe
           etag: response.headers.get('etag'),
         },
       };
-    },
+    }, ADAPTER_CODES),
   };
 }

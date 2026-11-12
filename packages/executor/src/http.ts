@@ -21,9 +21,12 @@ export interface ExecutorServerOptions {
   maxConnections?: number;
   /** Requests being handled at once; more get REQUEST_RATE_LIMITED. Integer 1-1024, default 32. */
   maxActiveRequests?: number;
-  /** Requests per minute per bearer credential (valid or not). Integer 1-1,000,000, default 600. */
+  /**
+   * Requests per minute per recognized bearer credential: a token of one of this executor's tasks, or
+   * the admin token. An unknown token is refused before it is counted. Integer 1-1,000,000, default 600.
+   */
   requestsPerMinutePerCredential?: number;
-  /** Requests per minute across the server. Integer 1-1,000,000, default 6,000. */
+  /** Task-route requests per minute across the server; admin routes are not counted. Integer 1-1,000,000, default 6,000. */
   requestsPerMinute?: number;
 }
 const WINDOW_MS = 60_000;
@@ -84,10 +87,16 @@ export async function startExecutorServer(
   const windows = new Map<string, { started: number; count: number }>();
   let global = { started: performance.now(), count: 0 };
   let active = 0;
-  const admit = (credential: Buffer): void => {
-    const now = performance.now();
+  // Administration (revoke, reconcile, approve) must stay reachable while task traffic is at
+  // its limits: it keeps reserved in-flight slots and is not counted in the server-wide window.
+  const adminReserve = Math.min(maxActive - 1, Math.max(1, Math.floor(maxActive / 8)));
+  /** Whether the server-wide window is used up. Asking does not spend it. */
+  const serverWindowFull = (now: number): boolean => {
     if (now - global.started >= WINDOW_MS) global = { started: now, count: 0 };
-    if (++global.count > perServer) throw new ExecutorError('REQUEST_RATE_LIMITED');
+    return global.count >= perServer;
+  };
+  /** Counts one request against the credential's own window. */
+  const chargeCredential = (credential: Buffer, now: number): void => {
     const key = credential.toString('hex');
     let window = windows.get(key);
     if (!window || now - window.started >= WINDOW_MS) {
@@ -105,10 +114,8 @@ export async function startExecutorServer(
       res.setHeader('Cache-Control', 'no-store');
       res.setHeader('X-Content-Type-Options', 'nosniff');
       let counted = false;
+      let admin = false;
       try {
-        if (active >= maxActive) throw new ExecutorError('REQUEST_RATE_LIMITED');
-        active++;
-        counted = true;
         if (req.headers.origin !== undefined || req.headers['sec-fetch-site'] !== undefined || req.method !== 'POST')
           throw new ExecutorError('REQUEST_DENIED');
         const route = req.url;
@@ -117,10 +124,23 @@ export async function startExecutorServer(
         if (!auth?.startsWith('Bearer ') || auth.length > 270 || req.headersDistinct.authorization?.length !== 1)
           throw new ExecutorError('UNAUTHENTICATED');
         const token = auth.slice(7);
-        admit(digest(token));
-        const admin = route.startsWith('/v1/admin/');
+        admin = route.startsWith('/v1/admin/');
+        // Recognize the credential first, in memory: an unknown or wrong token is refused before it
+        // can spend a request window, hold an in-flight slot or cause a ledger read.
+        if (admin ? !timingSafeEqual(digest(token), adminHash) : !executor.knowsToken(token))
+          throw new ExecutorError('UNAUTHENTICATED');
+        // Every limit is checked before the ledger is read, so a request over a limit costs no read.
+        // Only the credential's own window is charged here; the shared window and the slot are taken
+        // by a request that also authenticates below.
+        const arrived = performance.now();
+        chargeCredential(digest(token), arrived);
+        if (active >= (admin ? maxActive : maxActive - adminReserve) || (!admin && serverWindowFull(arrived)))
+          throw new ExecutorError('REQUEST_RATE_LIMITED');
+        // The ledger read: the task and everything it derives from must be unrevoked and unexpired.
         const taskId = admin ? undefined : executor.authenticate(token);
-        if (admin && !timingSafeEqual(digest(token), adminHash)) throw new ExecutorError('UNAUTHENTICATED');
+        active++;
+        counted = true;
+        if (!admin) global.count++;
         let bodyTimedOut = false;
         const bodyDeadline = performance.now() + timeout;
         const timer = setTimeout(() => {
@@ -204,6 +224,11 @@ export async function startExecutorServer(
               }),
             };
             break;
+          case '/v1/admin/action':
+            // What an action ID denotes, read from the ledger for the review screen.
+            keys(input, ['actionId']);
+            output = executor.preparedAction(string(input.actionId));
+            break;
           case '/v1/admin/revoke':
             keys(input, ['taskId']);
             executor.revokeTask(string(input.taskId));
@@ -230,8 +255,21 @@ export async function startExecutorServer(
         res.end(JSON.stringify(output));
       } catch (error) {
         const code = executorErrorResponse(error);
+        // revokeTask() denied the task in this process, but the ledger did not record it. The operator
+        // is told so, and that repeating the request is safe. No other response carries a detail.
+        const notDurable =
+          admin &&
+          code === 'OPERATION_FAILED' &&
+          error instanceof ExecutorError &&
+          error.detail === 'REVOCATION_NOT_DURABLE';
         res.writeHead(executorResponseStatus(code));
-        res.end(JSON.stringify({ error: code, retryable: executorResponseRetryable(code) }));
+        res.end(
+          JSON.stringify({
+            error: code,
+            retryable: notDurable || executorResponseRetryable(code),
+            ...(notDurable ? { detail: 'REVOCATION_NOT_DURABLE' } : {}),
+          }),
+        );
       } finally {
         if (counted) active--;
       }

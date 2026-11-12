@@ -1,3 +1,7 @@
+// The smallest complete flow: one tool, one task, a person's approval, then the same approval
+// refused when it is replayed.
+//
+// Run: npm run build, then node examples/basic.mjs (or npm run demo).
 import { AgentGuard } from '@shieldaai/agent-guard';
 
 const guard = new AgentGuard();
@@ -25,7 +29,7 @@ const args = { recordId: 'record-A' };
 const prepared = await guard.prepare(task, { tool: 'records.delete', args });
 args.recordId = 'record-B'; // The prepared invocation is already an immutable snapshot.
 const approvalId = guard.approve(prepared, { approverId: 'human-reviewer', expiresAt: Date.now() + 30_000 });
-console.log(await guard.execute(prepared, { approvalId }));
+console.log('Result:', JSON.stringify(await guard.execute(prepared, { approvalId })));
 console.log('Recorded effects:', effects);
 try {
   await guard.execute(prepared, { approvalId });

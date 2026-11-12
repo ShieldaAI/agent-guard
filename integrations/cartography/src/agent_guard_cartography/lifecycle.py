@@ -4,87 +4,54 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
-import sys
 import time
-from hashlib import sha256
+from collections.abc import Mapping, Sequence
 from pathlib import Path
+from typing import Any, NoReturn
 
-from neo4j import GraphDatabase, unit_of_work
+from neo4j import unit_of_work
 
-from agent_guard_cartography.graph import GraphImportError, _lock_source, source_key
-from agent_guard_cartography.input_files import read_regular_file
-
-MAX_TRANSITION_BYTES = 256 * 1024
-SOURCE_FIELDS = frozenset(
-    ("companyId", "sourceId", "tenantId", "enrollmentGeneration", "inventoryInstanceId")
+from agent_guard_cartography._command import (
+    add_archive_arguments,
+    add_neo4j_arguments,
+    add_verbose_argument,
+    archive_limits,
+    check_archive_arguments,
+    command_failed,
+    ingestion_lock,
+    lock_files,
+    neo4j_password,
+    open_driver,
+    validate_neo4j_uri,
 )
-PROFILES = ("core", "host", "host-mcp")
-MAX_TIMESTAMP_MS = 253_402_300_799_999
+from agent_guard_cartography._ids import MAX_TIMESTAMP_SECONDS
+from agent_guard_cartography.archive import ArchiveError, SnapshotArchive
+from agent_guard_cartography.graph import GraphImportError, _lock_source, source_key
+from agent_guard_cartography.shapes import Transition, TransitionReceipt
+from agent_guard_cartography.transitions import (
+    MAX_TRANSITION_BYTES,
+    LifecycleError,
+    load_transition,
+    transition_id,
+    validate_transition,
+)
+
+__all__ = [
+    "MAX_TRANSITION_BYTES",
+    "LifecycleError",
+    "load_transition",
+    "main",
+    "preflight_transition",
+    "supersede_source",
+    "transition_id",
+    "validate_transition",
+]
+
+MAX_TIMESTAMP_MS = MAX_TIMESTAMP_SECONDS * 1000 + 999
 
 
-class LifecycleError(RuntimeError):
-    """Stable safe diagnostics, excluding host configuration and database details."""
-
-    def __init__(self, code: str):
-        self.code = code
-        super().__init__(code)
-
-
-def _fail(code: str = "SOURCE_TRANSITION_INVALID") -> None:
+def _fail(code: str = "SOURCE_TRANSITION_INVALID") -> NoReturn:
     raise LifecycleError(code)
-
-
-def _source(value: object) -> dict:
-    if type(value) is not dict or value.keys() != SOURCE_FIELDS:
-        _fail()
-    result = {}
-    for key in sorted(SOURCE_FIELDS):
-        item = value[key]
-        if (
-            type(item) is not str
-            or not any(character != "\ufeff" and not character.isspace() for character in item)
-            or len(item) > 4096
-            or "\x00" in item
-            or any(0xD800 <= ord(char) <= 0xDFFF for char in item)
-        ):
-            _fail()
-        result[key] = item
-    return result
-
-
-def validate_transition(value: object) -> dict:
-    """Detach a closed explicit predecessor/successor transition within one installation."""
-    if (
-        type(value) is not dict
-        or value.keys() != {"schemaVersion", "predecessor", "successor", "profile"}
-        or type(value["schemaVersion"]) is not int
-        or value["schemaVersion"] != 1
-        or type(value["profile"]) is not str
-        or value["profile"] not in PROFILES
-    ):
-        _fail()
-    before, after = _source(value["predecessor"]), _source(value["successor"])
-    if any(before[key] != after[key] for key in ("companyId", "sourceId", "tenantId")):
-        _fail("SOURCE_TRANSITION_SCOPE_MISMATCH")
-    if before["enrollmentGeneration"] == after["enrollmentGeneration"]:
-        _fail()
-    result = {
-        "schemaVersion": 1,
-        "predecessor": before,
-        "successor": after,
-        "profile": value["profile"],
-    }
-    if len(json.dumps(result, ensure_ascii=False).encode("utf-8")) > MAX_TRANSITION_BYTES:
-        _fail()
-    return result
-
-
-def transition_id(value: object) -> str:
-    transition = validate_transition(value)
-    return sha256(
-        json.dumps(transition, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode()
-    ).hexdigest()
 
 
 def _timestamp(value: object) -> int:
@@ -93,7 +60,7 @@ def _timestamp(value: object) -> int:
     return value
 
 
-def _matches_source(node: dict, source: dict) -> bool:
+def _matches_source(node: Mapping[str, Any], source: Mapping[str, str]) -> bool:
     return all(
         node.get(property_name) == source[field]
         for field, property_name in (
@@ -106,7 +73,7 @@ def _matches_source(node: dict, source: dict) -> bool:
     )
 
 
-def _ready(tx, identifier: str, node: dict, profile: str) -> None:
+def _ready(tx: Any, identifier: str, node: Mapping[str, Any], profile: str) -> None:
     current = node.get("current_snapshot_id")
     if type(current) is not str or not current:
         _fail("SOURCE_TRANSITION_NOT_READY")
@@ -118,9 +85,8 @@ def _ready(tx, identifier: str, node: dict, profile: str) -> None:
     if row is None:
         _fail("SOURCE_TRANSITION_NOT_READY")
     snapshot = row["p"]
-    if snapshot.get("profile", "core") != profile or snapshot.get("tenant_id") != node.get(
-        "tenant_id"
-    ):
+    # Every published projection records its profile; none was written without one.
+    if snapshot.get("profile") != profile or snapshot.get("tenant_id") != node.get("tenant_id"):
         _fail("SOURCE_TRANSITION_PROFILE_MISMATCH")
     # A published projection is a completed importer transaction; also require
     # its mandatory coverage, rather than treating a damaged marker as ready.
@@ -139,7 +105,7 @@ def _ready(tx, identifier: str, node: dict, profile: str) -> None:
         _fail("SOURCE_TRANSITION_NOT_READY")
 
 
-def _receipt(transition: dict, identifier: str, timestamp: int) -> dict:
+def _receipt(transition: Transition, identifier: str, timestamp: int) -> TransitionReceipt:
     return {
         "schemaVersion": 1,
         "transitionId": identifier,
@@ -151,7 +117,9 @@ def _receipt(transition: dict, identifier: str, timestamp: int) -> dict:
 
 
 @unit_of_work(timeout=30)
-def _inspect(tx, transition: dict, identifier: str, lock: bool = False) -> dict | None:
+def _inspect(
+    tx: Any, transition: Transition, identifier: str, lock: bool = False
+) -> TransitionReceipt | None:
     predecessor, successor = (source_key(transition[key]) for key in ("predecessor", "successor"))
     nodes = {}
     # Shared sorted lock order also serializes publication and opposing transitions.
@@ -172,7 +140,7 @@ def _inspect(tx, transition: dict, identifier: str, lock: bool = False) -> dict 
     for key, node in (("predecessor", before), ("successor", after)):
         if not _matches_source(node, transition[key]):
             _fail("SOURCE_TRANSITION_SCOPE_MISMATCH")
-        if node.get("profile", "core") != transition["profile"]:
+        if node.get("profile") != transition["profile"]:
             _fail("SOURCE_TRANSITION_PROFILE_MISMATCH")
     if before.get("lifecycle_status") == "superseded":
         if (
@@ -195,7 +163,9 @@ def _inspect(tx, transition: dict, identifier: str, lock: bool = False) -> dict 
 
 
 @unit_of_work(timeout=30)
-def _supersede(tx, transition: dict, identifier: str, timestamp: int) -> dict:
+def _supersede(
+    tx: Any, transition: Transition, identifier: str, timestamp: int
+) -> TransitionReceipt:
     existing = _inspect(tx, transition, identifier, lock=True)
     if existing is not None:
         return existing
@@ -215,13 +185,13 @@ def _supersede(tx, transition: dict, identifier: str, timestamp: int) -> dict:
     return _receipt(transition, identifier, timestamp)
 
 
-def preflight_transition(session, transition: object) -> dict | None:
+def preflight_transition(session: Any, transition: object) -> TransitionReceipt | None:
     """Validate readiness before persisting intent; the mutation transaction rechecks it."""
     checked = validate_transition(transition)
     return session.execute_read(_inspect, checked, transition_id(checked))
 
 
-def _transition_projection_ids(session, transition: dict) -> dict:
+def _transition_projection_ids(session: Any, transition: Transition) -> dict[str, str]:
     identifiers = {source_key(transition[key]) for key in ("predecessor", "successor")}
     rows = list(
         session.run(
@@ -241,7 +211,9 @@ def _transition_projection_ids(session, transition: dict) -> dict:
     return result
 
 
-def supersede_source(session, transition: object, *, timestamp_ms: int | None = None) -> dict:
+def supersede_source(
+    session: Any, transition: object, *, timestamp_ms: int | None = None
+) -> TransitionReceipt:
     """Supersede an exact source after its approved replacement is fully published.
 
     The host must hold the shared ingestion lock and persist a pending archive
@@ -252,61 +224,37 @@ def supersede_source(session, transition: object, *, timestamp_ms: int | None = 
     return session.execute_write(_supersede, checked, transition_id(checked), timestamp)
 
 
-def load_transition(path: Path | str) -> dict:
-    def pairs(items):
-        value = {}
-        for key, item in items:
-            if key in value:
-                _fail()
-            value[key] = item
-        return value
-
-    try:
-        contents = read_regular_file(path, MAX_TRANSITION_BYTES + 1)
-        if len(contents) > MAX_TRANSITION_BYTES:
-            _fail()
-        return validate_transition(json.loads(contents.decode("utf-8"), object_pairs_hook=pairs))
-    except (OSError, ValueError, UnicodeError, TypeError, RecursionError):
-        raise LifecycleError("SOURCE_TRANSITION_INVALID") from None
+def _parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="agent-guard-source-lifecycle", description=__doc__)
+    parser.add_argument(
+        "--transition",
+        required=True,
+        type=Path,
+        help="Trusted JSON file naming the exact predecessor, successor and profile.",
+    )
+    add_archive_arguments(parser, create=True)
+    add_neo4j_arguments(parser)
+    add_verbose_argument(parser)
+    return parser
 
 
-def main(argv=None) -> int:
-    # Lazy imports keep archive validation and graph publication acyclic.
-    from agent_guard_cartography.archive import ArchiveError, SnapshotArchive
-    from agent_guard_cartography.cli import _validate_uri, ingestion_lock
-
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--transition", required=True, type=Path)
-    parser.add_argument("--archive-dir", required=True, type=Path)
-    parser.add_argument("--archive-max-snapshots", type=int, default=4096)
-    parser.add_argument("--archive-max-bytes", type=int, default=256 * 1024 * 1024)
-    parser.add_argument("--neo4j-uri", required=True)
-    parser.add_argument("--neo4j-user", default="neo4j")
-    parser.add_argument("--neo4j-database", default="neo4j")
-    parser.add_argument("--neo4j-password-env-var", default="NEO4J_PASSWORD")
-    parser.add_argument("--lock-file", required=True, type=Path)
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = _parser()
     args = parser.parse_args(argv)
+    check_archive_arguments(parser, args)
     try:
         transition = load_transition(args.transition)
-        _validate_uri(args.neo4j_uri)
-        password = os.environ.get(args.neo4j_password_env_var)
-        if not password:
-            raise GraphImportError("NEO4J_PASSWORD_REQUIRED")
+        validate_neo4j_uri(args.neo4j_uri)
+        password = neo4j_password(args)
+        if not args.create and not args.archive_dir.is_dir():
+            # A mistyped path must fail, not become a new empty archive or leave a lock file.
+            raise ArchiveError("ARCHIVE_DIRECTORY_NOT_FOUND")
         with (
-            ingestion_lock(args.lock_file),
+            ingestion_lock(*lock_files(args.archive_dir, args.lock_file)),
             SnapshotArchive(
-                args.archive_dir,
-                max_snapshots=args.archive_max_snapshots,
-                max_bytes=args.archive_max_bytes,
+                args.archive_dir, create=args.create, **archive_limits(args)
             ) as archive,
-            GraphDatabase.driver(
-                args.neo4j_uri,
-                auth=(args.neo4j_user, password),
-                connection_timeout=10,
-                connection_acquisition_timeout=10,
-                max_transaction_retry_time=0,
-                notifications_min_severity="OFF",
-            ) as driver,
+            open_driver(args, password, retry_seconds=0) as driver,
             driver.session(database=args.neo4j_database) as session,
         ):
             preflight_transition(session, transition)
@@ -318,12 +266,8 @@ def main(argv=None) -> int:
             archive.finish_transition(transition, result)
         print(json.dumps(result, sort_keys=True))
         return 0
-    except (LifecycleError, GraphImportError, ArchiveError) as error:
-        print(json.dumps({"error": error.code}), file=sys.stderr)
-        return 2
-    except Exception:
-        print(json.dumps({"error": "SOURCE_TRANSITION_FAILED"}), file=sys.stderr)
-        return 1
+    except Exception as error:
+        return command_failed(error, "SOURCE_TRANSITION_FAILED", args)
 
 
 if __name__ == "__main__":

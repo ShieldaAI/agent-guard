@@ -70,7 +70,12 @@ test('the family flag is persisted and survives a restart; a pre-read approval c
   assert.equal(await executor.execute('root', fresh.id, { approvalId: late }), 'sent');
   assert.equal(f.sent.count, 1);
   // The approval given before the read (on the earlier preparation) is gone with that process's epoch.
-  await assert.rejects(executor.execute('root', prepared.id, { approvalId }));
+  // The restart dropped that never-admitted preparation along with its approval.
+  await assert.rejects(executor.execute('root', prepared.id, { approvalId }), {
+    name: 'GuardError',
+    code: 'INVALID_PREPARED',
+  });
+  assert.equal(f.sent.count, 1, 'the stale approval sent nothing');
 });
 
 test('an approval issued while clean is invalid after an outside read in the same process', async t => {

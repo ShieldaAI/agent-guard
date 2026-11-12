@@ -97,7 +97,13 @@ const values = value =>
 
 test('projection differential oracle remains the exact pre-optimization compiled implementation', () => {
   const fixture = readFileSync(new URL('./fixtures/inventory-before-finalizer.mjs', import.meta.url), 'utf8');
-  const restored = fixture.split('\n').slice(4).join('\n').replace("from '../../dist/store.js'", "from './store.js'");
+  const restored = fixture
+    .split('\n')
+    .slice(4)
+    .join('\n')
+    .replace("from '../../dist/store.js'", "from './store.js'")
+    // 1.0 removed the root alias; the original imported immutableJson from the package root.
+    .replace("from '@shieldaai/agent-guard/internal'", "from '@shieldaai/agent-guard'");
   assert.equal(
     createHash('sha256').update(restored).digest('hex'),
     'cc3208d926b91d13cc42d4d40e24cb6408ea022c1c941a0cadf3a566628be62b',

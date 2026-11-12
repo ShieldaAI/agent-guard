@@ -5,5 +5,5 @@
  */
 export { PolicyAdmission } from './policy-admission.js';
 export { assertActionAuthority, containsLiteralSecret } from './authorization.js';
-export type { AuthorityPhase, AuthorityState } from './authorization.js';
+export type { AuthorityPhase, AuthorityState, AuthorityView } from './authorization.js';
 export { immutableJson, canonicalJson, digestJson } from './json.js';

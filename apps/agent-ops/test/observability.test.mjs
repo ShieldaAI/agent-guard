@@ -94,6 +94,10 @@ test('operator status scopes workflow to its tenant and labels deployment aggreg
       status.alerts.some(alert => alert.id === id),
       id,
     );
+  // TLS material reloads in place on SIGHUP; the alert must not send the operator to a restart.
+  const tlsAlert = status.alerts.find(alert => alert.id === 'tls_expiry').message;
+  assert.match(tlsAlert, /SIGHUP/);
+  assert.match(tlsAlert, /No restart is needed/);
   assert.deepEqual(status.scope, { tenantId: 'acme', workflow: 'tenant', capacity: 'deployment', http: 'deployment' });
   const metrics = prometheusStatus(status);
   assert.match(metrics, /agent_ops_tenant_unconfirmed 1/);
@@ -146,6 +150,21 @@ test('activity snapshot minimizes allowed fields, excludes other tenants and dis
   assert.throws(() => exportActivity({ workflow, operator: { ...operator, roles: [] }, now: 5000 }), {
     code: 'FORBIDDEN',
   });
+  // A recorded cause is exported only as a fixed uppercase code.
+  const coded = { tenantId: 'acme', at: 1, event: 'DISPATCH_REFUSED', requestId: 'request-1', code: 'TICKET_CHANGED' };
+  assert.deepEqual(
+    JSON.parse(exportActivity({ workflow: fakeWorkflow({ audit: [coded] }), operator, now: 5000 }).content).events,
+    [{ at: 1, event: 'DISPATCH_REFUSED', requestId: 'request-1', code: 'TICKET_CHANGED' }],
+  );
+  assert.throws(
+    () =>
+      exportActivity({
+        workflow: fakeWorkflow({ audit: [{ ...coded, code: 'free text /srv/private' }] }),
+        operator,
+        now: 5000,
+      }),
+    { code: 'AUDIT_EXPORT_UNAVAILABLE' },
+  );
 });
 
 test(

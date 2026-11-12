@@ -18,7 +18,13 @@ export type {
   ExecutionList,
   MaintenanceStatistics,
 } from './lifecycle.js';
-export { ExecutorError, type ExecutionReceipt, type ExecutionStatus, type ReceiptStatus } from './store.js';
+export {
+  ExecutorError,
+  type AuditEvent,
+  type ExecutionReceipt,
+  type ExecutionStatus,
+  type ReceiptStatus,
+} from './store.js';
 export type {
   DecisionTraceOptions,
   DecisionTraceScope,
@@ -29,7 +35,7 @@ export type {
   DecisionTraceSink,
   DecisionTraceExportResult,
 } from './traces.js';
-export type { InventoryOptions, InventorySourceOptions } from './inventory.js';
+export type { InventoryOptions, InventorySourceOptions, InventoryScope, InventorySnapshot } from './inventory.js';
 export { startExecutorServer, type ExecutorServerOptions } from './http.js';
 export { createRestrictedFetch, isPublicAddress, type NetworkPolicy } from './network.js';
 export { ExecutorClient } from './client.js';
@@ -45,6 +51,3 @@ export {
   type PublicToolDefinition,
 } from './adapters.js';
 export { createModelTool, createExecutorModelProvider, type ModelToolOptions, type ModelResult } from './model.js';
-
-// Deprecated root aliases for exports that moved to subpaths.
-export * from './deprecated.js';

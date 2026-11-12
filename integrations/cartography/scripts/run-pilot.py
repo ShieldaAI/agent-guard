@@ -26,8 +26,9 @@ from pathlib import Path
 
 from neo4j import GraphDatabase
 
+from agent_guard_cartography._command import ingestion_lock
 from agent_guard_cartography.archive import SnapshotArchive
-from agent_guard_cartography.cli import _model_diagnostics, ingestion_lock
+from agent_guard_cartography.cli import _model_diagnostics
 from agent_guard_cartography.collector import validate_enrollment
 from agent_guard_cartography.graph import source_key
 from agent_guard_cartography.publish import collect_and_publish

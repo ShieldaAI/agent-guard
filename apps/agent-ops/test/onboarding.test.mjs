@@ -195,9 +195,13 @@ test('company import is reviewed, add-only, tenant-enrolled and stale-input boun
 });
 test('maintenance refuses a live owner and lowering record limits does not evict another tenant', t => {
   const fixture = setup(t),
+    acceptable = { ...fixture.config, limits: normalizeLimits({ maxTickets: 600 }) },
     config = { ...fixture.config, limits: normalizeLimits({ maxTickets: 1 }) };
-  assert.throws(() => configureLimits(config));
+  // A change that is valid in itself is refused only because the service still owns the stores:
+  // the same call previews once the owner is gone.
+  assert.throws(() => configureLimits(acceptable), { code: 'LEDGER_KEY_UNAVAILABLE' });
   fixture.close();
+  assert.equal(configureLimits(acceptable).status, 'preview');
   const before = readFileSync(config.backendDatabase);
   assert.throws(() => configureLimits(config), { code: 'LIMITS_BELOW_USAGE' });
   assert.deepEqual(readFileSync(config.backendDatabase), before);
@@ -234,6 +238,47 @@ test('bounded bulk import accepts the configured 10000-ticket ceiling without we
   }
   write(ticketsFile, '{"tickets":[],"tickets":[]}');
   assert.throws(() => readTicketFile(ticketsFile));
-  for (const invalid of [0, 100001, 1.5, Infinity])
+  for (const invalid of [0, 200_001, 1.5, Infinity])
     assert.throws(() => parseEvidenceJson(Buffer.from('{}'), 100, invalid));
+});
+
+test('runtime configuration accepts bounded session, rate and sign-in settings and names the file that failed', async t => {
+  const fixture = await onboardingFixture(t),
+    prepared = onboard(fixture),
+    original = JSON.parse(readFileSync(prepared.configFile, 'utf8'));
+  write(prepared.configFile, {
+    ...original,
+    sessionTtlMs: 600_000,
+    rateLimitPerMinute: 600,
+    signInFlowsPerClient: 16,
+  });
+  const config = loadConfig(prepared.configFile);
+  assert.deepEqual([config.sessionTtlMs, config.rateLimitPerMinute, config.signInFlowsPerClient], [600_000, 600, 16]);
+  for (const [key, value, code] of [
+    ['sessionTtlMs', 15 * 60_000 + 1, 'SESSION_CONFIG_INVALID'],
+    ['sessionTtlMs', 999, 'SESSION_CONFIG_INVALID'],
+    ['rateLimitPerMinute', 59, 'RATE_LIMIT_CONFIG_INVALID'],
+    ['rateLimitPerMinute', 100_001, 'RATE_LIMIT_CONFIG_INVALID'],
+    ['signInFlowsPerClient', 0, 'SIGN_IN_CONFIG_INVALID'],
+    ['signInFlowsPerClient', 129, 'SIGN_IN_CONFIG_INVALID'],
+    ['signInFlowsPerClient', '4', 'SIGN_IN_CONFIG_INVALID'],
+  ]) {
+    write(prepared.configFile, { ...original, [key]: value });
+    assert.throws(() => loadConfig(prepared.configFile), { code }, `${key}=${value}`);
+  }
+  write(prepared.configFile, { ...original, unknownSetting: 1 });
+  assert.throws(() => loadConfig(prepared.configFile), { code: 'INVALID_INPUT' });
+  write(prepared.configFile, original);
+  // The failing file is named by its configuration key, never by its path.
+  chmodSync(original.tls.keyFile, 0o644);
+  assert.throws(() => loadConfig(prepared.configFile), { code: 'PRIVATE_FILE_REQUIRED', role: 'tls.keyFile' });
+  chmodSync(original.tls.keyFile, 0o600);
+  chmodSync(original.oidc.clientSecretFile, 0o644);
+  assert.throws(() => loadConfig(prepared.configFile), {
+    code: 'PRIVATE_FILE_REQUIRED',
+    role: 'oidc.clientSecretFile',
+  });
+  chmodSync(original.oidc.clientSecretFile, 0o600);
+  chmodSync(prepared.configFile, 0o644);
+  assert.throws(() => loadConfig(prepared.configFile), { code: 'PRIVATE_FILE_REQUIRED', role: 'config' });
 });

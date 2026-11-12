@@ -14,7 +14,6 @@ import {
   nodeName,
   queryReference,
 } from '../src/view-model.mjs';
-import { queryDemo } from '../src/demo.mjs';
 
 const token = `agm_v1.${'x'.repeat(43)}`;
 const json = (body, status = 200, headers = {}) =>
@@ -280,11 +279,11 @@ test('conditional and unavailable relationships retain textual state and distinc
   assert.match(edges[0].classes, /conditional/);
   assert.match(edges[0].data.label, /approval required/);
   assert.match(edges[1].classes, /unavailable/);
-  assert.match(edges[1].data.label, /quarantined/);
+  assert.match(edges[1].data.label, /Quarantined/);
   assert.match(edges[2].data.label, /Stale evidence/);
   assert.equal(
     evidenceState({ properties: { state: 'ready', assessment: 'unknown' } }).label,
-    'ready · access unknown',
+    'Ready · access unknown',
   );
   assert.equal(evidenceState({ properties: { revoked: true } }).kind, 'blocked');
 });
@@ -356,51 +355,8 @@ test('missing or invalid component capture times cannot be displayed as recent',
   }
   const unknown = componentHealth({ status: 'not_collected', observedAt: '2026-10-30T10:00:00Z' });
   assert.equal(unknown.freshness, 'Freshness unknown');
-  assert.equal(unknown.status, 'not collected');
+  assert.equal(unknown.status, 'Not collected');
   assert.equal(unknown.tone, 'amber');
-});
-
-test('explicit synthetic demo exercises each view without network access', async t => {
-  t.mock.method(globalThis, 'fetch', () => assert.fail('Demo must stay local'));
-  const agents = (await queryDemo('list_agents')).data.agents;
-  const access = await queryDemo('get_agent_access', { agentId: agents[0].id });
-  const elements = graphElements(access.graph);
-  assert.equal(elements.length, access.graph.nodes.length + access.graph.edges.length);
-  const explanation = await queryDemo('explain_access', initialExplanation(access.data));
-  assert.equal(explanation.data.assessment, 'unknown');
-  const health = await queryDemo('get_inventory_health');
-  assert.equal(health.data.sources.length, 1);
-  const changes = await queryDemo('get_changes', { sourceId: agents[0].sourceId, since: 'previous' });
-  assert.equal(changes.data.coverageGap, false);
-  const candidates = await queryDemo('find_agents_with_access', {
-    resourceRef: access.data.grants[0].resources[0],
-    action: 's3:GetObject',
-  });
-  assert.equal(candidates.data.candidates[0].assessment, 'unknown');
-});
-
-test('demo distinguishes matching grants, unknown tasks and lookups without a declared binding', async () => {
-  const access = (await queryDemo('get_agent_access', { agentId: 'agent-research' })).data;
-  const form = initialExplanation(access);
-  for (const override of [{ tool: 'mcp:documents:delete' }, { resourceId: 'opaque:other' }]) {
-    const { data } = await queryDemo('explain_access', { ...form, ...override });
-    assert.equal(data.assessment, 'blocked');
-    assert.deepEqual(data.matchedGrants, []);
-    assert.deepEqual(data.externalEvidence.policyEvidence, []);
-  }
-  await assert.rejects(queryDemo('explain_access', { ...form, taskId: 'unlisted' }), /REFERENCE_NOT_FOUND/);
-  const ref = 'arn:aws:s3:::company-reports/quarterly/summary.pdf';
-  for (const resourceRef of [ref, form.resourceId]) {
-    const { data } = await queryDemo('find_agents_with_access', { resourceRef, action: 's3:GetObject', limit: 2 });
-    assert.equal(data.candidates.length, 2);
-    assert.equal(data.truncated, true);
-  }
-  for (const [resourceRef, action] of [
-    [ref + '.old', 's3:GetObject'],
-    [ref, 's3:DeleteObject'],
-  ]) {
-    assert.deepEqual((await queryDemo('find_agents_with_access', { resourceRef, action })).data.candidates, []);
-  }
 });
 
 test('a timeout or an out-of-range time never throws while rendering', () => {

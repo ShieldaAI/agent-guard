@@ -1,13 +1,7 @@
 // Wording for the discovery views. Nothing here turns a missing, partial or hidden answer
 // into a number: unknown stays unknown, and a hidden view never shows a count.
+import { LABELS, hasLabel } from './labels.mjs';
 
-const ACTIVITY_REASONS = Object.freeze({
-  read_unavailable: 'the count could not be read',
-  read_timeout: 'the count ran out of time',
-  limit_exceeded: 'the count exceeded a read limit',
-  publication_changed: 'a new snapshot was published during the read',
-  not_reported: 'this service did not report a count',
-});
 const count = (value, minimum, noun) =>
   Number.isSafeInteger(value) && value >= 0
     ? `${value}${minimum === true ? '+' : ''} ${noun}${value === 1 && minimum !== true ? '' : 's'}`
@@ -25,7 +19,7 @@ export function undeclaredActivityLabel(activity) {
   if (!['complete', 'partial'].includes(value.status) || tasks === null || callers === null)
     return {
       tone: 'amber',
-      text: `Unknown: ${ACTIVITY_REASONS[value.reason] ?? 'no count was reported'}`,
+      text: `Unknown: ${hasLabel('activityReason', value.reason) ? LABELS.activityReason[value.reason] : 'no count was reported'}`,
     };
   const none = value.tasks === 0 && value.principals === 0 && value.status === 'complete';
   return {
@@ -36,34 +30,43 @@ export function undeclaredActivityLabel(activity) {
   };
 }
 
-const ACCOUNT_REASONS = Object.freeze({
-  stale: 'The last AWS collection is older than the enrolled age limit.',
-  collection_invalid: 'The AWS collection record is incomplete or malformed.',
-  changed: 'The AWS collection changed while it was read, or its members do not match it.',
-  limit_exceeded: 'The account holds more identities than one read may judge.',
-  claims_limit_exceeded: 'More identities are declared than one read may compare.',
-});
-/** Why an account's identities are not listed. Never empty for an unknown account. */
+/** A collected account whose collection the service marks stale: its numbers may be out of date. */
+export const accountStale = account => account?.status === 'complete' && account?.stale === true;
+/**
+ * The collection state of one account: collected (and whether that collection is stale), or why
+ * its identities are not listed. Never empty for an unknown account.
+ */
 export const accountReasonLabel = account =>
   account?.status === 'complete'
-    ? 'Collected'
-    : (ACCOUNT_REASONS[account?.reason] ?? 'The AWS collection could not be judged.');
+    ? accountStale(account)
+      ? 'Collected, but stale'
+      : 'Collected'
+    : hasLabel('accountReason', account?.reason)
+      ? LABELS.accountReason[account.reason]
+      : 'The AWS collection could not be judged.';
 
-/** The headline for `list_unclaimed_identities`: unknown is never shown as "none". */
+/**
+ * The headline for `list_unclaimed_identities`: unknown is never shown as "none", and a stale
+ * collection never gets the all-clear wording or colour.
+ */
 export function unclaimedSummary(data) {
   const value = data && typeof data === 'object' ? data : {};
+  const stale = Array.isArray(value.accounts) && value.accounts.some(accountStale);
+  const aged = stale ? '; at least one collection is stale, so this may be out of date' : '';
   if (value.status === 'complete' && Number.isSafeInteger(value.total))
     return {
-      tone: value.total === 0 ? 'green' : 'amber',
+      tone: value.total === 0 && !stale ? 'green' : 'amber',
       text:
         value.total === 0
-          ? 'Every collected IAM role and user is named by a declared agent'
-          : `${count(value.total, false, 'candidate')} to review`,
+          ? stale
+            ? `No unclaimed IAM role or user in the last collection${aged}`
+            : 'Every collected IAM role and user is named by a declared agent'
+          : `${count(value.total, false, 'candidate')} to review${aged}`,
     };
   if (value.status === 'partial' && Number.isSafeInteger(value.total))
     return {
       tone: 'amber',
-      text: `${count(value.total, false, 'candidate')} in the accounts that could be judged; the rest are unknown`,
+      text: `${count(value.total, false, 'candidate')} in the accounts that could be judged; the rest are unknown${aged}`,
     };
   return {
     tone: 'amber',

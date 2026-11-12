@@ -1,67 +1,210 @@
-# Run an operator usability acceptance session
+# Test the approval screen with real operators
 
-**Current evidence: unmeasured.** The repository contains a blank study packet and executable scoring rules. A UX owner can use them to decide whether operators can safely use a particular build and deployment. The checked-in tests use generated fixtures. No participant identities, observations, signatures or acceptance receipts are supplied.
+Read this if you must decide whether the people who approve agent actions can use your deployment's review screen safely, and you can recruit at least five of them for a study. Library users can skip it.
 
-Give the [participant brief](operator-study/participant-brief.md) to operators. Keep the following setup and scoring instructions with the facilitator and backend evidence owner. The [scorer](../../scripts/score-operator-study.mjs) runs offline against a local build of the executor package, on POSIX, using Node.js 22.13 or newer. Run `npm run build` from the repository root if the package has not been built.
+## What you will achieve
 
-## Freeze the study before the first task
+You will run a small study and get a score. Between 5 and 40 operators each attempt five tasks on a test copy of your deployment. One person watches the operators and records what they did. A second person records what the backend logs show for the same attempts. A script compares the two records and prints the result.
 
-1. The UX owner enrolls **5–40 different representative operators** who did not build the workflow. Include a habitual keyboard-only user and a separate assistive-technology user. Verify the real participants and their usual access methods privately. Use unique aliases in the worksheet. A simulated participant or an engineer role-playing a disability cannot fill either seat.
-2. Use synthetic records in a private disposable tenant on the proposed deployment, with its actual approval interface, company sign-in, evidence viewer and receipt lookup. Pin the source/build digest and a digest of the reviewed deployment boundary. Verify identity, rollback and receipt access before inviting anyone. The local terminal demonstration alone cannot test this integration.
-3. The facilitator freezes the exact private task script, including the five tasks, the assignment on each card and counterbalanced review order. Make a read-only copy. Start from [enrollment.blank.json](operator-study/enrollment.blank.json). Set `briefSha256` to the SHA-256 of the exact script bytes, `buildSha256` and `deploymentSha256` to the reviewed digests, `studyId` to a unique alias, and `start` and `end` to UTC timestamps with milliseconds (at most 31 days apart). Add `{"alias":"<alias>","method":"<method>"}` for every participant using `standard`, `keyboard-only` or `assistive-technology`.
-4. Enroll **different Ed25519 public keys** under `facilitatorKey` and `backendKey`. The facilitator observes human decisions. A separate backend evidence owner checks the complete action, identity and receipt logs for the enrolled tenant. Provision these keys privately under their respective owners. Each key field is canonical base64 of its public SPKI DER bytes. For example, an owner can export an existing Ed25519 public key using `openssl pkey -pubin -in public.pem -outform DER | openssl base64 -A`.
-5. The release owner runs the commands below before the enrollment starts. Preserve the printed digest in a dated, access-controlled release record outside the scoring bundle. The scorer cannot establish advance enrollment from an editable file and a digest supplied by the same submitter.
+The repository supplies the handout for operators, two blank forms and the scoring script. You collect the results.
+
+## Prerequisites
+
+- Linux or macOS, Node.js 22.13 or newer, and a clone of this repository with `npm ci` and `npm run build` done. The script works offline.
+- OpenSSL 3 or newer for signing. The `openssl` that ships with macOS is LibreSSL and does not support the signing command below.
+- A private test tenant on the deployment you want to assess, filled with made-up records, with its real approval screen, company sign-in, evidence viewer and receipt lookup.
+- These people:
+
+  | Role | Who | Does what |
+  | --- | --- | --- |
+  | Operators | 5 to 40 people who will do this work and did not build the workflow. At least one routinely works by keyboard only and at least one other uses assistive technology. An engineer playing the part does not count. | Attempt the five tasks |
+  | Facilitator | One person who sits with the operators | Records what each operator did and said, and signs that record |
+  | Backend owner | A different person, with access to the backend logs | Records what the logs show for each attempt, and signs that record |
+  | Study owner | Whoever makes the decision | Keeps the study digest from step 3 and runs the scoring |
+
+- An Ed25519 key each for the facilitator and the backend owner. Private keys stay with their owners. To create a key and print the public part in the form the study file expects:
+
+  ```sh
+  openssl genpkey -algorithm ed25519 -out facilitator-private.pem
+  openssl pkey -in facilitator-private.pem -pubout -out facilitator-public.pem
+  openssl pkey -pubin -in facilitator-public.pem -outform DER | openssl base64 -A
+  ```
+
+## Steps
+
+### 1. Write the task script
+
+The facilitator writes a private file, here `private-task-script.md`, with the five tasks, the team, environment and target printed on each operator's task card, and the order in which each operator gets the tasks. Vary the order between operators. Operators receive only the [participant brief](operator-study/participant-brief.md) and their cards.
+
+### 2. Fill in the study file
+
+Copy [enrollment.blank.json](operator-study/enrollment.blank.json) to `enrollment.json` and fill in every field.
+
+| Field | Value |
+| --- | --- |
+| `kind` | Leave as `operator-study-enrollment-v1` |
+| `studyId` | A short name: letters, digits, `_` and `-`, at most 48 characters |
+| `buildSha256`, `deploymentSha256` | SHA-256 digests that identify the build and the deployment configuration under test |
+| `briefSha256` | SHA-256 of the task script: `shasum -a 256 private-task-script.md` |
+| `start`, `end` | UTC times with milliseconds, such as `2026-11-20T09:00:00.000Z`. At most 31 days apart. |
+| `facilitatorKey`, `backendKey` | The two public keys, as printed by the last command above. They must differ. |
+| `participants` | One `{"alias": "<alias>", "method": "<method>"}` per operator. The method is `standard`, `keyboard-only` or `assistive-technology`. Use aliases, not names. |
+
+### 3. Lock the study before it starts
+
+Run this before the `start` time. It checks the file and prints its digest.
 
 ```sh
 node scripts/score-operator-study.mjs enroll enrollment.json private-task-script.md
+```
+
+```json
+{
+  "status": "unmeasured",
+  "enrollmentSha256": "0e811ee039bad52f868cd3bf76d5e8bf36797c9a295606225e1f771eef4bbe66"
+}
+```
+
+The study owner stores that digest where neither signer can edit it. Scoring later fails if `enrollment.json` no longer has this digest. If the build, the task script, the operator list or the deployment changes, start again from step 2.
+
+### 4. Create the two worksheets
+
+```sh
 node scripts/score-operator-study.mjs worksheet enrollment.json facilitator > facilitator.json
 node scripts/score-operator-study.mjs worksheet enrollment.json backend > backend.json
 ```
 
-Both worksheets contain every planned participant/task pair. Placeholder nulls are intentional. Do not supply a blank worksheet as an observation. A changed build, task script, access method, participant list or deployment needs fresh enrollment. Preserve failed and abandoned rounds.
+Each worksheet has one row for every operator and task, with `null` where a value is needed.
 
-## Observe the five tasks
+### 5. Run the sessions
 
-Give each person one card at a time. Do not suggest the intended decision. Ask what happened and why after each task. Any instruction during the task earns `prompted` rather than `none`. Record `abandoned` when someone stops. Code a safe unfinished or misunderstood task as `incomplete` and an unsafe decision as `unsafe`. The success answers below require both the observed human action and the operator’s own accurate account.
+Give each operator one card at a time. Do not hint at the expected decision. After each task, ask what happened and how they know.
 
-| Case | Only successful answer | Minimum setup and complete backend event sequence for success, in order |
-| --- | --- | --- |
-| `approve` | `explained-confirmed-change`: approved the assigned tenant, ticket, change and version, then correctly described the confirmed outcome. | `exact-review-presented` → `review-approved` → `write-dispatched` → `write-committed`. One correlated write to the exact assigned target. An operator who safely refuses may have `exact-review-presented` → `operator-refused` and no write. |
-| `lookalike` | `refused-and-identified-mismatch`: the person refused and identified the substituted tenant or target. A backend block alone earns no credit. | `wrong-target-presented` → `operator-refused`. Record an attempted unsafe approval even if the backend denied it. |
-| `session` | `reauthenticated-and-explained-expiry`: observed protected results clearing, used the intended sign-in and understood the inventory still existed. | `scoped-evidence-served` → `session-revoked` → `old-session-denied` → `new-session-authenticated` → `scoped-evidence-served`. The enrolled exercise must record the first two events. |
-| `relationship` | `identified-unknown-and-required-check`: recognized the stale, missing or conditional relationship as inconclusive and identified the missing live check. | `unknown-relationship-served` from the scoped viewer query. |
-| `recovery` | `checked-receipt-and-avoided-retry`: found the original receipt, checked termination, reconciled, and avoided submitting again. | `write-dispatched` → `write-committed` → `response-lost` → `receipt-read` → `execution-reconciled`. Seed and capture the first three events before the user investigates. |
+The five tasks (`scenario` in the worksheets):
 
-The facilitator fills each pre-generated row with the actually used `method`, `assistance`, `answer`, and explicit booleans for `unsafeDecision`, `disclosure` and `criticalBlocker`. Record unsafe behavior independently of whether it caused harm. A critical blocker prevents safe use of an essential task with the enrolled access method. Agree a fresh opaque `runRef` with the backend owner per attempt (64 lowercase hex digits). After witnessing and verifying the private roster, the facilitator may set `witnessedIndependentRepresentativeHumans` to true.
+| Task | The operator succeeds by | `answer` on success | Backend events for a success, in order |
+| --- | --- | --- | --- |
+| `approve` | Approving the assigned change and correctly describing the confirmed result | `explained-confirmed-change` | `exact-review-presented`, `review-approved`, `write-dispatched`, `write-committed` |
+| `lookalike` | Refusing a request for the wrong tenant or target, and saying what was wrong with it. A backend block alone does not count. | `refused-and-identified-mismatch` | `wrong-target-presented`, `operator-refused` |
+| `session` | Signing in again after the session ends, and understanding that the inventory still exists | `reauthenticated-and-explained-expiry` | `scoped-evidence-served`, `session-revoked`, `old-session-denied`, `new-session-authenticated`, `scoped-evidence-served` |
+| `relationship` | Recognizing that a stale, missing or conditional relationship proves nothing, and naming the live check that is needed | `identified-unknown-and-required-check` | `unknown-relationship-served` |
+| `recovery` | Finding the original receipt for an update whose response was lost, and not submitting it again | `checked-receipt-and-avoided-retry` | `write-dispatched`, `write-committed`, `response-lost`, `receipt-read`, `execution-reconciled` |
 
-## Collect and sign the evidence
+For `session`, set up the first two events before the operator starts. For `recovery`, set up the first three.
 
-For each attempt, the independent backend owner exports a **complete**, minimized chronological projection of the enrolled audit window. Use [receipt.blank.json](operator-study/receipt.blank.json). Bind the enrollment digest, alias, scenario, run reference and the actual capture timestamp. Set `complete` only after checking all relevant streams, including refused and retried operations. Missing logs leave the gate unverified. Store the original backend records privately for independent inspection.
+For each attempt the facilitator and the backend owner agree a fresh `runRef` (`openssl rand -hex 32`), and the facilitator fills in the row:
 
-Each event has exactly `type` and `ref`. Use the vocabulary in the table and record `wrong-target-approved`, `write-retried`, `foreign-write` or `foreign-disclosure` when observed. Preserve actual dispatches and commits, including duplicates. For a safely unfinished task the export may end after a prefix of the sequence, provided it covers the entire observation window and includes the required setup. The event reference is a pseudonymous, collision-resistant 64-hex digest of the actual audited operation, prepared review, query, or session identifier as appropriate. Use the **same** operation reference for a write and its receipt, including recovery. For session renewal, bind the first three events to the old session and the last two to the same new one. Use fresh subjects for every attempt. Do not use one shared ticket number or a fabricated reference for unrelated events.
+| Field | Value |
+| --- | --- |
+| `runRef` | The agreed value. Never reuse one. |
+| `method` | The access method the operator actually used. It must match the study file. |
+| `assistance` | `none`, `prompted` (any instruction during the task) or `abandoned` (the operator stopped) |
+| `answer` | The success answer from the table above, `incomplete` (unfinished or misunderstood, but safe) or `unsafe` |
+| `unsafeDecision`, `disclosure` | `true` if the operator made an unsafe decision or exposed another tenant's data, whether or not harm followed |
+| `criticalBlocker` | `true` if the operator could not safely do an essential task with their access method |
 
-Hash each receipt file's exact bytes and store it privately as `receipts/<sha256>.json`. Enter that digest in the matching row of `backend.json`. Counters, screenshots, a task outcome ticked by a facilitator, and a generic backend denial cannot replace these records. The observer must compare the normalized evidence to the original deployment records. Cryptography authenticates the enrolled signers and detects substitutions; it cannot establish that people attended, that the environment was representative, or that a dishonest signer reported every event.
+When all sessions are done and the facilitator has confirmed that every participant was a real, independent operator, the facilitator sets `witnessedIndependentRepresentativeHumans` to `true`.
 
-The owners separately sign the final exact JSON bytes with their enrolled keys. For OpenSSL 3 and a privately managed local test key, the signing command is:
+### 6. Record what the backend shows
+
+For every attempt the backend owner copies [receipt.blank.json](operator-study/receipt.blank.json), fills it in from the audit log, and saves it.
+
+| Field | Value |
+| --- | --- |
+| `enrollmentSha256` | The digest from step 3 |
+| `alias`, `scenario`, `runRef` | The same values as the facilitator's row |
+| `capturedAt` | When the log was read: UTC with milliseconds, between `start` and `end` |
+| `complete` | `true` only after checking every relevant log, including refused and retried operations |
+| `events` | 1 to 32 entries of `{"type": "<event>", "ref": "<64 hex characters>"}` in the order they happened |
+
+Rules for `events`:
+
+- Record what actually happened, including duplicates. Use the event names from the table in step 5, plus `wrong-target-approved`, `write-retried`, `foreign-write` and `foreign-disclosure` when you see them. An operator who safely declines the `approve` task leaves `exact-review-presented`, `operator-refused`.
+- `ref` is a SHA-256 digest of the real identifier of the operation, review, query or session in your logs, so that the receipt carries no private identifier.
+- All events in one receipt share one `ref`. The exception is `session`: the first three events share the old session's `ref`, and the last two share the new session's.
+- Never reuse a `ref` in another receipt.
+
+Save each receipt in a `receipts` directory under the name of its own digest, and enter that digest as `receiptSha256` in the matching row of `backend.json`:
+
+```sh
+mkdir -p receipts
+digest=$(shasum -a 256 receipt.json | cut -d' ' -f1)
+mv receipt.json "receipts/$digest.json"
+echo "$digest"
+```
+
+
+### 7. Sign the worksheets
+
+Each owner signs the final bytes of their own worksheet with their own key.
 
 ```sh
 openssl pkeyutl -sign -rawin -inkey facilitator-private.pem -in facilitator.json -out facilitator.sig
 openssl pkeyutl -sign -rawin -inkey backend-private.pem -in backend.json -out backend.sig
 ```
 
-Do not transfer private keys to the release owner. The release owner retrieves the original enrollment digest from the dated record and checks the build and deployment before running:
+### 8. Score
+
+The study owner runs the scoring with the digest stored in step 3.
 
 ```sh
 node scripts/score-operator-study.mjs score enrollment.json "$ENROLLED_SHA256" \
   facilitator.json facilitator.sig backend.json backend.sig receipts
 ```
 
-## Read the decision
+## What you should see
 
-The report includes successful/planned counts per scenario, access method and overall. Every planned attempt counts. A malformed, missing, duplicated, misbound, unsigned or incomplete study cannot pass. A wrong target, unsafe retry or disclosure, critical accessibility blocker, unsupported claim of success, or failure to complete either lookalike refusal or recovery independently disqualifies the round.
+```json
+{
+  "status": "stretch-met",
+  "enrollmentSha256": "0e811ee039bad52f868cd3bf76d5e8bf36797c9a295606225e1f771eef4bbe66",
+  "participants": 5,
+  "pilot": true,
+  "stretch": true,
+  "failures": [],
+  "missedThresholds": [],
+  "overall": { "successful": 24, "planned": 25 },
+  "byScenario": { "approve": { "successful": 4, "planned": 5 }, "...": {} },
+  "byMethod": { "standard": { "successful": 14, "planned": 15 }, "...": {} }
+}
+```
 
-- `stretch-met` (exit 0) requires at least **96% unassisted safe completion overall**, at least **80% in every scenario and access method**, and every hard gate. With five operators the overall requirement is 24/25.
-- `pilot-only` (exit 1) meets the original 90% pilot threshold (23/25 for five operators) with every hard gate, but misses a stretch threshold. `failed` (also exit 1) falls short of the pilot.
-- `unverified` (exit 2) means the required evidence could not be verified. `enroll` alone prints `unmeasured`. Neither result earns a human UX score.
+An attempt counts as successful only when the operator needed no help, gave the success answer, did nothing unsafe, hit no critical blocker, and the backend receipt shows the complete event sequence. Every planned attempt is in the denominator.
 
-A stretch result supports the named build and cohort. The 96% threshold is a task-completion criterion; five operators do not establish a population-wide UX rating or general accessibility conformance. Retest with a fresh cohort and enrollment after a critical fix. To exercise the verifier with test fixtures, run `node --test scripts/score-operator-study.test.mjs`.
+| `status` | Exit code | Meaning |
+| --- | --- | --- |
+| `stretch-met` | `0` | At least 96% of all attempts succeeded, at least 80% in every task and for every access method, and nothing in `failures`. With five operators that is 24 of 25. |
+| `pilot-only` | `1` | At least 90% of all attempts succeeded (23 of 25 with five operators) and nothing in `failures`, but a higher threshold was missed. `missedThresholds` says which. |
+| `failed` | `1` | Fewer than 90% succeeded, or `failures` is not empty. |
+| `unverified` | `2` | The files could not be checked. `reason` says why. No score is given. |
+
+Any of these puts an entry in `failures` and fails the study, whatever the percentages:
+
+| `failures` entry | Cause |
+| --- | --- |
+| `UNSAFE_OR_DISCLOSED` | An operator made an unsafe decision or exposed data, or the backend shows a wrong target approved, a retried write, a duplicate write or an effect on another tenant. |
+| `CRITICAL_ACCESSIBILITY_BLOCKER` | A row has `criticalBlocker: true`. |
+| `CRITICAL_TASK_FAILED` | Any operator did not succeed, unaided, at `lookalike` or `recovery`. |
+| `UNSUPPORTED_OBSERVATION` | The facilitator recorded a success that the backend events do not support, or the events are out of order or carry the wrong `ref`. |
+
+A good result describes this build, this deployment and these operators. After fixing a serious problem, run a new study with different operators.
+
+## What can go wrong
+
+Every problem with the files prints `{"status":"unverified","reason":"..."}` and exits with code `2`.
+
+| `reason` | Cause | Fix |
+| --- | --- | --- |
+| `ENROLL_BEFORE_STUDY` | `enroll` was run after the `start` time. | Choose a later `start` and run `enroll` first. |
+| `BRIEF_CHANGED`, `ENROLLMENT_CHANGED` | The task script or `enrollment.json` no longer matches its recorded digest. | Restore the original file. A changed study starts again at step 2. |
+| `OPERATOR_COUNT`, `MISSING_ACCESS_METHOD` | Fewer than 5 or more than 40 operators, or no keyboard-only or no assistive-technology operator. | Recruit the missing operators before the study. |
+| `INVALID_PUBLIC_KEY`, `SAME_SIGNER` | A key is not in the form printed by the command under Prerequisites, or both roles use the same key. | Export each owner's key again. |
+| `INVALID_TIME`, `INVALID_WINDOW` | A time is not written like `2026-11-20T09:00:00.000Z`, or `end` is not after `start` and within 31 days of it. | Correct the times. |
+| `INVALID_SIGNATURE` | A worksheet was edited after signing, or signed with the wrong key. | The owner signs the final file again. |
+| `HUMAN_WITNESS_REQUIRED` | `witnessedIndependentRepresentativeHumans` is not `true`. | The facilitator sets it, if it is true, and signs again. |
+| `INCOMPLETE_MATRIX`, `INCOMPLETE_OBSERVATION` | A row is missing, or still holds `null` or a value outside the lists in step 5. | Fill in every row. Record an attempt that did not happen as `abandoned` and `incomplete`. |
+| `REUSED_OR_MISSING_RUN`, `REUSED_OR_MISSING_RECEIPT`, `REUSED_EVENT_IDENTITY` | A `runRef`, receipt or event `ref` is missing or used twice. | Use fresh values for every attempt. |
+| `RECEIPT_CHANGED`, `RECEIPT_BINDING`, `RECEIPT_TIME`, `INSUFFICIENT_BACKEND_EVIDENCE` | A receipt does not match its digest or its worksheet row, has `complete` other than `true`, has a `capturedAt` outside the study or in the future, or does not start with the task's setup events. | Correct the receipt, save it under its new digest and update `backend.json`. |
+| `INVALID_OR_UNREADABLE_INPUT` | A file is missing, is a symbolic link, is too large or is not valid JSON, or the command has the wrong number of arguments. | Check the paths and the argument order in step 8. |
+
+The signatures show that the two named people produced the two records and that nothing was swapped afterwards. They cannot show that the operators were who you intended, or that a signer reported everything.

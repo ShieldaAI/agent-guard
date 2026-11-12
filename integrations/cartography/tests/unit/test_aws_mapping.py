@@ -1,6 +1,5 @@
-"""Pin the pilot mapping to the real Cartography parser and evidence semantics."""
+"""Pin the reference mapping to the real Cartography parser and evidence semantics."""
 
-from importlib.resources import as_file, files
 from pathlib import Path
 
 import pytest
@@ -23,13 +22,10 @@ BUCKET = "arn:aws:s3:::reports"
 
 @pytest.fixture(scope="module")
 def mapping():
-    if MAPPING.is_file():
-        return parse_permission_relationships_file(str(MAPPING))
-    resource = files("agent_guard_cartography").joinpath(
-        "data", "aws-permission-relationships.yaml"
-    )
-    with as_file(resource) as path:
-        return parse_permission_relationships_file(str(path))
+    if not MAPPING.is_file():
+        # The mapping is a deployment reference file; a source archive does not carry it.
+        pytest.skip("deployment/cartography is only present in the repository")
+    return parse_permission_relationships_file(str(MAPPING))
 
 
 def calculate(mapping, statement, *more):
@@ -37,7 +33,7 @@ def calculate(mapping, statement, *more):
     return calculate_permission_relationships(principals, [BUCKET], mapping["permissions"])
 
 
-def test_pilot_yaml_is_accepted_by_pinned_upstream_and_contains_only_reviewed_edges(mapping):
+def test_reference_yaml_is_accepted_by_pinned_upstream_and_contains_only_reviewed_edges(mapping):
     assert mapping == [
         {
             "target_label": "AWSS3Bucket",

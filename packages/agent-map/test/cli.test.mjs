@@ -6,8 +6,10 @@ import { mkdtemp, writeFile, symlink, chmod, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { readFile } from 'node:fs/promises';
 import { createMapToken } from '../dist/index.js';
 import { runMapCli } from '../dist/cli.js';
+import { startupFailure } from '../dist/cli-entry.js';
 
 const cli = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 const supported = typeof constants.O_NONBLOCK === 'number';
@@ -27,7 +29,7 @@ async function unsupportedHost() {
   assert.equal(result.error, undefined);
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'MAP_START_FAILED\n');
+  assert.match(result.stderr, /^MAP_START_FAILED MAP_CONFIG_INVALID: [^\n]+\n$/);
   return true;
 }
 async function validConfig(t, { linked = false, padded = false } = {}) {
@@ -38,7 +40,15 @@ async function validConfig(t, { linked = false, padded = false } = {}) {
     password = 'private-test-password';
   const config = join(dir, 'host.json');
   let contents = JSON.stringify({
-    neo4j: { uri: 'bolt://127.0.0.1:1', username: 'reader', passwordEnv: 'MAP_TEST_PASSWORD' },
+    neo4j: {
+      uri: 'bolt://127.0.0.1:1',
+      username: 'reader',
+      passwordEnv: 'MAP_TEST_PASSWORD',
+      // Optional read limits for a larger fleet are accepted up to the store's hard maximums.
+      maxNodes: 10_000,
+      maxEdges: 25_000,
+      maxBytes: 16 * 1024 * 1024,
+    },
     credentials: [
       {
         tokenEnv: 'MAP_TEST_TOKEN',
@@ -119,7 +129,13 @@ test('CLI startup failures produce only a stable safe error', async () => {
   const code = await new Promise(resolve => child.once('exit', resolve));
   assert.equal(code, 1);
   assert.equal(out, '');
-  assert.equal(error, 'MAP_START_FAILED\n');
+  // The specific safe code, one fixed hint and the usage; never the argument or its value.
+  assert.match(
+    error,
+    /^MAP_START_FAILED MAP_ARGUMENT_INVALID: [^\n]+\nUsage: agent-guard-map --config HOST_CONFIG\.json \| --help \| --version\n$/,
+  );
+  assert.equal(error.includes('unexpected'), false);
+  assert.equal(error.includes('private-value'), false);
 });
 
 test(onSupportedHost('shared-writable host configuration cannot choose credential destinations'), async t => {
@@ -153,7 +169,7 @@ test(onSupportedHost('CLI rejects FIFO configuration without waiting for a write
   assert.equal(result.error, undefined);
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'MAP_START_FAILED\n');
+  assert.match(result.stderr, /^MAP_START_FAILED MAP_CONFIG_INVALID: [^\n]+\n$/);
 });
 
 test('CLI rejects nonregular and oversized inputs with stable diagnostics', async t => {
@@ -171,7 +187,9 @@ test('CLI rejects nonregular and oversized inputs with stable diagnostics', asyn
     assert.equal(result.error, undefined);
     assert.equal(result.status, 1);
     assert.equal(result.stdout, '');
-    assert.equal(result.stderr, 'MAP_START_FAILED\n');
+    assert.match(result.stderr, /^MAP_START_FAILED MAP_CONFIG_(INVALID|UNREADABLE): [^\n]+\n$/);
+    assert.equal(result.stderr.includes('canary'), false);
+    assert.equal(result.stderr.includes(dir), false);
   }
 });
 
@@ -215,4 +233,94 @@ test(onSupportedHost('CLI bounds growing configuration reads and closes the chec
   assert.equal(result.status, 0);
   assert.equal(result.stderr, '');
   assert.deepEqual(JSON.parse(result.stdout), { code: 'MAP_CONFIG_INVALID', bytes: 128 * 1024 + 1, closed: true });
+});
+
+const packageVersion = async () =>
+  JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8')).version;
+const run = (script, args, env = {}) =>
+  spawnSync(process.execPath, [script, ...args], {
+    encoding: 'utf8',
+    timeout: 15_000,
+    killSignal: 'SIGKILL',
+    env: { ...process.env, ...env },
+  });
+
+test('both launchers print their version and usage without reading any configuration', async () => {
+  const version = await packageVersion();
+  for (const [script, usage] of [
+    [cli, 'agent-guard-map --config HOST_CONFIG.json | --help | --version\n'],
+    [
+      fileURLToPath(new URL('../dist/identity-cli.js', import.meta.url)),
+      'agent-guard-map-identity --config PRIVATE_HOST_CONFIG.json | --help | --version\n',
+    ],
+  ]) {
+    const shown = run(script, ['--version']);
+    assert.deepEqual([shown.status, shown.stdout, shown.stderr], [0, `${version}\n`, '']);
+    const help = run(script, ['--help']);
+    assert.deepEqual([help.status, help.stdout, help.stderr], [0, usage, '']);
+    // No arguments, or a missing value, names the argument fault and repeats the usage.
+    for (const args of [[], ['--config']]) {
+      const failed = run(script, args);
+      assert.equal(failed.status, 1);
+      assert.equal(failed.stdout, '');
+      assert.match(failed.stderr, /^MAP_START_FAILED MAP_ARGUMENT_INVALID: [^\n]+\n/);
+      assert.ok(failed.stderr.endsWith(`Usage: ${usage}`));
+    }
+  }
+});
+
+test(onSupportedHost('CLI names the cause of a startup failure without printing paths, names or values'), async t => {
+  if (await unsupportedHost()) return;
+  const dir = await mkdtemp(join(tmpdir(), 'agent-map-cli-cause-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const config = join(dir, 'host-canary.json');
+  const scope = { subject: 'cli', companyId: 'company', tenantIds: ['tenant'], teamIds: ['team'], allTeams: false };
+  const write = value => writeFile(config, typeof value === 'string' ? value : JSON.stringify(value));
+  const base = {
+    neo4j: { uri: 'bolt://127.0.0.1:1', username: 'reader', passwordEnv: 'MAP_TEST_CAUSE_PASSWORD' },
+    credentials: [{ tokenEnv: 'MAP_TEST_CAUSE_TOKEN', scope }],
+    port: 0,
+  };
+  const env = { MAP_TEST_CAUSE_PASSWORD: 'password-canary', MAP_TEST_CAUSE_TOKEN: createMapToken() };
+  const failure = async (expected, contents, variables = env) => {
+    if (contents !== undefined) await write(contents);
+    const result = run(cli, ['--config', config], variables);
+    assert.equal(result.status, 1, expected);
+    assert.equal(result.stdout, '', expected);
+    assert.match(result.stderr, new RegExp(`^MAP_START_FAILED ${expected}: [^\\n]+\\n$`), result.stderr);
+    for (const secret of ['canary', dir, 'MAP_TEST_CAUSE', 'bolt:', 'reader'])
+      assert.equal(result.stderr.includes(secret), false, `${expected} printed ${secret}`);
+  };
+  await failure('MAP_CONFIG_NOT_FOUND');
+  await failure('MAP_CONFIG_INVALID', '{"neo4j":{},"neo4j":{}}');
+  await failure('MAP_CONFIG_INVALID', { ...base, extra: 'value-canary' });
+  await failure('MAP_CONFIG_INVALID', { ...base, neo4j: { ...base.neo4j, uri: 'neo4j://db.example.invalid' } });
+  // Read limits past the store's hard maximum are a configuration fault, not a silent clamp.
+  await failure('MAP_CONFIG_INVALID', { ...base, neo4j: { ...base.neo4j, maxNodes: 10_001 } });
+  await failure('MAP_CONFIG_INVALID', { ...base, neo4j: { ...base.neo4j, maxRows: 5 } });
+  await failure('MAP_SCOPE_INVALID', { ...base, credentials: [{ tokenEnv: 'MAP_TEST_CAUSE_TOKEN', scope: {} }] });
+  await failure('MAP_CREDENTIAL_REQUIRED', base, { MAP_TEST_CAUSE_PASSWORD: '', MAP_TEST_CAUSE_TOKEN: '' });
+  await chmod(config, 0o000);
+  // Root reads any file; every other user is told the file cannot be opened.
+  if (process.getuid?.() !== 0) await failure('MAP_CONFIG_UNREADABLE');
+});
+
+test('startup failures map to fixed codes and never carry the error text', () => {
+  const system = (code, syscall) => Object.assign(new Error('secret-canary /private/path'), { code, syscall });
+  for (const [error, code, usage] of [
+    [system('ENOENT', 'open'), 'MAP_CONFIG_NOT_FOUND', false],
+    [system('EACCES', 'open'), 'MAP_CONFIG_UNREADABLE', false],
+    [system('ELOOP', 'open'), 'MAP_CONFIG_UNREADABLE', false],
+    [system('EADDRINUSE', 'listen'), 'MAP_LISTEN_FAILED', false],
+    [system('EACCES', 'listen'), 'MAP_LISTEN_FAILED', false],
+    [system('ERR_PARSE_ARGS_UNKNOWN_OPTION'), 'MAP_ARGUMENT_INVALID', true],
+    [system('SOMETHING_ELSE'), 'MAP_START_FAILED', false],
+    [new Error('secret-canary'), 'MAP_START_FAILED', false],
+    ['secret-canary', 'MAP_START_FAILED', false],
+    [null, 'MAP_START_FAILED', false],
+  ]) {
+    const failure = startupFailure(error);
+    assert.deepEqual([failure.code, failure.usage], [code, usage]);
+    assert.ok(failure.hint.length > 10 && !failure.hint.includes('canary') && !failure.hint.includes('/private'));
+  }
 });

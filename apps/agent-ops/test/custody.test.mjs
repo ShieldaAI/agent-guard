@@ -152,5 +152,12 @@ test('process loss while restoring a history file rebuilds its partial stage and
   } finally {
     recovered.close();
   }
-  assert.ok(readdirSync(f.config.historyDirectory).some(n => n.includes('.partial-')));
+  // The executor discards an incomplete stage and rebuilds it from the backup: the history
+  // file is back and no staged or partial file is left behind.
+  const names = readdirSync(f.config.historyDirectory);
+  assert.ok(names.includes(name));
+  assert.equal(
+    names.some(n => n.startsWith('.custody-history-') || n.includes('.partial-')),
+    false,
+  );
 });

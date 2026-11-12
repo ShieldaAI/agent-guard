@@ -12,14 +12,16 @@ import time
 from dataclasses import make_dataclass, replace
 from datetime import datetime
 from hashlib import sha256
+from typing import Any, NoReturn
 
 from cartography.graph.querybuilder import build_ingestion_query
 from cartography.models.aws.iam.role import AWSRoleSchema
 from cartography.models.aws.iam.user import AWSUserSchema
 from cartography.models.aws.s3.bucket import S3BucketSchema
 from cartography.models.core.common import PropertyRef
-from cartography.models.core.nodes import CartographyNodeProperties
+from cartography.models.core.nodes import CartographyNodeProperties, CartographyNodeSchema
 
+from agent_guard_cartography._ids import AWS_REGION
 from agent_guard_cartography.aws_config import (
     AwsCollectionError,
     AwsEnrollment,
@@ -43,11 +45,11 @@ _BUCKET = {"Name", "Arn", "Region", "CreationDate"}
 _LABELS = {"roles": "AWSRole", "users": "AWSUser", "buckets": "AWSS3Bucket"}
 
 
-def _fail(code: str = "AWS_CAPTURE_INVALID") -> None:
+def _fail(code: str = "AWS_CAPTURE_INVALID") -> NoReturn:
     raise AwsCollectionError(code)
 
 
-def _text(value, maximum: int = 4096) -> str:
+def _text(value: Any, maximum: int = 4096) -> str:
     if (
         type(value) is not str
         or not value
@@ -58,18 +60,19 @@ def _text(value, maximum: int = 4096) -> str:
     return value
 
 
-def _date(value) -> datetime:
+def _date(value: Any) -> datetime:
     _text(value, 128)
     try:
         result = datetime.fromisoformat(value)
-        if result.tzinfo is None or result.utcoffset().total_seconds() != 0:
+        offset = result.utcoffset()
+        if offset is None or offset.total_seconds() != 0:
             _fail()
         return result
     except (ValueError, OverflowError):
         _fail()
 
 
-def validate_aws_capture(enrollment: AwsEnrollment, value: object) -> dict:
+def validate_aws_capture(enrollment: AwsEnrollment, value: Any) -> dict[str, Any]:
     """Copy the small allowlisted wire shape before opening any graph transaction."""
     enrollment = validate_aws_enrollment(enrollment)
     expected_fields = {"capturedAt", "roles", "users", "buckets"}
@@ -84,7 +87,7 @@ def validate_aws_capture(enrollment: AwsEnrollment, value: object) -> dict:
         _fail()
     if sum(len(value[name]) for name in _LABELS) > enrollment.max_items:
         _fail("AWS_CAPTURE_LIMIT_EXCEEDED")
-    result = {"capturedAt": stamp, "roles": [], "users": [], "buckets": []}
+    result: dict[str, Any] = {"capturedAt": stamp, "roles": [], "users": [], "buckets": []}
     size = 128
     for category, fields in (("roles", _ROLE), ("users", _USER), ("buckets", _BUCKET)):
         seen = set()
@@ -102,9 +105,7 @@ def validate_aws_capture(enrollment: AwsEnrollment, value: object) -> dict:
                     _fail()
                 if row["Arn"] != f"arn:{enrollment.partition}:s3:::{name}":
                     _fail()
-                if not re.fullmatch(
-                    r"[a-z]{2}-(?:[a-z]+-)+[0-9]+", _text(row["Region"], 32)
-                ) or row["Region"].startswith(("cn-", "us-gov-")):
+                if not AWS_REGION.fullmatch(_text(row["Region"], 32)):
                     _fail()
                 _date(row["CreationDate"])
                 identity = name
@@ -153,7 +154,7 @@ def validate_aws_capture(enrollment: AwsEnrollment, value: object) -> dict:
     return result
 
 
-def _schemas():
+def _schemas() -> dict[str, CartographyNodeSchema]:
     # ListUsers does not authorize collecting password-use observations. Preserve
     # any independently collected properties while reusing every canonical ref,
     # label, ownership edge and ontology mapping for the metadata we do observe.
@@ -173,7 +174,9 @@ def _schemas():
     }
 
 
-def _publish_policy_evidence(tx, identifier: str, capture: dict, content_hash: str) -> None:
+def _publish_policy_evidence(
+    tx: Any, identifier: str, capture: dict[str, Any], content_hash: str
+) -> None:
     """Replace only this collection's candidate layer inside the metadata transaction."""
     tx.run(
         "MATCH ()-[r:G_AWS_POLICY_CANDIDATE {collection_id:$id}]->() DELETE r",
@@ -241,7 +244,7 @@ def _publish_policy_evidence(tx, identifier: str, capture: dict, content_hash: s
     ).consume()
 
 
-def publish_aws_capture(session, enrollment: AwsEnrollment, capture: object) -> dict:
+def publish_aws_capture(session: Any, enrollment: AwsEnrollment, capture: Any) -> dict[str, Any]:
     """Caller holds the shared ingestion lock. A failed transaction publishes nothing."""
     enrollment = validate_aws_enrollment(enrollment)
     capture = validate_aws_capture(enrollment, capture)
@@ -255,7 +258,7 @@ def publish_aws_capture(session, enrollment: AwsEnrollment, capture: object) -> 
         ).encode()
     ).hexdigest()
     stamp = capture["capturedAt"]
-    receipt = {
+    receipt: dict[str, Any] = {
         "status": "complete",
         "collectionId": identifier,
         "capturedAt": stamp,

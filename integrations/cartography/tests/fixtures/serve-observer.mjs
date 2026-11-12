@@ -1,7 +1,8 @@
 // Disposable real observer for Python collector tests. Credentials travel only over parent IPC.
 import { createInterface } from 'node:readline';
 import { randomBytes } from 'node:crypto';
-import { DurableExecutor, startInventoryServer, createInventoryObserverToken } from '../../../../packages/executor/dist/index.js';
+import { DurableExecutor } from '../../../../packages/executor/dist/index.js';
+import { startInventoryServer, createInventoryObserverToken } from '../../../../packages/executor/dist/entry-inventory.js';
 
 const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32),
   inventory: { companyId: 'collector-company', sourceId: 'collector-executor', enrollmentGeneration: 'generation-one' } });

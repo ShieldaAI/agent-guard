@@ -51,7 +51,7 @@ async function connect(t, options) {
 test('a connection marked readsUntrusted taints the family after any call; the default does not', async t => {
   assert.equal(await connect(t, { readsUntrusted: true }), true);
   assert.equal(await connect(t, {}), false);
-  await assert.rejects(connect(t, { readsUntrusted: 'yes' }));
+  await assert.rejects(connect(t, { readsUntrusted: 'yes' }), { code: 'INVALID_CONFIGURATION' });
 });
 
 test("a binding's explicit readsUntrusted reaches the registration, including false", async () => {

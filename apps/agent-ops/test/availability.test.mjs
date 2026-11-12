@@ -13,6 +13,8 @@ const test = (name, fn) =>
 import assert from 'node:assert/strict';
 import { setup, owner, httpsSetup } from './helpers.mjs';
 import { clientKey } from '../server.mjs';
+import { normalizeRequestPolicy } from '../workflow.mjs';
+import { existsSync } from 'node:fs';
 import { request as httpsRequest } from 'node:https';
 import { createTestIdentityProvider } from '../../../packages/agent-map/test/helpers/oidc-provider.mjs';
 
@@ -62,7 +64,7 @@ test('a pre-login cookie is signed and its CSRF token is bound to it', async t =
   assert.equal((await post(cookie, first.json().csrfToken)).status, 200);
 });
 
-test('one client can hold only a few pending sign-ins', async t => {
+test('one client holds only a few pending sign-ins and a new one is never refused for abandoned ones', async t => {
   const f = await httpsSetup(t);
   const statuses = [];
   for (let index = 0; index < 5; index++) {
@@ -83,7 +85,8 @@ test('one client can hold only a few pending sign-ins', async t => {
       ).status,
     );
   }
-  assert.deepEqual(statuses, [200, 200, 200, 200, 429]);
+  // At the per-address cap the oldest pending sign-in gives way (see server.test.mjs); nobody gets 429.
+  assert.deepEqual(statuses, [200, 200, 200, 200, 200]);
 });
 
 test('a looping requester hits its own pending cap without affecting others', async t => {
@@ -125,18 +128,40 @@ test('request policy values are validated', t => {
     { reviewExpiryMs: 59_999 },
     { reviewExpiryMs: 24 * 60 * 60_000 + 1 },
     { forbidSelfApproval: 'yes' },
+    { shareDenialReason: 1 },
     { maxPendingPerRequester: 0 },
     { maxPendingPerTenant: 1.5 },
+    { autoArchiveAfterDays: 0 },
     { unknown: 1 },
-  ]) {
+    [],
+    null,
+  ])
+    assert.throws(() => normalizeRequestPolicy(requests), { code: 'REQUEST_POLICY_INVALID' }, JSON.stringify(requests));
+  assert.deepEqual(normalizeRequestPolicy({ reviewExpiryMs: 60_000, autoArchiveAfterDays: 3650 }), {
+    reviewExpiryMs: 60_000,
+    forbidSelfApproval: false,
+    maxPendingPerRequester: 50,
+    maxPendingPerTenant: 1000,
+    shareDenialReason: false,
+    autoArchiveAfterDays: 3650,
+  });
+});
+
+test('the runtime refuses an invalid request policy and removes the directory it had prepared', async t => {
+  let directory;
+  await t.test('refused start', inner => {
     assert.throws(
-      () => setup(t, { requests }),
-      error =>
-        ['REQUEST_POLICY_INVALID', 'INVALID_INPUT', 'FIELDS_INVALID'].includes(error.code) ||
-        /INVALID/.test(error.code),
-      JSON.stringify(requests),
+      () => setup(inner, { requests: { unknown: 1 } }),
+      error => {
+        assert.equal(error.code, 'REQUEST_POLICY_INVALID');
+        return true;
+      },
     );
-  }
+    // The helper's cleanup is registered before the runtime opens; find what it created.
+    directory = inner.setupDirectory;
+  });
+  assert.equal(typeof directory, 'string');
+  assert.equal(existsSync(directory), false);
 });
 
 test('TLS material reloads in place for new connections; invalid material is refused', async t => {
@@ -197,14 +222,15 @@ test('online retention archives old finished requests in small batches and leave
     );
   }
   assert.ok(
-    fixture.workflow.data().audit.some(event => event.event === 'AUTO_ARCHIVED' && event.operatorId === 'retention'),
+    fixture.workflow
+      .data()
+      .audit.some(event => event.event === 'AUTO_ARCHIVED' && event.operatorId === 'system:retention'),
   );
 });
 
 test('online retention is off unless configured and validates its setting', t => {
   const fixture = setup(t);
   assert.deepEqual(fixture.workflow.autoArchive(), { archived: 0, skipped: 0 });
-  for (const autoArchiveAfterDays of [0, 3651, 1.5]) {
-    assert.throws(() => setup(t, { requests: { autoArchiveAfterDays } }), /INVALID/);
-  }
+  for (const autoArchiveAfterDays of [0, 3651, 1.5])
+    assert.throws(() => normalizeRequestPolicy({ autoArchiveAfterDays }), { code: 'REQUEST_POLICY_INVALID' });
 });

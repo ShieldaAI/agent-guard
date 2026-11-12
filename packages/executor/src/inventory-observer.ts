@@ -149,6 +149,9 @@ class ObservationPool {
   #teardownFailed = false;
   #closePromise: Promise<void> | undefined;
   readonly #reuseMs: number;
+  get reuseMs(): number {
+    return this.#reuseMs;
+  }
   /** The last completed observation and the inputs that produced it. */
   #last: { key: string; result: SerializedObservation; at: number } | undefined;
   get closed(): boolean {
@@ -568,6 +571,10 @@ export async function createInventoryObservationSession(
   if (entry.pool?.closed) await entry.pool.close();
   if (entry.closed || ledger.closed) throw unavailable();
   if (entry.pool && entry.pool.scheduling !== scheduling) throw schedulingUnavailable();
+  // One pool serves every listener of an executor: a second listener cannot silently run
+  // with the first one's reuse window, so a different value is refused like a scheduling mismatch.
+  if (entry.pool && entry.pool.reuseMs !== reuseMs)
+    throw new ExecutorError('INVENTORY_CONFIG_INVALID', { detail: 'REUSE_WINDOW_MISMATCH' });
   const pool = entry.pool ?? new ObservationPool(entry, ledger, scheduling, reuseMs);
   entry.pool = pool;
   const session = new InventoryObservationSession(pool);

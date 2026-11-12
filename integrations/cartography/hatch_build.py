@@ -1,4 +1,4 @@
-"""Bundle the repository's canonical inventory schema in wheels and source archives."""
+"""Bundle the repository's canonical inventory schemas and license in wheels and source archives."""
 
 from pathlib import Path
 
@@ -35,12 +35,3 @@ class CustomBuildHook(BuildHookInterface):
             "LICENSE" if self.target_name == "sdist" else "agent_guard_cartography/LICENSE"
         )
         build_data["force_include"][str(license_file)] = license_target
-        filename = "aws-permission-relationships.yaml"
-        canonical_mapping = root.parent.parent / "deployment" / "cartography" / filename
-        packaged_mapping = root / "src" / "agent_guard_cartography" / "data" / filename
-        mapping = canonical_mapping if in_repository else packaged_mapping
-        if not mapping.is_file():
-            raise RuntimeError("The pinned AWS permission mapping is missing")
-        build_data["force_include"][str(mapping)] = (
-            f"{prefix}agent_guard_cartography/data/{filename}"
-        )

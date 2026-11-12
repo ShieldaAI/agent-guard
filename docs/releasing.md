@@ -1,7 +1,7 @@
 # Releasing the npm packages
 
 Five ESM workspaces (core, MCP, scenarios, executor, Agent Map) are versioned together under `@shieldaai`;
-the private viewer and Python Cartography are not published. Gates: [candidate notes](releases/0.1.0.md),
+the private viewer and Python Cartography are not published. Gates: [release notes](releases/1.0.0.md),
 root [release state](../release-state.json) (do not publish while blocked), [support and limits](support-and-limits.md).
 
 ## Checklist
@@ -18,7 +18,7 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
    appear and verify its `gitHead`, registry integrity and package bytes. Never use `--ignore-scripts` to bypass publish hooks.
 7. Install the exact versions from the registry into a clean project, then tag and create the GitHub release.
 
-Release notes link the CI run URLs as evidence. Dated JSON under `docs/validation/` is historical; new releases do not add to it.
+Release notes link the CI run for the release commit. If you publish from CI, use npm trusted publishing with `--provenance` so each package carries a signed statement of the commit it was built from; no workflow in this repository holds a publishing token today.
 
 Timing signals (admission during polling, and the constrained observer) do not run on pull requests. Both run nightly on the
 default branch and on manual dispatch; the job summary shows the p95 ratio, skipped polls and reasons. They are never a required check.
@@ -47,17 +47,17 @@ npm publish --workspace packages/agent-map --access public --tag latest
 Wait for each with `npm view <package>@<version> version dist-tags --json`. Then verify and release (`RELEASE_COMMIT` = verified merged commit):
 
 ```sh
-mkdir -p artifacts/registry-0.1.0
+mkdir -p artifacts/registry-1.0.0
 for package in @shieldaai/agent-guard @shieldaai/agent-guard-mcp \
   @shieldaai/agent-guard-scenarios @shieldaai/agent-guard-executor @shieldaai/agent-map; do
-  npm view "$package@0.1.0" version dist.integrity gitHead --json
+  npm view "$package@1.0.0" version dist.integrity gitHead --json
   npm view "$package" dist-tags --json
-  npm pack "$package@0.1.0" --ignore-scripts --pack-destination artifacts/registry-0.1.0
+  npm pack "$package@1.0.0" --ignore-scripts --pack-destination artifacts/registry-1.0.0
 done
-git tag -a v0.1.0 "$RELEASE_COMMIT" -m 'Agent Guard 0.1.0'
-git push origin refs/tags/v0.1.0
-gh release create v0.1.0 artifacts/registry-0.1.0/*-0.1.0.tgz --verify-tag --latest \
-  --title 'Agent Guard 0.1.0' --notes-file docs/releases/0.1.0.md
+git tag -a v1.0.0 "$RELEASE_COMMIT" -m 'Agent Guard 1.0.0'
+git push origin refs/tags/v1.0.0
+gh release create v1.0.0 artifacts/registry-1.0.0/*-1.0.0.tgz --verify-tag --latest \
+  --title 'Agent Guard 1.0.0' --notes-file docs/releases/1.0.0.md
 ```
 
 ## Rollback and partial publication
@@ -70,4 +70,3 @@ await a still-processing upload, never repeat it. Resume, in order, only package
 Create no tag or GitHub release until all five packages and registry-installed consumers pass.
 Service image rollback: [upgrade and rollback procedure](../deployment/production/upgrades.md).
 
-See [archive/releasing-0.1.md](archive/releasing-0.1.md) for the detailed 0.1 process and evidence rules.

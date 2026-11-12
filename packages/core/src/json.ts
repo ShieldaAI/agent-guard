@@ -6,6 +6,7 @@ export type JsonPrimitive = string | number | boolean | null;
 export type JsonValue = JsonPrimitive | readonly JsonValue[] | { readonly [key: string]: JsonValue };
 export type JsonObject = { readonly [key: string]: JsonValue };
 
+/** Thrown by the JSON helpers for a value that is not plain JSON or exceeds a limit. The guard reports it as INVALID_JSON. */
 export class InvalidJsonError extends Error {
   constructor(message: string) {
     super(message);

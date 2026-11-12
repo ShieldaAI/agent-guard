@@ -9,7 +9,11 @@ const pair = generateKeyPairSync('ed25519');
 const otherPair = generateKeyPairSync('ed25519');
 const pem = key => key.export({ type: 'spki', format: 'pem' });
 const keyId = key => digest(key.export({ type: 'spki', format: 'der' }));
-const failure = { name: 'Error', message: 'Build provenance validation failed' };
+const failure = {
+  name: 'ExecutorError',
+  code: 'BUILD_PROVENANCE_INVALID',
+  message: 'BUILD_PROVENANCE_INVALID: Build provenance validation failed',
+};
 
 function rule() {
   return {

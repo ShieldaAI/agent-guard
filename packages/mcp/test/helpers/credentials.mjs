@@ -88,11 +88,13 @@ export async function credentialFixture(t, { wrongName = false } = {}) {
     keys: [0],
     delayJwks: 0,
     jwksBody: undefined,
+    /** When set, the valid key set is padded so the response body is exactly this many bytes. */
+    jwksBytes: undefined,
     redirectJwks: undefined,
     redirectMcp: undefined,
     hangCall: false,
   };
-  const counts = { jwks: 0, mcp: 0, calls: 0, reads: 0, writes: 0, credentialsAtJwks: 0 };
+  const counts = { jwks: 0, mcp: 0, calls: 0, reads: 0, writes: 0, credentialsAtJwks: 0, jwksBytesServed: 0 };
   const tokensSeen = new Set();
   let origin;
   const json = (res, value) => {
@@ -127,7 +129,14 @@ export async function credentialFixture(t, { wrongName = false } = {}) {
               }
               res.once('close', done);
             });
-          json(res, controls.jwksBody ?? { keys: controls.keys.map(index => keys[index]) });
+          const keySet = controls.jwksBody ?? { keys: controls.keys.map(index => keys[index]) };
+          if (controls.jwksBytes !== undefined) {
+            const unpadded = Buffer.byteLength(JSON.stringify({ ...keySet, padding: '' }));
+            if (unpadded > controls.jwksBytes) throw new Error('Fixture key set is larger than the requested size');
+            keySet.padding = 'x'.repeat(controls.jwksBytes - unpadded);
+          }
+          counts.jwksBytesServed = Buffer.byteLength(JSON.stringify(keySet));
+          json(res, keySet);
           return;
         }
         if (req.url !== '/mcp') {

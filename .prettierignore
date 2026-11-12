@@ -7,6 +7,8 @@
 **/*.yaml
 **/*.py
 **/*.css
+# The viewer stylesheet is formatted.
+!apps/agent-map/src/**/*.css
 **/*.html
 docs/
 deployment/

@@ -1,34 +1,62 @@
-"""Explicit file imports and single-worker observer collection for Cartography."""
+"""The collector command: explicit file imports and single-worker observer collection."""
+
+from __future__ import annotations
 
 import argparse
-import ipaddress
 import json
 import logging
 import os
 import re
-import stat
 import sys
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import asdict
 from pathlib import Path
-from urllib.parse import urlsplit
+from typing import Any
 
 from cartography.config import Config
 from cartography.sync import Sync
-from neo4j import GraphDatabase
+from neo4j import Driver, Session
 
-from agent_guard_cartography.archive import ArchiveError, SnapshotArchive
+from agent_guard_cartography._command import (
+    add_archive_arguments,
+    add_neo4j_arguments,
+    add_verbose_argument,
+    archive_limits,
+    check_archive_arguments,
+    command_failed,
+    failure_code,
+    infrastructure_code,
+    ingestion_lock,
+    lock_files,
+    log_exception,
+    neo4j_password,
+    open_driver,
+    report_failure,
+    sigterm_as_interrupt,
+    validate_neo4j_uri,
+    warn,
+)
+from agent_guard_cartography._ids import SHA256_HEX
+from agent_guard_cartography._json import unique_object
+from agent_guard_cartography.archive import (
+    MAX_RECORD_BYTES,
+    PROTECTED_PER_SOURCE,
+    ArchiveError,
+    SnapshotArchive,
+    required_snapshots,
+)
 from agent_guard_cartography.aws_capture import capture_aws
 from agent_guard_cartography.aws_config import (
     AwsCollectionError,
+    AwsEnrollment,
     collection_id,
     load_aws_enrollment,
 )
 from agent_guard_cartography.aws_graph import publish_aws_capture
 from agent_guard_cartography.cloud import CloudJoinError, CloudScope, validate_cloud_scope
-from agent_guard_cartography.collector import CollectionError, load_enrollment
+from agent_guard_cartography.collector import CollectionError, CollectorEnrollment, load_enrollment
 from agent_guard_cartography.graph import (
     GraphImportError,
     ImportResult,
@@ -36,11 +64,7 @@ from agent_guard_cartography.graph import (
     source_key,
 )
 from agent_guard_cartography.input_files import read_regular_file
-from agent_guard_cartography.inventory import (
-    InventoryValidationError,
-    load_snapshot,
-    validate_snapshot,
-)
+from agent_guard_cartography.inventory import load_snapshot, validate_snapshot
 from agent_guard_cartography.publish import (
     collect_and_publish,
     prune_archive,
@@ -48,6 +72,10 @@ from agent_guard_cartography.publish import (
     retire_obsolete,
     retire_superseded,
 )
+
+_AWS_CODE = re.compile(r"AWS_[A-Z_]{1,56}")
+# Company and tenant: the scope a cloud allowlist or AWS enrollment applies to.
+_Scope = tuple[str, str]
 
 
 @contextmanager
@@ -69,17 +97,26 @@ def _model_diagnostics() -> Iterator[None]:
                 )
             )
 
+    class StageFailureTraceback(logging.Filter):
+        """A rejected import is reported once, by its code; not as an upstream traceback."""
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            return record.msg != "Unhandled exception during sync stage '%s'"
+
     logger = logging.getLogger("cartography.graph.querybuilder")
-    notice = ExternalSchemaNotice()
+    stages = logging.getLogger("cartography.sync")
+    notice, rejection = ExternalSchemaNotice(), StageFailureTraceback()
     logger.addFilter(notice)
+    stages.addFilter(rejection)
     try:
         yield
     finally:
         logger.removeFilter(notice)
+        stages.removeFilter(rejection)
 
 
 def build_sync(
-    snapshot: dict,
+    snapshot: Mapping[str, Any],
     expected_source: Mapping[str, str],
     on_result: Callable[[ImportResult], None] | None = None,
     *,
@@ -91,7 +128,7 @@ def build_sync(
     if snapshot["source"] != expected_source:
         raise GraphImportError("SOURCE_SCOPE_MISMATCH")
 
-    def start_agent_guard_ingestion(session, config) -> None:
+    def start_agent_guard_ingestion(session: Session, config: Config) -> None:
         result = import_snapshot(
             session,
             snapshot,
@@ -107,148 +144,257 @@ def build_sync(
     return sync
 
 
-@contextmanager
-def ingestion_lock(path: Path) -> Iterator[None]:
-    """One worker on one host/volume. This is deliberately not a distributed lease."""
-    try:
-        import fcntl
-    except ImportError:
-        raise GraphImportError("PROCESS_LOCK_UNSUPPORTED") from None
-    flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
-    descriptor = os.open(path, flags, 0o600)
-    try:
-        metadata = os.fstat(descriptor)
-        if (
-            not stat.S_ISREG(metadata.st_mode)
-            or metadata.st_uid != os.getuid()
-            or metadata.st_nlink != 1
-        ):
-            raise GraphImportError("PROCESS_LOCK_UNSAFE")
-        try:
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise GraphImportError("INGESTION_ALREADY_RUNNING") from None
-        try:
-            yield
-        finally:
-            fcntl.flock(descriptor, fcntl.LOCK_UN)
-    finally:
-        # Do not unlink the file: another worker might have opened this inode.
-        os.close(descriptor)
-
-
-def _expected_source(path: Path) -> dict:
-    def object_pairs(pairs):
-        result = {}
-        for key, value in pairs:
-            if key in result:
-                raise ValueError()
-            result[key] = value
-        return result
-
+def _expected_source(path: Path) -> dict[str, Any]:
+    """A small trusted JSON object: the expected source, or a cloud scope."""
     try:
         content = read_regular_file(path, 16_385)
         if len(content) > 16_384:
             raise ValueError()
-        value = json.loads(content.decode("utf-8"), object_pairs_hook=object_pairs)
+        value = json.loads(content.decode("utf-8"), object_pairs_hook=unique_object)
         if not isinstance(value, dict):
             raise ValueError()
         return value
+    except FileNotFoundError:
+        raise GraphImportError("SOURCE_CONFIG_NOT_FOUND") from None
     except (OSError, UnicodeError, ValueError, RecursionError):
         raise GraphImportError("SOURCE_CONFIG_INVALID") from None
 
 
-def _validate_uri(value: str) -> None:
+def _secret_values(
+    args: argparse.Namespace,
+    enrollments: Sequence[CollectorEnrollment],
+    aws_enrollment: AwsEnrollment | None,
+) -> list[str]:
+    """Current credential values, so ``--verbose`` can never print one."""
+    names = [args.neo4j_password_env_var, *(item.token_env for item in enrollments)]
+    if aws_enrollment is not None:
+        names += [
+            aws_enrollment.access_key_id_env,
+            aws_enrollment.secret_access_key_env,
+            aws_enrollment.session_token_env,
+        ]
+    return [value for name in names if (value := os.environ.get(name))]
+
+
+def _check_sizing(args: argparse.Namespace, sources: int) -> None:
+    """Refuse an archive that can never hold its sources; warn once when history is cut."""
+    if args.archive_max_snapshots < sources * (PROTECTED_PER_SOURCE + 1):
+        raise ArchiveError("ARCHIVE_SIZING_INVALID")
+    if not args.watch:
+        return
+    required = required_snapshots(sources, args.interval_seconds, args.archive_retention_seconds)
+    if required > args.archive_max_snapshots:
+        # Collection continues: the oldest published snapshots are pruned early.
+        warn(
+            "ARCHIVE_SIZING_INSUFFICIENT",
+            sources=sources,
+            interval_seconds=args.interval_seconds,
+            retention_seconds=args.archive_retention_seconds,
+            required_snapshots=required,
+            max_snapshots=args.archive_max_snapshots,
+        )
+
+
+class _Cycle:
+    """What one pass over the enrolled sources produced."""
+
+    def __init__(self) -> None:
+        # 0 complete; 1 an unexpected source failure; 2 a failure with a known code.
+        self.failed = 0
+        # Published snapshots removed before their retention elapsed, to make room.
+        self.pruned_early = 0
+
+    def fail(self, level: int) -> None:
+        self.failed = max(self.failed, level)
+
+
+def _collect_aws(
+    driver: Driver,
+    args: argparse.Namespace,
+    aws_enrollment: AwsEnrollment,
+    explain: Callable[[BaseException], None],
+) -> int:
+    """Capture and publish the enrolled AWS account once; returns the failure level."""
     try:
-        uri = urlsplit(value)
-        if (
-            uri.scheme not in ("bolt", "bolt+s", "neo4j+s")
-            or not uri.hostname
-            or uri.username is not None
-            or uri.password is not None
-            or uri.path
-            or uri.query
-            or uri.fragment
-        ):
-            raise ValueError()
-        if uri.port is not None and not 1 <= uri.port <= 65535:
-            raise ValueError()
-        # Routing discovery can advertise remote plaintext peers even from a
-        # loopback seed. Plaintext therefore uses direct literal-loopback Bolt.
-        if uri.scheme == "bolt":
-            if not ipaddress.ip_address(uri.hostname).is_loopback:
-                raise ValueError()
-    except ValueError:
-        raise GraphImportError("NEO4J_URI_INVALID") from None
+        capture = capture_aws(aws_enrollment)
+        with driver.session(database=args.neo4j_database) as session:
+            publish_aws_capture(session, aws_enrollment, capture)
+        policy_summary = {}
+        if aws_enrollment.include_iam_policy_evidence:
+            evidence = capture["policyEvidence"]
+            policy_summary["policy_evidence"] = {
+                "status": "complete",
+                "assessment": "unknown",
+                "candidate_edges": len(evidence["edges"]),
+                "unresolved_principals": sum(
+                    row["status"] != "mapped" for row in evidence["principals"]
+                ),
+            }
+        print(
+            json.dumps(
+                {
+                    "kind": "aws_collection",
+                    "status": "complete",
+                    "collection_id": collection_id(aws_enrollment),
+                    "captured_at": capture["capturedAt"],
+                    "counts": {name: len(capture[name]) for name in ("roles", "users", "buckets")},
+                    **policy_summary,
+                },
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return 0
+    except Exception as error:
+        code = (
+            error.code
+            if isinstance(error, AwsCollectionError)
+            and isinstance(error.code, str)
+            and _AWS_CODE.fullmatch(error.code)
+            else infrastructure_code(error) or "AWS_COLLECTION_FAILED"
+        )
+        report_failure(code, kind="aws_collection", collection_id=collection_id(aws_enrollment))
+        explain(error)
+        return 2
 
 
-def _collect_sources(driver, args, enrollments, cloud_scopes, aws_enrollment=None) -> int:
+def _collect_source(
+    driver: Driver,
+    args: argparse.Namespace,
+    archive: SnapshotArchive,
+    enrollment: CollectorEnrollment,
+    scope: CloudScope | None,
+    cycle: _Cycle,
+    explain: Callable[[BaseException], None],
+) -> None:
+    """Collect (or replay) one source, publish it, then run its maintenance."""
+    try:
+        with driver.session(database=args.neo4j_database) as session:
+            if args.replay_receipt:
+                result = publish_receipt(
+                    session, enrollment, archive, args.replay_receipt, cloud_scope=scope
+                )
+            else:
+                # Reclaim old files before store, and make room for this poll,
+                # so a full archive recovers instead of failing every source.
+                cycle.pruned_early += prune_archive(
+                    session,
+                    archive,
+                    retention_seconds=args.archive_retention_seconds,
+                    reserve_snapshots=1,
+                    # The snapshot about to be stored, and the receipt beside it.
+                    reserve_bytes=enrollment.max_response_bytes + MAX_RECORD_BYTES,
+                ).pressure_removed
+                token = os.environ.get(enrollment.token_env, "")
+                result = collect_and_publish(session, enrollment, token, archive, cloud_scope=scope)
+            summary = {**result.summary(), "maintenance": "complete"}
+            try:
+                retire_obsolete(
+                    session,
+                    result.import_result.source_id,
+                    minimum_retention_seconds=args.retention_seconds,
+                )
+                cycle.pruned_early += prune_archive(
+                    session, archive, retention_seconds=args.archive_retention_seconds
+                ).pressure_removed
+            except Exception as error:
+                # Publication already committed; maintenance is retried next
+                # cycle, but its failure is reported and fails the run.
+                code = failure_code(error, "MAINTENANCE_FAILED")
+                summary.update(maintenance="unavailable", maintenance_code=code)
+                report_failure(
+                    code,
+                    operation="maintenance",
+                    source_id=source_key(enrollment.source),
+                    error=error,
+                )
+                explain(error)
+                cycle.fail(2)
+        print(json.dumps(summary, sort_keys=True), flush=True)
+    except Exception as error:
+        code = failure_code(error, "COLLECTION_FAILED")
+        context: dict[str, Any] = {"source_id": source_key(enrollment.source), "error": error}
+        receipt_id = getattr(error, "receipt_id", None)
+        if type(receipt_id) is str and SHA256_HEX.fullmatch(receipt_id):
+            # The retained receipt: replay it, or review and discard it.
+            context["receipt_id"] = receipt_id
+        report_failure(code, **context)
+        explain(error)
+        cycle.fail(1 if code == "COLLECTION_FAILED" else 2)
+
+
+def _retire_superseded(
+    driver: Driver,
+    args: argparse.Namespace,
+    archive: SnapshotArchive,
+    cycle: _Cycle,
+    explain: Callable[[BaseException], None],
+) -> None:
+    """Retire projections of superseded sources once their grace period has passed."""
+    # Retired generations are no longer in the active enrollment queue.
+    # Their durable journal keeps grace-period cleanup discoverable.
+    try:
+        with driver.session(database=args.neo4j_database) as session:
+            retired = retire_superseded(
+                session,
+                archive,
+                minimum_retention_seconds=args.retention_seconds,
+            )
+        if retired:
+            print(
+                json.dumps(
+                    {"status": "complete", "operation": "source_retirement", "retired": retired}
+                ),
+                flush=True,
+            )
+    except Exception as error:
+        report_failure(
+            failure_code(error, "SOURCE_RETIREMENT_FAILED"),
+            operation="source_retirement",
+            error=error,
+        )
+        explain(error)
+        cycle.fail(2)
+
+
+def _collect_sources(
+    driver: Driver,
+    args: argparse.Namespace,
+    enrollments: Sequence[CollectorEnrollment],
+    cloud_scopes: Mapping[_Scope, CloudScope],
+    aws_enrollment: AwsEnrollment | None = None,
+) -> int:
     """One bounded serial queue; one failing enrollment does not suppress other sources."""
-    with SnapshotArchive(
-        args.archive_dir, max_snapshots=args.archive_max_snapshots, max_bytes=args.archive_max_bytes
-    ) as archive:
+
+    def explain(error: BaseException) -> None:
+        if args.verbose:
+            log_exception(
+                error, verbose=True, secrets=_secret_values(args, enrollments, aws_enrollment)
+            )
+
+    with SnapshotArchive(args.archive_dir, **archive_limits(args)) as archive:
         # An interrupted reconstruction is not an active collector archive.
         # Reject before AWS observation/publication, pruning or source replay.
         archive.require_recovery_complete()
         next_aws = 0.0
+        ignored: tuple[str, ...] = ()
+        first = True
         while True:
             started = time.monotonic()
-            failed = 0
+            cycle = _Cycle()
+            if not first:
+                # Notice files added, removed or rewritten by anything else since the
+                # previous cycle; within a cycle the archive answers from its index.
+                try:
+                    archive.refresh()
+                except ArchiveError as error:
+                    report_failure(error.code, operation="archive", error=error)
+                    explain(error)
+                    cycle.fail(2)
+            first = False
             if aws_enrollment is not None and started >= next_aws:
                 try:
-                    capture = capture_aws(aws_enrollment)
-                    with driver.session(database=args.neo4j_database) as session:
-                        publish_aws_capture(session, aws_enrollment, capture)
-                    policy_summary = {}
-                    if aws_enrollment.include_iam_policy_evidence:
-                        evidence = capture["policyEvidence"]
-                        policy_summary["policy_evidence"] = {
-                            "status": "complete",
-                            "assessment": "unknown",
-                            "candidate_edges": len(evidence["edges"]),
-                            "unresolved_principals": sum(
-                                row["status"] != "mapped" for row in evidence["principals"]
-                            ),
-                        }
-                    print(
-                        json.dumps(
-                            {
-                                "kind": "aws_collection",
-                                "status": "complete",
-                                "collection_id": collection_id(aws_enrollment),
-                                "captured_at": capture["capturedAt"],
-                                "counts": {
-                                    name: len(capture[name])
-                                    for name in ("roles", "users", "buckets")
-                                },
-                                **policy_summary,
-                            },
-                            sort_keys=True,
-                        ),
-                        flush=True,
-                    )
-                except Exception as error:
-                    code = (
-                        error.code
-                        if isinstance(error, AwsCollectionError)
-                        and isinstance(error.code, str)
-                        and re.fullmatch(r"AWS_[A-Z_]{1,56}", error.code)
-                        else "AWS_COLLECTION_FAILED"
-                    )
-                    print(
-                        json.dumps(
-                            {
-                                "kind": "aws_collection",
-                                "status": "failed",
-                                "collection_id": collection_id(aws_enrollment),
-                                "code": code,
-                            },
-                            sort_keys=True,
-                        ),
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = max(failed, 2)
+                    cycle.fail(_collect_aws(driver, args, aws_enrollment, explain))
                 finally:
                     # Never retry a failed account in a hot loop or catch up missed periods.
                     next_aws = time.monotonic() + args.aws_interval_seconds
@@ -256,132 +402,55 @@ def _collect_sources(driver, args, enrollments, cloud_scopes, aws_enrollment=Non
                 scope = cloud_scopes.get(
                     (enrollment.source["companyId"], enrollment.source["tenantId"])
                 )
-                try:
-                    with driver.session(database=args.neo4j_database) as session:
-                        if args.replay_receipt:
-                            result = publish_receipt(
-                                session, enrollment, archive, args.replay_receipt, cloud_scope=scope
-                            )
-                        else:
-                            # Reclaim eligible old files before store, so a full archive can recover.
-                            prune_archive(session, archive)
-                            token = os.environ.get(enrollment.token_env, "")
-                            result = collect_and_publish(
-                                session, enrollment, token, archive, cloud_scope=scope
-                            )
-                        maintenance = "complete"
-                        try:
-                            retire_obsolete(
-                                session,
-                                result.import_result.source_id,
-                                minimum_retention_seconds=args.retention_seconds,
-                            )
-                            prune_archive(session, archive)
-                        except Exception:
-                            # Publication already committed; retry maintenance next cycle.
-                            maintenance = "unavailable"
-                    print(
-                        json.dumps(
-                            {**result.summary(), "maintenance": maintenance}, sort_keys=True
-                        ),
-                        flush=True,
-                    )
-                except (
-                    InventoryValidationError,
-                    GraphImportError,
-                    CollectionError,
-                    ArchiveError,
-                    CloudJoinError,
-                ) as error:
-                    print(
-                        json.dumps(
-                            {
-                                "status": "failed",
-                                "source_id": source_key(enrollment.source),
-                                "code": error.code,
-                            },
-                            sort_keys=True,
-                        ),
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = max(failed, 2)
-                except Exception:
-                    print(
-                        json.dumps(
-                            {
-                                "status": "failed",
-                                "source_id": source_key(enrollment.source),
-                                "code": "COLLECTION_FAILED",
-                            },
-                            sort_keys=True,
-                        ),
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    failed = max(failed, 1)
-            # Retired generations are no longer in the active enrollment queue.
-            # Their durable journal keeps grace-period cleanup discoverable.
-            try:
-                with driver.session(database=args.neo4j_database) as session:
-                    retired = retire_superseded(
-                        session,
-                        archive,
-                        minimum_retention_seconds=args.retention_seconds,
-                    )
-                if retired:
-                    print(
-                        json.dumps(
-                            {
-                                "status": "complete",
-                                "operation": "source_retirement",
-                                "retired": retired,
-                            }
-                        ),
-                        flush=True,
-                    )
-            except Exception:
-                print(
-                    json.dumps(
-                        {
-                            "status": "unavailable",
-                            "operation": "source_retirement",
-                            "code": "SOURCE_RETIREMENT_FAILED",
-                        }
-                    ),
-                    file=sys.stderr,
-                    flush=True,
+                _collect_source(driver, args, archive, enrollment, scope, cycle, explain)
+            _retire_superseded(driver, args, archive, cycle, explain)
+            if cycle.pruned_early:
+                warn(
+                    "ARCHIVE_RETENTION_SHORTENED",
+                    operation="archive_prune",
+                    removed=cycle.pruned_early,
                 )
-                failed = max(failed, 2)
+            # Unreadable receipts stay for review. Each fails only the source that owns
+            # it, but every one is named and fails the run until it is reconciled.
+            for name in archive.damaged[:16]:
+                report_failure("ARCHIVE_FILE_DAMAGED", operation="archive", file=name)
+            if archive.damaged:
+                cycle.fail(2)
+            if archive.ignored != ignored:
+                ignored = archive.ignored
+                if ignored:
+                    warn(
+                        "ARCHIVE_FILE_IGNORED",
+                        operation="archive",
+                        files=list(ignored[:16]),
+                        count=len(ignored),
+                    )
             if not args.watch:
-                return failed
+                return cycle.failed
             time.sleep(max(0, args.interval_seconds - (time.monotonic() - started)))
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Import a complete inventory file or collect an enrolled observer into Cartography."
+        prog="agent-guard-cartography",
+        description="Collect enrolled Agent Guard executors, or import one inventory file, "
+        "into Neo4j as immutable snapshots.",
     )
     mode = parser.add_mutually_exclusive_group(required=True)
-    mode.add_argument("--snapshot", type=Path)
     mode.add_argument(
         "--enrollment",
         type=Path,
         action="append",
         help="Trusted observer enrollment JSON; repeat for serial collection.",
     )
+    mode.add_argument(
+        "--snapshot", type=Path, help="Import one complete inventory file instead of collecting."
+    )
     parser.add_argument(
         "--expected-source",
         type=Path,
-        help="Trusted JSON file containing the exact enrolled source object.",
+        help="With --snapshot: trusted JSON file containing the exact enrolled source object.",
     )
-    parser.add_argument(
-        "--archive-dir",
-        type=Path,
-        help="Private persistent directory required for observer collection.",
-    )
-    parser.add_argument("--archive-max-snapshots", type=int, default=4096)
-    parser.add_argument("--archive-max-bytes", type=int, default=256 * 1024 * 1024)
     parser.add_argument(
         "--cloud-scope",
         type=Path,
@@ -395,7 +464,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "--watch", action="store_true", help="Keep the ingestion lock and collect repeatedly."
     )
-    parser.add_argument("--interval-seconds", type=int, default=300)
+    parser.add_argument(
+        "--interval-seconds",
+        type=int,
+        default=300,
+        help="With --watch: seconds between collection cycles, 1..3600 (default 300).",
+    )
     parser.add_argument(
         "--aws-enrollment",
         type=Path,
@@ -412,16 +486,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=3600,
         help="Minimum graph projection age before scoped retirement (at least 60 seconds).",
     )
-    parser.add_argument("--neo4j-uri", required=True)
-    parser.add_argument("--neo4j-user", default="neo4j")
-    parser.add_argument("--neo4j-database", default="neo4j")
-    parser.add_argument("--neo4j-password-env-var", default="NEO4J_PASSWORD")
-    parser.add_argument(
-        "--lock-file",
-        type=Path,
-        default=Path(".agent-guard-cartography.lock"),
-        help="Shared persistent lock path for every worker targeting this database.",
-    )
+    add_archive_arguments(parser, directory="optional")
+    add_neo4j_arguments(parser)
+    add_verbose_argument(parser)
+    return parser
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = _parser()
     args = parser.parse_args(argv)
     if args.aws_enrollment and (not args.enrollment or args.replay_receipt):
         parser.error("AWS collection requires observer enrollments and cannot replay receipts")
@@ -450,46 +522,64 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--replay-receipt and --watch cannot be combined")
     if not 1 <= args.interval_seconds <= 3600 or not 60 <= args.retention_seconds <= 2_592_000:
         parser.error("Interval must be 1..3600 and retention 60..2592000 seconds")
+    check_archive_arguments(parser, args)
+    with sigterm_as_interrupt() as terminated:
+        return _run(args, terminated)
+
+
+def _cloud_scopes(paths: Sequence[Path]) -> dict[_Scope, CloudScope]:
+    """Each allowlist file, keyed by its company and tenant; one file per scope."""
+    scopes: dict[_Scope, CloudScope] = {}
+    for path in paths:
+        scope = validate_cloud_scope(_expected_source(path))
+        key = (scope.company_id, scope.tenant_id)
+        if key in scopes:
+            raise CloudJoinError("CLOUD_CONFIG_INVALID")
+        scopes[key] = scope
+    return scopes
+
+
+def _check_enrollments(
+    args: argparse.Namespace,
+    enrollments: Sequence[CollectorEnrollment],
+    cloud_scopes: Mapping[_Scope, CloudScope],
+    aws_enrollment: AwsEnrollment | None,
+) -> None:
+    """Sources are distinct, the archive can hold them, and every scope is enrolled."""
+    if len({source_key(enrollment.source) for enrollment in enrollments}) != len(enrollments):
+        raise CollectionError("COLLECTOR_CONFIG_INVALID")
+    if not args.replay_receipt:
+        _check_sizing(args, len(enrollments))
+    enrolled_scopes = {(item.source["companyId"], item.source["tenantId"]) for item in enrollments}
+    if set(cloud_scopes) - enrolled_scopes:
+        raise CloudJoinError("CLOUD_SCOPE_MISMATCH")
+    if aws_enrollment is not None:
+        key = (aws_enrollment.company_id, aws_enrollment.tenant_id)
+        scope = cloud_scopes.get(key)
+        if (
+            key not in enrolled_scopes
+            or scope is None
+            or (aws_enrollment.partition, aws_enrollment.account_id) not in scope.accounts
+        ):
+            raise AwsCollectionError("AWS_SCOPE_MISMATCH")
+
+
+def _run(args: argparse.Namespace, terminated: list[int]) -> int:
     try:
-        _validate_uri(args.neo4j_uri)
-        password = os.environ.get(args.neo4j_password_env_var)
-        if not password:
-            raise GraphImportError("NEO4J_PASSWORD_REQUIRED")
+        validate_neo4j_uri(args.neo4j_uri)
+        password = neo4j_password(args)
         enrollments = [load_enrollment(path) for path in args.enrollment or []]
         aws_enrollment = load_aws_enrollment(args.aws_enrollment) if args.aws_enrollment else None
-        cloud_scopes = {}
-        for path in args.cloud_scope or []:
-            scope = validate_cloud_scope(_expected_source(path))
-            key = (scope.company_id, scope.tenant_id)
-            if key in cloud_scopes:
-                raise CloudJoinError("CLOUD_CONFIG_INVALID")
-            cloud_scopes[key] = scope
+        cloud_scopes = _cloud_scopes(args.cloud_scope or [])
+        results: list[ImportResult] = []
         if enrollments:
-            if len({source_key(enrollment.source) for enrollment in enrollments}) != len(
-                enrollments
-            ):
-                raise CollectionError("COLLECTOR_CONFIG_INVALID")
-            enrolled_scopes = {
-                (item.source["companyId"], item.source["tenantId"]) for item in enrollments
-            }
-            if set(cloud_scopes) - enrolled_scopes:
-                raise CloudJoinError("CLOUD_SCOPE_MISMATCH")
-            if aws_enrollment is not None:
-                key = (aws_enrollment.company_id, aws_enrollment.tenant_id)
-                scope = cloud_scopes.get(key)
-                if (
-                    key not in enrolled_scopes
-                    or scope is None
-                    or (aws_enrollment.partition, aws_enrollment.account_id) not in scope.accounts
-                ):
-                    raise AwsCollectionError("AWS_SCOPE_MISMATCH")
+            _check_enrollments(args, enrollments, cloud_scopes, aws_enrollment)
         else:
             snapshot = load_snapshot(args.snapshot)
             expected_source = _expected_source(args.expected_source)
             key = (snapshot["source"]["companyId"], snapshot["source"]["tenantId"])
             if set(cloud_scopes) - {key}:
                 raise CloudJoinError("CLOUD_SCOPE_MISMATCH")
-            results: list[ImportResult] = []
             sync = build_sync(
                 snapshot, expected_source, results.append, cloud_scope=cloud_scopes.get(key)
             )
@@ -500,45 +590,27 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         with (
             _model_diagnostics(),
-            ingestion_lock(args.lock_file),
-            GraphDatabase.driver(
-                args.neo4j_uri,
-                auth=(args.neo4j_user, password),
-                connection_timeout=10,
-                connection_acquisition_timeout=10,
-                max_transaction_retry_time=10,
-                notifications_min_severity="OFF",
-            ) as driver,
+            # The archive's own lock, so every command on this archive excludes this one.
+            ingestion_lock(*lock_files(args.archive_dir if enrollments else None, args.lock_file)),
+            open_driver(args, password) as driver,
         ):
             driver.verify_connectivity()
             if enrollments:
                 return _collect_sources(driver, args, enrollments, cloud_scopes, aws_enrollment)
-            else:
-                status = sync.run(driver, config)
-                if status != 0 or len(results) != 1:
-                    raise GraphImportError("SYNC_INCOMPLETE")
-                print(json.dumps(asdict(results[0]), sort_keys=True))
+            status = sync.run(driver, config)
+            if status != 0 or len(results) != 1:
+                raise GraphImportError("SYNC_INCOMPLETE")
+            print(json.dumps(asdict(results[0]), sort_keys=True))
         return 0
-    except (
-        InventoryValidationError,
-        GraphImportError,
-        CollectionError,
-        ArchiveError,
-        CloudJoinError,
-        AwsCollectionError,
-    ) as error:
-        print(str(error), file=sys.stderr)
-        return 2
     except KeyboardInterrupt:
-        # Ctrl-C is how an operator stops --watch: a clean stop. An interrupted one-shot
-        # collection is not a success; 130 is the conventional SIGINT status.
+        # Ctrl-C or SIGTERM is how an operator stops --watch: a clean stop. An interrupted
+        # one-shot collection is not a success; 130/143 are the conventional statuses.
         if args.watch:
             return 0
-        print("INTERRUPTED", file=sys.stderr)
-        return 130
-    except Exception:
-        print("IMPORT_FAILED", file=sys.stderr)
-        return 1
+        report_failure("TERMINATED" if terminated else "INTERRUPTED")
+        return 143 if terminated else 130
+    except Exception as error:
+        return command_failed(error, "IMPORT_FAILED", args)
 
 
 if __name__ == "__main__":

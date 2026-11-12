@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { TicketWorkflow } from '../workflow.mjs';
-import { companyHistory, historyState } from '../history-state.mjs';
+import { maintenanceBody } from '../responses.mjs';
+import { companyHistory, historyState, historySegmentUsage } from '../history-state.mjs';
 import { normalizeLimits } from '../limits.mjs';
 import { createOpsTelemetry, operationalStatus, monitoringSummary, prometheusStatus } from '../observability.mjs';
 import { httpsSetup } from './helpers.mjs';
@@ -19,19 +19,26 @@ test('maintenance reports global committed history plus pending reservation, sep
     company.head = { index: segments, hash: 'a'.repeat(64), keyBase64: Buffer.alloc(32).toString('base64') };
   }
   historyState(data).pending = { tenantId: 'acme' };
-  const host = {
-    data: () => data,
-    store: { read: () => ({ ticketService: data }) },
-    limits,
-    executor: { maintenanceStatistics: () => ({ ledgerBytes: 100, ledgerByteLimit: limits.maxLedgerBytes }) },
-  };
-  const result = TicketWorkflow.prototype.maintenance.call(host, operator);
+  const body = () =>
+    maintenanceBody({
+      requests: [],
+      eligible: [],
+      now: 0,
+      limits,
+      usage: { tickets: 0, requests: 0, receipts: 0, backendBytes: 0 },
+      historyCapacity: historySegmentUsage(data),
+      company: historyState(data).companies[operator.tenantId],
+      historyPending: historyState(data).pending,
+      statistics: { ledgerBytes: 100, ledgerByteLimit: limits.maxLedgerBytes },
+    });
+  const result = body();
   assert.deepEqual(result.historyCapacity, { committed: 7999, reserved: 1, total: 8000, limit: 10_000 });
   assert.equal(result.history.segments, 3000);
+  assert.equal(result.history.pending, true);
   assert.equal(result.capacityWarning, true);
   assert.equal(JSON.stringify(result).includes('private-tenant-reference'), false);
   historyState(data).pending = null;
-  assert.equal(TicketWorkflow.prototype.maintenance.call(host, operator).capacityWarning, false);
+  assert.equal(body().capacityWarning, false);
 });
 
 test('status, stdout and fixed metrics count reservations at the exact 80% and 95% history boundaries', () => {

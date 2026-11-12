@@ -1,3 +1,4 @@
+import { isInventoryIdentifier } from './identifiers.js';
 import { randomUUID } from 'node:crypto';
 import { isPromise } from 'node:util/types';
 import { type Json } from '@shieldaai/agent-guard';
@@ -26,15 +27,7 @@ function object(value: unknown, keys: readonly string[]): Record<string, unknown
   return record;
 }
 function identifier(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    /^[\s\u001c-\u001f\u0085]*$/u.test(value) ||
-    value.includes('\0') ||
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) ||
-    [...value].length > 4096
-  )
-    return fail();
-  return value;
+  return isInventoryIdentifier(value) ? value : fail();
 }
 function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return fail();
@@ -226,6 +219,8 @@ function hostSnapshot(value: unknown): HostInventorySnapshot {
       'tasks',
       'tools',
       'manifest',
+      // Present on every schema-2 snapshot (outside-content labels in use, or a v3 manifest).
+      ...(Object.hasOwn(value as object, 'untrustedContextDefault') ? ['untrustedContextDefault'] : []),
     ]);
     if (input.profile !== 'host') fail();
     const coverage = object(input.coverage, ['tasks', 'tools', 'manifest', 'mcp', 'cloud']);

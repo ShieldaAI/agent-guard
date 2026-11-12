@@ -4,6 +4,15 @@ import { chmodSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, wri
 import { readWorkspaceInput } from './workspace-input.js';
 import { homedir } from 'node:os';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
+import {
+  codedError,
+  foldPath,
+  MAX_PATH_COUNT,
+  pipelineError,
+  portablePathListProblem,
+  portablePathProblem,
+} from './path-rules.js';
+import { ExecutorError } from './store.js';
 
 export interface SandboxProfile {
   image: string;
@@ -35,8 +44,13 @@ export interface SandboxExport {
 }
 export interface SandboxResult {
   exitCode: number;
+  /** Lossy UTF-8 view for display. The exact bytes are in `stdoutBase64`. */
   stdout: string;
+  /** Lossy UTF-8 view for display. The exact bytes are in `stderrBase64`. */
   stderr: string;
+  /** The bytes the command wrote, unmodified. Signed receipts hash these bytes. */
+  stdoutBase64: string;
+  stderrBase64: string;
   exports: SandboxExport[];
   image: string;
   isolation: 'linux-container-network-none';
@@ -46,13 +60,19 @@ const sha256 = (bytes: Buffer) => createHash('sha256').update(bytes).digest('hex
 function bounded(value: number | undefined, fallback: number, min: number, max: number, integer = true): number {
   const result = value ?? fallback;
   if (!Number.isFinite(result) || result < min || result > max || (integer && !Number.isInteger(result)))
-    throw new Error('Invalid sandbox resource limit');
+    throw pipelineError('SANDBOX_PROFILE_INVALID', 'Invalid sandbox resource limit');
   return result;
 }
 /** Fixed isolation settings have no caller overrides. Images must already be available locally. */
 export function validateSandboxProfile(profile: SandboxProfile): ValidatedSandboxProfile {
-  if (!profile || !/^[a-z0-9][a-z0-9._/:\-]*@sha256:[a-f0-9]{64}$/.test(profile.image) || profile.image.includes('..'))
-    throw new Error('A repository image pinned by sha256 digest is required');
+  if (
+    !profile ||
+    typeof profile !== 'object' ||
+    typeof profile.image !== 'string' ||
+    !/^[a-z0-9][a-z0-9._/:\-]*@sha256:[a-f0-9]{64}$/.test(profile.image) ||
+    profile.image.includes('..')
+  )
+    throw pipelineError('SANDBOX_PROFILE_INVALID', 'A repository image pinned by sha256 digest is required');
   const allowed = new Set([
     'image',
     'memoryMb',
@@ -64,7 +84,8 @@ export function validateSandboxProfile(profile: SandboxProfile): ValidatedSandbo
     'maxOutputBytes',
     'maxExportBytes',
   ]);
-  if (Object.keys(profile).some(key => !allowed.has(key))) throw new Error('Unsupported sandbox profile option');
+  if (Object.keys(profile).some(key => !allowed.has(key)))
+    throw pipelineError('SANDBOX_PROFILE_INVALID', 'Unsupported sandbox profile option');
   return {
     image: profile.image,
     memoryMb: bounded(profile.memoryMb, 256, 64, 4096),
@@ -77,41 +98,24 @@ export function validateSandboxProfile(profile: SandboxProfile): ValidatedSandbo
     maxExportBytes: bounded(profile.maxExportBytes, 16 * MiB, 1, 64 * MiB),
   };
 }
-function portablePath(value: string): string {
-  if (
-    typeof value !== 'string' ||
-    !value ||
-    value.length > 240 ||
-    value.includes('\\') ||
-    value.includes(':') ||
-    /[\u0000-\u001f\u007f]/u.test(value) ||
-    value.startsWith('/') ||
-    value
-      .split('/')
-      .some(
-        part =>
-          !part ||
-          part === '.' ||
-          part === '..' ||
-          /[. ]$/.test(part) ||
-          /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(part),
-      )
-  )
-    throw new Error('Expected a portable relative file path');
-  return value;
+function invalidPath(detail: string): never {
+  throw pipelineError('SANDBOX_PATH_INVALID', 'Expected portable relative file paths without collisions', { detail });
 }
-function paths(values: string[]): string[] {
-  if (!Array.isArray(values) || values.length > 256) throw new Error('At most 256 explicit file paths are permitted');
-  const result = values.map(portablePath);
-  if (new Set(result.map(value => value.toLowerCase())).size !== result.length)
-    throw new Error('Duplicate or case-colliding file paths');
-  return result;
+function portablePath(value: unknown): string {
+  const problem = portablePathProblem(value);
+  if (problem) invalidPath(problem);
+  return value as string;
+}
+function paths(values: unknown): string[] {
+  const problem = portablePathListProblem(values);
+  if (problem) invalidPath(problem);
+  return [...(values as string[])];
 }
 
 export function buildDockerCreateArgs(profile: SandboxProfile, staging: string, name: string): string[] {
   const p = validateSandboxProfile(profile);
   if (!isAbsolute(staging) || /[,\r\n\u0000]/.test(staging) || !/^agent-guard-[a-f0-9-]{36}$/.test(name))
-    throw new Error('Invalid private staging directory or container name');
+    throw pipelineError('SANDBOX_ARGUMENT_INVALID', 'Invalid private staging directory or container name');
   return [
     'create',
     '--name',
@@ -165,39 +169,44 @@ interface CommandResult {
 function docker(args: string[], maximum: number, timeoutMs: number, signal?: AbortSignal): Promise<CommandResult> {
   return new Promise((resolvePromise, reject) => {
     if (signal?.aborted) {
-      reject(new Error('Sandbox operation aborted'));
+      reject(pipelineError('SANDBOX_ABORTED', 'Sandbox operation aborted'));
       return;
     }
-    const child = spawn('docker', args, {
-      shell: false,
-      windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    const unavailable = (cause: unknown) =>
+      pipelineError('SANDBOX_DOCKER_FAILED', 'Docker could not be started', { detail: 'CLI_UNAVAILABLE', cause });
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn('docker', args, {
+        shell: false,
+        windowsHide: true,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+    } catch (error) {
+      reject(unavailable(error));
+      return;
+    }
     const out: Buffer[] = [],
       err: Buffer[] = [];
     let size = 0,
-      failure: Error | undefined;
-    const stop = (message: string) => {
-      failure ??= new Error(message);
+      failure: ExecutorError | undefined;
+    const stop = (code: string, hint: string) => {
+      failure ??= pipelineError(code, hint);
       child.kill('SIGKILL');
     };
-    const timer = setTimeout(() => stop('Sandbox operation exceeded its time limit'), timeoutMs);
-    const aborted = () => stop('Sandbox operation aborted');
+    const timer = setTimeout(() => stop('SANDBOX_TIMEOUT', 'Sandbox operation exceeded its time limit'), timeoutMs);
+    const aborted = () => stop('SANDBOX_ABORTED', 'Sandbox operation aborted');
     signal?.addEventListener('abort', aborted, { once: true });
-    child.stdout.on('data', (part: Buffer) => {
+    const collect = (parts: Buffer[]) => (part: Buffer) => {
       size += part.length;
-      if (size > maximum) stop('Sandbox output exceeded its byte limit');
-      else out.push(part);
-    });
-    child.stderr.on('data', (part: Buffer) => {
-      size += part.length;
-      if (size > maximum) stop('Sandbox output exceeded its byte limit');
-      else err.push(part);
-    });
-    child.on('error', () => {
-      failure ??= new Error('Docker could not be started');
-    });
-    child.on('close', code => {
+      if (size > maximum) stop('SANDBOX_OUTPUT_LIMIT', 'Sandbox output exceeded its byte limit');
+      else parts.push(part);
+    };
+    child.stdout!.on('data', collect(out));
+    child.stderr!.on('data', collect(err));
+    let settled = false;
+    const settle = (code: number | null) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       signal?.removeEventListener('abort', aborted);
       if (failure) reject(failure);
@@ -207,23 +216,76 @@ function docker(args: string[], maximum: number, timeoutMs: number, signal?: Abo
           stderr: Buffer.concat(err),
           code: code ?? 1,
         });
+    };
+    child.on('error', error => {
+      failure ??= unavailable(error);
+      // A process that never started emits no close event.
+      if (child.pid === undefined) settle(null);
     });
+    child.on('close', settle);
   });
 }
+/**
+ * Docker's stderr can quote host paths, image names and guest output, so none of it is
+ * relayed. Only the first 4 KiB is inspected and reduced to one fixed category.
+ */
+const DOCKER_FAILURES: readonly (readonly [RegExp, string])[] = [
+  [
+    /cannot connect to the docker daemon|is the docker daemon running|error during connect|dial unix|open \/\/\.\/pipe/,
+    'DAEMON_UNAVAILABLE',
+  ],
+  [/permission denied|access is denied/, 'PERMISSION_DENIED'],
+  [/no such image|pull access denied|manifest unknown|unable to find image|image not found/, 'IMAGE_NOT_FOUND'],
+  [/no such container/, 'CONTAINER_NOT_FOUND'],
+  [/is not running|is paused|is restarting/, 'CONTAINER_NOT_RUNNING'],
+  [/is already in use|conflict/, 'NAME_CONFLICT'],
+  [/no space left|cannot allocate memory|out of memory|too many open files/, 'RESOURCE_EXHAUSTED'],
+  [/executable file not found|no such file or directory/, 'EXECUTABLE_NOT_FOUND'],
+  [/context .{0,128}(?:does not exist|not found)/, 'CONTEXT_NOT_FOUND'],
+];
+function dockerFailureCategory(stderr: Buffer): string {
+  const text = stderr.subarray(0, 4096).toString('latin1').toLowerCase();
+  return DOCKER_FAILURES.find(([pattern]) => pattern.test(text))?.[1] ?? 'UNCLASSIFIED';
+}
+type DockerOperation = 'context inspect' | 'version' | 'info' | 'image inspect' | 'create' | 'start' | 'exec' | 'rm';
 async function checked(
+  operation: DockerOperation,
   args: string[],
   maximum = MiB,
   timeoutMs = 15_000,
   signal?: AbortSignal,
 ): Promise<CommandResult> {
   const result = await docker(args, maximum, timeoutMs, signal);
-  if (result.code !== 0) throw new Error('Docker operation failed; verify the local Linux daemon and pinned image');
+  if (result.code !== 0)
+    throw pipelineError(
+      'SANDBOX_DOCKER_FAILED',
+      `Docker ${operation} failed; verify the local Linux daemon and pinned image`,
+      { detail: dockerFailureCategory(result.stderr) },
+    );
   return result;
+}
+function dockerJson(result: CommandResult): unknown {
+  try {
+    return JSON.parse(result.stdout.toString('utf8'));
+  } catch {
+    throw pipelineError('SANDBOX_DOCKER_FAILED', 'Docker returned an unreadable description', {
+      detail: 'RESPONSE_INVALID',
+    });
+  }
 }
 
 function stageInputs(workspace: string, selected: string[], target: string, limit: number): void {
   const root = resolve(workspace);
-  if (!lstatSync(root).isDirectory()) throw new Error('Workspace must be a directory');
+  let directory = false;
+  try {
+    directory = lstatSync(root).isDirectory();
+  } catch {
+    // Reported below without the host path.
+  }
+  if (!directory)
+    throw pipelineError('SANDBOX_ARGUMENT_INVALID', 'Workspace must be a directory', {
+      detail: 'WORKSPACE_UNAVAILABLE',
+    });
   let remaining = limit;
   for (const path of selected) {
     const data = readWorkspaceInput(root, path, remaining);
@@ -235,7 +297,52 @@ function stageInputs(workspace: string, selected: string[], target: string, limi
   chmodSync(target, 0o555);
 }
 
-/** Parses an untrusted tar stream into memory. Never extracts an archive to the host filesystem. */
+const utf8 = new TextDecoder('utf-8', { fatal: true });
+/** Entries per archive, counting long-name and pax records. */
+const MAX_ARCHIVE_ENTRIES = 4096;
+/** A GNU long-name record holds one path: "./", the path, an optional "/" and a NUL. */
+const MAX_LONG_NAME_BYTES = 1024;
+const MAX_PAX_BYTES = 8192;
+// Keys that never change which bytes belong to the entry. Any other key is refused.
+const PAX_IGNORED = /^(?:atime|ctime|mtime|uid|gid|uname|gname|comment|(?:SCHILY|LIBARCHIVE)\.[\x21-\x7e]+)$/;
+
+function invalidArchive(detail: string, hint = 'Invalid sandbox archive'): never {
+  throw pipelineError('SANDBOX_ARCHIVE_INVALID', hint, { detail });
+}
+function archiveName(bytes: Uint8Array): string {
+  try {
+    return utf8.decode(bytes);
+  } catch {
+    return invalidArchive('ARCHIVE_NAME');
+  }
+}
+/** The `path` of a pax extended header, or undefined when it only carries ignorable keys. */
+function paxPath(data: Buffer): string | undefined {
+  let path: string | undefined;
+  for (let start = 0; start < data.length;) {
+    const space = data.indexOf(0x20, start);
+    const digits = space === -1 ? '' : data.subarray(start, space).toString('latin1');
+    if (!/^[1-9][0-9]{0,4}$/.test(digits)) invalidArchive('ARCHIVE_EXTENSION');
+    const end = start + Number(digits);
+    if (end > data.length || data[end - 1] !== 0x0a) invalidArchive('ARCHIVE_EXTENSION');
+    const record = data.subarray(space + 1, end - 1);
+    const equals = record.indexOf(0x3d);
+    if (equals < 1) invalidArchive('ARCHIVE_EXTENSION');
+    const key = record.subarray(0, equals).toString('latin1');
+    if (key === 'path') {
+      if (path !== undefined) invalidArchive('ARCHIVE_EXTENSION');
+      path = archiveName(record.subarray(equals + 1));
+    } else if (!PAX_IGNORED.test(key)) invalidArchive('ARCHIVE_EXTENSION');
+    start = end;
+  }
+  return path;
+}
+
+/**
+ * Parses an untrusted tar stream into memory. Never extracts an archive to the host filesystem.
+ * Reads ustar, GNU long-name ("L") and pax ("x", `path` only) entries, so every path the shared
+ * rule accepts can be carried; links, devices, sparse files and global headers are refused.
+ */
 export function readSandboxArchive(archive: Buffer, selectedPaths: string[], maxExportBytes: number): SandboxExport[] {
   if (
     !Buffer.isBuffer(archive) ||
@@ -244,24 +351,27 @@ export function readSandboxArchive(archive: Buffer, selectedPaths: string[], max
     maxExportBytes < 1 ||
     maxExportBytes > 64 * MiB
   )
-    throw new Error('Invalid or oversized sandbox archive');
+    throw pipelineError('SANDBOX_ARGUMENT_INVALID', 'Invalid or oversized sandbox archive');
   const selected = new Set(paths(selectedPaths));
   const output = new Map<string, SandboxExport>();
   const seen = new Set<string>();
-  const seenFolded = new Set<string>();
   let offset = 0,
     count = 0,
     exportedBytes = 0,
-    terminated = false;
-  const field = (block: Buffer, start: number, length: number) =>
-    block
-      .subarray(start, start + length)
-      .toString('utf8')
-      .split('\0')[0]!;
+    terminated = false,
+    // Set by a long-name or pax record for the one entry that follows it.
+    longName: string | undefined,
+    extended = false;
+  const bytes = (block: Buffer, start: number, length: number) => {
+    const part = block.subarray(start, start + length);
+    const end = part.indexOf(0);
+    return end === -1 ? part : part.subarray(0, end);
+  };
+  const field = (block: Buffer, start: number, length: number) => bytes(block, start, length).toString('latin1');
   const octal = (value: string) => {
-    if (!/^[0-7]* *$/.test(value) || !value.trim()) throw new Error('Unsupported tar numeric field');
+    if (!/^[0-7]* *$/.test(value) || !value.trim()) invalidArchive('ARCHIVE_NUMERIC');
     const result = Number.parseInt(value.trim(), 8);
-    if (!Number.isSafeInteger(result) || result < 0) throw new Error('Invalid tar size');
+    if (!Number.isSafeInteger(result) || result < 0) invalidArchive('ARCHIVE_NUMERIC');
     return result;
   };
   while (offset + 512 <= archive.length) {
@@ -269,37 +379,61 @@ export function readSandboxArchive(archive: Buffer, selectedPaths: string[], max
     offset += 512;
     if (block.every(value => value === 0)) {
       terminated = true;
-      if (!archive.subarray(offset).every(value => value === 0)) throw new Error('Unexpected tar trailing content');
+      if (!archive.subarray(offset).every(value => value === 0)) invalidArchive('ARCHIVE_TRAILING');
       break;
     }
-    if (++count > 4096) throw new Error('Too many sandbox archive entries');
+    if (++count > MAX_ARCHIVE_ENTRIES) invalidArchive('ARCHIVE_ENTRY_LIMIT');
     const checksum = octal(field(block, 148, 8));
     let computed = 0;
     for (let i = 0; i < 512; i++) computed += i >= 148 && i < 156 ? 32 : block[i]!;
-    if (checksum !== computed) throw new Error('Invalid sandbox archive checksum');
+    if (checksum !== computed) invalidArchive('ARCHIVE_CHECKSUM');
     const magic = field(block, 257, 6);
-    if (magic && magic !== 'ustar' && magic !== 'ustar ') throw new Error('Unsupported sandbox archive format');
-    const prefix = magic === 'ustar' ? field(block, 345, 155) : '';
-    let path = `${prefix ? `${prefix}/` : ''}${field(block, 0, 100)}`;
-    if (path.startsWith('./')) path = path.slice(2);
+    if (magic && magic !== 'ustar' && magic !== 'ustar ') invalidArchive('ARCHIVE_FORMAT');
     const type = field(block, 156, 1) || '0';
     const size = octal(field(block, 124, 12));
-    if (size > archive.length - offset || !Number.isSafeInteger(Math.ceil(size / 512) * 512))
-      throw new Error('Truncated sandbox archive');
+    const padded = Math.ceil(size / 512) * 512;
+    if (size > archive.length - offset || !Number.isSafeInteger(padded)) invalidArchive('ARCHIVE_TRUNCATED');
+    if (type === 'L' || type === 'x') {
+      // One extension record per entry: a second one could contradict the first.
+      if (extended || size < 1 || size > (type === 'L' ? MAX_LONG_NAME_BYTES : MAX_PAX_BYTES))
+        invalidArchive('ARCHIVE_EXTENSION');
+      const data = archive.subarray(offset, offset + size);
+      longName = type === 'L' ? archiveName(bytes(data, 0, size)) : paxPath(data);
+      extended = true;
+      offset += padded;
+      continue;
+    }
     if (type !== '0' && type !== '5')
-      throw new Error('Sandbox exports reject symlinks, hardlinks, devices and extended tar records');
+      invalidArchive(
+        'ARCHIVE_ENTRY_TYPE',
+        'Sandbox exports reject symlinks, hardlinks, devices, sparse files and global tar headers',
+      );
+    let path: string;
+    if (longName !== undefined) path = longName;
+    else {
+      const prefix = magic === 'ustar' ? archiveName(bytes(block, 345, 155)) : '';
+      path = `${prefix ? `${prefix}/` : ''}${archiveName(bytes(block, 0, 100))}`;
+    }
+    longName = undefined;
+    extended = false;
+    if (path.startsWith('./')) path = path.slice(2);
     if (type === '5') {
-      if (size !== 0) throw new Error('Invalid archive directory');
+      if (size !== 0) invalidArchive('ARCHIVE_DIRECTORY');
       path = path.replace(/\/$/, '');
-      if (path && path !== '.') portablePath(path);
+      if (path && path !== '.') {
+        const problem = portablePathProblem(path);
+        if (problem) invalidArchive(problem);
+      }
     } else {
-      portablePath(path);
-      if (seen.has(path) || seenFolded.has(path.toLowerCase())) throw new Error('Duplicate sandbox archive path');
-      seen.add(path);
-      seenFolded.add(path.toLowerCase());
+      const problem = portablePathProblem(path);
+      if (problem) invalidArchive(problem);
+      const folded = foldPath(path);
+      if (seen.has(folded)) invalidArchive('ARCHIVE_DUPLICATE');
+      seen.add(folded);
       if (selected.has(path)) {
         exportedBytes += size;
-        if (exportedBytes > maxExportBytes) throw new Error('Sandbox exports exceeded their byte limit');
+        if (exportedBytes > maxExportBytes)
+          throw pipelineError('SANDBOX_EXPORT_LIMIT', 'Sandbox exports exceeded their byte limit');
         const data = archive.subarray(offset, offset + size);
         output.set(path, {
           path,
@@ -309,12 +443,16 @@ export function readSandboxArchive(archive: Buffer, selectedPaths: string[], max
         });
       }
     }
-    offset += Math.ceil(size / 512) * 512;
+    offset += padded;
   }
-  if (!terminated || output.size !== selected.size)
-    throw new Error('Incomplete sandbox archive or missing selected output');
+  if (!terminated || extended) invalidArchive('ARCHIVE_INCOMPLETE');
+  if (output.size !== selected.size)
+    throw pipelineError('SANDBOX_EXPORT_MISSING', 'A selected output is missing from the sandbox workspace');
   return [...output.values()];
 }
+
+/** Whether a container exists for the name: never asked for, refused by Docker, uncertain or created. */
+type ContainerState = 'none' | 'refused' | 'unknown' | 'created';
 
 export async function runDockerSandbox(options: {
   profile: SandboxProfile;
@@ -334,24 +472,27 @@ export async function runDockerSandbox(options: {
     options.command.some(value => typeof value !== 'string' || value.includes('\0') || value.length > 8192) ||
     options.command.join('').length > 128 * 1024
   )
-    throw new Error('Expected a bounded executable argument array');
-  if (!['linux', 'darwin', 'win32'].includes(process.platform)) throw new Error('Unsupported sandbox host platform');
+    throw pipelineError('SANDBOX_ARGUMENT_INVALID', 'Expected a bounded executable argument array');
+  const unsupported = (detail: string, hint: string) => pipelineError('SANDBOX_HOST_UNSUPPORTED', hint, { detail });
+  if (!['linux', 'darwin', 'win32'].includes(process.platform))
+    throw unsupported('PLATFORM', 'Unsupported sandbox host platform');
   if (process.env.DOCKER_HOST && !/^(?:unix:\/\/|npipe:\/\/)/.test(process.env.DOCKER_HOST))
-    throw new Error('Remote Docker endpoints are not supported');
+    throw unsupported('REMOTE_ENDPOINT', 'Remote Docker endpoints are not supported');
   const context = await checked(
+    'context inspect',
     ['context', 'inspect', '--format', '{{json .Endpoints.docker.Host}}'],
     MiB,
     15_000,
     options.signal,
   );
-  const endpoint: unknown = JSON.parse(context.stdout.toString('utf8'));
+  const endpoint = dockerJson(context);
   if (typeof endpoint !== 'string' || !/^(?:unix:\/\/|npipe:\/\/)/.test(endpoint))
-    throw new Error('A local Docker endpoint is required');
-  const daemon = await checked(['version', '--format', '{{.Server.Os}}'], MiB, 15_000, options.signal);
+    throw unsupported('REMOTE_ENDPOINT', 'A local Docker endpoint is required');
+  const daemon = await checked('version', ['version', '--format', '{{.Server.Os}}'], MiB, 15_000, options.signal);
   if (daemon.stdout.toString('utf8').trim() !== 'linux')
-    throw new Error('A Linux Docker daemon is required; macOS and Windows need a Linux VM');
-  const hostInfo = await checked(['info', '--format', '{{json .}}'], MiB, 15_000, options.signal);
-  const controls = JSON.parse(hostInfo.stdout.toString('utf8')) as {
+    throw unsupported('DAEMON_NOT_LINUX', 'A Linux Docker daemon is required; macOS and Windows need a Linux VM');
+  const hostInfo = await checked('info', ['info', '--format', '{{json .}}'], MiB, 15_000, options.signal);
+  const controls = (dockerJson(hostInfo) ?? {}) as {
     MemoryLimit?: boolean;
     SwapLimit?: boolean;
     PidsLimit?: boolean;
@@ -363,38 +504,63 @@ export async function runDockerSandbox(options: {
     controls.SwapLimit !== true ||
     controls.PidsLimit !== true ||
     controls.CpuCfsQuota !== true ||
-    !controls.SecurityOptions?.includes('name=seccomp,profile=builtin') ||
+    !Array.isArray(controls.SecurityOptions) ||
+    !controls.SecurityOptions.includes('name=seccomp,profile=builtin') ||
     !controls.SecurityOptions.includes('name=cgroupns')
   )
-    throw new Error('Docker daemon must support memory/swap/process/CPU limits, default seccomp and cgroup namespaces');
+    throw unsupported(
+      'CONTROLS_MISSING',
+      'Docker daemon must support memory/swap/process/CPU limits, default seccomp and cgroup namespaces',
+    );
   const image = await checked(
+    'image inspect',
     ['image', 'inspect', profile.image, '--format', '{{json .}}'],
     MiB,
     15_000,
     options.signal,
   );
-  const imageInfo = JSON.parse(image.stdout.toString('utf8')) as {
+  const imageInfo = (dockerJson(image) ?? {}) as {
     Os?: string;
     Config?: { Volumes?: Record<string, unknown> };
     RepoDigests?: string[];
   };
   if (
     imageInfo.Os !== 'linux' ||
-    !imageInfo.RepoDigests?.some(value => value.endsWith(profile.image.slice(profile.image.indexOf('@')))) ||
+    !Array.isArray(imageInfo.RepoDigests) ||
+    !imageInfo.RepoDigests.some(
+      value => typeof value === 'string' && value.endsWith(profile.image.slice(profile.image.indexOf('@'))),
+    ) ||
     Object.keys(imageInfo.Config?.Volumes ?? {}).length
   )
-    throw new Error('Pinned image must be Linux and must not declare implicit volumes');
-  const temporary = mkdtempSync(join(homedir(), '.agent-guard-stage-'));
-  const staging = join(temporary, 'input');
-  mkdirSync(staging, { mode: 0o755 });
+    throw pipelineError('SANDBOX_IMAGE_INVALID', 'Pinned image must be Linux and must not declare implicit volumes');
   const name = `agent-guard-${randomUUID()}`;
-  let created = false;
-  try {
-    stageInputs(options.workspace, input, staging, profile.maxInputBytes);
-    created = true;
-    await checked(buildDockerCreateArgs(profile, staging, name), MiB, 15_000, options.signal);
-    await checked(['start', name], MiB, 15_000, options.signal);
+  let temporary: string | undefined,
+    staging: string | undefined,
+    container: ContainerState = 'none';
+  const run = async (): Promise<SandboxResult> => {
+    let mounted: string;
+    try {
+      temporary = mkdtempSync(join(homedir(), '.agent-guard-stage-'));
+      mounted = staging = join(temporary, 'input');
+      mkdirSync(staging, { mode: 0o755 });
+      stageInputs(options.workspace, input, staging, profile.maxInputBytes);
+    } catch (error) {
+      throw codedError(error, 'SANDBOX_STAGING_FAILED', 'Sandbox inputs could not be staged');
+    }
+    // From here a container may exist even when the command that creates it fails:
+    // a timeout or an abort stops the CLI, not the daemon.
+    container = 'unknown';
+    try {
+      await checked('create', buildDockerCreateArgs(profile, mounted, name), MiB, 15_000, options.signal);
+      container = 'created';
+    } catch (error) {
+      // Docker answered and refused: nothing was created, so a failed removal is not a leak.
+      if (error instanceof ExecutorError && error.code === 'SANDBOX_DOCKER_FAILED') container = 'refused';
+      throw error;
+    }
+    await checked('start', ['start', name], MiB, 15_000, options.signal);
     await checked(
+      'exec',
       ['exec', name, '/bin/sh', '-c', 'cp -R /input/. /workspace/ && chmod -R u+w /workspace'],
       MiB,
       15_000,
@@ -407,8 +573,11 @@ export async function runDockerSandbox(options: {
       options.signal,
     );
     let files: SandboxExport[] = [];
-    if (exported.length) {
+    // A failed command has no reviewed output to export: return its exit code and streams
+    // instead of failing the archive step, which would leave the action's outcome unknown.
+    if (exported.length && result.code === 0) {
       const archive = await checked(
+        'exec',
         ['exec', name, '/bin/tar', '-C', '/workspace', '-cf', '-', '.'],
         profile.maxInputBytes + profile.maxExportBytes + 8 * MiB,
         15_000,
@@ -420,23 +589,56 @@ export async function runDockerSandbox(options: {
       exitCode: result.code,
       stdout: result.stdout.toString('utf8'),
       stderr: result.stderr.toString('utf8'),
+      stdoutBase64: result.stdout.toString('base64'),
+      stderrBase64: result.stderr.toString('base64'),
       exports: files,
       image: profile.image,
       isolation: 'linux-container-network-none',
     };
-  } finally {
-    let cleanupFailure = false;
-    if (created) {
+  };
+  /** Returns what could not be removed. Never throws, so it cannot replace the run's own error. */
+  const cleanup = async (): Promise<'CONTAINER_LEFT' | 'STAGING_LEFT' | undefined> => {
+    let left: 'CONTAINER_LEFT' | 'STAGING_LEFT' | undefined;
+    if (container !== 'none') {
       try {
-        await checked(['rm', '--force', '--volumes', name], MiB, 15_000);
-      } catch {
-        cleanupFailure = true;
+        await checked('rm', ['rm', '--force', '--volumes', name]);
+      } catch (error) {
+        const absent = error instanceof ExecutorError && error.detail === 'CONTAINER_NOT_FOUND';
+        if (container !== 'refused' && !absent) left = 'CONTAINER_LEFT';
       }
     }
-    chmodSync(staging, 0o755);
-    rmSync(temporary, { recursive: true, force: true });
-    if (cleanupFailure) throw new Error(`Sandbox cleanup failed; remove container ${name} before continuing`);
+    if (temporary !== undefined) {
+      try {
+        if (staging !== undefined) chmodSync(staging, 0o755);
+      } catch {
+        // The staging directory was never created; removing its parent below decides.
+      }
+      try {
+        rmSync(temporary, { recursive: true, force: true });
+      } catch {
+        left ??= 'STAGING_LEFT';
+      }
+    }
+    return left;
+  };
+  let outcome: { result: SandboxResult } | { error: unknown };
+  try {
+    outcome = { result: await run() };
+  } catch (error) {
+    outcome = { error: codedError(error, 'SANDBOX_FAILED', 'Sandbox run failed') };
   }
+  const left = await cleanup();
+  if (left)
+    // The run's own error stays reachable as the cause instead of being replaced.
+    throw pipelineError(
+      'SANDBOX_CLEANUP_FAILED',
+      left === 'CONTAINER_LEFT'
+        ? `Sandbox cleanup failed; remove container ${name} before continuing`
+        : 'Sandbox cleanup failed; remove the private staging directory before continuing',
+      { detail: left, ...('error' in outcome ? { cause: outcome.error } : {}) },
+    );
+  if ('error' in outcome) throw outcome.error;
+  return outcome.result;
 }
 
 /** Host-side reviewer supplies exact paths AND hashes. Creates a new destination, never overwrites. */
@@ -445,15 +647,31 @@ export function writeReviewedExports(
   approved: { path: string; sha256: string }[],
   destination: string,
 ): string[] {
-  if (!Array.isArray(result.exports) || result.exports.length > 256 || !Array.isArray(approved))
-    throw new Error('Invalid sandbox export review');
+  const review = (detail: string, hint: string) => pipelineError('SANDBOX_EXPORT_REVIEW_INVALID', hint, { detail });
+  if (
+    !result ||
+    typeof result !== 'object' ||
+    !Array.isArray(result.exports) ||
+    result.exports.length > MAX_PATH_COUNT ||
+    !Array.isArray(approved) ||
+    approved.length > MAX_PATH_COUNT ||
+    approved.some(item => !item || typeof item !== 'object') ||
+    typeof destination !== 'string' ||
+    !destination
+  )
+    throw review('REVIEW_SHAPE', 'Invalid sandbox export review');
   paths(approved.map(item => item.path));
   if (!approved.length) return [];
   let total = 0;
   const files = approved.map(selection => {
-    const file = result.exports.find(item => item.path === selection.path);
-    if (!file || !/^[a-f0-9]{64}$/.test(selection.sha256) || file.sha256 !== selection.sha256)
-      throw new Error('Export review does not match the selected artifact hash');
+    const file = result.exports.find(item => item && item.path === selection.path);
+    if (
+      !file ||
+      typeof selection.sha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(selection.sha256) ||
+      file.sha256 !== selection.sha256
+    )
+      throw review('REVIEW_HASH', 'Export review does not match the selected artifact hash');
     if (
       !Number.isSafeInteger(file.size) ||
       file.size < 0 ||
@@ -461,22 +679,29 @@ export function writeReviewedExports(
       typeof file.contentBase64 !== 'string' ||
       file.contentBase64.length > Math.ceil((64 * MiB) / 3) * 4
     )
-      throw new Error('Invalid export content size');
+      throw review('REVIEW_SIZE', 'Invalid export content size');
     total += file.size;
-    if (total > 64 * MiB) throw new Error('Reviewed exports exceed 64 MiB');
+    if (total > 64 * MiB) throw review('REVIEW_SIZE', 'Reviewed exports exceed 64 MiB');
     const bytes = Buffer.from(file.contentBase64, 'base64');
     if (
       bytes.toString('base64') !== file.contentBase64 ||
       bytes.length !== file.size ||
       sha256(bytes) !== selection.sha256
     )
-      throw new Error('Export content failed integrity verification');
+      throw review('REVIEW_INTEGRITY', 'Export content failed integrity verification');
     return { path: portablePath(file.path), bytes };
   });
-  const target = resolve(destination);
-  const parent = realpathSync(dirname(target));
-  const root = join(parent, relative(dirname(target), target));
-  mkdirSync(root, { mode: 0o700 });
+  const unavailable = (error: unknown) =>
+    codedError(error, 'SANDBOX_EXPORT_DESTINATION_UNAVAILABLE', 'The reviewed export destination could not be created');
+  let root: string;
+  try {
+    const target = resolve(destination);
+    const parent = realpathSync(dirname(target));
+    root = join(parent, relative(dirname(target), target));
+    mkdirSync(root, { mode: 0o700 });
+  } catch (error) {
+    throw unavailable(error);
+  }
   try {
     for (const file of files) {
       const path = join(root, ...file.path.split('/'));
@@ -486,6 +711,6 @@ export function writeReviewedExports(
     return files.map(file => join(root, ...file.path.split('/')));
   } catch (error) {
     rmSync(root, { recursive: true, force: true });
-    throw error;
+    throw unavailable(error);
   }
 }

@@ -207,7 +207,12 @@ test('focused graph never expands through shared tools to another execution iden
   assert.equal(serialized.includes('other-execution-identity-canary'), false);
   assert.equal(serialized.includes('writer-agent'), false);
   assert.equal(serialized.includes('provenance-only'), false);
-  assert.deepEqual(reads[0].request, { sourceId: 'source', agentId: 'entity:agent', boundary: true });
+  assert.deepEqual(reads[0].request, {
+    sourceId: 'source',
+    agentId: 'entity:agent',
+    policy: { optional: true },
+    boundary: true,
+  });
   assert.ok(Object.isFrozen(result.graph.nodes[0].properties));
   assert.throws(() => {
     result.data.agent.name = 'changed';
@@ -633,15 +638,39 @@ test('invalid trusted scopes never reach the store', async () => {
   assert.equal(reads.length, 0);
 });
 
-test('response and graph overflow fail without partial or truncated data', async () => {
+test('response overflow fails without partial data; a graph past the display cap is left out and marked', async () => {
   const { store } = fixture();
   const args = { sourceId: 'source', agentId: 'reader-agent' };
-  for (const options of [{ maxResponseBytes: 128 }, { maxGraphNodes: 1 }, { maxGraphEdges: 1 }]) {
-    await assert.rejects(
-      new MapService(store, { clock: () => NOW, ...options }).query(scope, 'get_agent_access', args),
-      { code: 'MAP_LIMIT_EXCEEDED' },
-    );
+  await assert.rejects(
+    new MapService(store, { clock: () => NOW, maxResponseBytes: 128 }).query(scope, 'get_agent_access', args),
+    { code: 'MAP_LIMIT_EXCEEDED' },
+  );
+  const whole = await new MapService(store, { clock: () => NOW }).query(scope, 'get_agent_access', args);
+  assert.equal(whole.data.graphStatus, 'included');
+  assert.ok(whole.graph.nodes.length > 1);
+  for (const options of [{ maxGraphNodes: 1 }, { maxGraphEdges: 1 }]) {
+    const result = await new MapService(store, { clock: () => NOW, ...options }).query(scope, 'get_agent_access', args);
+    // The busiest agents keep their evidence: only the optional picture is missing, and says so.
+    assert.equal(result.graph, undefined);
+    assert.equal(result.data.graphStatus, 'too_large');
+    assert.deepEqual(plain(result.data.graphLimit), {
+      nodes: options.maxGraphNodes ?? 500,
+      edges: options.maxGraphEdges ?? 1000,
+    });
+    for (const key of ['agent', 'tasks', 'grants', 'bindings', 'policyEvidence', 'outsideGuard', 'receipt'])
+      assert.deepEqual(plain(result.data[key]), plain(whole.data[key]), key);
+    assert.equal(result.data.boundaryFlags[0].kind, 'dangerous_three');
+    assert.equal(result.data.boundaryFlags[0].status, whole.data.boundaryFlags[0].status);
   }
+  // A response that only fits without its graph also answers with the evidence alone.
+  const evidenceOnly = Buffer.byteLength(JSON.stringify({ ...whole, graph: undefined }));
+  const tight = await new MapService(store, { clock: () => NOW, maxResponseBytes: evidenceOnly + 256 }).query(
+    scope,
+    'get_agent_access',
+    args,
+  );
+  assert.equal(tight.graph, undefined);
+  assert.equal(tight.data.graphStatus, 'too_large');
 });
 
 test('timeout and store failures expose stable codes without private backend details', async () => {

@@ -1,6 +1,6 @@
 import { createHmac, randomBytes } from 'node:crypto';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
-import { McpBoundaryError } from './boundary.js';
+import { McpBoundaryError, wellFormedIdentifier } from './boundary.js';
 
 export type McpConnectionState = 'connecting' | 'refreshing' | 'ready' | 'quarantined' | 'closed';
 export type McpMetadataState = 'unobserved' | 'current' | 'stale';
@@ -40,14 +40,7 @@ export function opaqueTransportRef(identity: string): string {
 }
 
 function identifier(value: unknown): string {
-  if (
-    typeof value !== 'string' ||
-    /^[\s\u001c-\u001f\u0085]*$/u.test(value) ||
-    value.includes('\0') ||
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value) ||
-    [...value].length > 4096
-  )
-    throw new McpBoundaryError('MCP_INVENTORY_INVALID');
+  if (!wellFormedIdentifier(value) || [...value].length > 4096) throw new McpBoundaryError('MCP_INVENTORY_INVALID');
   return value;
 }
 function integer(value: number): number {

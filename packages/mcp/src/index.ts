@@ -9,6 +9,7 @@ export {
   type McpSkippedOperation,
 } from './managed.js';
 export { McpBoundaryError, compileBoundedSchema, type McpBoundaryErrorCode } from './boundary.js';
+export { McpBoundaryErrorCatalog, type McpBoundaryErrorInfo } from './error-catalog.js';
 export { createRestrictedMcpHttpTransport, type RestrictedMcpHttpOptions } from './http.js';
 export { assertVerifiedMcpClaims, type VerifiedMcpClaims, type McpAuthorizationPolicy } from './authorization.js';
 export { VerifiedMcpHttpSession, type VerifiedMcpHttpOptions, type McpJwtAuthorization } from './credentials.js';
@@ -43,6 +44,10 @@ export interface McpRegistration {
   maxCost?: number;
   /** Read verified usage from the result. Without this callback, charge the full maxCost. */
   measureCost?: (result: Json) => number;
+  /** Outside-content labels passed to the guard (see ToolDefinition). */
+  readsUntrusted?: boolean;
+  untrustedContext?: 'allow' | 'require_approval' | 'deny';
+  sendsExternal?: boolean;
 }
 
 export interface RegisteredMcpTool {
@@ -72,6 +77,7 @@ export function registerMcpTool(
   registration: McpRegistration,
 ): RegisteredMcpTool {
   const { serverId, tool, client, resolve, requiresApproval, controlPlane, maxCost, measureCost } = registration;
+  const { readsUntrusted, untrustedContext, sendsExternal } = registration;
   const serverToolName = tool.name;
   const name = mcpToolName(serverId, serverToolName);
   const callTool = client.callTool.bind(client);
@@ -88,6 +94,9 @@ export function registerMcpTool(
     ...(requiresApproval === undefined ? {} : { requiresApproval }),
     ...(controlPlane === undefined ? {} : { controlPlane }),
     ...(maxCost === undefined ? {} : { maxCost }),
+    ...(readsUntrusted === undefined ? {} : { readsUntrusted }),
+    ...(untrustedContext === undefined ? {} : { untrustedContext }),
+    ...(sendsExternal === undefined ? {} : { sendsExternal }),
     resolve: (args, task) => resolve(argumentsObject(args), task),
     async execute(args, { signal }) {
       const value = await callTool({ name: serverToolName, arguments: argumentsObject(args) }, { signal });

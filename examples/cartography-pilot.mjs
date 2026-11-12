@@ -1,15 +1,17 @@
 #!/usr/bin/env node
-// Synthetic, local pilot host. Collector/reference outages never enter admission.
-// Launch through the pilot runner; never point this example at an existing ledger.
+// Synthetic, local pilot host used by the Cartography pilot runner and its tests. It is a
+// test harness, not a usage example: collector/reference outages never enter admission.
+// Launch through the pilot runner; never point it at an existing ledger.
 import { randomBytes, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, realpath } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { parseArgs } from 'node:util';
-import { DurableExecutor } from '../packages/executor/dist/index.js';
-import { validateInventoryManifest, startInventoryServer } from '../packages/executor/dist/entry-inventory.js';
-import { MapService, createNeo4jMapStore, startMapServer } from '../packages/agent-map/dist/index.js';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import { validateInventoryManifest, startInventoryServer } from '@shieldaai/agent-guard-executor/inventory';
+import { MapService, createNeo4jMapStore, startMapServer } from '@shieldaai/agent-map';
+// The harness reuses the map's strict bounded JSON reader, which is not a public export.
 import { parseRequest } from '../packages/agent-map/dist/boundary.js';
 
 const fail = code => {

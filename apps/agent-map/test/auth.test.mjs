@@ -476,7 +476,7 @@ test('explicit logout retry confirms an anonymous session or uses fresh CSRF wit
   });
 });
 
-function lifecycle() {
+function lifecycle({ expiresAt = 2000, warnMs } = {}) {
   const windowImpl = new EventTarget(),
     documentImpl = new EventTarget();
   documentImpl.visibilityState = 'visible';
@@ -485,12 +485,15 @@ function lifecycle() {
   let now = 1000,
     next = 1;
   const close = watchCompanySession({
-    expiresAt: new Date(2000).toISOString(),
+    expiresAt: new Date(expiresAt).toISOString(),
+    ...(warnMs === undefined ? {} : { warnMs }),
     windowImpl,
     documentImpl,
     now: () => now,
     onInvalidate: reason => events.push(['clear', reason]),
     onRevalidate: reason => events.push(['check', reason]),
+    onExpiring: () => events.push(['warn']),
+    onAway: () => events.push(['away']),
     schedule: (callback, delay) => {
       const id = next++;
       timers.set(id, { callback, delay });
@@ -513,39 +516,85 @@ test('company session expiry clears evidence before revalidation, with canceled 
   const l = lifecycle();
   const timer = [...l.timers.values()][0];
   assert.equal(timer.delay, 1000);
+  // Less than a minute was left when the watch began, so the warning is immediate.
+  assert.deepEqual(l.events, [['warn']]);
   l.advance(2000);
   timer.callback();
-  assert.deepEqual(l.events, [
-    ['clear', 'expired'],
-    ['check', 'expired'],
-  ]);
+  assert.deepEqual(l.events, [['warn'], ['clear', 'expired'], ['check', 'expired']]);
   l.close();
   timer.callback();
-  assert.equal(l.events.length, 2);
+  assert.equal(l.events.length, 3);
   assert.equal(l.timers.size, 0);
 });
-test('hidden and restored company pages cannot retain cached evidence without revalidation', () => {
-  const l = lifecycle();
+test('a company session warns once, one minute before it ends', () => {
+  const l = lifecycle({ expiresAt: 1000 + 15 * 60_000 });
+  // The first wake-up is for the warning, a minute before expiry.
+  const first = [...l.timers.values()][0];
+  assert.equal(first.delay, 14 * 60_000);
+  assert.deepEqual(l.events, []);
+  l.advance(1000 + 14 * 60_000);
+  first.callback();
+  assert.deepEqual(l.events, [['warn']]);
+  const second = [...l.timers.values()].at(-1);
+  assert.equal(second.delay, 60_000);
+  // A timer that fires early neither warns again nor ends the session.
+  l.advance(1000 + 14.5 * 60_000);
+  second.callback();
+  assert.deepEqual(l.events, [['warn']]);
+  l.advance(1000 + 15 * 60_000);
+  [...l.timers.values()].at(-1).callback();
+  assert.deepEqual(l.events, [['warn'], ['clear', 'expired'], ['check', 'expired']]);
+  l.close();
+});
+test('hiding a company page keeps the workspace; returning or restoring it asks for one session check', () => {
+  const l = lifecycle({ expiresAt: 1000 + 15 * 60_000 });
   l.documentImpl.visibilityState = 'hidden';
   l.documentImpl.dispatchEvent(new Event('visibilitychange'));
-  assert.deepEqual(l.events, [['clear', 'hidden']]);
+  // Nothing is cleared while the page is hidden; the caller is told so it can cover the evidence.
+  assert.deepEqual(l.events, [['away']]);
   l.documentImpl.visibilityState = 'visible';
   l.documentImpl.dispatchEvent(new Event('visibilitychange'));
   l.documentImpl.dispatchEvent(new Event('visibilitychange'));
-  assert.deepEqual(l.events, [
-    ['clear', 'hidden'],
-    ['check', 'hidden'],
-  ]);
+  assert.deepEqual(l.events, [['away'], ['check', 'hidden']]);
+  // Hidden again while that check runs: the evidence is still covered, so nothing more is asked.
+  l.documentImpl.visibilityState = 'hidden';
+  l.documentImpl.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(l.events, [['away'], ['check', 'hidden']]);
   l.close();
-  const restored = lifecycle(),
+  // A watch that starts on a hidden page reports it at once, and checks on the first return.
+  const hidden = new EventTarget();
+  hidden.visibilityState = 'hidden';
+  const late = [];
+  const stop = watchCompanySession({
+    expiresAt: new Date(Date.now() + 900_000).toISOString(),
+    windowImpl: new EventTarget(),
+    documentImpl: hidden,
+    onInvalidate: () => late.push('clear'),
+    onRevalidate: reason => late.push(reason),
+    onAway: () => late.push('away'),
+    schedule: () => 1,
+    cancel() {},
+  });
+  assert.deepEqual(late, ['away']);
+  hidden.visibilityState = 'visible';
+  hidden.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(late, ['away', 'hidden']);
+  stop();
+  // After the watch has stopped, nothing is reported.
+  hidden.visibilityState = 'hidden';
+  hidden.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(late, ['away', 'hidden']);
+  // A page that was never hidden asks for nothing when it becomes visible again.
+  const steady = lifecycle({ expiresAt: 1000 + 15 * 60_000 });
+  steady.documentImpl.dispatchEvent(new Event('visibilitychange'));
+  assert.deepEqual(steady.events, []);
+  steady.close();
+  const restored = lifecycle({ expiresAt: 1000 + 15 * 60_000 }),
     event = new Event('pageshow');
   Object.defineProperty(event, 'persisted', { value: true });
   restored.windowImpl.dispatchEvent(event);
-  assert.deepEqual(restored.events, [
-    ['clear', 'restored'],
-    ['check', 'restored'],
-  ]);
+  assert.deepEqual(restored.events, [['check', 'restored']]);
   restored.close();
   restored.windowImpl.dispatchEvent(event);
-  assert.equal(restored.events.length, 2);
+  assert.equal(restored.events.length, 1);
 });

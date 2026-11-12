@@ -78,10 +78,10 @@ test('real HTTPS MCP credentials enforce verified access token lifecycle and cle
   const id = task(executor);
   await executor.execute(id, (await prepare(executor, id)).id);
   const write = await prepare(executor, id, 'write');
-  await assert.rejects(executor.execute(id, write.id));
+  await assert.rejects(executor.execute(id, write.id), { code: 'APPROVAL_REQUIRED' });
   assert.equal(fixture.counts.writes, 0);
   await executor.execute(id, write.id, { approvalId: approve(executor, write) });
-  await assert.rejects(prepare(executor, id, 'read', 'foreign'));
+  await assert.rejects(prepare(executor, id, 'read', 'foreign'), { code: 'TENANT_DENIED' });
   assert.equal(fixture.counts.reads, 1);
   assert.equal(fixture.counts.writes, 1);
   const stale = await prepare(executor, id, 'write');
@@ -92,23 +92,23 @@ test('real HTTPS MCP credentials enforce verified access token lifecycle and cle
   await session.replaceCredential(secondToken);
   assert.notEqual(session.sessionId, oldSession);
   assert.equal(fixture.counts.jwks, 2);
-  await assert.rejects(executor.execute(id, stale.id));
-  await assert.rejects(prepare(executor, id));
+  await assert.rejects(executor.execute(id, stale.id), { code: 'TOOL_CHANGED' });
+  await assert.rejects(prepare(executor, id), { code: 'TOOL_UNAPPROVED' });
   approveTools(executor, session);
   const renewed = await prepare(executor, id, 'write');
-  await assert.rejects(executor.execute(id, renewed.id));
+  await assert.rejects(executor.execute(id, renewed.id), { code: 'APPROVAL_REQUIRED' });
   await executor.execute(id, renewed.id, { approvalId: approve(executor, renewed) });
   assert.equal(fixture.counts.writes, 2);
   const before = fixture.counts.calls;
   // Removed keys cannot survive the fresh verification boundary on another replacement.
   await assert.rejects(session.replaceCredential(firstToken), { code: 'AUTHORIZATION_DENIED' });
-  await assert.rejects(prepare(executor, id));
+  await assert.rejects(prepare(executor, id), { code: 'TOOL_UNAPPROVED' });
   assert.equal(fixture.counts.calls, before);
   await session.replaceCredential(secondToken);
   approveTools(executor, session);
   const revoked = await prepare(executor, id);
   await session.revoke();
-  await assert.rejects(executor.execute(id, revoked.id));
+  await assert.rejects(executor.execute(id, revoked.id), { code: 'TOOL_CHANGED' });
   await assert.rejects(session.replaceCredential(secondToken), { code: 'CONNECTION_UNAVAILABLE' });
   assert.equal(fixture.counts.calls, before);
   assert.equal(fixture.counts.credentialsAtJwks, 0);
@@ -145,7 +145,7 @@ test('a peer reflecting the bearer cannot publish metadata or return it to a tas
   await assert.rejects(executor.execute(id, action.id), { code: 'TOOL_FAILED' });
   assert.equal(executor.execution(id, action.id).status, 'UNKNOWN');
   assert.deepEqual(session.registrations, []);
-  await assert.rejects(prepare(executor, id));
+  await assert.rejects(prepare(executor, id), { code: 'TOOL_UNAPPROVED' });
   assert.equal(fixture.counts.calls, 2);
   assert(
     !JSON.stringify([session.inventory(), executor.decisionTraceSnapshot({ tenantId: 'tenant-a' })]).includes(token),
@@ -224,7 +224,7 @@ test('replacement invalidates immediately and close during JWKS verification can
   fixture.controls.delayJwks = 500;
   const replacement = session.replaceCredential(token);
   const rejection = assert.rejects(replacement, { code: 'AUTHORIZATION_DENIED' });
-  await assert.rejects(executor.execute(id, action.id));
+  await assert.rejects(executor.execute(id, action.id), { code: 'TOOL_CHANGED' });
   await assert.rejects(session.replaceCredential(token), { code: 'CREDENTIAL_REPLACEMENT_PENDING' });
   await until(() => fixture.counts.jwks === 2);
   const before = fixture.counts.mcp;
@@ -250,10 +250,11 @@ test('expired credentials deny a prepared dispatch without contacting the peer',
     action = await prepare(executor, id);
   await new Promise(resolve => setTimeout(resolve, Math.max(1, exp * 1000 - Date.now() + 20)));
   const before = fixture.counts.mcp;
-  await assert.rejects(executor.execute(id, action.id));
+  await assert.rejects(executor.execute(id, action.id), { code: 'TOOL_FAILED' });
   assert.equal(fixture.counts.mcp, before);
   assert.equal(fixture.counts.calls, 0);
   assert.equal(session.status, 'quarantined');
+  assert.equal(session.failureReason, 'AUTHORIZATION_DENIED');
 });
 
 test('JWKS bounds deadline and redirects fail closed without leaking bearer credentials', async t => {
@@ -267,23 +268,40 @@ test('JWKS bounds deadline and redirects fail closed without leaking bearer cred
   await new Promise(resolve => collector.listen(0, '127.0.0.1', resolve));
   t.after(() => new Promise(resolve => collector.close(resolve)));
   const target = `http://127.0.0.1:${collector.address().port}`;
+  const denied = { code: 'AUTHORIZATION_DENIED' };
   fixture.controls.redirectJwks = target;
-  await assert.rejects(VerifiedMcpHttpSession.connect(options(fixture, guard), await fixture.token()));
+  await assert.rejects(VerifiedMcpHttpSession.connect(options(fixture, guard), await fixture.token()), denied);
   assert.equal(leaks, 0);
   fixture.controls.redirectJwks = undefined;
-  fixture.controls.jwksBody = { padding: 'x'.repeat(2000) };
+  // The same valid key set, padded to an exact size: one byte over the limit is refused
+  // before any MCP request, and exactly at the limit it verifies and connects.
+  const maxJwksBytes = 4096;
+  fixture.controls.jwksBytes = maxJwksBytes + 1;
   await assert.rejects(
-    VerifiedMcpHttpSession.connect(options(fixture, guard, { maxJwksBytes: 1024 }), await fixture.token()),
+    VerifiedMcpHttpSession.connect(options(fixture, guard, { maxJwksBytes }), await fixture.token()),
+    denied,
   );
-  fixture.controls.jwksBody = undefined;
+  assert.equal(fixture.counts.jwksBytesServed, maxJwksBytes + 1);
+  assert.equal(fixture.counts.mcp, 0);
+  fixture.controls.jwksBytes = maxJwksBytes;
+  const atLimit = await VerifiedMcpHttpSession.connect(
+    options(fixture, guard, { maxJwksBytes }),
+    await fixture.token(),
+  );
+  assert.equal(fixture.counts.jwksBytesServed, maxJwksBytes);
+  assert.equal(atLimit.status, 'ready');
+  await atLimit.close();
+  fixture.controls.jwksBytes = undefined;
+  const afterSizeCases = fixture.counts.mcp;
   fixture.controls.delayJwks = 200;
   await assert.rejects(
     VerifiedMcpHttpSession.connect(options(fixture, guard, { verificationTimeoutMs: 30 }), await fixture.token()),
+    denied,
   );
-  assert.equal(fixture.counts.mcp, 0);
+  assert.equal(fixture.counts.mcp, afterSizeCases);
   fixture.controls.delayJwks = 0;
   fixture.controls.redirectMcp = target;
-  await assert.rejects(VerifiedMcpHttpSession.connect(options(fixture, guard), await fixture.token()));
+  await assert.rejects(VerifiedMcpHttpSession.connect(options(fixture, guard), await fixture.token()), denied);
   assert.equal(leaks, 0);
   assert.equal(fixture.counts.credentialsAtJwks, 0);
 });
@@ -380,13 +398,13 @@ test('revoking an admitted remote call preserves UNKNOWN until trusted reconcili
     action = await prepare(executor, id);
   fixture.controls.hangCall = true;
   const result = executor.execute(id, action.id),
-    rejected = assert.rejects(result);
+    rejected = assert.rejects(result, { code: 'TOOL_FAILED' });
   await until(() => fixture.counts.calls === 1);
   await session.revoke();
   await rejected;
   assert.equal(executor.execution(id, action.id).status, 'UNKNOWN');
   assert.equal(executor.snapshot(id).concurrent, 1);
-  await assert.rejects(executor.execute(id, action.id));
+  await assert.rejects(executor.execute(id, action.id), { code: 'ACTION_USED' });
   assert.equal(fixture.counts.calls, 1);
   await fixture.close();
   assert.equal(fixture.cleaned(), true);
@@ -396,4 +414,48 @@ test('revoking an admitted remote call preserves UNKNOWN until trusted reconcili
     reference: 'Trusted fixture handler exited without effect; HTTPS listener and all sockets terminated.',
   });
   assert.equal(executor.snapshot(id).concurrent, 0);
+});
+
+test('a malformed identity, binding or limit fails INVALID_CONFIGURATION before any network call', async () => {
+  let requests = 0;
+  const base = {
+    guard: new AgentGuard(),
+    identity: { serverId: 'remote', tenantId: 'tenant-a', principalId: 'operator' },
+    endpoint: 'https://mcp.example.test/mcp',
+    authorization: {
+      issuer: 'https://issuer.example.test',
+      jwksUri: 'https://issuer.example.test/jwks',
+      audience: 'https://mcp.example.test/resource',
+      subject: 'operator',
+    },
+    fetch: async () => {
+      requests++;
+      throw new Error('This test makes no network call');
+    },
+    tools: [{ name: 'read', resolve: () => ({ resourceId: 'allowed', tenantId: 'tenant-a' }) }],
+  };
+  const identity = patch => ({ identity: { ...base.identity, ...patch } });
+  for (const [label, patch] of [
+    ['server ID with an unpaired surrogate', identity({ serverId: 'remote\ud800' })],
+    ['tenant ID with NUL', identity({ tenantId: 'tenant-a\0x' })],
+    ['blank principal ID', identity({ principalId: ' \u0085' })],
+    ['server ID over 1,024 characters', identity({ serverId: 'r'.repeat(1025) })],
+    ['server ID too long once URL-encoded', identity({ serverId: '中'.repeat(500) })],
+    ['no identity', { identity: undefined }],
+    ['binding name with an unpaired surrogate', { tools: [{ ...base.tools[0], name: 'read\udc00' }] }],
+    ['binding without resolve', { tools: [{ name: 'read' }] }],
+    ['maxMessageBytes below 1 MiB', { limits: { maxMessageBytes: 1000 } }],
+    ['maxMessageBytes above 16 MiB', { limits: { maxMessageBytes: 16_777_217 } }],
+    ['requestTimeoutMs of zero', { limits: { requestTimeoutMs: 0 } }],
+    ['maxPages above 16', { limits: { maxPages: 17 } }],
+    ['readsUntrusted that is not a boolean', { readsUntrusted: 'yes' }],
+  ])
+    await assert.rejects(
+      VerifiedMcpHttpSession.connect({ ...base, ...patch }, 'not-inspected'),
+      { code: 'INVALID_CONFIGURATION' },
+      label,
+    );
+  assert.equal(requests, 0);
+  // Valid options get past construction; only then is the token judged.
+  await assert.rejects(VerifiedMcpHttpSession.connect(base, 'not-a-jwt'), { code: 'AUTHORIZATION_DENIED' });
 });

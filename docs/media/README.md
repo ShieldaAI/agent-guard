@@ -1,8 +1,8 @@
 # Tool permission demonstration
 
 The GIF and terminal cast are annotated replays of verified output from
-`node examples/tool-permissions.mjs` using the published
-`@shieldaai/agent-guard@0.1.0-alpha.2` package. Pauses were added for explanation;
+`node examples/tool-permissions.mjs`, recorded with the `0.1.0-alpha.2` package; the
+example's output is the same in 1.0.0. Pauses were added for explanation;
 the sixty-four-second replay is not a real-time recording of command execution.
 
 The example asserts handler counts for an ungranted resource, missing approval,

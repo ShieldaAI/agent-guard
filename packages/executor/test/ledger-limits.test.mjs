@@ -11,7 +11,8 @@ import { removeAtExit } from './temp-directory.mjs';
 test('executor ledger byte limits accept only bounded integer configuration', () => {
   for (const maxLedgerBytes of [0, 1024, 1024 * 1024 - 1, 64 * 1024 * 1024 + 1, 1.5, NaN, Infinity, '16777216', null])
     assert.throws(() => new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32), maxLedgerBytes }), {
-      code: 'INVALID_INPUT',
+      name: 'ExecutorError',
+      code: 'STORE_CONFIG_INVALID',
     });
   for (const maxLedgerBytes of [undefined, 1024 * 1024, 64 * 1024 * 1024]) {
     const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32), maxLedgerBytes });

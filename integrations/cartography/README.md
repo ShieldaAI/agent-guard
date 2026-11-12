@@ -1,462 +1,402 @@
 # Agent Guard Cartography integration
 
-Experimental implementation of the inventory contract and graph milestones in
-[the integration plan](../../docs/archive/cartography-integration-plan.md). It validates
-single-tenant inventory files and enrolled observer responses, imports declared grants through Cartography's data
-model, and publishes immutable graph snapshots. Agent Guard's execution path is
-unchanged.
+`agent-guard-cartography` is a Python collector that reads complete inventory
+snapshots from Agent Guard executors, validates them, keeps a private copy on
+disk and publishes each one into Neo4j as an immutable snapshot, using
+[Cartography](https://github.com/cartography-cncf/cartography)'s data model. The
+[Agent Map service](../../packages/agent-map/README.md) reads that graph to show
+which agents exist, what they were granted and what changed.
 
-This implementation supports the **core** inventory profile (source identity,
-tasks, principals, tools, resource selectors and grants), the **host** profile,
-which adds a validated host-owned manifest, and the **host-mcp** profile for managed
-connection and operation observations. Host assertions describe agents,
-deployments, resource mappings and execution identities without changing grants.
-Optional cloud joins record separate evidence from existing AWS inventory;
-they do not change the executor's cloud coverage field or its authority.
-The executor provides a trusted-host
-`inventorySnapshot({ tenantId })` API; see its [README](../../packages/executor/README.md).
-A separate loopback `startInventoryServer()` now adds tenant-scoped observer
-authentication and bounded complete responses. The collector supports serial
-multi-source polling, protected replay and retention. The scoped reference service,
-viewer and isolated pilot tooling are implemented; see the [runbook](../../deployment/cartography/RUNBOOK.md)
-for measured performance, backup/reconstruction and deployment-specific rollout gates.
+The collector only reads. It never changes what the guard allows or what the
+executor runs, and nothing in the graph is an authorization decision: every
+grant, binding and cloud match is recorded with `assessment: unknown`.
 
-## Run the checks
+The package is experimental (version `0.1.0a1`).
 
-Requirements: Python 3.13, `uv`, Node >=22.13, and a running local Docker engine. The integration
-uses Cartography **0.144.0** and the dependencies in `uv.lock`; it does not add
-Python or Neo4j dependencies to the npm packages.
+## What you need
 
-Build the executor from the repository root first:
+- **Python 3.13** on Linux or macOS (Linux inside WSL2 also works). Native Windows
+  is not supported: the archive and lock rely on POSIX ownership and file locks.
+- **[uv](https://docs.astral.sh/uv/)**, to install the locked dependencies.
+- **Neo4j 5.23 or later.** That is what the Agent Map service, which reads this
+  graph, requires; the collector's own queries are tested only against Neo4j
+  Community 5.26.32. A remote database
+  must be reached with verified TLS (`bolt+s://` or `neo4j+s://`); plaintext
+  `bolt://` is accepted only for a literal loopback address.
+- **An Agent Guard executor that runs the inventory observer.** The host (your
+  trusted application code) starts it with `startInventoryServer()` and issues an
+  `agi_v1.…` observer token; see the
+  [executor guide](../../packages/executor/README.md#inventory-experimental).
+  The [agent cartography guide](../../docs/guides/agent-cartography.md) walks
+  through the whole setup, executor included.
+
+Optional: AWS IAM and S3 metadata for one account ([AWS.md](../../deployment/cartography/AWS.md)).
+
+## Install
+
+From a checkout of this repository:
 
 ```sh
-npm ci --ignore-scripts
-npm run build
-```
-
-Then, from this directory:
-
-```sh
+cd integrations/cartography
 uv sync --locked
-uv audit --locked
-uv run ruff check .
-uv run ruff format --check .
-uv run pytest tests/unit
-uv run python scripts/test-disposable-neo4j.py -- -q
 ```
 
-The separate **Python dependency audit** workflow checks the exact lock on
-pull requests, main-branch pushes and a weekly schedule. It audits Python 3.13
-Linux x64/ARM64, macOS ARM64 and Windows x64 dependency selections, including
-development groups, without suppressing advisory IDs. Vulnerabilities and lookup
-failures fail the job; JSON findings and the lock digest are retained. Archived
-package notices are also reported by uv and require review, even when no known
-vulnerability is returned. This covers Python dependencies separately from npm
-and container package scans; it does not certify those platforms' runtime behavior.
+This installs four commands into the project environment; run them with
+`uv run <command>`:
 
-The unit suite executes the built TypeScript exporter against a temporary encrypted
-ledger and validates its output with the independent Python contract. It covers
-tenant isolation, normalized grants, delegation and provenance, repeated read-only
-snapshots, revocation, persistent identity, and unavailable tool flags after restart.
-Missing Node or missing build output fails this check instead of silently skipping it.
-Only this repository test bridge needs Node; installed Python consumers do not.
-An additional actual HTTP bridge validates authenticated observer responses and
-checks denied scopes, wrong credentials, filter rejection and response caps. The
-Python consumer receives the same snapshot contract over either path. A third
-bridge exercises manifest composition and host-profile observer delivery, including
-invalid source/ARN mappings and preservation of all core authority fields. The MCP
-bridge connects a real SDK server and managed client to the durable executor and
-checks lifecycle transitions, descriptor drift, removal and observer delivery.
+| Command | Purpose |
+| --- | --- |
+| `agent-guard-cartography` | Collect enrolled executors, or import one snapshot file. |
+| `agent-guard-recovery` | List and discard pending receipts; back up, restore and replay the archive. |
+| `agent-guard-source-lifecycle` | Replace one enrolled source generation with its successor. |
+| `agent-guard-map-report` | Store counts of what changed between two snapshots. |
 
-The last command creates a uniquely named **Neo4j Community 5.26.32** container
-using the version and multi-platform digest in [neo4j-image.txt](neo4j-image.txt).
-Authentication is enabled with a generated password. It publishes only a random
-loopback Bolt port, uses temporary data and capped resources, and removes its own
-container and volumes on completion or failure. It accepts no existing database
-URL. Integration fixtures check container ownership before opening a session;
-Docker being unavailable is a failure, not a skipped validation.
+To install on another host, build a wheel with `uv build` and install
+`dist/agent_guard_cartography-0.1.0a1-py3-none-any.whl` there. Each command is
+also available as a module, for example
+`python -m agent_guard_cartography.pilot_recovery` for `agent-guard-recovery`.
 
-For Colima installations that do not forward VM loopback ports, the runner can
-create a temporary SSH tunnel using the active Colima connection. The database
-remains bound to loopback. The tunnel and temporary connection file are removed
-with the container; no persistent Colima settings are changed.
+## Collect your first executor
 
-The integration cases cover authenticated connectivity, two successive snapshots,
-idempotency, revision and content conflicts, partial-load failures, required
-relationship validation, two-tenant cleanup isolation, an existing cloud-node
-sentinel, and protection of current/previous projections. Host-profile cases also
-check binding edges, manifest revision/content conflicts, profile pinning and
-cleanup of failed or retired metadata projections. Tests use synthetic
-data and do not call cloud APIs or read provider credentials.
+1. Choose where the collector keeps its files. Every example in this
+   documentation uses the same two private directories:
 
-## Inventory contract
+   ```sh
+   CONFIG="$HOME/.config/agent-guard-cartography"       # enrollment files
+   STATE="$HOME/.local/share/agent-guard-cartography"   # archive, lock, backups
+   install -d -m 700 "$CONFIG" "$STATE"
+   ```
 
-The canonical schema is
-[agent-guard-inventory-v1.schema.json](../../schemas/agent-guard-inventory-v1.schema.json),
-using JSON Schema Draft 2020-12. It is bundled into both the wheel and source
-archive, alongside the standalone
-[manifest v1 schema](../../schemas/agent-guard-inventory-manifest-v1.schema.json),
-[manifest v2 schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json),
-[manifest v3 schema](../../schemas/agent-guard-inventory-manifest-v3.schema.json)
-(v2 plus host-declared `directAccess`, projected as `GuardDirectAccess` nodes linked by
-`G_DIRECT_ACCESS_FOR`; inventory v2 tools also carry `untrusted_context_default`, and
-every task carries `delegated` and `derived`), the [inventory v2 schema](../../schemas/agent-guard-inventory-v2.schema.json), and
-[MCP connection schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json);
-installed consumers do not need this repository. Python additionally
-checks graph references and cross-record invariants that JSON Schema cannot express.
+2. Write the enrollment. Copy the example and replace its placeholders with the
+   executor's real identity, profile and observer address:
+
+   ```sh
+   install -m 600 examples/observer-enrollment.json "$CONFIG/observer.json"
+   ```
+
+   An enrollment fixes the five-field source identity (`companyId`, `sourceId`,
+   `enrollmentGeneration`, `inventoryInstanceId`, `tenantId`), the profile, the
+   exact observer endpoint and the *name* of the environment variable that
+   holds the observer token. The token itself never goes in a file or on the
+   command line.
+
+3. Provide the two secrets through the environment and run one collection:
+
+   ```sh
+   export NEO4J_PASSWORD=...                 # from your secret store
+   export AGENT_GUARD_OBSERVER_TOKEN=...     # the agi_v1 token for this executor
+
+   uv run agent-guard-cartography \
+     --enrollment "$CONFIG/observer.json" \
+     --archive-dir "$STATE/archive" \
+     --neo4j-uri bolt://127.0.0.1:7687
+   ```
+
+   On success it prints one JSON line with `"status": "complete"`, the
+   `receipt_id` of the stored snapshot and an `import_result` whose `source_id`
+   identifies this source in the graph. The archive directory is created on the
+   first run.
+
+4. Keep it running. Add `--watch` to collect every five minutes
+   (`--interval-seconds`, 1–3,600). Repeat `--enrollment` to collect several
+   executors in one serial queue. Stop with Ctrl-C or SIGTERM.
+
+Then start the [Agent Map service](../../packages/agent-map/README.md) against
+the same database to query the result.
+
+## How collection works
+
+### Profiles
+
+| Profile | Contents |
+| --- | --- |
+| `core` | Source identity, tasks, principals, tools, resource selectors and grants. |
+| `host` | `core` plus a manifest written by the host: agents, owners, deployments, resource bindings and execution identities. |
+| `host-mcp` | `host` plus observed Model Context Protocol (MCP) connections and the operations they expose. |
+
+The first import fixes a source's profile. Changing it requires a new
+`enrollmentGeneration`.
+
+### One collection, step by step
+
+1. **Fetch.** One authenticated `POST` to the enrolled
+   `/v1/inventory/snapshot` endpoint. HTTP is allowed only to a literal loopback
+   address; anything else needs verified HTTPS. Redirects, proxies from the
+   environment, compressed or chunked replies and duplicate headers are refused.
+   The response must be complete JSON within 8 MiB and ten seconds (an
+   enrollment can lower both; the deadline can be raised to 60 seconds).
+2. **Validate.** The snapshot is checked against the bundled JSON schemas and
+   cross-record rules (see [Inventory contract](#inventory-contract)), and its
+   source and profile must equal the enrollment's.
+3. **Archive.** The snapshot and a *receipt* are written to the archive before
+   anything touches the graph.
+4. **Publish.** The snapshot is loaded as a new projection and published in one
+   transaction that moves the source's `current_snapshot_id`. A failed import
+   leaves the previous view in place.
+5. **Maintain.** Old projections and archive files are retired (see
+   [Retention](#retention-and-archive-sizing)).
+
+Observer collection calls no AWS API. AWS is contacted only when you pass
+`--aws-enrollment`.
+
+### The archive and the lock
+
+The archive directory must be owned by the collector's user with mode 0700; its
+files have mode 0600. Symlinks, hard-linked files and files owned by someone else
+are refused. It holds, per snapshot, `<receipt id>.snapshot.json` and
+`<receipt id>.receipt.json`, plus one `health-<source id>.json` per source and
+any `lifecycle-*.json` journals. It contains no credentials or endpoints.
+
+Every command that reads or writes an archive holds that archive's lock for its
+whole run, so only one runs at a time; `--watch` holds it until it stops. The
+lock is the file `<archive directory>.lock` beside the archive directory:
+`$STATE/archive.lock` for `$STATE/archive`. It is derived from the archive's
+location alone, so no option is needed and the working directory does not
+matter. `agent-guard-recovery restore` locks the file beside its
+`--destination`, the archive it creates; `inspect` takes no lock. The command's
+user must be able to create that file in the archive's parent directory. It is a
+POSIX file lock on one host and volume, not a distributed lease. The file is
+never removed; do not delete it while a command runs.
+
+`--lock-file FILE` names a second lock to hold as well; it never replaces the
+archive's. Use it when two commands write the same Neo4j database without
+sharing an archive: two collectors with separate archives, or a file import
+(`--snapshot`), which has no archive. A file import without `--lock-file` locks
+`.agent-guard-cartography.lock` in its working directory. If you upgrade a
+deployment that relied on `--lock-file` or on that working-directory file, see
+[upgrading the lock](../../deployment/cartography/RUNBOOK.md#upgrading-the-lock).
+
+A file the archive did not write, such as macOS `.DS_Store`, is never read or
+counted; the collector names it once in an `ARCHIVE_FILE_IGNORED` warning. An
+unreadable receipt fails only the source it belongs to, is reported every cycle
+as `ARCHIVE_FILE_DAMAGED` and is kept until you repair or discard it. A receipt
+is unreadable when its content is invalid, or when the file is not a private
+file of the collector's user (wrong mode or owner, a second hard link): repair
+that one with `chmod 600`, and the next cycle accepts it again.
+
+While it runs, the collector keeps an index of the archive in memory instead of
+re-reading the directory, and checks once per cycle for files that something
+else added, removed, rewrote or changed the mode, owner or links of. The files
+it acts on — the receipt and snapshot being published, replayed or discarded —
+are always read and verified from disk, and pruning deletes a file only if it
+is still the one that was indexed.
+
+### Pending receipts and replay
+
+A receipt is *pending* until the graph publishes its snapshot. The failure line
+of a snapshot that was stored but not published carries its `receipt_id`.
+
+One kind of rejected snapshot is not kept. When the graph refuses a newly
+collected snapshot because it already holds a newer view of the source
+(`REVISION_ROLLBACK`, or `GENERATED_AT_ROLLBACK` at the same revision), no retry
+could ever publish it: the failure is reported without a `receipt_id` and
+recorded in the source's health file, and nothing is stored. An executor whose
+clock was set back therefore fails each poll with `GENERATED_AT_ROLLBACK` until
+its clock passes the published capture, then publishes again by itself.
+
+- **Replay** a pending receipt with the same enrollment and archive. No observer
+  token is needed:
+
+  ```sh
+  uv run agent-guard-cartography \
+    --enrollment "$CONFIG/observer.json" \
+    --archive-dir "$STATE/archive" \
+    --neo4j-uri bolt://127.0.0.1:7687 \
+    --replay-receipt RECEIPT_ID
+  ```
+
+  The archive verifies the snapshot's hash, source and profile again, and the
+  importer applies its normal rules. A snapshot the graph already published
+  returns its existing result and moves nothing. A pending snapshot is published,
+  and becomes the current one, only if it is not older than the current view: a
+  lower ledger revision is refused with `REVISION_ROLLBACK`, and at the same
+  revision a capture generated before the published one is refused with
+  `GENERATED_AT_ROLLBACK`.
+
+- **List and discard** with the collector stopped:
+
+  ```sh
+  uv run agent-guard-recovery pending --archive-dir "$STATE/archive"
+  uv run agent-guard-recovery discard --archive-dir "$STATE/archive" \
+    --receipt-id RECEIPT_ID --reviewed
+  ```
+
+  `pending` changes nothing; add `--enrollment` to list one source. `discard`
+  requires `--reviewed` and removes one pending, uncertain, invalid or orphaned
+  record. An *uncertain* receipt is one the graph already knew when it was
+  replayed, so nothing confirmed what it published; retention never removes it.
+  `discard` refuses a published receipt (`ARCHIVE_DISCARD_REFUSED`; retention
+  removes those) and a receipt whose file has unsafe permissions or cannot be
+  read (`ARCHIVE_FILE_UNSAFE`, `ARCHIVE_READ_FAILED`): repair the file instead.
+
+A source may hold 16 pending receipts (`--archive-max-pending`, 1–1,024). After
+that its new snapshots are refused with `ARCHIVE_PENDING_LIMIT_EXCEEDED` until
+you replay or discard some; other sources continue.
+
+### Retention and archive sizing
+
+Every poll stores a new snapshot, even when nothing changed:
+
+```text
+snapshots needed = sources × (retention seconds ÷ interval seconds + 1)
+bytes needed     = snapshots needed × average snapshot size
+```
+
+| Limit | Default | Maximum | Option |
+| --- | --- | --- | --- |
+| Snapshots | 4,096 | 100,000 | `--archive-max-snapshots` |
+| Bytes | 256 MiB | 8 GiB | `--archive-max-bytes` |
+| Archive retention | 7 days | 90 days (minimum 1 hour) | `--archive-retention-seconds` |
+| Pending receipts per source | 16 | 1,024 | `--archive-max-pending` |
+| Graph retention | 1 hour | 30 days (minimum 60 seconds) | `--retention-seconds` |
+| Enrollments | — | 128 | `--enrollment` |
+
+One source at the default 300-second interval and seven-day retention needs
+2,017 snapshots, so **the defaults hold two sources**. The maximum holds 49
+sources at those settings; 128 sources fit with about 2.7 days of retention, or
+a longer interval. Pass the same `--archive-*` values to every command that
+opens the archive.
+
+The archive always keeps the newest two publications of each source, every
+snapshot a graph pointer refers to, and every pending or uncertain receipt.
+Older published snapshots are removed once they pass the retention age. If the
+archive fills first, the collector removes the oldest of them early and warns
+with `ARCHIVE_RETENTION_SHORTENED`; a source fails with `ARCHIVE_LIMIT_EXCEEDED`
+only when nothing more can be removed. Every collection run, one-shot or
+`--watch`, refuses to start (`ARCHIVE_SIZING_INVALID`) when
+`--archive-max-snapshots` is below three per enrolled source; a receipt replay
+does not check. `--watch` also warns once at startup
+(`ARCHIVE_SIZING_INSUFFICIENT`) when the limit cannot hold the retention window.
+
+In the graph, a source's current and previous projections are never retired.
+Other projections are retired after `--retention-seconds`, at most 32 per source
+per cycle.
+
+### Output and exit status
+
+All four commands report the same way. Each success is one JSON line on stdout.
+Each failure is one JSON line on stderr: `{"status": "failed", "code": "…"}`,
+with `source_id`, `receipt_id`, `file` or `operation` when they apply. Codes are
+stable and never contain paths, messages or credentials. `"status": "warning"`
+lines do not change the exit status.
+
+A command line that cannot be parsed is the one exception: for an unknown or
+missing option, or a value outside its range, the command prints a usage line
+and `<command>: error: <message>` as plain text on stderr and exits 2 before it
+does anything.
+
+| Exit status | Meaning |
+| --- | --- |
+| 0 | Everything completed. A `--watch` run stopped by Ctrl-C or SIGTERM also exits 0. |
+| 1 | An unexpected failure (`COLLECTION_FAILED`, `IMPORT_FAILED`, `RECOVERY_FAILED`, `SOURCE_TRANSITION_FAILED`, `REFERENCE_REPORT_FAILED`). |
+| 2 | A failure with a specific code, such as `NEO4J_UNAVAILABLE`, `NEO4J_AUTH_FAILED`, `PROCESS_LOCK_PATH_INVALID`, `INGESTION_ALREADY_RUNNING`, `COLLECTOR_ENROLLMENT_NOT_FOUND` or `REFERENCE_QUERY_FAILED`; or a command line that could not be parsed. |
+| 130, 143 | A one-shot run interrupted by Ctrl-C or SIGTERM. |
+
+One failing source does not stop the others; a one-shot run exits nonzero if any
+source failed. If maintenance fails after a publication, the success line
+reports `"maintenance": "unavailable"` with a `maintenance_code` and the run
+exits 2. Every command accepts `--verbose`, which also logs the exception type
+and message as a `"status": "debug"` line, with credential values redacted.
+
+## Reference
+
+### Inventory contract
+
+The schemas are JSON Schema Draft 2020-12 files in [`schemas/`](../../schemas),
+bundled into the wheel: inventory
+[v1](../../schemas/agent-guard-inventory-v1.schema.json) and
+[v2](../../schemas/agent-guard-inventory-v2.schema.json), manifest
+[v1](../../schemas/agent-guard-inventory-manifest-v1.schema.json),
+[v2](../../schemas/agent-guard-inventory-manifest-v2.schema.json) and
+[v3](../../schemas/agent-guard-inventory-manifest-v3.schema.json), and the
+[MCP connection schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json).
+The [contract document](../../docs/agent-cartography-contract.md) lists the fields.
 
 | Field | Contract |
 | --- | --- |
-| `schemaVersion`, `profile` | `1` or `2`; profile `core`, `host` or `host-mcp`. |
-| `source` | Exact company, source, enrollment generation, ledger instance and tenant identity. |
-| `snapshotId`, `generatedAt` | Immutable snapshot identifier and valid UTC timestamp. |
+| `schemaVersion`, `profile` | `1` or `2`; `core`, `host` or `host-mcp`. |
+| `source` | Exact company, source, enrollment generation, ledger instance and tenant. |
+| `snapshotId`, `generatedAt` | Immutable snapshot identifier and UTC timestamp. |
 | `ledgerRevision`, `policyEpoch` | Nonnegative JavaScript-safe integers. |
-| `coverage` | Tasks/tools complete; host manifest complete with its own capture time; host-mcp coverage computed from observations; cloud uncollected or unavailable. |
+| `coverage` | Which components were collected, and when. |
 | `tasks` | Identity, parent and provenance references, grants, budgets, usage, recipients and state. |
-| `tools` | Registration/approval evidence and safe flags; unavailable live flags are `null`. |
-| `manifest` | Required for `host` and `host-mcp`, forbidden for `core`; exact source, independent revision and closed host assertions. |
-| `mcp` | Required only for `host-mcp`; capture time and one observed/unavailable record per manifest connection ID. |
+| `tools` | Registration and approval evidence; flags the executor could not observe are `null`. |
+| `manifest` | Required for `host` and `host-mcp`, forbidden for `core`. |
+| `mcp` | Required for `host-mcp` only: one observed or unavailable record per manifest connection. |
 
-The validator rejects unknown properties at every object level, duplicate IDs or
-JSON keys, non-finite numbers, invalid timestamps, cross-tenant task records,
-missing task references and cycles. It limits input to 8 MiB, 32 JSON nesting
-levels, 10,000 tasks, 10,000 tools and 100,000 resource selectors, with an additional
-aggregate value/work bound. Errors use stable codes and omit imported values.
+The validator rejects unknown properties at every level, duplicate IDs and JSON
+keys, non-finite numbers, invalid timestamps, tasks of another tenant, missing
+task references and reference cycles. Limits: 8 MiB, 32 nesting levels, 10,000
+tasks, 10,000 tools, 100,000 resource selectors, and 2 MiB for a manifest. Errors
+are stable codes that never quote imported values.
 
-Task grants are normalized to one entry per tool with unique resource selectors.
-The executor exporter merges duplicate tool grants from raw task options
-before producing this profile. A grant can reference a tool absent from the
-registration inventory; the graph preserves its unknown metadata. Tool names are
-not interpreted as read/write/delete actions. `*` is a local wildcard selector,
-not an edge to every discovered cloud resource.
+Rules worth knowing when you read the graph:
 
-Delegation (`parentTaskId`) and provenance (`sourceTaskId`) remain separate. The
-validator checks relationship consistency without evaluating authorization or
-rejecting an inventory merely because a task is revoked, expired or blocked.
-Only the actual executor and resource backend may authorize execution.
+- A grant can name a tool that is not registered; the tool node then has
+  `known_metadata = false`. Tool names are not interpreted as read or write
+  actions, and `*` is a local wildcard selector, not an edge to every resource.
+- Delegation (`parentTaskId`, `G_DELEGATED_FROM`) and provenance
+  (`sourceTaskId`, `G_DERIVED_FROM`) are separate relationships.
+- A revoked, expired or blocked task is still inventory; the validator does not
+  evaluate authorization.
 
-## Host assertions and bindings
+### Host manifest
 
-`validate_manifest()` enforces the standalone 2 MiB/200,000-value contract and its
-cross-record/ARN rules. `validate_snapshot()` also checks exact manifest source,
-coverage timestamp, and task/tool/resource references against the core inventory.
-Manifest validation does not contact AWS or accept a manifest as authorization.
-See the [executor guide](../../packages/executor/README.md#host-owned-manifest-and-bindings)
-for the input shape and the runnable `examples/inventory-manifest.mjs`.
+The host writes the manifest; it is an assertion, not a verified claim, and it
+never changes grants. See the
+[executor guide](../../packages/executor/README.md#inventory-experimental)
+for its shape and [how agents get onto the map](../../docs/guides/agent-cartography.md#how-agents-get-onto-the-map).
 
-Manifest v2 adds accountable owners, agent purpose/lifecycle, deployment/build
-references, credential-reference catalogs, resource ownership/sensitivity,
-approved destinations and explicit resource dependencies. The
-[v2 contract](../../docs/agent-cartography-contract.md) lists the exact fields;
-`node examples/agent-cartography.mjs` at the repository root produces a synthetic
-v2 snapshot through the authenticated observer. Version 1 remains readable;
-metadata it never collected is shown as unknown, without invented catalog nodes.
-Version 2 requires its new fields even when their value is null or an empty list.
-Owners and credentials are limited to 1,000 records each; deployment credential
-references to 32; dependency/destination/audience/recipient arrays to 128.
-These limits also remain subject to the total manifest and snapshot byte bounds.
+- **Nodes:** `GuardAgent`, `GuardOwner`, `GuardCredentialReference`,
+  `GuardDeployment`, `GuardDirectAccess` (manifest v3: paths a deployment has that
+  bypass the guard), `GuardResourceBinding`, `GuardExecutionBinding`,
+  `GuardExternalResource` and `GuardExternalIdentity`. Each carries
+  `evidence_kind = 'host_asserted'` and the manifest's ID, revision and
+  observation time.
+- **Agents** exist only if the manifest declares them. A task not assigned to a
+  deployment stays in the graph but is listed under no agent.
+- **Resource bindings** map one local tool and selector to one exact target
+  (account, partition, ARN, kind and scope). A wildcard grant never fans out to
+  mapped resources. Targets with `provider: host` are opaque IDs that never join
+  AWS nodes.
+- **Execution bindings** belong to a deployment and a tool. Only a declared
+  static identity gets an identity edge; a dynamic or unknown identity stays
+  unresolved.
+- **Credential references**, issuers, audiences and build references are opaque
+  host identifiers. There are no secret, token or URL fields; the host must keep
+  names and purpose text free of secrets.
+- **Revisions:** `manifest.revision` advances independently of `ledgerRevision`.
+  A lower revision, different content at the same revision, a different
+  `manifestId` and a lower manifest schema version are all refused. Moving from
+  manifest v1 to v2 requires a higher revision.
 
-All v2 records inherit the manifest's authority ID, independent revision and
-observation time. They are host assertions, not signed or verified claims about
-provider ownership. `GuardOwner` and `GuardCredentialReference` nodes and
-`G_OWNED_BY`, `G_RESOURCE_OWNED_BY`, `G_USES_CREDENTIAL` and `G_DEPENDS_ON`
-relationships remain source-, tenant- and projection-local. Relationship-ID
-arrays are internal loader data; the query layer exposes an edge only when both
-endpoints are authorized. Catalog membership never changes viewer team scope.
+Limits: 1,000 owners and 1,000 credential references per manifest, 32 credential
+references and 32 direct-access entries per deployment, 128 entries in each
+dependency, destination, audience and recipient list.
 
-Generic resources use `provider: host` and an opaque resource ID. Display-name
-changes retain that resource's identity; conflicting definitions of one ID are
-rejected. These resources never join AWS nodes or become IAM candidates. When
-AWS collection is enabled they retain `not_collected`/`unsupported_provider`
-status, and do not consume the AWS-reference limit or invalidate AWS captures.
-Credential IDs, issuer/audience/recipient and build/runtime references are opaque
-host-generated identifiers. There are no secret, token, URL or arbitrary payload
-fields. The trusted host must also keep names and purpose text nonsecret.
+### MCP observations
 
-The graph adds `GuardAgent`, `GuardDeployment`, `GuardResourceBinding`,
-`GuardExecutionBinding`, `GuardExternalResource` and `GuardExternalIdentity` inside
-the same immutable projection. Every new node carries `evidence_kind='host_asserted'`,
-`assessment='unknown'` and manifest provenance. Task-to-deployment associations are
-optional. Unassigned tasks stay in the graph but are not listed under any agent (an
-all-teams reader can see them in `get_changes` or query them by ID), and an agent exists
-only if the manifest declares it (see
-[how agents get onto the map](../../docs/guides/agent-cartography.md#how-agents-get-onto-the-map)). Resource mappings include the local
-tool and exported selector plus the exact target account/partition/ARN, kind,
-scope and explicit actions. Wildcard grants never fan out to mapped cloud resources.
+`GuardMcpConnection` nodes are scoped to the source and the host's connection
+ID. An observed record carries its lifecycle state, session and revisions; an
+unavailable record carries only the reason, so a new projection never shows a
+stale `ready` state. `GuardMcpOperation` nodes carry operation names, kinds and
+fingerprints. Edges: `G_VIA_CONNECTION` (execution binding to connection),
+`G_EXPOSES_OPERATION` and `G_OPERATION_TOOL` (operation to the executor tool).
 
-Execution bindings belong to a deployment and tool. Only a declared static identity
-has an identity edge; dynamic/unknown selection remains unresolved. A connection
-ID does not establish a live MCP connection. Follow the explicit
-task→deployment→execution-binding association when interpreting metadata; sharing
-a tool name or caller principal does not share execution identities. External
-reference nodes are scoped host assertions, not provider inventory or IAM permission
-edges. In particular, S3 account ownership is asserted by the host because its ARN
-omits the account. Bucket, object and prefix scopes are retained separately.
+The importer refuses a session whose revisions go backwards, different content
+at the same revision, and a retired session that reappears. It remembers at
+most 128 connection IDs per enrollment and 64 retired sessions per connection;
+past that, publication fails with `MCP_ENROLLMENT_ROTATION_REQUIRED` and you
+enroll a new `enrollmentGeneration`. No descriptor, endpoint, resource URI or
+credential is stored. Connections are observed by the host, not by this
+collector.
 
-The first import pins the source profile. Changing core↔host or `manifestId`
-requires a new enrolled generation; mixing profiles cannot silently erase host
-metadata. `manifest.revision` advances independently of `ledgerRevision`.
-Decreasing revisions and different associations at the same manifest revision are
-rejected at staging and publication. Capture-time-only refreshes and reordered
-equivalent records are allowed. A manifest update at an unchanged ledger revision
-still must preserve identical core authority content. Failed composition or
-publication leaves the previous current snapshot in place.
+### Reading the graph
 
-A v1-to-v2 upgrade requires a higher manifest revision. After publication, the
-source's persisted schema watermark rejects v2-to-v1 downgrade, including a
-higher-revision downgrade after collector restart. Archive replay preserves the
-complete schema and provenance; an old collector rejects v2 rather than dropping
-new fields. Restored or cloned source instances still require the existing new
-enrollment-generation procedure.
-
-Change views compare authorized retained snapshots: declared grants, host
-bindings, ownership and relationships can change without proving an effective
-permission gain or loss. Current mapped policy candidates retain their separate
-capture times. External policy history, request-time decisions, approval events
-and backend receipts remain explicitly uncollected. Minimized stored reports
-keep only source/projection references and added/removed/changed counts per
-allowlisted label; owner names and credential metadata are not copied into them.
-
-## MCP observations
-
-`GuardMcpConnection` nodes are scoped to the inventory source and host connection
-ID. Observed records carry lifecycle, manager session and independent inventory,
-authorization and metadata revisions. Unavailable records carry only the capture
-status/reason and provenance, so a new projection cannot retain an old `ready`
-state. `GuardMcpOperation` nodes carry only explicitly bound operation names, kinds
-and fingerprints. Host execution bindings use `G_VIA_CONNECTION`; connections
-use `G_EXPOSES_OPERATION`, and operations use `G_OPERATION_TOOL` to reference the
-matching executor tool. These relationships are evidence with unknown assessment,
-not permission decisions or joins to a task principal's cloud permissions.
-
-The independent validator checks tenant scope, exact manifest connection coverage,
-operation allowlists, executor registration/fingerprints and computed coverage.
-The importer enforces per-session revision monotonicity and same-revision content
-consistency. A changed manifest may change the exposed operation subset. New
-sessions may reset counters; retired sessions cannot reappear. Failed or missing
-captures preserve internal revision watermarks while publishing unavailable
-current nodes. These checks run again at publication to protect against races.
-
-Watermarks are bounded to 128 connection IDs over an enrollment and 64 retired
-sessions per connection. Rotate `enrollmentGeneration` for an intentional reset
-or when those limits are reached. Changing inventory profile also requires a new
-enrollment. No descriptor, endpoint, resource URI, credential or native transport
-session is stored by this projection. The CLI imports files or enrolled observer responses;
-connection capture happens in the host, not in Cartography.
-
-## Observer collection and restart recovery
-
-Create trusted enrollment files from host-reviewed deployment information. Each
-fixes the entire five-field source identity, profile, exact observer endpoint and
-the name of a credential environment variable. Start with
-[observer-enrollment.json](examples/observer-enrollment.json), replacing its
-placeholder enrollment/ledger IDs and port. The credential is a separate
-`agi_v1.…` observer token; do not put it in the enrollment file or command line.
-Neither an incoming snapshot nor discovery can enroll a new ledger or tenant.
-
-With `NEO4J_URI`, `NEO4J_PASSWORD` and `AGENT_GUARD_OBSERVER_TOKEN` supplied by the
-host's secret configuration, run from this directory:
-
-```sh
-uv run agent-guard-cartography \
-  --enrollment examples/observer-enrollment.json \
-  --archive-dir "$PWD/.collector-archive" \
-  --neo4j-uri "$NEO4J_URI" \
-  --lock-file "$PWD/.collector.lock"
-```
-
-This performs one collection. Add `--watch` for a five-minute polling cycle;
-`--interval-seconds` accepts 1–3,600 seconds. Repeat `--enrollment` for up to 128
-sources in one serial queue. A source failure does not prevent the others from
-being collected; a one-shot run exits nonzero if any source fails. The worker
-holds the shared database lock between polls, so another manual or scheduled
-worker cannot overlap. Credential environment variables are read for each attempt.
-Use Ctrl-C to stop cleanly. Every worker must share the same lock path and volume.
-
-HTTP is permitted only for literal loopback addresses. Remote endpoints require
-verified HTTPS, the exact `/v1/inventory/snapshot` path, and a host-deployed TLS
-bridge. Redirects, ambient proxies, compressed/chunked replies, duplicate length
-headers and duplicate JSON keys are rejected. Capture requires a complete
-length-delimited JSON response within 8 MiB and ten seconds by default; enrollment
-can tighten those bounds (maximum deadline 60 seconds). The total deadline also
-covers DNS and validation through four bounded worker slots. Late DNS completion
-cannot send credentials after cancellation. No AWS API is called by this collector.
-
-`SnapshotArchive` writes validated snapshots before graph import, with atomic
-replacement, directory synchronization and private owned files. The directory
-must have mode 0700; files must have mode 0600. Symlinks, hard-linked files and
-unsafe ownership are rejected. Use a real directory path, including on systems
-where `/tmp` is a symlink. Snapshots retain only the inventory allowlist; observer
-credentials, endpoint configuration and response error bodies are excluded.
-
-Each successful CLI line includes a `receipt_id`. After a crash, use the same
-enrollment/archive with `--replay-receipt RECEIPT_ID`; no observer token is needed
-for replay. The archive checks content hashes, source, profile and snapshot ID
-again, and the importer applies the normal revision and idempotency rules.
-Replay never restores executor authority. A successful replay of an old receipt
-does not move the current graph pointer backwards.
-
-Private health files retain the latest attempt/error, last successful receipt,
-failure count and source snapshot generation time. A successful import attempt
-is distinct from fresh source evidence or the current graph projection; inspect
-`GuardSource.current_snapshot_id` for the latter. Errors contain stable codes.
-Automatic graph maintenance retains current/previous projections and waits at
-least one hour by default (`--retention-seconds`, minimum 60). Archive cleanup
-keeps seven days of published snapshots, current/previous graph pointers and
-pending or uncertain receipts. It runs before storing a new snapshot and after
-publication. Each graph maintenance pass handles at most 32 obsolete projections.
-
-The archive defaults to 4,096 snapshots and 256 MiB; configure
-`--archive-max-snapshots` and `--archive-max-bytes` for actual inventory size.
-Committed archive files are also capped at four times the snapshot limit.
-New snapshots reserve space for both snapshot and receipt before either write;
-updates reuse their file slot but still require temporary byte headroom.
-Quota exhaustion fails closed. Pending/uncertain receipts require explicit replay
-or operator reconciliation and are not silently evicted. Protected directories
-and POSIX locks support one host/volume; this is not a distributed lease.
-
-## Single-account AWS metadata collection
-
-The optional `--aws-enrollment` mode now populates the provider metadata needed
-by cloud joins. Follow [AWS.md](../../deployment/cartography/AWS.md) and copy
-[aws-enrollment.json](examples/aws-enrollment.json) to a protected file. Configure
-one exact commercial account, caller ARN, region and three temporary credential
-environment names. AWS collection is disabled by default and requires matching
-observer enrollment and an explicit cloud scope.
-
-The five fixed SDK operations are STS GetCallerIdentity, IAM ListRoles/ListUsers,
-and S3 ListBuckets/GetBucketLocation. Policy documents and other extra returned
-fields are discarded. The collector neither assumes roles nor discovers accounts
-or credential profiles. It does not run upstream reporting jobs or collect
-objects or ACL data. Temporary credentials are frozen
-for one owned worker; verified HTTPS, response/page/item/call bounds and an
-overall process deadline prevent an unbounded capture.
-
-The observer worker holds one shared ingestion lock. AWS capture runs before
-Guard collection when due, defaulting to an hour after the last attempt finishes.
-`--watch --interval-seconds 300 --aws-interval-seconds 3600` coordinates both
-cadences; no separate scheduler is installed. AWS failures produce safe bounded
-receipts, retain the last complete evidence with its original time, and allow
-ordinary observer collection to continue. One-shot failures exit nonzero.
-
-Publication uses the pinned Cartography schemas/query builder in one transaction.
-`GuardAwsCollection` and `G_AWS_OBSERVED` record complete scoped membership.
-An empty capture retires membership while preserving shared provider nodes,
-ownership edges and Guard snapshots. Managed cloud joins require current
-membership and matching capture/provider evidence; another writer cannot make
-an omitted or stale managed observation fresh. Real AWS account validation and
-company rollout remain separate work.
-
-Set `includeIamPolicyEvidence: true` in the private enrollment to add the bounded
-IAM `GetAccountAuthorizationDetails` read. The complete principal/group/policy
-census must resolve; otherwise the full AWS capture fails. The pinned mapper
-produces only GetObject/PutObject/ListBucket candidates for observed buckets.
-Boundaries and unsupported expressions suppress the affected principal's
-candidates. Every result remains `assessment: unknown`, with bucket-summary scope.
-Policy byte/statement/work/edge limits apply before publication; documents and
-condition values never leave the worker. The graph retains minimized
-`G_AWS_POLICY_CANDIDATE` relationships, per-principal coverage and a census digest,
-atomically with metadata. Successful opt-out removes only this collection's
-candidates. Existing `CAN_*` and other collectors' edges are preserved. See
-[the policy guide](../../deployment/cartography/AWS.md#opt-in-to-iam-policy-evidence)
-for limits, unsupported semantics and rollout. The reference API/viewer now
-exposes candidates only through visible task/deployment execution and resource
-bindings, with provenance/freshness checks and explicit unknown assessments.
-It preserves object/prefix scope and omits live policy observations from history.
-
-## AWS inventory joins
-
-Use `--cloud-scope examples/cloud-scope.json` only after reviewing its explicit
-company, tenant, partition and AWS account allowlist. Repeat this option for
-different company/tenant scopes in a multi-source run. Unlisted scopes receive
-no cloud enrichment. Cloud configuration is also available as `cloud_scope=` on
-`import_snapshot()` and `build_sync()`.
-
-The supported provider model is pinned to Cartography 0.144.0: exact `AWSRole`
-and `AWSUser` ARN/ID plus `AWSPrincipal`, or exact `AWSS3Bucket` ARN/name, owned
-through the configured `AWSAccount`'s `RESOURCE` relationship. Account, node and
-ownership timestamps must all be present, non-future and within `maxAgeSeconds`
-(default two hours). Explicit bucket regions must match. Missing, ambiguous,
-unsupported, out-of-scope or stale matches create no positive provider link.
-Lookups are limited to 1,024 external references and a five-second transaction.
-
-`G_CLOUD_MATCH` means an exact role/user/bucket association. Object and prefix
-references retain their original ARN/kind/scope and use `G_CLOUD_CONTAINER` to
-their exact bucket. Dynamic/unknown execution identity creates no principal join.
-The collector never joins a task's calling principal by name or borrows another
-execution binding's identity. All cloud assessments remain `unknown`.
-
-Cloud evidence is rechecked in the bounded publication transaction. Changes or
-optional lookup failures publish explicit unavailable evidence with fresh
-mandatory inventory; no old successful joins are reused. A narrowly scoped
-retry drops failed cloud capture while preserving the same publication CAS.
-The graph stores independent `cloud_coverage_json`, reference status/reason,
-capture time and the three provider timestamps (Unix seconds). Complete coverage
-means the configured references matched, not complete AWS discovery or effective
-permission. Shared provider nodes/edges may change independently after capture.
-Cleanup removes only Guard nodes and their outgoing links.
-
-The opt-in policy reducer uses the reviewed
-[S3 permission mapping](../../deployment/cartography/aws-permission-relationships.yaml)
-for the enrolled account. The YAML is also packaged at
-`agent_guard_cartography/data/aws-permission-relationships.yaml`. It selects
-GetObject, PutObject and ListBucket evidence only. Only condition keys/flags are
-retained; conditional denies and object/prefix-to-bucket projection limit what
-those edges prove. Missing edges never prove denial, and bucket edges never
-establish permission over an exact object or every object. No provider policy
-blobs or condition values are copied into Guard observations.
-
-## File import into a dedicated sandbox
-
-The CLI is a host-side collector; keep it outside agent tool access.
-Supply an independent, trusted source enrollment file and a database password
-through an environment variable. Do not derive a trusted enrollment from an
-untrusted incoming inventory.
-
-Snapshot, observer enrollment, expected-source/cloud-scope and lifecycle
-transition inputs must resolve to regular files. Named pipes, devices and
-directories are rejected before reading; symlinks to regular files remain
-supported. Existing byte limits and JSON/schema validation still apply. Private
-AWS enrollment and archive files retain their stricter path/permission checks.
-
-For a dedicated local sandbox whose Bolt endpoint and password are already set:
-
-```sh
-uv run agent-guard-cartography \
-  --snapshot tests/fixtures/alpha-v1.json \
-  --expected-source examples/alpha-source.json \
-  --neo4j-uri "$NEO4J_URI" \
-  --neo4j-password-env-var NEO4J_PASSWORD \
-  --lock-file .agent-guard-cartography.lock
-```
-
-Import `alpha-v2.json` with the same enrollment to publish the next view. The
-disposable test runner exercises this CLI automatically, so a manual database is
-not required to verify the milestone. The CLI emits a JSON receipt containing
-the scoped source key and projection ID. Exit status is nonzero on invalid
-inventory, source mismatch or incomplete import.
-
-The CLI constructs one explicit Cartography `Sync` stage. It does not invoke
-default provider discovery. It uses a POSIX file lock; every worker targeting the
-same database must use the same protected lock path on the same host/volume.
-Distributed collection and Windows locking are outside this milestone. Verified
-TLS is required for remote database endpoints; cleartext is limited to loopback.
-
-## Publication and cleanup
-
-`GuardSource` is keyed by the full enrolled source tuple. Every import attempt
-creates a distinct `GuardSnapshot` projection; task/tool/grant/resource/principal
-nodes carry both a versioned storage ID and a stable logical `entity_id`.
-
-Cartography loads endpoints first, then their relationships. Publication validates
-node counts and required relationship endpoints and atomically updates
-`current_snapshot_id` and `previous_snapshot_id`. A failed or losing import stays
-unpublished. Replaying an identical completed snapshot returns its receipt without
-moving the current pointer; reusing its ID for different content is rejected.
-
-Always select a published projection through `GuardSource.current_snapshot_id`.
-An unrestricted label scan includes staged, failed and historical evidence.
-For example, with the source key returned by the CLI as `$sourceId`:
+`GuardSource` is keyed by the full source identity. Every import creates a
+`GuardSnapshot` projection; each node has a per-projection `id` and a stable
+`entity_id`. Always select through the source's current pointer — a plain label
+scan also returns staged, failed and historical projections:
 
 ```cypher
 MATCH (s:GuardSource {id: $sourceId})
@@ -467,31 +407,100 @@ RETURN t.task_id, t.revoked, g.tool, g.resources, g.assessment,
        p.generated_at, p.coverage_json
 ```
 
-All grants remain `evidence_kind='declared'`, `assessment='unknown'`. The graph
-does not make effective-permission claims. `G_DELEGATED_FROM` and `G_DERIVED_FROM`
-preserve distinct task relationships. Raw arguments, results, credentials, token
-hashes, memory bodies and arbitrary tool metadata are not contract fields.
+Publication checks node counts and every expected relationship before it moves
+the pointer. Importing an identical snapshot again returns its existing result;
+reusing a snapshot ID for different content is refused. Retirement removes only
+this integration's nodes in one old projection; provider nodes such as
+`AWSRole` are never deleted.
 
-Cleanup runs the real Cartography `GraphJob` with `GuardSnapshotId` restricted to
-one unpublished projection. Retirement targets only allowlisted Guard labels in
-an old projection, preserves its receipt, and refuses current/previous views.
-Provider nodes are never cleanup targets. Retirement has a configurable grace
-period. The optional [Agent Map service](../../packages/agent-map/README.md)
-reads current/previous published projections through fixed scoped queries;
-it does not hold unbounded historical cursors.
+<a id="file-import-into-a-dedicated-sandbox"></a>
 
-The file lock and pointer compare-and-set protect this single-worker experiment.
-They are not a distributed ingestion service. Revision comparison can detect
-rollback but cannot prove an unreported restore did not occur. Restores/clones
-must use explicit new enrollment generations. The host can now run an explicit
-source transition after the successor is fully published and archived. It fences
-old-generation imports, removes the predecessor from normal reads, and preserves
-the decision through backup/replay. Completed transition journals drive bounded
-post-grace graph retirement; the latest two archived snapshots per source remain
-recovery anchors. Missing enrollments and outages never trigger supersession.
-See [source lifecycle operations](../../deployment/cartography/SOURCE-LIFECYCLE.md).
+### Import a snapshot file
 
-## Build and check the packaged contract
+For a sandbox database, import one prepared file instead of collecting. The
+expected source comes from a separate trusted file, never from the snapshot:
+
+```sh
+uv run agent-guard-cartography \
+  --snapshot tests/fixtures/alpha-v1.json \
+  --expected-source examples/alpha-source.json \
+  --lock-file "$STATE/archive.lock" \
+  --neo4j-uri bolt://127.0.0.1:7687
+```
+
+A file import has no archive, so it has no lock of its own. `--lock-file` above
+names the collector's archive lock, which keeps the import from running beside a
+collector that writes the same database; see
+[the archive and the lock](#the-archive-and-the-lock).
+
+It prints the source ID and projection ID. Input files must be regular files
+(symlinks to regular files are followed); pipes, devices and directories are
+refused.
+
+### AWS metadata and cloud joins
+
+Both are optional and off by default; [AWS.md](../../deployment/cartography/AWS.md)
+is the operator guide.
+
+- `--cloud-scope FILE` allows the importer to link host-declared AWS references
+  to provider nodes already in the graph, for the listed company, tenant and
+  accounts only. `G_CLOUD_MATCH` is an exact role, user or bucket match;
+  `G_CLOUD_CONTAINER` links an object or prefix reference to its bucket. A match
+  needs one provider node whose account, node and ownership timestamps are all
+  within `maxAgeSeconds` (default two hours). Missing, ambiguous, out-of-scope
+  or stale matches create no link, and the reason is recorded. At most 1,024
+  references are looked up per import.
+- `--aws-enrollment FILE` makes the collector capture IAM role and user
+  identifiers and S3 bucket names and regions for one account, using five fixed
+  read-only API operations, and publish them as the provider nodes those joins
+  need. With `includeIamPolicyEvidence: true` it also reads the account's IAM
+  identity policies and writes `G_AWS_POLICY_CANDIDATE` edges for three S3
+  actions. The three rules are fixed in the collector;
+  [aws-permission-relationships.yaml](../../deployment/cartography/aws-permission-relationships.yaml)
+  states the same rules for upstream Cartography and is not read by this package.
+
+A candidate edge or a cloud match is evidence, never proof of access, and a
+missing edge is never proof of denial.
+
+### Operator guides
+
+- [RUNBOOK.md](../../deployment/cartography/RUNBOOK.md): the synthetic end-to-end
+  check, backups and reconstruction, difference reports, monitoring, rollback.
+- [SOURCE-LIFECYCLE.md](../../deployment/cartography/SOURCE-LIFECYCLE.md):
+  replacing an executor that was restored or cloned.
+- [AWS.md](../../deployment/cartography/AWS.md): AWS metadata and policy evidence.
+- [IDENTITY.md](../../deployment/cartography/IDENTITY.md): company sign-in for
+  the Agent Map viewer.
+
+## Develop and test
+
+Besides Python 3.13 and uv you need Node 22.13 or newer and a running Docker
+engine. Build the JavaScript packages from the repository root first (the unit
+tests run the built executor against the Python contract):
+
+```sh
+npm ci --ignore-scripts
+npm run build
+```
+
+Then, from this directory:
+
+```sh
+uv sync --locked
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest tests/unit
+uv run python scripts/test-disposable-neo4j.py -- -q
+```
+
+The last command starts its own Neo4j container from the image pinned in
+[neo4j-image.txt](neo4j-image.txt), with a generated password and a random
+loopback port, runs `tests/integration` against it and removes it. It accepts no
+existing database address. Missing Node, missing build output or an unavailable
+Docker engine fail the run; nothing is skipped silently. Tests use synthetic data
+and call no cloud API.
+
+To check the built package in isolation:
 
 ```sh
 uv build
@@ -500,61 +509,17 @@ uv run --isolated --no-project \
   python scripts/check-installed.py
 ```
 
-The installed consumer checks the bundled schema against the canonical contract,
-validates the synthetic fixtures, and imports the custom stage with Cartography
-0.144.0. `hatch_build.py` also includes the schema when building a wheel from the
-source archive, without relying on an external repository path.
+## Versions and limits
 
-## Pilot operations
-
-The [pilot runbook](../../deployment/cartography/RUNBOOK.md) covers the new
-Compose-backed live synthetic deployment, private archive backup and fresh-graph
-reconstruction, bounded 30-day minimized differences, rollback and benchmark gates.
-The collector accepts plaintext database connections only through direct
-`bolt://` literal-loopback addresses; routing `neo4j://` is rejected because its
-advertised peers may be remote. Remote connections require verified TLS.
-
-```sh
-uv run python scripts/run-pilot.py --output /absolute/new-verification.json
-uv run python scripts/benchmark-pilot.py --profile acceptance --samples 100 --output /absolute/new-benchmark.json
-```
-
-Both runners create and verify ownership of their own disposable databases. The
-live runner compares graph snapshot/logical-content identity after restore and
-executor authority before/after collection and reconstruction. Packaged
-`pilot_recovery` and `reference_report` modules are included in wheel/source-archive
-consumer checks. Company SSO/TLS and live AWS deployment need separate approved
-configuration and review; the supplied pilot uses synthetic data and local
-credentials only.
-
-The [company identity endpoint](../../deployment/cartography/IDENTITY.md) adds
-provider-neutral OIDC/HTTPS browser access to the same scoped Neo4j reader.
-Its disposable integration test signs in through a local verified HTTPS issuer,
-checks hidden/nonexistent equivalence and host scope despite broader signed
-claims, revokes the reader and verifies no graph mutation. This exercises the
-implementation without enrolling a real company identity provider.
-
-## Compatibility baseline
-
-- Cartography release `0.144.0`, source commit
-  `66ead780c590c2db63947286fa8d5131f44697f8`.
-- Cartography wheel SHA256
-  `89ee88f4fca44a1a74e10de253475f14ba84154b5e88c908ad2a34412b26872a`,
-  also recorded in `uv.lock`.
-- Python 3.13; Neo4j Community 5.26.32 at the pinned image digest.
-- Apache-2.0 integration and Cartography code; Neo4j remains a separate GPLv3
-  Community service. Community credentials do not establish database-level
-  read-only or per-team permissions.
-
-The contract/collector checks do not establish live cloud coverage or production
-throughput. The reference milestone additionally tests company/tenant/team
-visibility in the real Neo4j query adapter; it does not establish company SSO,
-remote deployment or database-level isolation on Community edition.
-
-Validation recorded on 29 October 2026: **84 unit cases and 15 Neo4j integration
-cases passed with no skips**, using Python 3.13.10 on macOS arm64 with Colima,
-Cartography 0.144.0, Neo4j driver 6.4.1 and the pinned Community 5.26.32 server.
-Ruff lint/format checks, lockfile verification, wheel/source-archive builds and an
-isolated installed-wheel consumer check passed. The disposable container and
-tunnel were removed. The separate Ubuntu CI workflow is included; these results
-are from the local run, not a completed hosted CI run.
+- Cartography `0.144.0`, pinned with its hash in `uv.lock`; Python 3.13; Neo4j
+  Community 5.26.32 for tests.
+- Apache-2.0. Neo4j Community is a separate GPLv3 service.
+- One collector process per database, on one host. There is no distributed
+  ingestion.
+- Neo4j Community has no per-user read permissions: anyone with database
+  credentials can read every tenant's inventory. Keep the credentials on trusted
+  hosts and give readers access through the Agent Map service instead.
+- A revision comparison detects a rollback, not an unreported restore. An
+  executor that was restored or cloned must be enrolled with a new
+  `enrollmentGeneration`; see
+  [SOURCE-LIFECYCLE.md](../../deployment/cartography/SOURCE-LIFECYCLE.md).

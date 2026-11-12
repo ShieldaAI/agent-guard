@@ -1,70 +1,163 @@
-# Detect a stale restore before it can revive authority
+# Detect a restored old ledger
 
-A valid AES-GCM payload proves the state was written by a holder of the key.
-It cannot tell you that it is the **latest** state. In a disposable reproduction,
-restoring an earlier encrypted database caused an otherwise valid, revoked task
-token to authenticate again. The single-owner witness profile detects this
-restore before exposing task or approval APIs.
+The executor keeps its state in an encrypted file, the ledger. Encryption proves the file
+was written by someone who holds the key. It does not prove the file is the latest one. If
+an old backup is restored, a task token that was revoked after that backup works again.
+The rollback witness is a second small file that records which ledger state is current,
+so the executor can refuse to start on an older one.
 
-**Provision once.** On a POSIX host, prepare two canonical, owner-only directories
-(0700), with neither directory inside the other. Keep the ledger and its
-independently protected witness in **different restore domains**, on local
-filesystems supporting SQLite locking, durable sync and rollback journals.
-Both filenames must be new. Keep the config and encryption key outside workloads.
+## What you will achieve
 
-```ts
+- An executor that writes a witness file next to its ledger.
+- A refusal to start (`STORE_WITNESS_UNAVAILABLE`) when the ledger is older than the
+  witness, or when either file is missing or replaced.
+- A recovery procedure that does not bring revoked tasks back.
+
+## Prerequisites
+
+- Linux or macOS. The witness is not available on Windows.
+- Node.js 22.13 or later, and this repository built (`npm ci --ignore-scripts`, then
+  `npm run build`).
+- Two directories that only the host's user can access (mode `0700`), neither inside the
+  other, on local filesystems.
+- Backups arranged so that the two directories are **not** saved and restored together.
+  If one snapshot rewinds both, the witness cannot help.
+- The encryption key and configuration stored where agent workloads cannot read them.
+
+## Steps
+
+### 1. Create the two directories
+
+```sh
+sudo install -d -o "$USER" -m 0700 /srv/agent-guard/state
+sudo install -d -o "$USER" -m 0700 /srv/agent-guard-control/witness
+```
+
+Use the user the host runs as in place of `$USER`.
+
+### 2. Turn the witness on
+
+```js
 import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 
 const executor = new DurableExecutor({
   database: '/srv/agent-guard/state/ledger.sqlite',
-  encryptionKey: keyFromHostSecretStore,
+  encryptionKey: keyFromHostSecretStore, // 32 bytes from your secret store
   rollbackWitness: {
     path: '/srv/agent-guard-control/witness/latest.sqlite',
-    mode: 'create', // first initialization only
+    mode: 'create', // first start only; use 'resume' on every later start
   },
 });
 ```
 
-On **every subsequent start**, use the same paths and key, with `mode: 'resume'`.
-Resume requires both files to exist and match. The witness stores a SHA-256
-commitment to the encrypted bytes. The store updates both databases in one
-transaction using [SQLite's attached-database atomic commit](https://sqlite.org/lang_attach.html),
-on-disk databases, DELETE rollback journals and [EXTRA synchronous writes](https://sqlite.org/pragma.html#pragma_synchronous)
-on both files. In a [disposable Linux VM](../validation/witness-vm-power-cut-2026-11-05-a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9.json),
-three abrupt guest shutdowns exercised two points during commit and one after
-revocation returned. The acknowledged revocation survived reboot. The host
-and disk controller stayed powered. Validate physical durability and restoration
-on the enrolled deployment's storage and backup system.
-Witnessed ciphertext uses a distinct authentication domain: removing the option
-does not make a witnessed ledger usable as an ordinary ledger.
+Both paths must be absolute. With `create`, neither file may exist yet. With `resume`,
+both must exist and match. A ledger created with a witness cannot be opened without the
+`rollbackWitness` option.
 
-**Recovery.** Stop dispatch and close the executor before taking or restoring a
-database backup. Preserve the current witness independently. Restore the closed
-ledger file only; do not mix backups with live or historic SQLite journal files.
-A matching pair can resume; an earlier ledger, substituted witness, missing file
-or mismatched key fails closed. On `STORE_WITNESS_UNAVAILABLE`, stop and retain
-the files. Check ownership, provisioning, the key, and which backup actually
-matches the independent witness. Do **not** delete/recreate the witness, try
-`create`, restore an old pair, or create fresh authority to clear the error.
-If the matching state is lost, investigate and reconcile backend effects, revoke
-old credentials, and explicitly enroll a new deployment rather than resuming
-old tasks. Interrupted initial provisioning may leave unused files; determine
-that no deployment was activated before provisioning a different pair.
+### 3. See the refusal for yourself
 
-**Cost.** On the reviewer's macOS arm64 filesystem, the 95th percentile for
-one complete prepare, approve and execute cycle was **251.5 ms** with the
-witness and **7.2 ms** with the ordinary ledger (100 measured cycles per
-mode, with both directories on the same disk). Use the [benchmark](../validation/benchmark-rollback-witness.mjs)
-and [recorded samples](../validation/protection-96-witness-timing-2026-11-05.json)
-to compare results on the intended storage before setting a latency budget.
-Reducing the sync settings invalidates the tested durability profile.
+Save this as `witness-demo.mjs` in the repository root and run `node witness-demo.mjs`. It
+creates a ledger in a temporary directory, backs it up, revokes a task, restores the
+backup and tries to start.
 
-**Limits.** This does not protect a machine snapshot that rewinds *both* files,
-a malicious host owner, an untrusted filesystem, or an old deployment with a
-separate authorization route. Separate directory names alone cannot establish
-independent backups. No in-place enrollment of unverified legacy history,
-Windows ACL profile, cross-host quorum, or automatic recovery from a lost
-witness is claimed. Privately validate the restore policy against the actual
-backup system. The [regressions](../../packages/executor/test/rollback-witness.test.mjs)
-exercise stale-token resurrection, a confirmed backend write, and child-process
-termination immediately before and after the paired commit.
+```js
+import { randomBytes } from 'node:crypto';
+import { copyFileSync, mkdirSync, mkdtempSync, realpathSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+
+const root = realpathSync(mkdtempSync(join(tmpdir(), 'witness-demo-')));
+for (const name of ['state', 'witness']) mkdirSync(join(root, name), { mode: 0o700 });
+const database = join(root, 'state', 'ledger.sqlite');
+const witness = join(root, 'witness', 'latest.sqlite');
+const encryptionKey = randomBytes(32);
+const open = mode => new DurableExecutor({ database, encryptionKey, rollbackWitness: { path: witness, mode } });
+
+// First start: create both files.
+let executor = open('create');
+executor.createTask({
+  id: 'demo-task',
+  principalId: 'demo',
+  tenantId: 'demo',
+  grants: [],
+  budget: { maxCalls: 1, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
+});
+executor.close();
+
+// Take a backup of the ledger, then change the state by revoking the task.
+copyFileSync(database, `${database}.backup`);
+executor = open('resume');
+executor.revokeTask('demo-task');
+executor.close();
+
+// Restore the older ledger. The witness still describes the newer state.
+copyFileSync(`${database}.backup`, database);
+try {
+  open('resume');
+  console.log('opened: the stale restore was NOT detected');
+} catch (error) {
+  console.log('refused:', error.code);
+}
+```
+
+### 4. Back up and restore safely
+
+1. Stop sending work and close the executor before you copy or restore the ledger.
+2. Back up the ledger file on its own. Keep the witness in its separate backup domain.
+3. To restore, put back the closed ledger file only. Do not mix it with SQLite journal
+   files from another time.
+4. Start with `mode: 'resume'`. A ledger that matches the witness opens. An older one is
+   refused.
+
+### 5. Measure the cost
+
+With the witness on, every state change waits for both files to reach the disk. Calls get
+much slower, often by ten times or more. Before you set a latency budget, run the
+[benchmark](../../scripts/benchmark-rollback-witness.mjs) on the storage you will use:
+
+```sh
+node scripts/benchmark-rollback-witness.mjs
+```
+
+Compare `default.p95Ms` (without the witness) with `witnessed.p95Ms` in its output.
+
+## What you should see
+
+Step 3 prints:
+
+```text
+refused: STORE_WITNESS_UNAVAILABLE
+```
+
+## What can go wrong
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `STORE_CONFIG_INVALID` | A path is relative, one directory is inside the other, `mode` is not `create` or `resume`, or the host runs on Windows. | Use two absolute paths in separate directories on Linux or macOS. |
+| `STORE_WITNESS_UNAVAILABLE` on first start | One of the files already exists, or a directory is not owner-only. | Use new file names in `0700` directories owned by the host's user. |
+| `STORE_WITNESS_UNAVAILABLE` on a later start | A file is missing, the ledger is older than the witness, the witness was replaced, or the key is wrong. | Stop. Follow the recovery steps below. |
+| `STORE_UNAVAILABLE` | A ledger that was created with a witness was opened without the `rollbackWitness` option. | Add the option with `mode: 'resume'`. |
+| Calls became much slower | Expected with the witness on. | Measure with the benchmark. Do not lower SQLite's sync settings; that removes the protection. |
+
+**When a later start is refused:**
+
+1. Stop and keep every file as it is.
+2. Check file ownership, the paths, the key, and which backup matches the witness.
+3. Restore the ledger backup that matches the witness, if you have it.
+4. If no matching ledger exists, treat the old state as lost: check your backends for
+   actions that ran, revoke the old credentials, and set up a new deployment with new
+   files. Do not resume the old tasks.
+
+Do not delete or recreate the witness, switch to `mode: 'create'`, or restore an old
+ledger and witness together to make the error go away. Each of those brings revoked
+authority back.
+
+## What the witness does not cover
+
+- A machine or volume snapshot that rewinds both files together.
+- A person or process with the host's own file access and key.
+- Adding a witness to a ledger that was created without one.
+- Automatic recovery when the witness itself is lost.
+
+For general limits, see [Support and limits](../support-and-limits.md).

@@ -1,119 +1,210 @@
-# Protected ticket workflow for OpenAI and Anthropic
+# Protect a ticket workflow with OpenAI or Anthropic
 
-Both examples use the same Agent Guard host and synthetic ticket store. The model requests a read of ticket `123`, the host reviews the proposed change through a synthetic approval callback, and the host changes that ticket to `resolved`. Ticket `456` belongs to another tenant. Private ticket notes never enter a tool result. The command-line examples replay provider-shaped responses locally and assert the final backend state. They make no network calls and require no API keys.
+This example puts the guard between a model and a ticket system. The model may read one
+ticket and ask to resolve it. The host checks every tool call, a person approves the exact
+change, and the model never sees private ticket notes. The same host code works with the
+OpenAI Responses API and the Anthropic Messages API.
+
+## What you will achieve
+
+- Run the example offline for both providers. It needs no API key and makes no network
+  call.
+- Practice the reviewer's decision in a terminal.
+- Connect your own provider client and review screen to the same runner.
+
+## Prerequisites
+
+- Node.js 22.13 or later, and this repository built:
+
+  ```sh
+  npm ci --ignore-scripts
+  npm run build
+  ```
+
+- For step 3 with a live model: your own OpenAI or Anthropic SDK client. This repository
+  installs neither SDK.
+
+## Steps
+
+### 1. Run the offline examples
 
 ```sh
-npm run build
 node examples/providers/openai-responses.mjs
 node examples/providers/anthropic-messages.mjs
-node --test scripts/provider-ticket.test.mjs
 ```
 
-Each command prints JSON confirming one permitted read, one approved write, zero forbidden writes and zero provider requests containing the private canary. Failed assertions exit nonzero. The package check also copies these examples into a temporary consumer and runs them using the packed public package, rather than an internal source import.
+Each replays four provider-shaped responses against a made-up ticket store: read ticket
+`123`, try to resolve ticket `456` (which belongs to another tenant), resolve ticket
+`123`, then finish.
 
-## Host authority and the point of effect
+### 2. Practice the review
 
-To practice the operator decision, run `node examples/providers/review-ticket.mjs`
-in a terminal after building. It shows the tenant, exact change, expected version
-and expiry. Press Enter to keep the ticket open; rerun and type `approve 123`
-to see the confirmed new version. Each run uses fresh synthetic records. A pipe,
-closed prompt or expired review cannot approve a change. The local practice
-identity is not authentication for a deployed service.
+```sh
+node examples/providers/review-ticket.mjs
+```
 
-[protected-ticket.mjs](../../examples/providers/protected-ticket.mjs) owns the backend, identity, grants, registered tools and approval API. Only the host can access the full records. The provider gets two strict tool declarations, `tickets_read` and `tickets_update`, and the fixed task text. Provider calls cannot supply a tenant, principal, approval, destination, backend operation identity or extra argument.
+Run it in a terminal. It shows the tenant, the exact change, the expected ticket version
+and when the review expires. Press Enter to refuse. Run it again and type `approve 123` to
+approve. Each run starts from fresh made-up records.
 
-1. The host validates and copies the arguments. It resolves the ticket's tenant and version from its own store.
-2. Agent Guard prepares an immutable action and enforces the task's tenant, resource grants and budget. The entire batch is prepared before any action in it runs. If a call fails preparation, the batch returns errors without effects. A valid caller can retry the valid operation with a fresh correlation ID.
-3. For a write, the review callback receives the exact action ID, digest, ticket, target status, resource version and expiry. Its authenticated decision must name that digest. The fixture's automatic synthetic reviewer exists only to make offline testing repeatable. There is no approval tool exposed to the model, and the runner requires a reviewer for writes.
-4. Agent Guard consumes the approval once. The handler checks the tenant, cancellation and resource version again immediately before the effect. The backend uses a host-generated operation ID, separate from provider IDs and approval IDs, for its receipt.
-5. The read result contains only ticket ID, status, version and bounded public text. A write returns only ticket ID, status and version. Neither returns the private notes, tenant identifier or internal receipt ID.
+### 3. Connect your own transport and reviewer
 
-The shared runner treats a provider ID only as conversation correlation. It rejects duplicate IDs both within a response and across the run. Replaying a prepared action or applying another action's approval also fails. Each host instance supports a single run and is revoked on completion or failure. A new provider ID does not bypass approval. Repeating an approved request for an already resolved ticket makes no additional state change.
+The runner takes two functions from you: `transport`, which sends one request to the
+provider and returns the completed JSON response, and `review`, which shows the change to
+a person and returns the decision.
 
-## Provider adapters
-
-[openai-responses.mjs](../../examples/providers/openai-responses.mjs) exports `runOpenAITicketWorkflow`. It uses the Responses API shape, sends only synchronous direct function tools, parses complete arguments, preserves the response output items including reasoning, and sends a `function_call_output` for each original `call_id`. Requests set `stream: false` and `store: false`. Current direct caller metadata and absent legacy metadata are both supported. [OpenAI function calling](https://developers.openai.com/api/docs/guides/function-calling)
-
-[anthropic-messages.mjs](../../examples/providers/anthropic-messages.mjs) exports `runAnthropicTicketWorkflow`. It preserves the assistant content, including thinking signatures, and puts all `tool_result` blocks in the immediately following user message. Each result uses the original `tool_use_id`. Tool errors set `is_error: true`. Ticket text stays inside the tool-result block. [Anthropic tool results](https://platform.claude.com/docs/en/agents-and-tools/tool-use/handle-tool-calls)
-
-Both use [workflow.mjs](../../examples/providers/workflow.mjs). A response is copied and bounded before dispatch. Unsupported server tools, hosted-code callers, toolset members, namespace dispatch, asynchronous calls, stream events and partial responses stop the run before any call in that response executes. OpenAI must return a completed response and no explicitly incomplete function call. Anthropic must return `tool_use` or `end_turn` consistent with its content. An incomplete argument object is never executed. To add streaming, first assemble and validate a completed response through the same boundary.
-
-Multiple calls in one provider response are supported. They execute sequentially after preflight so that shared state and approvals have a predictable order. There is no transaction spanning a whole batch. If the first approved action executes and a later action fails, the earlier effect remains. Both success and error results are returned under their original correlation IDs.
-
-## Connecting an application transport
-
-The exported functions accept a trusted `transport(request, { signal })` callback that returns the provider's completed JSON response. They do not import provider SDKs, read environment variables, select credentials or perform HTTP themselves. A host can use its configured SDK clients with automatic retries disabled:
+Save this as `ticket-demo.mjs` in the repository root and run `node ticket-demo.mjs`. It
+uses a scripted transport so that it runs without a provider.
 
 ```js
 import { createTicketHost } from './examples/providers/protected-ticket.mjs';
 import { runOpenAITicketWorkflow } from './examples/providers/openai-responses.mjs';
-import { runAnthropicTicketWorkflow } from './examples/providers/anthropic-messages.mjs';
+import { toolResponse, finalResponse } from './examples/providers/replay.mjs';
 
-// openai and anthropic are host-created SDK clients, with host-owned credentials.
-// requestAuthenticatedReview is the application's review UI/service, not model input.
-const common = {
-  review: (request, { signal }) => requestAuthenticatedReview(request, { signal }),
+// Stand-in for the provider: two scripted responses in the OpenAI Responses shape.
+const scripted = [
+  toolResponse('openai', [{ id: 'call_1', name: 'tickets_update', args: { ticket_id: '123', status: 'resolved' } }]),
+  finalResponse('openai'),
+];
+
+const host = createTicketHost();
+const result = await runOpenAITicketWorkflow({
+  model: 'your-model-id',
+  host,
+  // Replace with a call to your provider SDK. It must return the completed JSON response.
+  transport: async (request, { signal }) => scripted.shift(),
+  // Replace with your review screen. It must return the digest it was shown.
+  review: async (request, { signal }) => {
+    console.log('review:', request.ticketId, '->', request.status);
+    return { approved: true, digest: request.digest, approverId: 'reviewer-1', expiresAt: request.expiresAt };
+  },
   maxTurns: 6,
   maxOutputTokens: 1024,
   timeoutMs: 15_000,
-};
-
-await runOpenAITicketWorkflow({
-  ...common,
-  model: configuredOpenAIModel,
-  host: createTicketHost(),
-  transport: (request, { signal }) => openai.responses.create(request, {
-    signal, maxRetries: 0,
-  }),
 });
 
-await runAnthropicTicketWorkflow({
-  ...common,
-  model: configuredAnthropicModel,
-  host: createTicketHost(),
-  transport: (request, { signal }) => anthropic.messages.create(request, {
-    signal, maxRetries: 0,
-  }),
-});
+console.log(result.outcomes.map(outcome => outcome.ok));
+console.log(host.snapshot().tickets.find(ticket => ticket.id === '123').status);
 ```
 
-The review service must authenticate the operator and display the reviewed tenant, target and change. Approval returns `{ approved: true, digest, approverId, expiresAt }`; rejection returns `{ approved: false }`. The digest must match the request. The reviewer can shorten the displayed expiry; neither a later callback nor reopening that request can extend it. A callback that blindly returns approval is not human review. Keep the host administration object and full `snapshot()` diagnostic state out of model context.
+With real SDK clients, the two `transport` functions look like this. Turn the SDK's
+automatic retries off, so that a request is never sent twice behind the runner's back:
 
-This wiring is not a live smoke-test command. A live application must supply its own credential storage, permitted endpoint, bounded raw HTTP response reader, transport timeout, cancellation and provider spend policy before using it. The runner's byte cap applies to decoded JSON, after the transport returns. It cannot limit bytes already buffered by an SDK or stop a remote request whose transport ignores cancellation. Do not enable SDK retries, hosted tools or a separate raw tool dispatcher around this boundary. No SDK dependency or paid provider run was added to this milestone.
+```js
+// OpenAI, with runOpenAITicketWorkflow
+transport: (request, { signal }) => openai.responses.create(request, { signal, maxRetries: 0 }),
 
-## Limits and recovery scope
+// Anthropic, with runAnthropicTicketWorkflow
+transport: (request, { signal }) => anthropic.messages.create(request, { signal, maxRetries: 0 }),
+```
 
-If preparation or review denies a call, its handler did not run. If a submitted
-call fails without a usable result, the runner stops the batch, revokes the task
-and raises `TOOL_OUTCOME_UNCONFIRMED` to the **host**, with the host action ID.
-It sends no further provider requests. The example's host-only
-`lookupWriteReceipt(actionId)` looks up the actual write receipt while this
-process lives; a missing receipt means unconfirmed. In a real deployment, persist
-the action-to-backend-operation binding before dispatch. Check the backend receipt and the durable
-executor's action status before considering another attempt. A transport timeout
-or malformed result cannot prove that a write did not happen. A model's final
-text is never a receipt; show success to an operator only from verified backend state.
-If a later provider turn fails after a confirmed call, the host error carries
-`confirmedActions` with its host action references. If task revocation also
-fails, the host receives `TASK_REVOCATION_UNCONFIRMED`; stop the dispatcher and
-verify authority has been withdrawn. Do not start the whole workflow again.
+Your `review` function must authenticate the person and show them the tenant, the ticket
+and the change from the `request` object (`tenantId`, `ticketId`, `status`,
+`resourceVersion`, `expiresAt`). To approve, return
+`{ approved: true, digest, approverId, expiresAt }` with the `digest` from the request;
+`expiresAt` may be earlier than the one shown, never later. To refuse, return
+`{ approved: false }`. A function that always approves is not a review.
 
-Defaults are six provider requests, four calls per response, 1,024 output tokens per request, 64 KiB per decoded provider response, 256 KiB per assembled request/history, 8 KiB per tool result, and a 15-second run timeout. Overrides have fixed upper bounds in the runner. The Guard task has a 60-second deadline, six admitted tool calls, one concurrent call and eight synthetic cost units. Reads cost one unit and writes cost two. Those units test tool-budget admission; they do not represent dollars or cap provider billing.
+Each host from `createTicketHost()` serves one run. Keep the host object and its
+`snapshot()` output away from the model.
 
-Abort and timeout revoke the host task, reject the pending wait and prevent a late transport or review response from dispatching an action. They do not roll back an action already executed. The synthetic backend performs its checked effect synchronously. A real asynchronous backend must enforce its own cancellation and version check at the actual write, keep durable idempotency receipts, and reconcile unknown outcomes before retrying. For crash recovery and externally running workers, use the existing durable executor patterns rather than treating this in-memory fixture as production persistence.
+## What you should see
 
-The fixture demonstrates an enforceable integration contract for a host that owns dispatch. It does not sandbox malicious host code or remove alternate clients the application exposes. No real ticket service, identity provider, paid model behavior or representative attack success rate was tested. Model-loop evaluations and production isolation remain separate milestones.
+Step 1 prints one line per provider:
 
-## Regression coverage
+```text
+{"provider":"openai","mode":"offline-synthetic-replay","reads":1,"approvedWrites":1,"forbiddenEffects":0,"privateCanaryDisclosures":0,"assertions":"passed"}
+{"provider":"anthropic","mode":"offline-synthetic-replay","reads":1,"approvedWrites":1,"forbiddenEffects":0,"privateCanaryDisclosures":0,"assertions":"passed"}
+```
 
-The same fixture can use a dedicated `DurableExecutor` via `createTicketHost({ executor })`. Enable `decisionTraces` on that executor to collect bounded, tenant-scoped lifecycle events and explicit human refusals. The host can inspect or export those events through the [decision trace API](decision-traces.md). No trace is added to provider requests. The executor persists its authority ledger, but this example's ticket store remains in memory; passing a durable executor does not provide ticket persistence or production crash recovery.
+One read, one approved change, no change to the other tenant's ticket, and no request to
+the provider that contains the private notes. A failed check exits with a non-zero status.
 
-[provider-ticket-traces.test.mjs](../../scripts/provider-ticket-traces.test.mjs) runs both protocols through that executor. It reconstructs one approved write and a rejected foreign-tenant write, verifies human refusal prevents admission, scans snapshots and exports for private identifiers and customer text, and confirms failed export followed by retry cannot repeat a ticket effect.
+Step 3 prints:
 
-[provider-ticket.test.mjs](../../scripts/provider-ticket.test.mjs) exercises both protocols against the shared backend. It checks permitted reads and exactly one approved state change, foreign tenants, unknown tools, extra authority arguments, missing/denied/mismatched/expired approval, prepared-action replay, backend version changes, caller mutation, complete batch preflight, parallel result correlation, duplicate IDs, malformed and partial responses, unsupported execution contexts, private canaries, hostile public ticket text, abort, late completion after timeout, turn/call/cost limits and directory-alias CLI launch. The default fixture carries current explicit direct-caller metadata; legacy absence is also tested.
+```text
+review: 123 -> resolved
+[ true ]
+resolved
+```
 
-These are deterministic offline integration tests. Their oracle is the actual backend state and serialized provider requests, not whether an assistant says it refused an action.
+## How a call is handled
 
-Validation on 4 November 2026 used Node 26.12.0. `npm run check` passed 749 tests and the clean-package consumer checks, including both provider examples and the installed Agent Map commands. Its five opt-in Docker tests were then run separately with the cached pinned image `alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca3e1c20870c75c5ce2c1186d30`; all five passed with zero skips. Thus all 754 tests were exercised across the two runs. The 35 provider-workflow tests also passed on Node 22.13.0. Docker checks ran through the local Docker daemon on macOS and do not certify the separate native platform matrix.
+[protected-ticket.mjs](../../examples/providers/protected-ticket.mjs) is the host. It owns
+the ticket store, the task, the two tools (`tickets_read` and `tickets_update`) and the
+approval step. [workflow.mjs](../../examples/providers/workflow.mjs) is the runner shared
+by both providers; the adapters
+[openai-responses.mjs](../../examples/providers/openai-responses.mjs) and
+[anthropic-messages.mjs](../../examples/providers/anthropic-messages.mjs) only differ in
+message format.
 
-The [model-selected trial runner](model-selected-provider-trials.md) supplies a bounded, opt-in provider transport and measures actual tool decisions on this synthetic host.
+1. The runner copies and size-checks the provider's response. It stops the run before
+   anything executes if the response is incomplete or contains something it does not
+   support: hosted tools, streaming events or asynchronous calls.
+2. The host looks up the ticket's tenant and version in its own store. The model cannot
+   supply a tenant, a principal, an approval or any extra argument.
+3. The guard prepares every call in the response before any of them runs. If one fails,
+   none of the calls in that response runs.
+4. For a change, the reviewer receives the exact action. The approval is tied to that
+   action's digest and works once.
+5. The tool checks the tenant and the ticket version again just before it writes.
+6. The model gets back the ticket id, status and version, and for a read a bounded piece
+   of public text. It never gets the private notes.
+
+Calls in one response run one after another, with no transaction across them: if the
+first succeeds and the second fails, the first stays done.
+
+## Limits
+
+| Setting | Default | Allowed |
+| --- | --- | --- |
+| `maxTurns` (provider requests per run) | 6 | 1 to 12 |
+| `maxCallsPerTurn` (tool calls in one response) | 4 | 1 to 8 |
+| `maxOutputTokens` (per request) | 1,024 | 16 to 4,096 |
+| `maxResponseBytes` (one decoded provider response) | 64 KiB | 256 bytes to 256 KiB |
+| `maxHistoryBytes` (one assembled request) | 256 KiB | 4 KiB to 1 MiB |
+| `timeoutMs` (whole run) | 15,000 | 1 to 60,000 |
+
+A tool result is at most 8 KiB. The task behind each host has a 60-second deadline, six
+tool calls and a budget of eight made-up cost units (a read costs one, a change two).
+The units are not money and do not limit what the provider bills you.
+
+What the example does not do:
+
+- **It keeps tickets in memory.** It is a model for your integration, not a ticket system.
+- **It does not limit the network.** The response size limit applies after your transport
+  returns. Your transport must set its own timeout, size limit and spending limit.
+- **It does not undo a finished action.** A timeout or abort revokes the task and stops
+  further calls. A change that already ran stays.
+- **It only protects calls that go through it.** If your application gives the model
+  another way to reach the ticket system, the guard does not see it.
+
+## What can go wrong
+
+A refused call does not stop the run. It appears in `result.outcomes` with `ok: false` and
+an `error` code, and the model is told. The other codes below are thrown by the runner and
+end the run.
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `review-ticket.mjs` prints "No interactive terminal" | Input or output is piped. | Run it directly in a terminal. |
+| An entry in `result.outcomes` has `error: "REVIEW_REQUIRED"` | A change was requested and no `review` function was given. | Pass `review`. |
+| An outcome has `error: "REVIEW_DENIED"` | The reviewer returned `{ approved: false }`. | Expected. The tool did not run. |
+| An outcome has `error: "APPROVAL_INVALID"` | The reviewer returned a different `digest` or a later `expiresAt`. | Return the digest from the request and an `expiresAt` no later than the request's. |
+| `INVALID_CONFIGURATION` | A setting is outside the allowed range, or `model`, `transport` or `host` is missing. | Check the limits table. |
+| `INVALID_TASK` | The same host was used for a second run. | Call `createTicketHost()` again. |
+| `INCOMPLETE_RESPONSE`, `UNSUPPORTED_CALLER`, `UNSUPPORTED_TOOL_OR_CONTENT` | The provider returned a partial response, a hosted tool call or another unsupported item. Nothing in that response ran. | Send completed, non-streaming responses with only these two function tools. |
+| `WORKFLOW_TIMEOUT`, `WORKFLOW_ABORTED` | The run timed out or your `signal` aborted it. The task was revoked. | Start a new run with a new host. Check first whether a change already ran. |
+| `TOOL_OUTCOME_UNCONFIRMED` | A call was sent to the tool and no usable result came back. The run stopped and the task was revoked. The change may or may not have happened. | Do not retry. Look up the real result in your backend. In the example, `host.lookupWriteReceipt(actionId)` does this. |
+| `TASK_REVOCATION_UNCONFIRMED` | The run failed and revoking the task also failed. | Stop sending calls and confirm that the task can no longer act before you do anything else. |
+
+When a run fails after some calls succeeded, the error carries `confirmedActions`: the
+calls that did finish. Do not start the whole workflow again without checking them. The
+model's final text is never proof that a change happened. Show success to a person only
+from what your backend recorded.
+
+## Next steps
+
+- [Decision traces](decision-traces.md): pass a `DurableExecutor` created with
+  `decisionTraces` to `createTicketHost({ executor })` to record each decision.
+- [Measure a live model on the protected ticket workflow](model-selected-provider-trials.md).

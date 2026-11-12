@@ -49,7 +49,7 @@ function setup(t, options = {}) {
 
 for (const [name, options] of [
   ['the default per-family cap', {}],
-  ['only the shared caps', { maxReceiptsPerFamily: 4096 }],
+  ['the per-tenant cap', { maxReceiptsPerFamily: 256 }],
 ]) {
   test(`300 executions by another tenant leave this tenant's receipt intact under ${name}`, async t => {
     const f = setup(t, options);
@@ -91,7 +91,7 @@ test('a pruned reconciled failure keeps its outcome, charge and evidence hash', 
   assert.throws(() => f.executor.execution('beta', failing.id), { code: 'INVALID_PREPARED' });
 });
 
-test('the task client accepts a PRUNED receipt only with an outcome', async t => {
+test('the task client accepts a PRUNED receipt with a settled outcome, or with nothing else', async t => {
   const fake = body =>
     new ExecutorClient({
       endpoint: 'http://127.0.0.1:1/',
@@ -104,8 +104,10 @@ test('the task client accepts a PRUNED receipt only with an outcome', async t =>
     outcome: 'SUCCEEDED',
     charged: 1,
   });
+  // The stub was evicted too: the receipt says only that the action settled.
+  assert.deepEqual(await fake({ id: 'a', status: 'PRUNED' }).execution('a'), { id: 'a', status: 'PRUNED' });
   for (const body of [
-    { id: 'a', status: 'PRUNED' },
+    { id: 'a', status: 'PRUNED', charged: 1 },
     { id: 'a', status: 'PRUNED', outcome: 'UNKNOWN' },
     { id: 'a', status: 'SUCCEEDED', outcome: 'SUCCEEDED' },
   ]) {

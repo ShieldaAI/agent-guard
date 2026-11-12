@@ -192,9 +192,10 @@ test('generic resources navigate only exact declared bindings and preserve objec
 
 test('paged sections remain usable beyond graph display caps without leaking shared neighborhoods', async () => {
   const map = service([fixture()], { maxGraphNodes: 1 });
-  await assert.rejects(map.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'agent' }), {
-    code: 'MAP_LIMIT_EXCEEDED',
-  });
+  // Past the display cap the graph is left out; the evidence itself still answers.
+  const access = await map.query(scope, 'get_agent_access', { sourceId: 'source', agentId: 'agent' });
+  assert.equal(access.graph, undefined);
+  assert.equal(access.data.graphStatus, 'too_large');
   for (const section of [
     'overview',
     'owners',

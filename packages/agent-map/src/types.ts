@@ -183,6 +183,11 @@ export interface MapProjection {
   >;
   /** `undeclared` reads only: activity in this projection that no declared agent accounts for. */
   readonly undeclared?: MapUndeclaredActivity;
+  /**
+   * A `policy.optional` read found more task/binding/action pairs than one read evaluates and
+   * loaded no policy evidence. Its coverage is unknown, never `not_collected`.
+   */
+  readonly policyEvidenceNotLoaded?: boolean;
 }
 /** A task seen through an enrolled executor that no manifest task binding assigns to a declared agent. */
 export interface MapUndeclaredTask {
@@ -261,6 +266,19 @@ export interface MapView {
   /** `unclaimedIdentities` reads only. */
   readonly unclaimedIdentities?: MapUnclaimedIdentities;
 }
+/** Narrows the policy evidence of a read to the pairs its caller will show. */
+export interface MapPolicySelection {
+  /** Only pairs of this task (native or entity id). */
+  readonly taskId?: string;
+  /** Only pairs of this tool. */
+  readonly tool?: string;
+  /** Only pairs of bindings with this exact resource reference or mapped ARN. */
+  readonly resourceRef?: string;
+  /** Only this action. */
+  readonly action?: string;
+  /** Past the pair limit, answer with `policyEvidenceNotLoaded` instead of failing the read. */
+  readonly optional?: boolean;
+}
 export interface MapReadRequest {
   readonly sourceId?: string;
   readonly agentId?: string;
@@ -275,6 +293,18 @@ export interface MapReadRequest {
   readonly flags?: boolean;
   /** Full graph plus identity reach limited to the buckets visible bindings map to. */
   readonly outsideGuard?: boolean;
+  /**
+   * Owner index only (list_owners): agents, resource bindings and owners, plus, for a team
+   * reader, the nodes that decide which bindings are visible. No policy evidence.
+   */
+  readonly owners?: boolean;
+  /**
+   * Policy evidence of the current projection. Omitted: every visible task/binding/action pair,
+   * at most 512 per read (more fails the read). `false`: none, so the read is not bound by
+   * that limit. An object narrows the pairs. Summary, history, flags, owner and discovery
+   * reads never load policy evidence.
+   */
+  readonly policy?: false | MapPolicySelection;
   /**
    * All-teams readers only. Per source, counts of tasks and caller principals that no declared
    * agent accounts for; no nodes are loaded. With `sourceId` and `page`, also one page of them.

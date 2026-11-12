@@ -6,4 +6,5 @@ export {
   type PilotReviewPolicy,
   type PilotReviewBundle,
   type PilotReviewResult,
+  type PilotReviewCheck,
 } from './pilot-review.js';

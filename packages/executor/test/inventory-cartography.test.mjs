@@ -2,13 +2,13 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { DurableExecutor } from '../dist/index.js';
 import {
-  DurableExecutor,
   composeInventorySnapshot,
   validateInventoryManifest,
   createInventoryObserverToken,
   startInventoryServer,
-} from '../dist/index.js';
+} from '../dist/entry-inventory.js';
 import { LedgerStore } from '../dist/store.js';
 
 const fixture = JSON.parse(readFileSync(new URL('fixtures/inventory-manifest-v2.json', import.meta.url), 'utf8'));

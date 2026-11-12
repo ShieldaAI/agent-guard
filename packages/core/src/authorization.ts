@@ -12,6 +12,39 @@ export interface AuthorityState {
   revoked: boolean;
 }
 
+/**
+ * The same authority as AuthorityState, with grants and recipients already indexed so each
+ * check is a constant-time lookup. Build it once per task and reuse it for every check;
+ * `snapshot` and `revoked` may be getters that read live counters. A grant on `'*'` covers
+ * every resource of its tool.
+ */
+export interface AuthorityView {
+  readonly identity: Readonly<TaskIdentity>;
+  /** Tool name to the resource IDs granted for it. */
+  readonly grants: ReadonlyMap<string, ReadonlySet<string>>;
+  readonly allowedRecipients: ReadonlySet<string>;
+  readonly allowControlPlane: boolean;
+  readonly budget: Readonly<Budget>;
+  readonly snapshot: Readonly<Pick<TaskSnapshot, 'calls' | 'concurrent' | 'spent' | 'reserved'>>;
+  readonly revoked: boolean;
+}
+
+function granted(grants: AuthorityState['grants'] | AuthorityView['grants'], tool: string, resource: string): boolean {
+  if (grants instanceof Map) {
+    const resources = grants.get(tool);
+    return resources !== undefined && (resources.has(resource) || resources.has('*'));
+  }
+  return (grants as readonly Capability[]).some(
+    grant => grant.tool === tool && (grant.resources.includes(resource) || grant.resources.includes('*')),
+  );
+}
+function allowsRecipient(
+  recipients: AuthorityState['allowedRecipients'] | AuthorityView['allowedRecipients'],
+  recipient: string,
+): boolean {
+  return recipients instanceof Set ? recipients.has(recipient) : (recipients as readonly string[]).includes(recipient);
+}
+
 export function containsLiteralSecret(value: Json, secrets: readonly string[]): boolean {
   if (typeof value === 'string') return secrets.some(secret => value.includes(secret));
   if (value === null || typeof value !== 'object') return false;
@@ -31,10 +64,15 @@ export function containsLiteralSecret(value: Json, secrets: readonly string[]): 
  */
 export type AuthorityPhase = 'prepare' | 'dispatch';
 
-/** The mandatory gates shared by embedded and durable executors; never an authentication API. */
+/**
+ * The mandatory gates shared by embedded and durable executors; never an authentication API.
+ * `ancestors` lists the task first, then each parent up to the root, as AuthorityState
+ * objects (grants as arrays) or precomputed AuthorityView objects. Both forms decide the same.
+ * Throws a GuardError naming the first gate that refuses the action.
+ */
 export function assertActionAuthority(
   action: Readonly<Action>,
-  ancestors: readonly AuthorityState[],
+  ancestors: readonly (AuthorityState | AuthorityView)[],
   options: {
     now: number;
     maxCost: number;
@@ -59,15 +97,9 @@ export function assertActionAuthority(
   for (const ancestor of ancestors) {
     if (ancestor.revoked) deny('TASK_REVOKED');
     if (options.now >= ancestor.budget.deadline) deny('TASK_EXPIRED');
-    if (
-      !ancestor.grants.some(
-        grant =>
-          grant.tool === action.tool && (grant.resources.includes(action.resourceId) || grant.resources.includes('*')),
-      )
-    )
-      deny('GRANT_DENIED');
+    if (!granted(ancestor.grants, action.tool, action.resourceId)) deny('GRANT_DENIED');
     if (options.controlPlane && !ancestor.allowControlPlane) deny('CONTROL_PLANE_DENIED');
-    if (action.external && (!action.recipient || !ancestor.allowedRecipients.includes(action.recipient)))
+    if (action.external && (!action.recipient || !allowsRecipient(ancestor.allowedRecipients, action.recipient)))
       deny('RECIPIENT_DENIED');
     if (ancestor.snapshot.calls >= ancestor.budget.maxCalls) deny('CALL_BUDGET_EXCEEDED');
     // Preparation treats transient usage as zero: a budget that can never admit the call

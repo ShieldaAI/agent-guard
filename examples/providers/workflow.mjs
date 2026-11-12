@@ -1,4 +1,5 @@
-import { GuardError, immutableJson } from '@shieldaai/agent-guard';
+import { isGuardError } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { TICKET_TOOLS, TASK_TEXT, SYSTEM_TEXT } from './protected-ticket.mjs';
 
 export class WorkflowError extends Error {
@@ -101,7 +102,7 @@ function decodeAnthropic(response) {
 function errorResult(error) {
   return {
     ok: false,
-    error: error instanceof GuardError || error instanceof WorkflowError ? error.code : 'HOST_OPERATION_FAILED',
+    error: isGuardError(error) || error instanceof WorkflowError ? error.code : 'HOST_OPERATION_FAILED',
   };
 }
 

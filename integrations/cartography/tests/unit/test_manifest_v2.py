@@ -159,7 +159,15 @@ def test_host_identity_is_stable_across_names_but_conflicting_definitions_fail()
         binding["dependsOn"] = []
     validate_manifest(snapshot["manifest"])
     duplicate["target"]["kind"] = "queue"
-    with pytest.raises(InventoryValidationError, match="^INVENTORY_MANIFEST_BINDING_INVALID$"):
+    # The executor's TypeScript validator reports the same condition with this code.
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_MANIFEST_REFERENCE_INVALID$"):
+        validate_manifest(snapshot["manifest"])
+
+
+def test_execution_binding_to_an_undeclared_deployment_is_a_reference_error():
+    snapshot = host_v2()
+    snapshot["manifest"]["executionBindings"][0]["deploymentId"] = "undeclared-deployment"
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_MANIFEST_REFERENCE_INVALID$"):
         validate_manifest(snapshot["manifest"])
 
 

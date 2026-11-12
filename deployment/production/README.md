@@ -14,22 +14,19 @@ is for an existing private configuration.
 The supported deployment is one Linux host, one service owner, and local durable
 POSIX filesystems with reliable SQLite locking and synchronization. The process
 owns an encrypted authority database and a separately encrypted ticket database.
-Each has its own rollback witness. There is no distributed writer or automatic
-failover. A second owner fails to acquire the store. Size and availability needs
-may justify another deployment architecture; this profile does not claim HA.
+Each has its own rollback witness. There is no distributed writer, automatic
+failover or high availability. A second owner fails to acquire the store.
 
 ## Build and local verification
 
-Use an independently reviewed Linux Node image from a supported release line,
-pinned by repository digest. The build refuses versions below the current
-security floor: 22.23.4, 24.22.1 or 26.12.1. These floors cover published fixes
-through October 21, 2026; review newer advisories before each deployment. The
-runtime removes unused npm, Corepack and Yarn tooling. Build from the repository
-root after `npm run check` passes. No mutable image default or automatic Compose
-pull is configured.
-The [dated advisory review](advisories-2026-11-06.md) records the base-image
-findings, removed runtime tooling and the unresolved November Node security
-pre-alert. A pinned digest does not eliminate the need for security updates.
+Supply an independently reviewed Linux Node image, pinned as
+`repository@sha256:digest`. The image must run Node 22.23.4 or later on the 22
+line, 24.22.1 or later on the 24 line, or 26.12.1 or later on the 26 line. The
+build refuses an older patch, another release line and an image reference that
+is not a digest. Review newer Node security releases before each deployment; a
+pinned digest does not update itself. The runtime image removes npm, Corepack
+and Yarn. Build from the repository root after `npm run check` passes. There is
+no default base image, and Compose never pulls an image.
 
 ```sh
 export NODE_IMAGE='YOUR_REVIEWED_NODE_IMAGE@sha256:YOUR_REVIEWED_DIGEST'
@@ -46,9 +43,8 @@ The smoke script accepts no deployment paths. It creates disposable fixtures,
 performs a reviewed update with an interrupted receipt, rotates both stores,
 reconciles without repeating the effect, archives the completed task and rejects
 a stale authority copy against the current witness. It removes its fixtures.
-A process/container restart test is not physical host power-loss validation.
-Revalidate the chosen Linux filesystem, storage synchronization, backup controls
-and recovery procedure before using the host for real work.
+[Container verification](#container-verification) states what these checks do
+not cover.
 
 ## Provision private storage and identity
 
@@ -79,6 +75,20 @@ export AGENT_OPS_CONFIG=/etc/agent-ops
 export AGENT_OPS_HISTORY=/srv/agent-ops/history
 ```
 
+Compose reads these environment variables. It creates no missing host directory.
+
+| Variable | Required | Meaning |
+| --- | --- | --- |
+| `AGENT_OPS_IMAGE` | Yes | Reviewed image: a locally built image ID or a repository digest. Never pulled. |
+| `AGENT_OPS_DATA` | Yes | Host directory for both databases, mounted at `/var/lib/agent-ops`. |
+| `AGENT_OPS_WITNESS` | Yes | Host directory for the witnesses and the history mirror, mounted at `/var/lib/agent-ops-witness`. |
+| `AGENT_OPS_CONFIG` | Yes | Host directory for the config, keyring and secret files, mounted at `/run/agent-ops`. Read-only for the running service. |
+| `AGENT_OPS_HISTORY` | Yes | Host directory for encrypted history, mounted at `/var/lib/agent-ops-history`. Read-only for the running service. |
+| `AGENT_OPS_CONFIG_FILE` | No | Config path inside the container, used by the service command and the health check. Default `/run/agent-ops/config.json`; onboarding uses `/run/agent-ops/company/config.json`. |
+| `AGENT_OPS_PORT` | No | Loopback port on the host that Compose maps to container port 8443. Default `8443`. |
+| `AGENT_OPS_ONBOARDING` | `onboarding` profile | Host directory with the company inputs, mounted read-only at `/run/company`. |
+| `AGENT_OPS_CUSTODY_DATA`, `AGENT_OPS_CUSTODY_WITNESS`, `AGENT_OPS_CUSTODY_KEYS`, `AGENT_OPS_BACKUPS` | `custody` profile | Offline custody directories. See the [custody runbook](custody.md). |
+
 Provision reviewed `config.json` from [config.example.json](config.example.json),
 the HTTPS certificate/key, the confidential OIDC client secret, and a private
 `tickets.json` seed under `/etc/agent-ops`. Every file must be a regular single-link
@@ -88,19 +98,37 @@ Compose environment variables, image layers, command arguments or source control
 Configured database, witness, keyring, history, mirror and secret-file paths must
 fit **512 UTF-8 bytes including the final filename**. Onboarding checks the
 generated paths before publishing a bundle; startup and preflight enforce the
-same bound so an accepted installation remains compatible with offline recovery.
+same bound so the installation stays compatible with offline recovery.
 `CONFIG_PATH_TOO_LONG` requires a shorter private mount or directory path, not a
 larger storage quota.
 Bind the entire config directory so atomic keyring replacement works; runtime
 mounts that directory read-only. Protect its host copy and backups separately.
 
+Set `"port": 8443` and `"listenHost": "0.0.0.0"` in the config for the Compose
+deployment; `onboard` writes both. Compose publishes container port 8443, and
+the health check probes `port`, or 8443 when `port` is absent. Without `port`
+the service listens on the port of `publicOrigin`, or on 443 when the origin
+names none. Unless that port is 8443, Compose does not publish it and the health
+check fails; 443 is also a privileged port that the nonroot container is not set
+up to use. The config loader accepts 1024 to 65535 for `port`. Without
+`listenHost` the service listens on `127.0.0.1` inside the container, which the
+published port cannot reach.
+
 Set `publicOrigin` to the exact external HTTPS origin, including the port when
-nondefault; enroll `${publicOrigin}/auth/callback` at the OIDC provider. Use exact
-issuer subjects and explicit per-tenant roles. The sample subjects/domains/client
-ID are placeholders, not usable identities. For a private issuer CA, add `caFile`
-under `oidc`. `endpointOrigins` explicitly enrolls different origins used by
+nondefault; enroll `${publicOrigin}/auth/callback` at the OIDC provider. The
+port in `publicOrigin` is the one users actually reach: it differs from `port`
+and from `AGENT_OPS_PORT` when a passthrough in front of the service listens on
+another port.
+
+Use exact issuer subjects and explicit per-tenant roles. The sample
+subjects/domains/client ID are placeholders, not usable identities. For a
+private issuer CA, add `caFile` under `oidc`. `endpointOrigins` explicitly enrolls different origins used by
 provider endpoints. `clientAuthMethod` may select a supported confidential-client
-method; the secret is still loaded from its private file.
+method; the secret is still loaded from its private file. The optional
+`sessionTtlMs`, `rateLimitPerMinute` and `signInFlowsPerClient` keys and the
+`requests` policy are described in the
+[Agent Ops README](../../apps/agent-ops/README.md#identity-and-permissions).
+The loader rejects unknown keys.
 
 Seed format is `{ "tickets": [{ "id": "T-1", "tenantId": "your-tenant", "title":
 "Your enrolled ticket", "status": "open" }] }`. The default cap is 500 tickets; an empty initial seed is supported. The configured
@@ -145,9 +173,7 @@ or account binding; sign in through the browser after startup to verify both.
 The `onboarding` Compose profile has no published ports, reads `/run/company`
 read-only, and may use outbound HTTPS for IdP discovery. The profile is inactive
 during ordinary startup. It does not automatically download images or enroll a
-hosted account. The `maintenance` profile retains `network_mode: none`.
-`AGENT_OPS_CONFIG_FILE` controls both the runtime command and healthcheck; its
-default remains `/run/agent-ops/config.json` for existing deployments. Keep the
+hosted account. The `maintenance` profile has `network_mode: none`. Keep the
 original input secrets and generated bundle under your key-custody policy.
 
 ## Reviewed capacity changes and ticket imports
@@ -213,8 +239,8 @@ importing tickets or increasing a limit.
 
 ## First enrollment from an existing private configuration
 
-Run these from the repository root with the five `AGENT_OPS_*` environment
-variables above. `keygen` refuses an existing keyring. `init` requires all four
+Run these from the repository root with `AGENT_OPS_IMAGE` and the four directory
+variables set. `keygen` refuses an existing keyring. `init` requires all four
 store/witness files to be absent; normal startup never enrolls missing authority.
 
 ```sh
@@ -227,11 +253,17 @@ docker compose -f deployment/production/compose.yaml run --rm --entrypoint node 
 docker compose -f deployment/production/compose.yaml up -d agent-ops
 ```
 
-Compose publishes only `127.0.0.1:8443` by default. Provide a reviewed TCP/TLS
-passthrough or secure local access path to that listener; do not expose it by
-changing the bind address without your deployment's access controls. The service
-terminates TLS and requires the configured Host header. It rejects `Forwarded`,
+Compose publishes the service only on `127.0.0.1`, port `AGENT_OPS_PORT`. Provide
+a reviewed TCP/TLS passthrough or secure local access path to that listener; do
+not expose it by changing the bind address without your deployment's access
+controls. The service terminates TLS and requires the configured Host header. It rejects `Forwarded`,
 `X-Forwarded-*` and `X-Auth-*` headers; proxy identity headers cannot grant roles.
+Behind a passthrough the service sees one client address, the passthrough's, for
+every user, so its own per-address limits (requests per minute, connections,
+anonymous request slots, pending sign-ins) are shared by everyone. Enforce
+per-client limits on connections, concurrent requests and new sign-ins at the
+passthrough or firewall; this is required, not optional. See
+[limits per client address](../../apps/agent-ops/README.md#identity-and-permissions).
 The healthcheck connects inside the container, pins the peer certificate to the
 configured certificate bytes, sends the correct Host, and asks `/health/ready`.
 It sends no user credentials. Readiness checks both stores; liveness only reports
@@ -252,12 +284,10 @@ docker compose -f deployment/production/compose.yaml ps
 docker compose -f deployment/production/compose.yaml logs --tail 100 agent-ops
 ```
 
-The process emits redacted lifecycle/error codes and periodic request counts,
-unresolved counts and capacity warnings. Alert on an absent/unhealthy service,
-`START_FAILED`, `STORE_HEALTH_FAILED`, repeated uncertain receipts, capacity
-warnings and low disk space. Export logs to your organization's collector if
-retention beyond the bounded local log is needed. The bounded activity/audit lists
-are operational records, not a complete external audit archive.
+The process writes one JSON line per lifecycle, status and security event, with
+fixed codes and no secrets. The [monitoring guide](monitoring.md) lists every
+event, the alert thresholds and the collector checks. Compose keeps three 10 MB
+log files; export logs to your organization's collector for longer retention.
 
 ## Offline key custody and rotation
 
@@ -309,16 +339,19 @@ both stores and the complete history closure, preserves existing damaged files,
 and never rewinds a witness or authorizes replay. Follow the exact commands and
 directory re-enrollment steps in the [recovery runbook](custody.md).
 
-Existing installations explicitly enroll the complete history mirror before
-claiming this protection. Recovery does not cover simultaneous loss of witness
-custody, its mirror or required keys. Keep these in an independent failure domain
-and test the actual storage's durability. The [production acceptance review](../../docs/support-and-limits.md)
-separates repository fault-test evidence from company installation acceptance.
+Existing installations must explicitly enroll the complete history mirror to get
+this protection. Recovery does not cover simultaneous loss of witness custody,
+its mirror or required keys. Keep these in an independent failure domain.
+[Support and limits](../../docs/support-and-limits.md) lists the limits of this
+reference app.
 
 The two application stores are linked by their stable authority identity. Missing
 or mismatched receipts leave outcomes unconfirmed. Reconciliation may settle the
 original action from its exact backend receipt; absence of evidence never permits
-a speculative retry or a reset of spent authority.
+a speculative retry or a reset of spent authority. An operator may close an
+unconfirmed request as not applied only after reviewing evidence that no receipt
+exists and the ticket is still at the reviewed version; that settles the original
+reservation at zero cost and never submits the change.
 
 The operator page previews task-family retirement and archival with exact counts
 and blockers. Active or uncertain work and external references block it. SDK
@@ -333,11 +366,8 @@ SDK archives retain their original finite limits. Capacity warnings at 80% and
 critical warnings at 95% call for reviewed maintenance before admission stops;
 none of these bounds authorize eviction of receipts or unresolved reservations.
 
-Use the [monitoring guide](monitoring.md) for bounded status/security events,
-latency/capacity alerts and collector verification. Use the [upgrade guide](upgrades.md)
-before changing an image; older readers must not interpret newer authority
-semantics. Installation acceptance remains pending until its real custody,
-recovery, alerts and identity environment have been exercised.
+Use the [upgrade guide](upgrades.md) before changing an image; older readers must
+not interpret newer authority semantics.
 
 ## Reviewed company history
 
@@ -365,9 +395,9 @@ chain, so their cost grows with retained bytes. The current backup adapter safel
 refuses histories above 10,000 segments; plan a reviewed streaming adapter before
 that threshold. External history consumes durable storage indefinitely and is
 not automatically pruned. The runbook details recovery checkpoints, residual
-metadata bounds and the limits of the retained audit evidence.
+metadata bounds and what the history does and does not record.
 
-## Repeatable deployment gate
+## Container verification
 
 The verification stage adds a disposable HTTPS identity-provider fixture. The
 default production stage excludes it and the app's tests. Build both from the
@@ -395,11 +425,13 @@ HTTPS archival and stale-restore refusal. It also verifies history compaction,
 managed backup/key retirement, latest-state repair after primary directory loss,
 preserved unresolved reservations, bounded concurrent reads and overload admission.
 Independent Docker named volumes survive the verifier process and reopen in a
-fresh container. The image comparison proves that production application bytes
-match those tested. Evidence files cannot be overwritten. These disposable
-fixtures do not certify a production
-bind volume, restore automation, a cloud identity tenant or a deployed customer
-service. The [self-hosted onboarding record](../../docs/validation/self-hosted-onboarding-2026-11-05.json)
-records the exact image and those limits. The earlier
-[P0 record](../../docs/validation/production-linux-2026-11-05.json) is retained separately.
-CI repeats the gate on Linux amd64.
+fresh container. The image comparison checks that the production image has the
+same Node version and application files as the verification image, without the
+test fixtures and without a package manager. Neither
+script overwrites an existing output file. CI runs both scripts on Linux amd64.
+
+These checks and the smoke script use disposable fixtures and restart processes
+and containers. They do not cover physical power loss, the synchronization
+behavior of your filesystem and storage, a production bind volume, restore
+automation, a real identity provider or alert delivery. Exercise custody,
+recovery, alerts and sign-in on the real installation before relying on it.

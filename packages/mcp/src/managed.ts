@@ -11,7 +11,18 @@ import {
   type TransportSendOptions,
   type Tool,
 } from '@modelcontextprotocol/client';
-import { boundedJson, compileBoundedSchema, McpBoundaryError, passiveJson } from './boundary.js';
+import {
+  boundedJson,
+  compileBoundedSchema,
+  compileSchemaWithLimits,
+  DEFAULT_MESSAGE_BYTES,
+  McpBoundaryError,
+  messageLimits,
+  passiveJson,
+  wellFormedIdentifier,
+  type JsonLimits,
+  type McpBoundaryErrorCode,
+} from './boundary.js';
 import { mcpToolName, type RegisteredMcpTool } from './index.js';
 import {
   mcpInventorySnapshot,
@@ -65,16 +76,29 @@ export interface ManagedMcpOptions {
    * Default false.
    */
   readsUntrusted?: boolean;
-  /**
-   * maxMessages is a sliding-window rate: at most this many inbound messages per
-   * messageWindowMs (defaults 10,000 per 10 s). Exceeding it quarantines; refresh() recovers.
-   */
+  /** Bounds on this connection. Every value has a default; one outside its range fails INVALID_CONFIGURATION. */
   limits?: {
+    /** Longest one request may take, in milliseconds. 1-120,000, default 10,000. */
     requestTimeoutMs?: number;
+    /** Most bindings, and most definitions the server may advertise. 1-256, default 64. */
     maxEntries?: number;
+    /**
+     * Sliding-window rate: at most this many inbound messages per messageWindowMs.
+     * 1-100,000, default 10,000. Exceeding it quarantines; refresh() recovers.
+     */
     maxMessages?: number;
+    /** Length of the inbound rate window, in milliseconds. 1-600,000, default 10,000. */
     messageWindowMs?: number;
+    /** Most pages read from one list request. 1-16, default 4. */
     maxPages?: number;
+    /**
+     * Largest protocol message in either direction, and so the largest result, in bytes of
+     * JSON. 1,048,576-16,777,216 (1 MiB to 16 MiB), default 1,048,576. A larger result
+     * fails only its own call. When raising it, raise the guard's `limits.maxJsonBytes` to
+     * at least the same value: a result the guard refuses fails RESULT_INVALID and revokes
+     * the task. Call arguments and the advertised registry stay limited to 1 MiB.
+     */
+    maxMessageBytes?: number;
   };
 }
 /** A configured binding the server advertised but this manager could not accept. */
@@ -88,6 +112,12 @@ export interface ManagedMcpRegistration extends RegisteredMcpTool {
   readonly kind: 'tool' | 'resource' | 'prompt';
   readonly remoteName: string;
   readonly descriptor: Json;
+  /**
+   * `sha256:` digest of the kind, remote name and accepted descriptor. Unlike `fingerprint`,
+   * it is the same on every connection and after every refresh while the server advertises
+   * the same definition: store it when you review a tool, and compare it before approving.
+   */
+  readonly descriptorDigest: string;
 }
 const EPOCH_META = 'shielda/connection-epoch';
 const SESSION_META = 'shielda/connection-session';
@@ -130,10 +160,22 @@ function responseId(message: unknown): string | number | undefined {
     : undefined;
 }
 
-function identifier(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim() || value.length > 1024)
-    throw new McpBoundaryError('INVALID_CONFIGURATION');
+/**
+ * The same rule the inventory applies, so a connection that constructs can always be observed.
+ * `code` is INVALID_CONFIGURATION for a host option; a name the server advertised fails with
+ * a code that points at the server instead.
+ */
+function identifier(value: unknown, code: McpBoundaryErrorCode = 'INVALID_CONFIGURATION'): string {
+  if (!wellFormedIdentifier(value) || value.length > 1024) throw new McpBoundaryError(code);
   return value;
+}
+/** The guard's limit on a tool name. A longer operation name could never be registered. */
+const MAX_OPERATION_NAME = 4096;
+/** The name an operation is registered under: `mcp:`, `mcp-resource:` or `mcp-prompt:`, then both parts URL-encoded. */
+function operationName(kind: 'tool' | 'resource' | 'prompt', serverId: string, remoteName: string): string {
+  return kind === 'tool'
+    ? mcpToolName(serverId, remoteName)
+    : `mcp-${kind}:${encodeURIComponent(serverId)}:${encodeURIComponent(remoteName)}`;
 }
 function limit(value: number | undefined, fallback: number, maximum: number): number {
   const result = value ?? fallback;
@@ -143,7 +185,7 @@ function limit(value: number | undefined, fallback: number, maximum: number): nu
 }
 function object(value: Json): Record<string, Json> {
   if (value === null || typeof value !== 'object' || Array.isArray(value))
-    throw new McpBoundaryError('INVALID_ARGUMENTS');
+    throw new McpBoundaryError('ARGUMENTS_INVALID');
   return value as Record<string, Json>;
 }
 function bindings(input: readonly McpBinding[] | undefined): readonly McpBinding[] {
@@ -156,6 +198,85 @@ function bindings(input: readonly McpBinding[] | undefined): readonly McpBinding
       return Object.freeze({ ...binding, name });
     }),
   );
+}
+
+/** ManagedMcpOptions after every check that needs no transport. */
+export interface CheckedManagedMcpOptions {
+  readonly authorize: (() => void) | undefined;
+  readonly protectedValues: readonly string[];
+  readonly readsUntrusted: boolean;
+  readonly identity: Readonly<McpConnectionIdentity>;
+  readonly tools: readonly McpBinding[];
+  readonly prompts: readonly McpBinding[];
+  readonly resources: readonly McpResourceBinding[];
+  readonly requestTimeoutMs: number;
+  readonly maxEntries: number;
+  readonly maxMessages: number;
+  readonly messageWindowMs: number;
+  readonly maxMessageBytes: number;
+  readonly maxPages: number;
+}
+/**
+ * Checks and copies every option that can be judged without a transport, so a caller that
+ * builds the transport later (VerifiedMcpHttpSession) can refuse bad options before any
+ * network call. Throws INVALID_CONFIGURATION, or REGISTRY_LIMIT for too many bindings.
+ */
+export function checkManagedMcpOptions(
+  options: Omit<ManagedMcpOptions, 'guard' | 'transport'>,
+): CheckedManagedMcpOptions {
+  if (options.authorize !== undefined && typeof options.authorize !== 'function')
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
+  const protectedValues = options.protectedValues ?? [];
+  if (
+    !Array.isArray(protectedValues) ||
+    protectedValues.length > 32 ||
+    protectedValues.some(value => typeof value !== 'string' || !value.length || value.length > 16_384)
+  )
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
+  if (options.readsUntrusted !== undefined && typeof options.readsUntrusted !== 'boolean')
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
+  const identity = Object.freeze({
+    serverId: identifier(options.identity.serverId),
+    transportIdentity: identifier(options.identity.transportIdentity),
+    principalId: identifier(options.identity.principalId),
+    tenantId: identifier(options.identity.tenantId),
+  });
+  const tools = bindings(options.tools);
+  const prompts = bindings(options.prompts);
+  const resources = bindings(options.resources) as readonly McpResourceBinding[];
+  for (const resource of resources) identifier(resource.uri);
+  // Encoding can make a name several times longer. Refuse here what the guard would refuse
+  // at registration, where it would only surface as a failed connection.
+  const longest = (kind: 'tool' | 'resource' | 'prompt', list: readonly McpBinding[]): number =>
+    Math.max(0, ...list.map(binding => operationName(kind, identity.serverId, binding.name).length));
+  if (
+    operationName('tool', identity.serverId, 'x').length > MAX_OPERATION_NAME ||
+    Math.max(longest('tool', tools), longest('prompt', prompts), longest('resource', resources)) > MAX_OPERATION_NAME
+  )
+    throw new McpBoundaryError('INVALID_CONFIGURATION');
+  const requestTimeoutMs = limit(options.limits?.requestTimeoutMs, 10_000, 120_000);
+  const maxEntries = limit(options.limits?.maxEntries, 64, 256);
+  const maxMessages = limit(options.limits?.maxMessages, 10_000, 100_000);
+  const messageWindowMs = limit(options.limits?.messageWindowMs, 10_000, 600_000);
+  const maxMessageBytes = limit(options.limits?.maxMessageBytes, DEFAULT_MESSAGE_BYTES, 16_777_216);
+  if (maxMessageBytes < DEFAULT_MESSAGE_BYTES) throw new McpBoundaryError('INVALID_CONFIGURATION');
+  if (tools.length + resources.length + prompts.length > maxEntries) throw new McpBoundaryError('REGISTRY_LIMIT');
+  const maxPages = limit(options.limits?.maxPages, 4, 16);
+  return Object.freeze({
+    authorize: options.authorize,
+    protectedValues: Object.freeze([...protectedValues]),
+    readsUntrusted: options.readsUntrusted === true,
+    identity,
+    tools,
+    prompts,
+    resources,
+    requestTimeoutMs,
+    maxEntries,
+    maxMessages,
+    messageWindowMs,
+    maxMessageBytes,
+    maxPages,
+  });
 }
 
 /**
@@ -177,6 +298,7 @@ export class ManagedMcpConnection {
   readonly #maxEntries: number;
   readonly #maxMessages: number;
   readonly #messageWindow: number;
+  readonly #messageLimits: Readonly<JsonLimits>;
   /** Ring of inbound message times; the oldest entry bounds the sliding window. */
   readonly #messageTimes: Float64Array;
   #messageHead = 0;
@@ -194,54 +316,40 @@ export class ManagedMcpConnection {
   #registrations: readonly ManagedMcpRegistration[] = Object.freeze([]);
   #skipped: readonly McpSkippedOperation[] = Object.freeze([]);
   #known = new Set<string>();
+  #failureReason: McpBoundaryErrorCode | undefined;
   #refreshTail: Promise<void> = Promise.resolve();
 
   private constructor(options: ManagedMcpOptions) {
     this.#guard = options.guard;
-    if (options.authorize !== undefined && typeof options.authorize !== 'function')
-      throw new McpBoundaryError('INVALID_CONFIGURATION');
-    this.#authorize = options.authorize;
-    const protectedValues = options.protectedValues ?? [];
-    if (
-      !Array.isArray(protectedValues) ||
-      protectedValues.length > 32 ||
-      protectedValues.some(value => typeof value !== 'string' || !value.length || value.length > 16_384)
-    )
-      throw new McpBoundaryError('INVALID_CONFIGURATION');
-    this.#protectedValues = Object.freeze([...protectedValues]);
-    if (options.readsUntrusted !== undefined && typeof options.readsUntrusted !== 'boolean')
-      throw new McpBoundaryError('INVALID_CONFIGURATION');
-    this.#readsUntrusted = options.readsUntrusted === true;
-    this.#identity = Object.freeze({
-      serverId: identifier(options.identity.serverId),
-      transportIdentity: identifier(options.identity.transportIdentity),
-      principalId: identifier(options.identity.principalId),
-      tenantId: identifier(options.identity.tenantId),
-    });
+    const checked = checkManagedMcpOptions(options);
+    this.#authorize = checked.authorize;
+    this.#protectedValues = checked.protectedValues;
+    this.#readsUntrusted = checked.readsUntrusted;
+    this.#identity = checked.identity;
     this.#transportRef = opaqueTransportRef(this.#identity.transportIdentity);
-    this.#tools = bindings(options.tools);
-    this.#prompts = bindings(options.prompts);
-    this.#resources = bindings(options.resources) as readonly McpResourceBinding[];
-    for (const resource of this.#resources) identifier(resource.uri);
-    this.#timeout = limit(options.limits?.requestTimeoutMs, 10_000, 120_000);
-    this.#maxEntries = limit(options.limits?.maxEntries, 64, 256);
-    this.#maxMessages = limit(options.limits?.maxMessages, 10_000, 100_000);
-    this.#messageWindow = limit(options.limits?.messageWindowMs, 10_000, 600_000);
+    this.#tools = checked.tools;
+    this.#prompts = checked.prompts;
+    this.#resources = checked.resources;
+    this.#timeout = checked.requestTimeoutMs;
+    this.#maxEntries = checked.maxEntries;
+    this.#maxMessages = checked.maxMessages;
+    this.#messageWindow = checked.messageWindowMs;
     this.#messageTimes = new Float64Array(this.#maxMessages);
-    if (this.#tools.length + this.#resources.length + this.#prompts.length > this.#maxEntries)
-      throw new McpBoundaryError('REGISTRY_LIMIT');
+    this.#messageLimits = messageLimits(checked.maxMessageBytes);
     this.#client = new Client(
       { name: 'shielda-agent-guard', version: PACKAGE_VERSION },
       {
         capabilities: {},
         versionNegotiation: { mode: 'legacy' },
-        listMaxPages: limit(options.limits?.maxPages, 4, 16),
+        listMaxPages: checked.maxPages,
         cachePartition: this.#session,
         jsonSchemaValidator: {
           getValidator: <T>(schema: unknown) => {
             // The SDK asks again on every call; a schema object is compiled once.
             const known = typeof schema === 'object' && schema !== null ? this.#validators.get(schema) : undefined;
-            const validate = known ?? compileBoundedSchema(schema);
+            // The SDK validates results here (a tool's output schema), so the connection's
+            // message limit applies. Arguments are checked in resolve() and stay at 1 MiB.
+            const validate = known ?? compileSchemaWithLimits(schema, this.#messageLimits);
             if (!known && typeof schema === 'object' && schema !== null) this.#validators.set(schema, validate);
             return (value: unknown) =>
               validate(value)
@@ -253,7 +361,8 @@ export class ManagedMcpConnection {
     );
     this.#transport = this.#wrap(options.transport);
     this.#client.onclose = () => {
-      if (this.#state !== 'closed') this.#invalidate('closed');
+      // The transport went away without close() being called: say so in failureReason.
+      if (this.#state !== 'closed') this.#invalidate('closed', 'CONNECTION_UNAVAILABLE');
     };
     // SDK request dispatch rejects unadvertised sampling/elicitation/roots capabilities.
     this.#client.fallbackRequestHandler = async () => {
@@ -263,16 +372,24 @@ export class ManagedMcpConnection {
       'notifications/tools/list_changed' | 'notifications/resources/list_changed' | 'notifications/prompts/list_changed'
     )[]) {
       this.#client.setNotificationHandler(method, () => {
-        this.#invalidate('quarantined');
+        this.#invalidate('quarantined', 'REGISTRY_CHANGED');
       });
     }
   }
 
+  /**
+   * Connects, loads the registry and registers each accepted operation with the guard,
+   * unapproved. Rejects with INVALID_CONFIGURATION or REGISTRY_LIMIT for bad options, and
+   * with CONNECTION_FAILED (the connection is then closed) when the handshake, the
+   * authorization check or the first registry load fails.
+   */
   static async connect(options: ManagedMcpOptions): Promise<ManagedMcpConnection> {
     const connection = new ManagedMcpConnection(options);
     try {
       connection.#checkAuthorization();
       await connection.#client.connect(connection.#transport, { timeout: connection.#timeout });
+      // The transport may have closed while the handshake settled: closed is final.
+      if (connection.#state === 'closed') throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
       connection.#state = 'quarantined';
       connection.#inventoryRevision++;
       await connection.refresh();
@@ -283,27 +400,46 @@ export class ManagedMcpConnection {
     }
   }
 
+  /** `ready` is the only state in which operations can be prepared or run. */
   get status(): McpConnectionState {
     return this.#state;
   }
+  /** Random ID of this connection; a new connection always has a new one. */
   get sessionId(): string {
     return this.#session;
   }
+  /** Advances whenever prepared calls and approvals are invalidated: every refresh, quarantine and close. */
   get revision(): number {
     return this.#epoch;
   }
+  /** Advances on every state change, including a refresh completing. Same as `inventory().revision`. */
   get inventoryRevision(): number {
     return this.#inventoryRevision;
   }
+  /** The operations accepted by the last refresh. Empty unless the connection is `ready`. */
   get registrations(): readonly ManagedMcpRegistration[] {
     return this.#registrations;
+  }
+  /**
+   * Why the connection last left `ready` for a reason other than an explicit refresh or close:
+   * for example `REGISTRY_CHANGED` (the server announced changed definitions), `MESSAGE_BUDGET`,
+   * `MESSAGE_REJECTED`, `CREDENTIAL_REFLECTED`, `AUTHORIZATION_DENIED`, or
+   * `CONNECTION_UNAVAILABLE` when the transport closed or a send failed. Cleared by the next
+   * successful refresh. A code only, never server data.
+   */
+  get failureReason(): McpBoundaryErrorCode | undefined {
+    return this.#failureReason;
   }
   /** Advertised bindings skipped by the last successful refresh, with the reason. */
   get skipped(): readonly McpSkippedOperation[] {
     return this.#skipped;
   }
 
-  /** A pure observation: no authorization checks, discovery, resolvers or dispatch. */
+  /**
+   * A pure observation: no authorization checks, discovery, resolvers or dispatch. Throws
+   * MCP_INVENTORY_CLOCK_INVALID, MCP_INVENTORY_INVALID or MCP_INVENTORY_LIMIT_EXCEEDED
+   * when the observation cannot be produced.
+   */
   inventory(): McpConnectionInventory {
     return mcpInventorySnapshot({
       identity: {
@@ -321,7 +457,14 @@ export class ManagedMcpConnection {
     });
   }
 
-  /** Explicit refresh after quarantine. Every successful refresh requires renewed approval. */
+  /**
+   * Loads the registry again, for example after quarantine. Every successful refresh issues
+   * new fingerprints, so each operation needs `approveTool()` again. Rejects with
+   * CONNECTION_UNAVAILABLE when the connection is closed, REGISTRY_REJECTED when this
+   * refresh could not accept the server's registry (the connection is then quarantined),
+   * and CONNECTION_CHANGED when something else changed the connection before this refresh
+   * finished: a newer refresh, a change notification, an authorization failure or a close.
+   */
   refresh(): Promise<void> {
     if (this.#state === 'closed' || this.#state === 'connecting')
       return Promise.reject(new McpBoundaryError('CONNECTION_UNAVAILABLE'));
@@ -332,13 +475,15 @@ export class ManagedMcpConnection {
     return pending;
   }
 
+  /** Closes for good and invalidates every registration. A closed connection cannot be refreshed. */
   async close(): Promise<void> {
     this.#invalidate('closed');
     await this.#client.close();
   }
 
-  #invalidate(state: McpConnectionState): void {
+  #invalidate(state: McpConnectionState, reason?: McpBoundaryErrorCode): void {
     if (this.#state === 'closed') return;
+    if (reason !== undefined) this.#failureReason = reason;
     this.#state = state;
     this.#epoch++;
     this.#inventoryRevision++;
@@ -371,7 +516,7 @@ export class ManagedMcpConnection {
         throw new McpBoundaryError('AUTHORIZATION_DENIED');
       }
     } catch {
-      this.#invalidate('quarantined');
+      this.#invalidate('quarantined', 'AUTHORIZATION_DENIED');
       throw new McpBoundaryError('AUTHORIZATION_DENIED');
     }
   }
@@ -391,13 +536,13 @@ export class ManagedMcpConnection {
           if (this.#state === 'closed') return;
           if (!this.#admitMessage()) {
             // A flood is a server problem, not a reason to lose the connection for good.
-            this.#invalidate('quarantined');
+            this.#invalidate('quarantined', 'MESSAGE_BUDGET');
             wrapper.onerror?.(new McpBoundaryError('MESSAGE_BUDGET'));
             return;
           }
           let data: Json;
           try {
-            data = boundedJson(message);
+            data = boundedJson(message, this.#messageLimits);
           } catch {
             // An oversized or malformed reply fails only the call it answers.
             const id = responseId(message);
@@ -407,7 +552,7 @@ export class ManagedMcpConnection {
                 extra,
               );
             } else {
-              this.#invalidate('quarantined');
+              this.#invalidate('quarantined', 'MESSAGE_REJECTED');
               wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
             }
             return;
@@ -417,7 +562,7 @@ export class ManagedMcpConnection {
               throw new McpBoundaryError('CREDENTIAL_REFLECTED');
           } catch {
             // A reflected host secret is a hostile server: close, a new reviewed connection is required.
-            this.#invalidate('closed');
+            this.#invalidate('closed', 'CREDENTIAL_REFLECTED');
             wrapper.onerror?.(new McpBoundaryError('MESSAGE_REJECTED'));
             void inner.close().catch(() => {});
             return;
@@ -426,7 +571,8 @@ export class ManagedMcpConnection {
           const id = responseId(safe);
           if (id !== undefined) this.#pendingRequests.delete(id);
           // Quarantine synchronously before SDK async notification dispatch.
-          if ('method' in safe && listChanged.includes(safe.method)) this.#invalidate('quarantined');
+          if ('method' in safe && listChanged.includes(safe.method))
+            this.#invalidate('quarantined', 'REGISTRY_CHANGED');
           wrapper.onmessage?.(safe, extra);
         };
         await inner.start();
@@ -434,7 +580,7 @@ export class ManagedMcpConnection {
       close: () => inner.close(),
       send: async (message: JSONRPCMessage, options?: TransportSendOptions) => {
         if (this.#state === 'closed') throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
-        const safe = boundedJson(message) as unknown as JSONRPCMessage;
+        const safe = boundedJson(message, this.#messageLimits) as unknown as JSONRPCMessage;
         if ('method' in safe) {
           if (operations.has(safe.method)) {
             const meta = (safe.params as { _meta?: Record<string, unknown> } | undefined)?._meta;
@@ -535,7 +681,7 @@ export class ManagedMcpConnection {
           const properties: Record<string, Json> = Object.create(null);
           const required: string[] = [];
           for (const argument of args) {
-            const name = identifier(argument.name);
+            const name = identifier(argument.name, 'SCHEMA_INVALID');
             if (Object.hasOwn(properties, name)) throw new McpBoundaryError('SCHEMA_INVALID');
             properties[name] = { type: 'string', maxLength: 16_384 };
             if (argument.required === true) required.push(name);
@@ -559,10 +705,14 @@ export class ManagedMcpConnection {
       }
       this.#registrations = Object.freeze(registrations);
       this.#skipped = Object.freeze(skipped);
+      this.#failureReason = undefined;
       this.#state = 'ready';
       this.#inventoryRevision++;
-    } catch {
-      if (epoch === this.#epoch) this.#invalidate('quarantined');
+    } catch (error) {
+      // Something else moved the connection on (a newer refresh, a change notification, an
+      // authorization failure or a close). This refresh was superseded, however far it got.
+      if (epoch !== this.#epoch) throw new McpBoundaryError('CONNECTION_CHANGED');
+      this.#invalidate('quarantined', error instanceof McpBoundaryError ? error.code : 'REGISTRY_REJECTED');
       throw new McpBoundaryError('REGISTRY_REJECTED');
     }
   }
@@ -570,7 +720,8 @@ export class ManagedMcpConnection {
   #unique<T extends object>(values: T[], key: keyof T): Map<string, T> {
     const map = new Map<string, T>();
     for (const value of values) {
-      const name = identifier(value[key]);
+      // A malformed name is the server's fault, never a host option.
+      const name = identifier(value[key], 'REGISTRY_REJECTED');
       if (map.has(name)) throw new McpBoundaryError('REGISTRY_REJECTED');
       map.set(name, value);
     }
@@ -585,10 +736,7 @@ export class ManagedMcpConnection {
     validate: (input: unknown) => boolean,
     epoch: number,
   ): ManagedMcpRegistration {
-    const name =
-      kind === 'tool'
-        ? mcpToolName(this.#identity.serverId, binding.name)
-        : `mcp-${kind}:${encodeURIComponent(this.#identity.serverId)}:${encodeURIComponent(binding.name)}`;
+    const name = operationName(kind, this.#identity.serverId, binding.name);
     const safe = passiveJson(descriptor);
     const fingerprint = this.#guard.registerTool({
       name,
@@ -636,7 +784,7 @@ export class ManagedMcpConnection {
               options,
             );
           this.#assertEpoch(epoch);
-          const value = passiveJson(result);
+          const value = passiveJson(result, this.#messageLimits);
           if (kind === 'resource') {
             const contents = object(value).contents;
             if (
@@ -649,12 +797,14 @@ export class ManagedMcpConnection {
         } catch (error) {
           // A failed/aborted request may still have had a remote effect; the guard records it
           // as unknown and never retries it. Only connection-level failures quarantine.
-          if (epoch === this.#epoch && connectionFailure(error)) this.#invalidate('quarantined');
+          if (epoch === this.#epoch && connectionFailure(error))
+            this.#invalidate('quarantined', error instanceof McpBoundaryError ? error.code : 'CONNECTION_UNAVAILABLE');
           throw new McpBoundaryError('MCP_OPERATION_FAILED');
         }
       },
     });
     this.#known.add(name);
-    return Object.freeze({ name, fingerprint, kind, remoteName: binding.name, descriptor: safe });
+    const descriptorDigest = `sha256:${digestJson({ kind, remoteName: binding.name, descriptor: safe })}`;
+    return Object.freeze({ name, fingerprint, kind, remoteName: binding.name, descriptor: safe, descriptorDigest });
   }
 }

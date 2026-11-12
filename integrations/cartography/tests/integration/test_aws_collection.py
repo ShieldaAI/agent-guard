@@ -10,6 +10,7 @@ import botocore.session
 import pytest
 from botocore.config import Config
 from botocore.stub import Stubber
+from faults import import_snapshot
 from test_cloud_graph import cloud_edges, cloud_nodes, import_case, next_snapshot, seed
 from test_cloud_graph import cloud_snapshot as cloud_snapshot
 
@@ -21,7 +22,6 @@ from agent_guard_cartography.aws_config import (
     validate_aws_enrollment,
 )
 from agent_guard_cartography.aws_graph import publish_aws_capture
-from agent_guard_cartography.graph import import_snapshot
 
 pytestmark = pytest.mark.integration
 

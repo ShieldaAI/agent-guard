@@ -261,3 +261,63 @@ def test_file_error_does_not_echo_path(tmp_path):
     with pytest.raises(InventoryValidationError) as caught:
         load_snapshot(tmp_path / "secret-file-name.json")
     assert str(caught.value) == "INVENTORY_READ_FAILED"
+
+
+def test_identical_content_is_schema_checked_once_and_any_change_is_checked_again(
+    snapshot, monkeypatch
+):
+    from agent_guard_cartography import inventory
+
+    snapshot["snapshotId"] = "validated-once-canary"
+    checked = []
+    original = inventory._check_graph
+    monkeypatch.setattr(
+        inventory,
+        "_check_graph",
+        lambda value: checked.append(value["snapshotId"]) or original(value),
+    )
+    first = validate_snapshot(snapshot)
+    # The same content again, as a different object with a different key order.
+    again = validate_snapshot(dict(reversed(list(deepcopy(snapshot).items()))))
+    assert again == first and again is not first
+    assert checked == ["validated-once-canary"]
+    # The result is still detached from its input on the short path.
+    again["tasks"].clear()
+    assert validate_snapshot(snapshot)["tasks"] and checked == ["validated-once-canary"]
+    # Content is compared, never identity: a mutation is validated in full and rejected.
+    snapshot["tasks"][0]["tenantId"] = "another-tenant"
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_TENANT_MISMATCH$"):
+        validate_snapshot(snapshot)
+    assert checked == ["validated-once-canary"] * 2
+    # A failed validation is never remembered.
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_TENANT_MISMATCH$"):
+        validate_snapshot(snapshot)
+    assert len(checked) == 3
+
+
+def test_non_json_input_is_rejected_even_when_equal_content_was_validated(snapshot):
+    validate_snapshot(snapshot)
+    disguised = deepcopy(snapshot)
+    disguised["tasks"] = tuple(disguised["tasks"])
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_JSON_INVALID$"):
+        validate_snapshot(disguised)
+
+
+def test_validated_content_memory_is_bounded(snapshot):
+    from agent_guard_cartography import inventory
+
+    for index in range(inventory._VALIDATED_LIMIT + 8):
+        validate_snapshot({**snapshot, "snapshotId": f"bounded-{index}"})
+    assert len(inventory._validated) == inventory._VALIDATED_LIMIT
+
+
+@pytest.mark.parametrize("field", ["ledgerRevision", "policyEpoch"])
+@pytest.mark.parametrize("value", [1.0, -0.0, 0.0, 2.5, True, "1"])
+def test_ordering_counters_must_be_true_integers(snapshot, field, value):
+    # JSON Schema's "integer" admits 1.0 and -0.0; the graph must only ever order integers.
+    assert validate_snapshot(snapshot)[field] == snapshot[field]
+    snapshot[field] = value
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_SCHEMA_INVALID$"):
+        validate_snapshot(snapshot)
+    with pytest.raises(InventoryValidationError, match="^INVENTORY_SCHEMA_INVALID$"):
+        validate_snapshot(json.loads(json.dumps(snapshot)))

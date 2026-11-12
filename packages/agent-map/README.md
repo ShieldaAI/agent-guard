@@ -1,192 +1,268 @@
-# Agent Guard reference map
+# @shieldaai/agent-map
 
-**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
-compatibility or long-term-support promise. The
-[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
-record the verified scope, known limits and post-release follow-ups.
+A read-only inventory service for AI agents. It answers questions such as "which agents
+exist and who owns them", "what was this agent granted", "which agents could touch this
+resource" and "what changed since the last snapshot", over HTTP, over MCP and for a
+browser viewer. It reads a Neo4j graph and never prepares, approves or executes anything.
 
-**Experimental.** The API and graph model may change in any minor release.
+**Experimental.** The package shares the Agent Guard version number, but its API and
+graph model are not covered by the 1.x compatibility promise and may change in a minor
+release.
 
-Query AI agent and MCP inventory, snapshot changes and access explanations over
-scoped HTTP and MCP interfaces. See the
-[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)
-for tool authorization and model response validation.
+What it shows is evidence: declared grants, host observations and cloud policy
+candidates. None of it is a decision that access is allowed, and a missing fact is
+reported as `unknown`, never as "none".
 
-Optional read-only reference service for the immutable Agent Guard projections
-published by the [Cartography collector](../../integrations/cartography/README.md).
-It supplies the same evidence to HTTP, MCP clients and the
-[React/Cytoscape viewer](../../apps/agent-map/README.md). It never prepares or
-executes an action. Declared grants and cloud associations are not effective
-permission decisions.
+## Before you start
+
+You need three things. Only the first is on npm.
+
+1. **Node.js 22.13 or later** on a POSIX host (Linux or macOS). The launchers need
+   non-blocking, no-follow file opens; native Windows is not supported.
+2. **Neo4j 5.23 or later**, reachable over verified TLS (`neo4j+s://` or `bolt+s://`), or
+   over plain `bolt://` on a literal loopback address only.
+3. **A graph filled by the Agent Guard Cartography collector.** The collector is a Python
+   program in the Agent Guard repository and is **not published to npm**. It reads an
+   executor's inventory and a host manifest and publishes immutable snapshots that this
+   service reads. Follow the
+   [collector README](https://github.com/ShieldaAI/agent-guard/blob/main/integrations/cartography/README.md) and the
+   [setup guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/agent-cartography.md).
+
+Without a collector-filled graph the service starts and answers, with nothing in it. The
+[quick start](#quick-start) below needs neither Neo4j nor the collector: it runs the
+service over an in-memory store so you can see the interface first.
 
 The map lists only agents that a person declared in a host manifest. It does not scan
-infrastructure, code, networks or identity providers. For an all-teams reader it lists
-two kinds of [discovery leads](#discovery): activity through the guard, and AWS IAM
-identities, that no declared agent accounts for. See
-[how agents get onto the map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/agent-cartography.md#how-agents-get-onto-the-map)
-and the [risk map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)
-(it supports ASI10, rogue agents, as an inventory, and flags agents that combine private
-data, outside content and external sends).
+infrastructure, code, networks or identity providers. See
+[how agents get onto the map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/guides/agent-cartography.md#how-agents-get-onto-the-map).
 
-Install the service with `npm install @shieldaai/agent-map`. It includes the
-`agent-guard-map` and `agent-guard-map-identity` commands. Viewer assets and the
-Python collector are separate repository components and are not bundled in this
-npm package. The commands require host-owned configuration and credentials.
+## Capacity
 
-## Run the loopback bearer service
+Sized for roughly **150 declared agents per reader** with the default limits, and
+roughly **800** with the store's read limits raised to their maximum (`maxNodes: 10000`,
+`maxEdges: 25000`, `maxBytes: 16777216`; see [Limits](#limits)). These are estimates,
+not measurements: the node limit divided by about a dozen graph nodes per agent. An
+agent with more tasks, grants or bindings counts for more.
 
-```sh
-npm ci --ignore-scripts
-npm run build
-node packages/agent-map/dist/cli.js --config deployment/cartography/reference.example.json
-```
+Every operation answers from one bounded read of the graph the reader may see. Paging
+pages that read's result; it does not reach past the read. A larger fleet fails with
+`MAP_LIMIT_EXCEEDED` instead of returning part of it. `list_agents` reads fewer nodes per
+agent and so reaches further; `get_changes` reads two snapshots within the same limits
+and reaches about half as far. [Limits](#limits) gives the estimate for each kind of read
+and says what was tested.
 
-Review the example's company, tenant and team identifiers, Neo4j address and
-username before use. Provide `AGENT_MAP_NEO4J_PASSWORD` and
-`AGENT_MAP_READER_TOKEN` through your host's secret environment. Generate the
-reader token with `createMapToken()` and provision it through your trusted host;
-do not commit it or include it in a URL. The launcher prints only its loopback URL
-and mode. Open that URL and enter the reference token. The viewer keeps it in
-memory until disconnect/reload and never sends it to a different origin. The
-clearly labeled synthetic demo uses only browser-local fixture data.
+Values above the default limits are accepted, but they have only been exercised against
+a fake database driver in this package's tests, never against Neo4j. The 5-second
+transaction deadline does not grow with them. Before you rely on raised limits, run your
+largest reads against your own database and check that they finish in time.
 
-The launcher requires nonblocking file-open support, as provided by the pilot's
-POSIX hosts. Its configuration must resolve to a regular file of at most 128 KiB;
-symlinks to regular files remain supported. The file must belong to the service user or root, with group and other write access disabled. Protect the configuration path and its parent directories from replacement. It checks the opened descriptor and
-limits bytes read even if the file grows. Named pipes and other nonregular inputs
-fail startup with the same safe diagnostic. Native Windows is outside the
-[pilot's supported host profile](../../deployment/cartography/RUNBOOK.md#prerequisites-and-layout).
-
-Viewer asset hosting on both HTTP and HTTPS also requires nonblocking and
-no-follow file-open support, as provided by the POSIX pilot hosts. The fixed
-`index.html`, `app.js` and `app.css` entries must each be regular files of at most
-4 MiB. The loader checks each opened descriptor, rejects a symlink replacing an
-asset, and bounds reads even if the file grows. Assets must belong to the service user or root, with group and other write access disabled. Keep the entire asset path in trusted directories. It captures the bytes at startup;
-later path replacements do not change the served assets. Starting an API without
-`viewerDirectory` does not require these file-open capabilities.
-
-`agm_v1` reference credentials are independent of executor/task and observer
-credentials. Each credential is mapped to an immutable `ReadScope` by the host:
-`subject`, `companyId`, `tenantIds`, `teamIds`, `allTeams`. Neither HTTP nor MCP
-arguments can override this scope. A team reader can see only agents explicitly
-assigned to an allowed team and their attached evidence. `allTeams: true` is a
-separate explicit grant, including unassigned/core inventory. It must not be
-inferred from an empty team list. Restart with a revised credential registry to
-rotate or revoke these bearer credentials.
-
-The server binds `127.0.0.1` only and requires an exact Host header. Browser
-requests must use its same origin. It provides no CORS, arbitrary Cypher,
-database credentials, execution tools or administration routes. For company
-browser access, use the separate HTTPS identity endpoint below. Do not expose
-the loopback listener directly through an unchecked proxy.
-
-Use a dedicated Neo4j reader account where database privileges are available.
-The driver's READ session mode is not a privilege boundary. Neo4j Community
-does not establish database-level team isolation; the service's fixed queries
-and scope checks enforce its reference interface. The database remains a
-trusted service accessible only to collector and query hosts. Remote database
-connections require verified TLS (`neo4j+s` or `bolt+s`). Unencrypted connections
-are accepted only with direct `bolt://` and a literal loopback address. Plaintext
-`neo4j://` routing is rejected because advertised peers can leave loopback.
-
-## Run the company HTTPS viewer
-
-The separate `agent-guard-map-identity` launcher serves the viewer and scoped
-queries over HTTPS with confidential OIDC sign-in. Follow the
-[identity deployment guide](../../deployment/cartography/IDENTITY.md) to register
-the provider, provision private configuration/TLS files and environment secrets,
-and adapt [identity.example.json](../../deployment/cartography/identity.example.json).
-After building and provisioning the private config:
+## Quick start
 
 ```sh
-node packages/agent-map/dist/identity-cli.js --config /absolute/private/identity.json
+mkdir map-try && cd map-try
+npm init -y
+npm install @shieldaai/agent-map
 ```
 
-The installed package exposes the equivalent `agent-guard-map-identity` command.
-The provider must support authorization code flow with S256 PKCE and RS256 ID
-tokens. Each exact issuer `sub` has an explicit host-owned scope; provider groups
-and browser arguments cannot grant access. The endpoint owns TLS, requires exact
-Host/Origin, rejects forwarded identity/authorization headers and provides no
-CORS. It does not wrap or reconfigure the loopback service.
+Save this as `try.mjs` and run `node try.mjs`. It starts the loopback service over an
+in-memory store with one agent, asks it one question over HTTP and stops.
 
-The browser uses opaque Secure/HttpOnly cookies and CSRF-protected same-origin
-POSTs. It receives no provider tokens or scope claims. Sessions last at most 15
-minutes, capped by ID token expiry, and are not refreshed. Sign out ends the
-local session only; the IdP SSO session may remain active. Bindings, secrets and
-TLS files reload on restart, which invalidates all sessions. There is no
-distributed session store or HA mode. A registered live company IdP and a
-trusted-browser end-to-end check remain rollout gates; see the guide for their
-status and the complete configuration/operational limits.
+```js
+import { MapService, createMapToken, startMapServer } from '@shieldaai/agent-map';
 
-Startup verifies that the served certificate matches its key, is currently valid
-and covers the public hostname. Once that certificate expires, HTTP operations
-are refused. Monitor expiry, renew the trusted files and restart before expiry;
-then verify company sign-in again. Only the public entry document accepts a
-cross-site top-level navigation from the IdP redirect chain. Authenticated APIs
-and all POSTs retain the same-origin and CSRF checks.
+// A store is anything with `read(scope, request)`. This one holds one declared agent in memory.
+const projection = {
+  id: 'projection-1',
+  snapshotId: 'snapshot-1',
+  generatedAt: new Date().toISOString(),
+  status: 'published',
+  nodes: [
+    {
+      id: 'node-1',
+      entityId: 'agent:support',
+      label: 'GuardAgent',
+      sourceId: 'demo',
+      projectionId: 'projection-1',
+      properties: { agent_id: 'support-assistant', name: 'Support assistant', team_id: 'support' },
+    },
+  ],
+  edges: [],
+  coverage: { tasks: { status: 'complete' } },
+};
+const store = {
+  async read() {
+    return {
+      sources: [
+        { id: 'demo', tenantId: 'engineering', sourceId: 'demo', profile: 'host', current: projection, previous: null },
+      ],
+    };
+  },
+};
 
-## Shared operations
+const token = createMapToken();
+const server = await startMapServer({
+  service: new MapService(store),
+  credentials: [
+    {
+      token,
+      scope: { subject: 'me', companyId: 'example', tenantIds: ['engineering'], teamIds: [], allTeams: true },
+    },
+  ],
+});
+const response = await fetch(`${server.url}/v1/query`, {
+  method: 'POST',
+  headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+  body: JSON.stringify({ operation: 'list_agents', args: {} }),
+});
+const { data } = await response.json();
+console.log(data.agents.map(agent => `${agent.name} (${agent.lifecycleState}, ${agent.ownershipStatus})`));
+await server.close();
+```
 
-On the loopback service, POST `/v1/query` with `Authorization: Bearer <reference-token>`, content type
-`application/json` and `{ "operation": "list_agents", "args": {} }`.
-Results contain `operation`, `observedAt`, `data` and an optional focused `graph`.
-Source IDs are the graph source IDs returned by the service, not native source
-names. Native agent/task IDs and returned stable entity IDs are accepted where
-documented by the schemas. No pagination cursor exposes a broader scope.
+It prints `[ 'Support assistant (unknown, unknown)' ]`: the agent is listed, and the
+lifecycle and ownership nobody declared read `unknown`.
 
-| Operation                   | Arguments                                                                                                                                                       | Evidence                                                                                                                                                                                                                                                                                                                                            |
-| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_agents`               | optional `sourceId`, `search`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `flag`, `flagStatus`, `includeFlags`, `offset`, `limit` | Scoped agents, owner names, lifecycle and host provenance. With a flag argument, also `boundaryFlags.dangerousThree`.                                                                                                                                                                                                                               |
-| `get_agent_access`          | `sourceId`, `agentId`                                                                                                                                           | Focused deployments, tasks, grants, tools, bindings, MCP and cloud observations; `boundaryFlags` (the dangerous-three flag); `outsideGuard.directAccess` lists host-declared paths around the guard per deployment (`found`, `none_declared` or `unknown`) and `outsideGuard.identityScope` compares each tool identity's S3 reach with its grants. |
-| `explain_access`            | `sourceId`, `taskId`, `tool`, `resourceId`                                                                                                                      | Visible delegation, declared matches, known blockers and explicit unknown checks.                                                                                                                                                                                                                                                                   |
-| `find_agents_with_access`   | `resourceRef`, `action`; optional `sourceId`, `limit`                                                                                                           | Potential candidates from exact host resource/action bindings; no wildcard or prefix expansion.                                                                                                                                                                                                                                                     |
-| `get_changes`               | `sourceId`; optional `since`, `agentId`, `resourceId`, `changeKind`, `offset`, `limit`                                                                          | Retained safe before/after fields, relationship deltas and affected authorized agents; explicit gaps.                                                                                                                                                                                                                                               |
-| `get_inventory_health`      | optional `sourceId`                                                                                                                                             | Visible capture times and independently stale or unavailable components. For an all-teams reader, `undeclaredActivity` per source: how many tasks and callers belong to no declared agent.                                                                                                                                                          |
-| `list_owners`               | optional `sourceId`, `search`, `kind`, `offset`, `limit`                                                                                                        | Declared owners and visible agent/resource counts.                                                                                                                                                                                                                                                                                                  |
-| `list_resources`            | optional `sourceId`, `search`, `ownerId`, `sensitivity`, `offset`, `limit`                                                                                      | Host resource bindings, exact/prefix declarations, accountable owners and authorized dependencies, plus `outsideGuard`: `yes`, `none_found` or `unknown`.                                                                                                                                                                                           |
-| `get_resource_access`       | `sourceId`, `resourceId`; optional `offset`, `limit`                                                                                                            | Agents with an observed declared binding to this resource, plus the identities and declared direct paths that reach it outside the guard; assessment remains unknown.                                                                                                                                                                               |
-| `get_agent_inventory`       | `sourceId`, `agentId`; optional `section`, `offset`, `limit`                                                                                                    | Paged structured evidence without requiring a focused graph.                                                                                                                                                                                                                                                                                        |
-| `list_undeclared_activity`  | `sourceId`; optional `kind` (`tasks` or `principals`), `offset`, `limit`                                                                                        | All-teams readers only. Tasks or caller principals that ran through this executor and belong to no declared agent.                                                                                                                                                                                                                                  |
-| `list_unclaimed_identities` | optional `offset`, `limit`                                                                                                                                      | All-teams readers only. IAM roles and users of the enrolled AWS accounts that no declared agent's execution binding names. Candidates, not findings.                                                                                                                                                                                                |
+### Run it against Neo4j
 
-Paged indexes return their named array plus `total`, `offset`, `limit` and
-`truncated`; totals and filters apply only to the authorized view. Defaults are
-offset 0 and limit 50; limit is at most 100. Pair each returned identity with its
-`sourceId` when navigating: native owner/resource IDs can repeat across sources.
-`list_resources` explicitly reports `resourceCoverage: host_bound_resources`.
-Unmapped declared selectors remain visible in agent permissions rather than
-being presented as host-bound resources.
+Write a configuration file (see [Configuration](#configuration)), keep the secrets in the
+environment, and start the launcher:
 
-`get_agent_inventory` returns `items`, the same pagination fields, `counts`,
-`agent`, a snapshot `receipt`, and `graphStatus: not_requested`. Its sections are
-`overview` (default), `owners`, `deployments`, `tasks`, `permissions`, `resources`,
-`connections`, `credentials`, `relationships`, `tools`, `bindings`, `identities`
-and `policies`. `policyEvidence` contains only the policy page in `policies` and
-is otherwise empty; `policyCoverage` describes the selected agent's complete
-validated policy evidence. Structured pages remain available when a graph
-exceeds its display cap; store, work and response-byte ceilings still apply.
+```json
+{
+  "neo4j": {
+    "uri": "bolt://127.0.0.1:7687",
+    "username": "agent_map_reader",
+    "passwordEnv": "AGENT_MAP_NEO4J_PASSWORD"
+  },
+  "credentials": [
+    {
+      "tokenEnv": "AGENT_MAP_READER_TOKEN",
+      "scope": {
+        "subject": "platform-reader",
+        "companyId": "example-company",
+        "tenantIds": ["engineering"],
+        "teamIds": ["platform"],
+        "allTeams": false
+      }
+    }
+  ]
+}
+```
 
-Host observations retain `manifestId`, `manifestRevision`, `authorityId` and
-`observedAt` (snake_case in raw property rows). Missing v1 metadata stays unknown;
-it is not an assertion that ownership is unassigned. Credential entries contain
-opaque references and lifecycle metadata only. Raw credential/dependency ID
-arrays are excluded; relationships expose only authorized endpoints, with
-readable names/labels and stable entity IDs. Generic host resources never imply
-AWS policy resolution, and unsupported host actions remain explicitly
-`not_collected` policy evidence.
+```sh
+export AGENT_MAP_NEO4J_PASSWORD='...'
+export AGENT_MAP_READER_TOKEN="$(node -e "import('@shieldaai/agent-map').then(m => console.log(m.createMapToken()))")"
+npx agent-guard-map --config ./map.json
+```
 
-For `get_changes`, `changeKind` is `all`, `permissions`, `ownership`, `bindings` or
-`outside_guard`. Declared direct paths and a deployment's declaration status are
-`outside_guard` changes and carry `evidenceKind: declared`.
+The launcher prints `{"url":"http://127.0.0.1:8789","mode":"read-only"}` and serves
+`POST /v1/query` and `POST /mcp` on that loopback address. Send the token as
+`Authorization: Bearer <token>`:
 
-### Discovery
+```sh
+curl -s http://127.0.0.1:8789/v1/query \
+  -H "Authorization: Bearer $AGENT_MAP_READER_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{"operation":"list_agents","args":{}}'
+```
 
-The map lists only declared agents. Two operations point at what the manifest may be
-missing; they never create an agent and never grant or block anything. Both are for
-readers with `allTeams: true`, because what they list belongs to no team. A team-scoped
-reader gets `{ visibility: 'all_teams_required', status: 'not_visible', note }` and
-nothing else: no names, no counts, and the same answer whether or not anything would be
-listed. The store is not read for that reader.
+Neither launcher connects to Neo4j at startup: an unreachable or misconfigured database
+shows as `MAP_UNAVAILABLE` on queries. For browser access by company staff, use the
+second launcher, `agent-guard-map-identity`, which serves HTTPS with OIDC sign-in; see
+[Company sign-in](#company-sign-in).
+
+## Operations
+
+Twelve read-only operations, the same over HTTP (`POST /v1/query` with
+`{ "operation": "...", "args": {...} }`) and as MCP tools (`POST /mcp` on the loopback
+service). A result has `operation`, `observedAt`, `data` and, for `get_agent_access`
+only, an optional `graph`.
+
+"Any reader" means any credential or signed-in user, within its own scope: a team reader
+sees only agents assigned to its teams and what is attached to them.
+
+| Operation | What it answers | Who can call it |
+| --- | --- | --- |
+| `list_agents` | Which declared agents exist, with owner, team, lifecycle and environments. Filters: `search`, `sourceId`, `ownerId`, `teamId`, `environment`, `ownershipStatus`, `lifecycleState`, `flag`, `flagStatus`; `includeFlags` adds each agent's flag. | Any reader |
+| `get_agent_access` | One agent's tasks, declared grants, bindings, MCP connections, IAM policy evidence, [boundary flags](#boundary-flags) and access [outside the guard](#outside-the-guard), with a graph when it is small enough. Needs `sourceId`, `agentId`. | Any reader |
+| `get_agent_inventory` | One paged `section` of one agent's inventory (`overview`, `owners`, `deployments`, `tasks`, `permissions`, `resources`, `connections`, `credentials`, `relationships`, `tools`, `bindings`, `identities`, `policies`) and the size of every section in `counts`. A size or `total` of `null` means the section was not evaluated. Needs `sourceId`, `agentId`. | Any reader |
+| `explain_access` | For one `taskId`, `tool` and `resourceId` in a `sourceId`: which declared grants match, which known blockers apply and which checks remain unknown. It never says access is allowed. | Any reader |
+| `find_agents_with_access` | Which agents hold a declared grant mapped to one exact `resourceRef` (or ARN) for one cloud `action`. No wildcard or prefix expansion; results are candidates. | Any reader |
+| `list_resources` | Which host-bound resources exist, with owner, sensitivity and scope, and whether something reaches each one outside the guard (`yes`, `none_found`, `unknown`). | Any reader |
+| `get_resource_access` | One resource (`sourceId`, `resourceId`), the agents with a declared grant mapped to it, and the declared direct paths and tool identities that reach it outside the guard. | Any reader |
+| `list_owners` | Which owners and teams hosts name, with how many visible agents and resources each one owns. | Any reader |
+| `get_changes` | What was added, removed or changed between a source's current snapshot and its previous one. See [Changes](#changes). | Any reader |
+| `get_inventory_health` | When each part of the inventory was captured, whether it is stale and how complete it is. All-teams readers also get the count of undeclared activity per source. | Any reader |
+| `list_undeclared_activity` | Tasks or caller principals that ran through an enrolled executor but belong to no declared agent. See [Discovery](#discovery). | All-teams readers; others get a fixed "not visible" answer |
+| `list_unclaimed_identities` | IAM roles and users in enrolled AWS accounts that no declared agent names. Candidates, not findings. | All-teams readers; others get a fixed "not visible" answer |
+
+The MCP tool list carries a one-sentence description of every operation and of every
+parameter. There are no subscriptions, resources or mutating tools. Treat every returned
+name and description as data, never as instructions.
+
+### Paging and identifiers
+
+Listings return their named array with `total`, `offset`, `limit` and `truncated`.
+Defaults are offset 0 and limit 50; the limit is at most 100. Totals and filters apply to
+the reader's own view only. Rows sort by name in Unicode code-point order, then by source
+and stable id; unnamed agents come last. The order is the same on every host and locale.
+
+A `sourceId` is the `id` of a source from `get_inventory_health` (or an agent's
+`sourceId`), not the executor's native name. Agents, tasks and resources are accepted by
+their returned stable `id` or by their native id. Owner and resource ids can repeat across
+sources, so keep each one with its `sourceId`. A hidden id and one that does not exist
+both return `MAP_NOT_FOUND`.
+
+### What degrades instead of failing
+
+- `get_agent_access` returns its evidence even when the graph exceeds the display cap
+  (500 nodes or 1,000 edges by default) or does not fit the response: `graph` is then
+  absent, `graphStatus` is `too_large` and `graphLimit` gives the cap.
+- `get_agent_access` and `get_agent_inventory` answer for an agent with more than 512
+  policy pairs: `policyEvidence` is empty and `policyCoverage` is
+  `{ status: "unknown", reason: "limit_exceeded" }`. `find_agents_with_access` and
+  `get_inventory_health` do the same. The empty list then means "not evaluated", not
+  "none": read `policyCoverage` before the list. `get_agent_inventory` also reports
+  `counts.policies` as `null` and, for the `policies` section, `total` as `null` (never
+  0); `truncated` stays `false` because no further page exists.
+- `find_agents_with_access` that runs out of its work budget returns the candidates it
+  completed with `truncated: true` and `truncatedReason: "work_limit"`.
+- `list_agents` with `includeFlags` whose flag read is too large or too slow still lists
+  the agents, with every flag `unknown` and `flagsUnavailable` saying why.
+- Health answers when the undeclared-activity count cannot be read; the count is then
+  `{ status: "unknown", reason }`.
+
+## Changes
+
+`get_changes` compares the current snapshot of a `sourceId` with its previous retained
+one. Optional arguments: `since` (`previous` by default), `agentId`, `resourceId`,
+`changeKind`, `offset`, `limit`.
+
+- Each entry in `details` has `kind` (`added`, `removed`, `changed`), its `categories`,
+  the `changedFields`, the `before` and `after` properties and relationships, and the
+  visible agents it affects (at most 100, with the total).
+- `changeKind` is `all`, `permissions`, `ownership`, `bindings`, `outside_guard` or
+  `inventory`. `outside_guard` covers declared direct paths and a deployment's declaration
+  status, and carries `evidenceKind: declared`. `inventory` is every change in no other
+  category, such as a name, a purpose or a lifecycle state.
+- With an explicit `offset` or `limit`, `changeSummaryScope` is `page`: the `changes`
+  summary, relationship changes and affected agents describe that page. Without paging
+  they describe every retained change and `details` holds the first 50.
+- `coverageGap: true` means there is no previous snapshot to compare with.
+- A renamed agent appears under its current name. A change of display name is not a
+  relationship change. Capture times alone are not changes.
+
+These are net differences between two snapshots, not an event log. They do not show that
+effective access was gained or lost, and policy history is not collected
+(`policyHistory: "not_collected"`).
+
+## Discovery
+
+The map lists declared agents only. Two operations point at what a manifest may be
+missing. They never create an agent and never grant or block anything. Both are for
+readers with `allTeams: true`, because what they list belongs to no team. A team reader
+gets `{ visibility: "all_teams_required", status: "not_visible", note }` and nothing
+else: no names, no counts, and the same answer whether or not anything would be listed.
 
 **Undeclared activity.** A task is undeclared when no manifest task binding assigns it to
 a deployment of a declared agent; a caller principal is undeclared when none of its tasks
@@ -194,168 +270,220 @@ is assigned.
 
 - `get_inventory_health` adds `undeclaredActivity` to each source:
   `{ status, tasks, tasksIsMinimum, principals, principalsIsMinimum, manifest }`. `status`
-  is `complete`, or `partial` when counting stopped at 10,000 (the figure is then a
-  minimum). `manifest: not_collected` marks a source enrolled without a manifest, where
-  every task counts. If the count cannot be read it is
-  `{ status: 'unknown', reason }` (`read_unavailable`, `read_timeout`, `limit_exceeded`,
-  `publication_changed` or `not_reported`) and the rest of health still answers. A
-  team-scoped reader gets `{ status: 'not_visible', reason: 'all_teams_required' }`.
-- `list_undeclared_activity` returns `kind`, `items`, `total`, `totalIsMinimum`, `offset`,
-  `limit`, `truncated`, the same `counts`, and a snapshot `receipt`. A task item has
-  `taskId`, `principalId`, `delegated`, `derived`, `revoked`, `parentDeclared`, up to 32
-  `tools` it holds a grant on (`toolsTruncated`), `evidenceKind: observed` and
-  `assessment: unknown`. `parentDeclared: true` means its direct parent is assigned to a
-  declared agent: usually a sub-task that only lacks its own binding. A principal item has
-  `principalId` and `tasks` (counted to 1,000, then `tasksCapped`).
-- Limit: only activity through an enrolled executor is seen.
+  is `complete`, or `partial` when counting stopped at 10,000. `manifest: "not_collected"`
+  marks a source enrolled without a manifest, where every task counts.
+- `list_undeclared_activity` (`sourceId`, optional `kind` of `tasks` or `principals`)
+  returns `items`, `total`, `totalIsMinimum`, paging fields, the same `counts` and a
+  snapshot `receipt`. A task item has `taskId`, `principalId`, `delegated`, `derived`,
+  `revoked`, `parentDeclared` and up to 32 `tools`. `parentDeclared: true` usually means a
+  sub-task that only lacks its own binding.
+- Only activity through an enrolled executor is seen. An agent that does not use the
+  guard leaves nothing here.
 
-**Unclaimed cloud identities.** `list_unclaimed_identities` reads the AWS collections
-already in the graph (see the [AWS guide](../../deployment/cartography/AWS.md)).
+**Unclaimed cloud identities.** `list_unclaimed_identities` reads the AWS collections in
+the graph (see the [AWS guide](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/AWS.md)).
 
 - `identities` are IAM roles and users whose exact ARN no declared execution binding
-  names in a current snapshot the reader can see. Each has `arn`, `kind` (`role` or
-  `user`), `name`, `path`, `tenantId`, `partition`, `accountId`, `candidate: true`,
-  `evidenceKind: provider_inventory` and `assessment: unknown`. They are ordered by ARN
-  and paged with `total`, `offset`, `limit` and `truncated`.
-- `accounts` has one entry per enrolled account with `status` `complete` or `unknown`, a
-  `reason` (`stale`, `collection_invalid`, `changed`, `limit_exceeded` or
-  `claims_limit_exceeded`), `observedAt`, and for a complete account `observed` and
-  `unclaimed`. An unknown account lists none of its identities.
-- `status` is `complete`, `partial` (some accounts unknown; `total` covers the complete
-  ones) or `unknown`. With `unknown`, `total` is `null` and `identities` is empty; with no
-  collection at all `reason` is `cloud_not_collected`. Unknown is never an empty list.
-- A collection is stale past the enrolled cloud age limit of its tenant's sources, capped
-  by the host's `policyMaxAgeSeconds` (default two hours).
-- `bindingsWithoutIdentity: true` means some declared execution binding names no
-  identity, so a listed identity may be the one it uses. `declaredFrom` names the
-  snapshots whose bindings decided what is claimed.
-- Limits: role assumption, instance profiles and federation are not followed. Only IAM
-  roles and users of enrolled accounts are collected. At most 64 collections, 50,000
-  identities per account and 10,000 declared ARNs are compared per read.
+  names. Each has `arn`, `kind`, `name`, `path`, `tenantId`, `partition`, `accountId` and
+  `candidate: true`. Most roles are not agents; these are candidates to review.
+- `accounts` has one entry per enrolled account, `complete` or `unknown` with a `reason`
+  (`stale`, `collection_invalid`, `changed`, `limit_exceeded`, `claims_limit_exceeded`).
+  An unknown account lists none of its identities.
+- `status` is `complete`, `partial` or `unknown`. With `unknown`, `total` is `null` and
+  the list is empty; unknown is never an empty list presented as "none".
+- Role assumption, instance profiles and federation are not followed. At most 64
+  collections, 50,000 identities per account and 10,000 declared ARNs are compared.
 
-### Boundary flags
+## Boundary flags
 
-`get_agent_access.data.boundaryFlags` holds the `dangerous_three` flag: whether one of
-the agent's live tasks can read private data, read outside content and send data out.
-Each leg is `present`, `absent` or `unknown`, with evidence naming the task, tool and
-resource binding; `taskId`, `legs` and `evidence` all describe the agent's worst live
-task. The status is `exposed` (a declared sending tool runs in `allow` mode),
-`mitigated` (every possible sender needs approval or is refused after outside content),
-`unknown` or `absent`. Only an explicit `readsUntrusted: false` or `sendsExternal: false`
-rules a tool out, and a task without a boolean `sensitive` makes private data and its
-declared sends `unknown`. A v1 inventory, an unregistered tool, a delegation ancestor outside
-your scope, an older import without delegation data or a chain deeper than 16 ancestors
-make the affected leg `unknown`; the status is `absent` only when another leg is known
-absent. When a read has no room left for an agent's delegation ancestors it loads none and
-notes `delegation_ancestors_not_loaded`; a missing parent (`delegation_parent_missing`
-for an all-teams reader), more than one parent or handoff source
-(`delegation_evidence_ambiguous`) or missing revocation or expiry facts
-(`task_liveness_unverified`) is also noted. A task counts as live only if no delegation ancestor or handoff source is revoked and
-no delegation ancestor has expired (the executor's own rules); a task whose chain was read
-only in part is never `absent`, since an unread ancestor may be revoked or expired. An agent's status is its worst live task, ranked exposed, unknown, mitigated,
-absent, so a mitigated task never hides one that might be exposed. Empty effective recipients and a sensitive task stop only
-sends a tool declares external. The flag is declared evidence, not proof that data can
-leave. `list_agents` adds the status for the returned page with `includeFlags: true`
-(one extra read of those agents; if it is too large, every flag on the page is `unknown`
-and the response says `flagsUnavailable`), and filters with `flag: 'dangerous_three'` (everything
-but `absent`) or `flagStatus` (a read of the full scoped graph).
-An explicit `offset` or `limit` makes `changeSummaryScope: page`: `changes`,
-relationship deltas and affected-agent companions describe that detail page.
-Legacy calls without paging retain complete bounded `changes` summaries with
-`changeSummaryScope: retained`; `details` still defaults to 50. Each affected-agent
-list is capped at 100 with its authorized total and truncation flag; available
-navigation targets current observations. Owner navigation explicitly has scope
-`direct_current_ownership`: it excludes indirect effects through resource
-ownership and does not enumerate every affected agent. Relationship identity uses stable
-endpoints and kind, so a display-name change does not invent an edge change.
-Neither net snapshot changes nor current policy candidates establish effective
-access gained/lost. Approval events, request-time decisions, backend receipts and
-external policy history are explicitly `not_collected`.
+`get_agent_access` returns `boundaryFlags` with one flag, `dangerous_three`: whether one
+of the agent's live tasks can read private data, read outside content and send data out.
 
-Snapshot generation time and component observation times are separate. Tasks and
-tools retain their original capture times after host/MCP recomposition. MCP age
-uses the oldest capture or observation among visible connections; recomposing a
-cached observation does not refresh it. Missing observation times remain unknown
-and stale for observed connections. Unavailable connections use the time their
-failure was captured. Historical projections retain their own capture times.
+| Status | Meaning |
+| --- | --- |
+| `exposed` | All three apply and a declared sending tool runs without approval. |
+| `mitigated` | All three apply, but every possible sender needs approval or is refused after outside content. |
+| `unknown` | The declarations do not settle at least one of the three. |
+| `absent` | At least one of the three is known not to apply. |
 
-On the loopback service, POST `/mcp` uses the official MCP SDK's stateless HTTP transport. The twelve tools
-have the same arguments and use the same service as HTTP. Supply the reference
-bearer in the client's HTTP headers. The host-only `createMapMcpServer(service,
-scope)` factory also supports embedding; only trusted host code chooses scope.
-There are no subscriptions, arbitrary resources or mutation methods. MCP tool
-results return the common JSON envelope as `structuredContent` with an output schema,
-and as text; clients should treat all
-imported names and identifiers as data, never instructions.
+- Each of the three (`privateData`, `outsideContent`, `externalSend`) is `present`,
+  `absent` or `unknown`, with evidence naming the task, tool and resource binding.
+- An agent's status is that of its worst live task, ranked exposed, unknown, mitigated,
+  absent, so a mitigated task never hides one that might be exposed.
+- Only an explicit `readsUntrusted: false` or `sendsExternal: false` rules a tool out.
+  Older inventories, unregistered tools, delegation ancestors outside the reader's scope
+  and chains deeper than 16 ancestors make the affected part `unknown`; `notes` says
+  which.
+- A task counts as live only if no delegation ancestor or handoff source is revoked and
+  none has expired.
+- `list_agents` adds the status with `includeFlags: true` (one extra read of the returned
+  page) and filters with `flag: "dangerous_three"` (everything but `absent`) or
+  `flagStatus`.
 
-The company endpoint exposes the same `/v1/query` envelope with session cookies
-and `X-CSRF-Token`, and deliberately has no `/mcp` route. Bearer/MCP credentials
-and company browser sessions are separate authentication boundaries.
+The flag is declared evidence, not proof that data can leave.
 
-## Host API
+## Outside the guard
 
-### Current IAM policy evidence
+`get_agent_access` also returns `outsideGuard`:
 
-The existing HTTP/MCP operations also expose the collector's optional IAM policy
-candidate layer. `get_agent_access.data.policyEvidence` lists evidence for the
-selected agent. `explain_access.data.externalEvidence.policyEvidence` selects the
-exact task/tool/resource bindings; potential-access lookup further selects the
-requested action. Each result identifies its task, deployment, execution binding,
-resource binding and external endpoints by stable entity ID, with an independent
-policy observation time, status, reason and `assessment: unknown`.
+- `directAccess`: per deployment, the paths the host declared that act without the guard
+  (a shell, a database client, an SDK). The status is `found`, `none_declared` (the host's
+  own claim, not a check) or `unknown` (the host has not said).
+- `identityScope`: for each tool that runs under a static AWS identity, the collected S3
+  buckets that identity has a policy candidate on but the tool's grants do not bind
+  (`broader_than_grants`), or `matches_grants`, or `unknown` with a reason. A record lists
+  at most 100 extra buckets; a cut list is marked `truncated` and keeps its status.
 
-`get_agent_access.data.outsideGuard.identityScope` runs the same evidence the other
-way. For each static execution identity of the selected agent, it lists every
-collected bucket in that account the identity has a candidate on but that tool's
-grants do not bind (`broader_than_grants`), or reports `matches_grants`. Missing,
-stale, disabled or malformed evidence, and an identity with candidates on more than 500
-buckets, report `unknown` with a reason. Each record lists at most 100 extra buckets; a
-cut list is marked `truncated` and keeps its `broader_than_grants` status. Bucket policies, SCPs and permission boundaries are not evaluated, so
-the extra buckets are candidates, not proven access.
+`list_resources` and `get_resource_access` report the same evidence from the resource's
+side. Only S3 identity policies and host declarations are checked. Bucket policies, SCPs
+and permission boundaries are not, so the buckets are candidates, and `none_found` is not
+proof that no path exists.
 
-Only the three collected S3 mappings are supported. A complete record contains
-zero or one candidate with mapping name, condition flag/key names and
-`resourceScope: bucket_summary`. Empty candidates never prove denial. The original
-host resource ARN, kind and scope remain on the binding graph; a bucket summary
-does not authorize an exact object or prefix. Boundaries, unsupported policies,
-missing collection, opt-out and stale/changed evidence remain explicit gaps.
+## IAM policy evidence
 
-The Neo4j reader derives pairs through a visible task's own deployment, declared
-grant, resource binding and execution tool. It validates the exact provider
-links, account ownership, scoped collection, membership and candidate provenance.
-It rechecks the bounded raw evidence and source pointers before returning;
-concurrent changes fail with a stable error instead of mixing observations.
-The reader returns no raw policies, condition values, collection-wide hashes,
-counts or unrelated provider neighbors. Generic Cartography `CAN_*` edges do not
-fill missing owned evidence.
+Where the collector has AWS evidence, `get_agent_access`, `get_agent_inventory`
+(`policies` section), `explain_access` and `find_agents_with_access` return
+`policyEvidence`: one record per task, binding and action, with `status` (`complete`,
+`unavailable`, `not_collected`), a `reason`, an observation time and `candidates`, an
+array with at most one entry.
 
-Policy age uses the tighter of the snapshot's enrolled cloud `maxAgeSeconds` and
-the host's `Neo4jMapStoreOptions.policyMaxAgeSeconds` (default 7,200; maximum
-86,400). A newer AWS capture makes old Guard provider joins unavailable until the
-next successful Guard collection. `get_inventory_health` reports policy coverage
-separately. `get_changes` returns `policyHistory: not_collected`: live candidates
-are not attached to historical inventory snapshots or used to invent policy diffs.
+- Three S3 mappings are supported: `s3:GetObject`, `s3:PutObject`, `s3:ListBucket`.
+- A candidate is bucket-level evidence (`resourceScope: "bucket_summary"`) with a
+  condition flag and the names of its condition keys. It does not authorize an exact
+  object or prefix, and an empty result does not prove denial.
+- No raw policy, condition value or unrelated provider data is returned.
+- Evidence older than the snapshot's enrolled age limit, capped by `policyMaxAgeSeconds`
+  (two hours by default), is reported `stale`, not used.
+- At most 512 task/binding/action pairs are evaluated per read, each operation narrowed to
+  what it shows. `explain_access` fails with `MAP_LIMIT_EXCEEDED` past that; the others
+  answer with coverage `unknown` (see above).
 
-The reader caps each request at 512 task/binding/action pairs and fails overflow
-without returning partial evidence. Fixed read queries, row/byte limits, the
-five-second transaction deadline and the existing response limits still apply.
-Custom `MapStore` implementations may omit `MapProjection.policyEvidence`; supplied
-records receive closed-shape and binding-path validation at the service boundary.
-Complete evidence requires one owning agent and unambiguous tool/identity/binding
-links, including unique task/grant and grant/selector pairs. Distinct valid grants
-and resource selectors remain supported; ambiguous evidence may be reported as
-unavailable with no candidates.
-This metadata never changes executor admission.
+`assessment` is always `unknown`: this metadata never changes what the executor admits.
 
-Sources superseded through the host's [lifecycle command](../../deployment/cartography/SOURCE-LIFECYCLE.md)
-are excluded from normal reads, including explicit source requests and history.
-A read spanning supersession fails rather than returning its old view. The new
-enrollment generation has its own source identity; supersession does not rewrite
-the executor ledger or change agent permissions.
+## Scopes and privacy rules
 
-This self-contained example demonstrates the public contract without requiring
-a database. For real inventory, replace the store with `createNeo4jMapStore` and
-close it when the host shuts down.
+Every caller has a `ReadScope` chosen by the host: `subject`, `companyId`, `tenantIds`,
+`teamIds`, `allTeams`. Request arguments cannot change it.
+
+- **Team readers** see only agents explicitly assigned to one of their teams, and what is
+  attached to those agents. Shared tools, principals, resources and MCP connections do not
+  reveal other teams' entities.
+- **All-teams readers** (`allTeams: true`) also see unassigned inventory and the discovery
+  operations. It is an explicit grant and is never inferred from an empty team list.
+- A hidden id and an id that does not exist return the same `MAP_NOT_FOUND`.
+- For a team reader, a declared direct path whose target is outside its scope is listed
+  without the target; identity-scope buckets that no visible binding maps are mentioned in a
+  note, never named or counted; and explanations always keep a generic "ancestors outside your scope"
+  uncertainty.
+- History is filtered by current ownership, so moving an agent between teams does not
+  expose its old team's evidence.
+- Only allowlisted properties leave the store. Credential entries are opaque references
+  with lifecycle metadata; no secret, token or raw policy is stored or returned.
+- Error responses carry a code and nothing else: no path, name, query or value.
+
+The service provides no arbitrary Cypher, no CORS, no administration route and no way to
+write. The Neo4j driver's read mode is not a privilege boundary, and Neo4j Community has
+no per-team isolation: use a dedicated reader account, and treat the database as a
+trusted service reachable only by the collector and this service.
+
+## Company sign-in
+
+`agent-guard-map-identity` serves the viewer and `POST /v1/query` over HTTPS with OIDC
+sign-in (authorization code flow with S256 PKCE and RS256 ID tokens). It has no `/mcp`
+route.
+
+```sh
+npx agent-guard-map-identity --config /absolute/private/identity.json
+```
+
+- Each exact issuer `sub` is bound to a scope in the configuration. Provider groups and
+  browser arguments cannot grant access.
+- The browser gets an opaque Secure, HttpOnly session cookie and a CSRF value. It
+  receives no provider token. Sessions last at most 15 minutes, capped by the ID token's
+  expiry, and are not refreshed. Sign-out ends the map session only.
+- The endpoint owns TLS, requires the exact Host and Origin, rejects forwarded identity
+  headers and reads only its own two `__Host-agm_*` cookies.
+- The certificate must match its key, be valid and cover the public host name. Once it
+  expires, requests are refused: renew and restart before then. A restart reloads
+  bindings and secrets and ends every session. There is no shared session store.
+- An identity provider clock up to five seconds ahead is tolerated
+  (`oidc.clockToleranceSeconds`, 0 to 60). Expiry is never extended.
+
+Registration, file permissions and the full option list are in the
+[identity guide](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/IDENTITY.md), with an
+[example configuration](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/identity.example.json).
+
+## Configuration
+
+### `agent-guard-map --config FILE`
+
+The file is strict JSON (no comments, no duplicate keys), at most 128 KiB, a regular file
+owned by the service user or root and not writable by group or others. This launcher
+follows a symbolic link at the configuration path (a mounted configuration is often one)
+and applies the checks to the file it leads to; the file may be readable by others and
+may have more than one hard link, because it holds names of environment variables and
+scopes, not secrets. The company launcher below is stricter.
+
+| Key | Required | Meaning |
+| --- | --- | --- |
+| `neo4j.uri` | yes | `neo4j+s://`, `bolt+s://`, or `bolt://` on a loopback address. Plain `neo4j://` is refused. |
+| `neo4j.username` | yes | The reader account. |
+| `neo4j.passwordEnv` | yes | Name of the environment variable that holds the password. |
+| `neo4j.database` | no | Database name; `neo4j` by default. |
+| `neo4j.maxNodes`, `neo4j.maxEdges`, `neo4j.maxBytes` | no | Per-read limits; see [Limits](#limits). |
+| `credentials[]` | yes | 1 to 128 entries of `{ "tokenEnv", "scope" }`. `tokenEnv` names the environment variable that holds an `agm_v1.` token from `createMapToken()`; `scope` is the reader's `ReadScope`. |
+| `port` | no | Loopback port; 8789 by default. |
+| `viewerDirectory` | no | Directory with the viewer's `index.html`, `app.js`, `demo.js` and `app.css` (all four required, each at most 4 MiB, same ownership rule, no symbolic links). The viewer is built from the Agent Guard repository; it is not in this package. |
+
+The server binds `127.0.0.1` only and requires an exact Host header. Do not expose it
+through a proxy that does not check both. To rotate or revoke a token, change the
+environment and restart.
+
+`--help` prints the usage and `--version` the package version. A startup failure prints
+one line, `MAP_START_FAILED <code>: <hint>` (followed by a usage line when an argument is
+wrong), and exits with status 1; see [Error codes](#error-codes).
+
+### `agent-guard-map-identity --config FILE`
+
+The same `neo4j` block, plus `publicOrigin`, `tls` (`keyFile`, `certFile`), `oidc`
+(`issuer`, `clientId`, `clientSecretEnv`, and optional `clientAuthMethod`,
+`endpointOrigins`, `caFile`, `requestTimeoutMs`, `maxResponseBytes`,
+`clockToleranceSeconds`), `companyId` and `bindings` (`subject`, `scope`). Optional:
+`listenHost`, `port`, `viewerDirectory`, `sessionTtlMs`, `loginTtlMs`, `maxSessions`,
+`maxLoginTransactions`, `requestTimeoutMs`, `maxRequestBytes`, `maxResponseBytes`,
+`maxConcurrentRequests`, `rateLimit`. Unlike the reference launcher, this one does not
+follow symbolic links and does not accept files owned by root: the configuration, the
+TLS key and certificate and the optional CA file must each be a regular file owned by
+the service user, with one hard link, not a symbolic link and not writable by group or
+others. The configuration and the TLS key must also be private to the service user (no
+group or other access). Viewer assets keep the rule given for `viewerDirectory` above.
+Details are in the [identity guide](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/IDENTITY.md).
+
+### Options in code
+
+| Where | Option | Default | Range |
+| --- | --- | --- | --- |
+| `MapService` | `maxResponseBytes` | 1 MiB | 128 bytes to 8 MiB |
+| | `maxGraphNodes` / `maxGraphEdges` | 500 / 1,000 | up to 2,000 / 5,000 |
+| | `queryTimeoutMs` | 5,000 | 10 to 10,000 |
+| | `staleAfterSeconds` | 900 | 1 to 86,400 |
+| `createNeo4jMapStore` | `timeoutMs` | 5,000 | up to 5,000 |
+| | `maxSources` | 64 | up to 64 |
+| | `maxNodes` / `maxEdges` / `maxBytes` | 2,000 / 5,000 / 4 MiB | up to 10,000 / 25,000 / 16 MiB (above the defaults: not tested against Neo4j, see [Limits](#limits)) |
+| | `policyMaxAgeSeconds` | 7,200 | up to 86,400 |
+| `startMapServer` | `port` | any free port | 0 to 65,535 |
+| | `maxRequestBytes` | 32 KiB | 128 bytes to 64 KiB |
+| | `maxResponseBytes` | 2 MiB | 128 bytes to 2 MiB |
+| | `requestTimeoutMs` | 10,000 | 10 to 30,000 |
+| | `maxConcurrentRequests` | 4 | 1 to 32 |
+| | `rateLimit` | 120 requests per 60 s per credential | up to 10,000 per window of 10 ms to 60 s |
+
+A value outside its range is `MAP_CONFIG_INVALID`.
+
+## Use it from code
+
+The service takes any `MapStore`. This example needs no database; for real inventory use
+`createNeo4jMapStore` and close it when the host shuts down.
 
 ```ts
 import { MapService, validateReadScope, type MapStore } from '@shieldaai/agent-map';
@@ -377,11 +505,15 @@ const response = await service.query(scope, 'list_agents', {});
 console.log(response.data);
 ```
 
-To embed the company endpoint, load TLS material and secrets in trusted host
-code. This self-contained function uses an empty store and is not invoked by the
-example. Replace its paths, registered issuer/client and subject binding before
-calling it; the host API requires an absolute viewer directory and loaded PEM
-strings. The CLI adds the private-file checks described in the deployment guide.
+A custom `MapStore` is a trusted adapter: it must apply the reader's scope itself. The
+service validates what it is given (allowlisted properties, the shape and binding path of
+policy evidence) but does not turn an unscoped store into a scoped one. `MapReadRequest`
+tells a store what a read needs (`summary`, `owners`, `policy`, `boundary` and so on); a
+store that ignores it and returns the whole scoped graph is still correct.
+
+To embed the company endpoint, load the TLS material and secrets in trusted host code.
+The host API takes loaded PEM strings and an absolute viewer directory; the launcher adds
+the private-file checks.
 
 ```ts
 import { readFile } from 'node:fs/promises';
@@ -420,78 +552,142 @@ export async function startCompanyReference(clientSecret: string): Promise<MapId
         },
       },
     ],
-    viewerDirectory: '/absolute/path/to/agent-guard/apps/agent-map/dist',
+    viewerDirectory: '/absolute/path/to/viewer/dist',
   });
 }
 ```
 
-`bindings[].subject` is the exact IdP `sub`; `scope.subject` is a local alias and
-can differ. The returned server exposes `replaceBindings`, `revokeSubject` and
-`invalidateSessions` only to host code. Each invalidates all current sessions
-and login transactions; revocation also removes that binding. Persist policy
-changes in the host before restarting. Call `close()` during shutdown and close
-any real Neo4j store. No HTTP administration endpoints are exposed.
+`bindings[].subject` is the exact `sub` from the identity provider; `scope.subject` is a
+local alias. The returned server offers `replaceBindings`, `revokeSubject` and
+`invalidateSessions` to host code only; each ends every current session. Call `close()`
+on shutdown.
 
-Custom `MapStore` implementations are trusted adapters and must implement the
-same visibility boundary as `Neo4jMapStore`; the service does not turn an
-unscoped store into a scoped one. The included store filters all node/edge
-queries before limits or materialization. Shared tools, principals, resources
-and MCP connections do not reveal other teams' attached entities. Historical
-membership is intersected with current authorized agent ownership, including
-task ownership, so moving an agent/task between teams cannot expose its old
-team's evidence. Hidden and nonexistent IDs return the same `MAP_NOT_FOUND`.
-Team responses omit source-wide revision counters and hidden ancestor/family
-identifiers. Explanations always retain a generic ancestor-scope uncertainty.
+Other exports: `startMapServer` and `createMapToken` (the loopback service),
+`createMapMcpServer(service, scope)` (an MCP server for a scope that trusted host code
+chooses), `validateReadScope`, `MAP_OPERATIONS`, `MAP_INPUT_SCHEMAS` and
+`validateQueryArguments`.
 
-## Limits and semantics
+`@shieldaai/agent-map/service` exports the service alone, without the Neo4j store or the
+servers: `MapService`, `MAP_OPERATIONS`, `MAP_INPUT_SCHEMAS`, `validateQueryArguments`
+and four names that only this subpath exports, not the package root:
+`MAP_OPERATION_DESCRIPTIONS` (one sentence per operation) and the closed vocabularies
+`MAP_LABELS`, `MAP_RELATIONSHIPS` and `MAP_PROPERTIES`. The subpath does not load
+`neo4j-driver`, `openid-client` or an HTTP server, but it is not free of Node built-ins:
+it imports `node:buffer`, and through `@shieldaai/agent-guard` also `node:crypto` and
+`node:util/types`. A browser bundle must supply stand-ins for those three, as the viewer
+build does.
 
-Loopback defaults: 32 KiB HTTP request, 1 MiB service result (2 MiB transport ceiling),
-500 focused nodes/1,000 edges, 64 sources and 2,000 nodes/5,000 edges per store
-read, 5-second graph/service deadline, 10-second HTTP deadline, four concurrent
-HTTP requests and 120 requests/minute per credential plus a global quota.
-Streaming graph reads cap materialized nodes/edges at 4 MiB. Synchronous service
-processing shares the query deadline and has a 200,000-unit work budget; potential
-access evidence is limited to 1,000 entries and the cumulative response-byte
-budget. Configuration has hard upper bounds. Oversized authorized inventories fail
-closed instead of returning a misleading partial map. Paged operations return
-up to 100 rows with authorized totals and explicit remaining-page indicators.
+## Limits
 
-The company endpoint has separate browser/provider limits, including a default
-600 requests/minute per session and globally. Its complete defaults and hard
-ceilings are in the [identity guide](../../deployment/cartography/IDENTITY.md).
-The MapService/store limits and evidence semantics below apply to both endpoints.
+| Limit | Default | Notes |
+| --- | --- | --- |
+| Nodes, edges and bytes per store read | 2,000 / 5,000 / 4 MiB | Across all of a reader's sources, and both snapshots for `get_changes`. Raise with `maxNodes`, `maxEdges`, `maxBytes`, up to 10,000 / 25,000 / 16 MiB; see the note on raised limits below. |
+| Sources per read | 64 | |
+| Store transaction and service deadline | 5 s each | Does not move when the read limits are raised. |
+| Service work per query | 200,000 units | One budget for the main answer. Four optional parts each count against a separate budget of the same size, so running out there degrades that part instead of failing the answer: the candidate search of `find_agents_with_access`, the page flags of `list_agents` with `includeFlags`, the flag of `get_agent_access`, and outside-guard reach in `list_resources` and `get_resource_access`. |
+| Response size | 1 MiB (service), 2 MiB (HTTP) | Past it, optional detail goes first (identity-scope bucket lists, then the graph); then the answer fails. |
+| Graph in `get_agent_access` | 500 nodes / 1,000 edges | Past it the evidence is returned without the graph. |
+| Rows per page | 50, at most 100 | |
+| Policy pairs per read | 512 | |
+| Candidates in `find_agents_with_access` | 50, at most 100; 1,000 evidence entries | |
+| HTTP request body | 32 KiB | |
+| HTTP request deadline | 10 s | |
+| Concurrent HTTP requests / store reads | 4 / 8 | |
+| Requests per credential | 120 per minute | Plus a global quota. The company endpoint allows 600 per session. |
+| Company session | 15 minutes | Never refreshed. |
 
-The store uses fixed parameterized read-only templates in one transaction,
-allowlisted properties and relationships, bounded graph paths, and a publication
-pointer recheck. It never traverses into arbitrary provider policy data. A
-pointer change fails the query for retry rather than mixing generations.
-Current/previous comparisons are net differences, not an audit history; missing
-or retired previous evidence is explicit. Collection times and global revision
-changes alone are not entity changes. Health describes published inventory,
-not collector process health. Source-wide publication timing is visible to
-authorized readers of that source.
+How many agents each kind of read reaches. These are estimates, not measurements: the
+node limit (2,000 by default, 10,000 at the maximum) divided by the nodes that read loads
+per agent, for a fleet with about a dozen graph nodes per agent (one or two deployments
+and tasks, their grants, bindings, tools and identities). Your figure is your own node
+count per agent, and the edge and byte limits can be reached first.
 
-Blockers describe exported gates at capture/evaluation time. A result without
-blockers remains `unknown`: live budgets, arguments, custom policy, approvals,
-delegation outside scope and backend authorization still require evaluation.
-Potential-access matches retain exact/prefix, static/dynamic, cloud freshness
-and MCP lifecycle limitations. The graph is never used in executor admission.
+| Read | Loads | Estimate, default limits | Estimate, maximum limits |
+| --- | --- | --- | --- |
+| `list_agents`, also with `includeFlags` | Agents, deployments, owners | about 900 | about 4,500 |
+| `list_owners`, all-teams reader | Agents, resource bindings, owners | about 1,900 | about 9,000 |
+| `list_owners`, team reader | The above plus what decides which bindings are visible | about 250 | about 1,200 |
+| `list_resources`, `get_resource_access`, `find_agents_with_access`, `explain_access`, `get_inventory_health`, `list_agents` with `flag` or `flagStatus` | The whole visible graph | about 150 | about 800 |
+| `get_changes` | The whole visible graph of two snapshots | about 75 | about 400 |
+| `get_agent_access`, `get_agent_inventory` | The selected agent's own neighborhood | not bound by fleet size | not bound by fleet size |
+| `list_undeclared_activity`, `list_unclaimed_identities` | Counts and one page, read in the database | not bound by fleet size | not bound by fleet size |
 
-## Validation
+What was tested: `test/capacity.test.mjs` runs the listing operations (`list_agents`,
+`list_owners`, `list_resources`, `get_resource_access`, `find_agents_with_access`,
+`get_inventory_health`) for an all-teams reader over a synthetic fleet of 800 agents in a
+graph of about 9,000 nodes and 8,800 relationships, with the limits at their maximum.
+That test uses a fake database driver. It shows that the store's bookkeeping and the
+service's work budget hold at that size; it says nothing about how long Neo4j takes.
+`get_resource_access` walks every visible agent, so the service work budget can stop it
+before the node limit does.
 
-```sh
-npm test
-npm run test:pack
-cd integrations/cartography
-.venv/bin/python scripts/test-disposable-neo4j.py -- -q
-```
+Raised limits: values above the defaults are accepted up to the maximum, but no read
+above the defaults has been run against a Neo4j database. The transaction deadline stays
+at 5 seconds and records are fetched 32 at a time whatever the limits are, so a read of
+10,000 nodes and 25,000 relationships makes about a thousand round trips inside that
+deadline. A host that raises the limits should load its largest expected fleet into its
+own database and confirm that `list_resources`, `get_inventory_health`,
+`find_agents_with_access` and `get_changes` answer without `MAP_TIMEOUT`, for a team
+reader as well as an all-teams reader.
 
-JavaScript checks cover schemas, immutable scope, query bounds, safe HTTP,
-official SDK HTTP/MCP equivalence, disposable HTTPS/OIDC exchange, cookie/CSRF
-and revocation boundaries, private launcher files and viewer lifecycle behavior.
-The packed-package check compiles both Host API examples and exercises the
-installed identity boundary. Disposable Neo4j checks
-exercise actual published graphs, cross-company/tenant/team isolation, shared
-MCP metadata, moved ownership, hidden IDs, current/previous visibility and
-absence of database mutations. Never run the integration suite against a
-shared or production database.
+Raise the three store limits together: a read holds up to `maxBytes` in memory and up to
+eight reads run at once.
+
+Other things to know:
+
+- A read is one transaction over fixed, parameterized queries. If a new snapshot is
+  published while it runs, the read fails with `MAP_UNAVAILABLE` rather than mix two
+  snapshots; retry it.
+- Snapshot time and component capture times are separate. Recomposing a snapshot does not
+  make an old MCP or cloud observation fresh.
+- Health describes the published inventory, not whether the collector process is running.
+- A source retired through the host's
+  [lifecycle command](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/SOURCE-LIFECYCLE.md) is no longer read.
+- A result of `explain_access` without blockers is still `unknown`: live budgets, request
+  arguments, custom policy, approvals and backend authorization are not evaluated here.
+
+## Error codes
+
+An HTTP error is a JSON body `{ "error": "<code>" }` and nothing else. An MCP tool error
+carries the same code. `service.query` and `store.read` throw a `MapQueryError` whose
+`code` is one of these.
+
+| Code | HTTP status | Meaning |
+| --- | --- | --- |
+| `MAP_REQUEST_INVALID` | 400 | The request is not valid JSON, has an unknown operation or argument, or a wrong value. Also sent with status 417 for an `Expect` header other than `100-continue`. |
+| `MAP_UNAUTHENTICATED` | 401 | The bearer token is missing or not accepted. |
+| `MAP_SESSION_REQUIRED` | 401 | The company session is missing, ended or not signed in. |
+| `MAP_IDENTITY_INVALID` | 401 | Company sign-in could not be completed. |
+| `MAP_REQUEST_DENIED` | 403 | Wrong host, origin, route, method or CSRF value. |
+| `MAP_SCOPE_INVALID` | 403 | The scope given to the service is not a valid `ReadScope`. |
+| `MAP_NOT_FOUND` | 404 | The source, agent, task or resource does not exist or is outside the reader's scope. |
+| `MAP_TIMEOUT` | 408 or 504 | 408: the request did not arrive in time. 504: the request arrived, and the read (or, at sign-in, the identity provider) ran out of time. |
+| `MAP_LIMIT_EXCEEDED` | 413 | The answer needs more than one bounded read, or more work or bytes than allowed. Narrow the request. |
+| `MAP_REQUEST_TOO_LARGE` | 413 | The request body is over the limit. |
+| `MAP_RESPONSE_TOO_LARGE` | 413 | The response is over the transport limit. |
+| `MAP_RATE_LIMITED` | 429 | Too many requests; wait and retry. |
+| `MAP_BUSY` | 503 | Too many requests in progress, or the server is stopping. |
+| `MAP_UNAVAILABLE` | 503 | The database is unreachable, returned something malformed, or a snapshot was published during the read. |
+| `MAP_IDENTITY_UNAVAILABLE` | 503 | The identity provider did not answer. |
+| `MAP_CONFIG_INVALID` | none | Thrown by constructors and launchers for an option out of range or a file that fails its checks. |
+
+Startup failures print `MAP_START_FAILED <code>: <hint>` with one of
+`MAP_ARGUMENT_INVALID` (followed by a usage line), `MAP_CONFIG_NOT_FOUND`,
+`MAP_CONFIG_UNREADABLE`, `MAP_CONFIG_INVALID`, `MAP_CREDENTIAL_REQUIRED` (an environment
+variable the configuration names is empty), `MAP_SCOPE_INVALID`, `MAP_LISTEN_FAILED`,
+`MAP_IDENTITY_INVALID`, `MAP_IDENTITY_UNAVAILABLE` or `MAP_UNAVAILABLE` (a required
+service or capability is unavailable). Any other failure prints
+`MAP_START_FAILED: unexpected failure during startup.` with no code. No path, name, value
+or secret is printed.
+
+## Related
+
+- [Viewer](https://github.com/ShieldaAI/agent-guard/blob/main/apps/agent-map/README.md): the browser interface for this service.
+- [Operations runbook](https://github.com/ShieldaAI/agent-guard/blob/main/deployment/cartography/RUNBOOK.md): collecting, publishing and
+  serving in one place.
+- [Package guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md): which Agent Guard package does what.
+- [Risk map](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md): which risks the map helps with, and which it does not.
+
+## License
+
+Apache-2.0. See [LICENSE](./LICENSE).

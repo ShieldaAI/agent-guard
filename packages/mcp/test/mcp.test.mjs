@@ -33,13 +33,15 @@ test('MCP approval and scoped execution mediate the actual client call', async (
   const guard = new AgentGuard();
   const tool = registerMcpTool(guard, registration(effects));
   const handle = task(guard, tool.name);
-  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: { id: 'report' } }));
+  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: { id: 'report' } }), {
+    code: 'TOOL_UNAPPROVED',
+  });
   assert.equal(effects.length, 0);
   guard.approveTool(tool.name, tool.fingerprint);
   const prepared = await guard.prepare(handle, { tool: tool.name, args: { id: 'report' } });
   assert.deepEqual(JSON.parse(JSON.stringify(await guard.execute(prepared))), { text: 'public' });
   assert.deepEqual(JSON.parse(JSON.stringify(effects)), [{ name: 'read', arguments: { id: 'report' } }]);
-  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: { id: 'other' } }));
+  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: { id: 'other' } }), { code: 'GRANT_DENIED' });
   assert.equal(effects.length, 1);
 });
 
@@ -53,8 +55,10 @@ test('MCP annotations and schemas change the fingerprint and stop prepared calls
   const prepared = await guard.prepare(handle, { tool: before.name, args: { id: 'report' } });
   const after = registerMcpTool(guard, { ...config, tool: { ...config.tool, annotations: { destructiveHint: true } } });
   assert.notEqual(before.fingerprint, after.fingerprint);
-  await assert.rejects(guard.execute(prepared));
-  await assert.rejects(guard.prepare(handle, { tool: after.name, args: { id: 'report' } }));
+  await assert.rejects(guard.execute(prepared), { code: 'TOOL_CHANGED' });
+  await assert.rejects(guard.prepare(handle, { tool: after.name, args: { id: 'report' } }), {
+    code: 'TOOL_UNAPPROVED',
+  });
   assert.equal(effects.length, 0);
   guard.approveTool(after.name, after.fingerprint);
   await guard.execute(await guard.prepare(handle, { tool: after.name, args: { id: 'report' } }));
@@ -68,6 +72,6 @@ test('namespaces are unambiguous and scalar arguments never reach MCP', async ()
   const tool = registerMcpTool(guard, registration(effects));
   guard.approveTool(tool.name, tool.fingerprint);
   const handle = task(guard, tool.name);
-  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: 'invalid' }));
+  await assert.rejects(guard.prepare(handle, { tool: tool.name, args: 'invalid' }), { code: 'RESOLUTION_FAILED' });
   assert.equal(effects.length, 0);
 });

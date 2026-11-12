@@ -7,18 +7,11 @@ pulls an image or mounts the host project, home directory, Docker socket, creden
 store or other management socket. The only host bind mount is a newly created,
 read-only directory containing copies of the selected regular files.
 
-| Host    | Runtime requirement                                                                                 | Validation in this change                                                            |
-| ------- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| Linux   | Local Linux Docker Engine, supported cgroup resource limits                                         | 44/44 platform checks passed with the executor running as a Linux arm64 process inside Colima against its native Linux daemon |
-| macOS   | Local Linux VM, for example Docker Desktop or Colima, sharing the private staging directory         | 44/44 platform checks passed on macOS arm64 with Colima and Linux Docker 29.5.2 |
-| Windows | Local Linux Docker VM/WSL2 mode with a local named-pipe endpoint and staging-directory file sharing | Implemented candidate profile. Native Windows execution must pass the platform gate before Windows rollout |
-
-The [candidate verification record](../docs/validation/guarded-input-review-2026-11-05.json)
-identifies the tested archive and records zero skipped checks in both measured
-profiles. The Linux result covers the process and daemon running inside the VM.
-The [separate ext4 Linux VM recovery run](../docs/validation/witness-vm-power-cut-2026-11-05-a7957d91a4dfc4e2f523675804b58b5b5dc994e4e9ed2ef51d973b9aa38f54f9.json)
-also verified three abrupt guest interruptions using the exact packaged executor.
-The host and physical storage remained powered during those recovery checks.
+| Host | Runtime requirement | Status |
+| --- | --- | --- |
+| Linux | Local Linux Docker Engine with cgroup resource limits | Checked in CI on every change. |
+| macOS | A local Linux VM (Docker Desktop or Colima) sharing the private staging directory | Works through the VM. Run the platform check on your host before relying on it. |
+| Windows | Local Linux Docker VM or WSL2 with a local named-pipe endpoint and staging-directory file sharing | Not verified. Run the platform check on native Windows before use. |
 
 Remote TCP/SSH daemons and non-Linux daemons fail closed. The daemon must report support for memory/swap, process and CPU limits, default seccomp and cgroup namespaces. Docker must be configured
 and available to the trusted host process. Docker management access is powerful;
@@ -76,8 +69,10 @@ hashes, writes only selected regular files into a **new** private directory and
 refuses an existing destination. It never overwrites project files or executes output.
 An agent-generated list of hashes is not a human approval or policy authorization.
 
-Input paths must be explicit portable relative filenames. Input symlinks, hardlinks,
-sockets, devices, traversal and case-colliding selections are rejected. A private
+Input and export paths must be explicit portable relative filenames: at most 240 UTF-8
+bytes each, at most 256 paths, in normalized (NFC) form. Input symlinks, hardlinks,
+sockets, devices, traversal and case-colliding selections are rejected. The same rule
+applies to artifact receipts and build policies. A private
 parent under the host home directory protects staging files from other local users;
 only its dedicated input child is mounted. This location supports VM file sharing
 without mounting the home directory itself.
@@ -91,11 +86,12 @@ Keep the host account, its temporary directory and the Docker daemon private.
 
 Exports use a bounded tar stream from `/workspace` because Docker's copy API does
 not reliably copy tmpfs contents. The host parser reads regular-file bytes into
-memory and **never extracts an archive**. Links, devices, extended/PAX records,
-traversal, duplicate/case-colliding paths, invalid checksums and missing selected
-outputs fail the export. A link anywhere in the workspace blocks export. Long path
-or extended tar features are deliberately unsupported. The workspace is discarded
-after collecting outputs, even if the command exits unsuccessfully.
+memory and **never extracts an archive**. Links, devices, traversal,
+duplicate/case-colliding paths, invalid checksums and missing selected outputs fail the
+export. A link anywhere in the workspace blocks export. Long file names are read from
+the archive's long-name and `path` records; other extended tar features are refused. A
+command that exits unsuccessfully returns its exit code and output without an export.
+The workspace is discarded afterwards.
 
 Public utilities are `validateSandboxProfile`, `buildDockerCreateArgs`,
 `readSandboxArchive` and `writeReviewedExports`, alongside `runDockerSandbox`.
@@ -112,7 +108,7 @@ AGENT_GUARD_SANDBOX_IMAGE='alpine@sha256:bbfcd601d7cd20d35bb0b8b866ad1a8a0d107ca
   node --test packages/executor/test/sandbox.test.mjs
 ```
 
-That digest was present locally for this validation; it is a reproducible smoke-test
+That digest is a reproducible smoke-test
 fixture, not a production image recommendation. Tests inspect UID, capabilities,
 no-new-privileges, network interfaces and actual cgroup memory/process limits, verify
 read-only host input/root filesystems, reject malicious exports, exercise timeout/
@@ -123,19 +119,19 @@ Installed CI workflows:
 
 - The ordinary CI runs unit/build/package checks on Linux, macOS and Windows; the
   Node 22/24/26 compatibility matrix also runs on Linux.
-- The manually dispatched `Platform isolation gate` runs this unchanged real-Docker
+- The manually dispatched `Platform isolation gate` workflow runs this unchanged real-Docker
   suite on dedicated runners labeled `agent-guard-isolation` plus `Linux`, `macOS`
   or `Windows`. These runners must provide the corresponding Linux daemon/VM.
 - Provision the same reviewed digest beforehand, confirm local endpoint/LINUX mode,
   and archive host OS, Docker/VM versions and unskipped test results. A skipped
   integration suite must not count as platform isolation certification. The
-  `scripts/verify-platform.mjs` gate requires the image input and writes
+  `scripts/verify-platform.mjs` check requires the image input and writes
   `artifacts/platform-evidence.json`. Do not run untrusted pull requests on a
   persistent runner with Docker-management privileges.
 
 ### Windows preflight and failure handling
 
-Run the Windows gate from native Windows Node under the dedicated host account.
+Run the Windows check from native Windows Node under the dedicated host account.
 A Node process running inside WSL exercises the Linux profile. Use Node 22.13.0 or
 later, a fixed local drive, and a canonical workspace path. Selected file names
 must match their on-disk spelling. Network shares, junctions, symbolic links,
@@ -152,8 +148,8 @@ PowerShell profile. Configure the Docker Linux VM to share the account's private
 `.agent-guard-stage-*` directories. Provision the account's filesystem ACLs outside
 the library. The POSIX rollback-witness profile is unavailable on Windows.
 
-After building the candidate, first run the two native file-reader tests, then
-the complete platform gate with locally installed reviewed image digests. In
+After building, first run the two native file-reader tests, then
+the complete platform check with locally installed reviewed image digests. In
 PowerShell, replace both image placeholders before running these commands.
 
 ```powershell
@@ -165,7 +161,7 @@ $env:AGENT_GUARD_MCP_ISOLATION_IMAGE = 'REVIEWED_NODE_IMAGE@sha256:REVIEWED_DIGE
 node scripts/verify-platform.mjs
 ```
 
-Retain a passing `artifacts/platform-evidence.json` with zero skipped checks
+Keep a passing `artifacts/platform-evidence.json` with zero skipped checks
 before enabling this profile. A file-reader failure calls for checking the path,
 links, account permissions, available PowerShell compiler and private temporary
 directory. A Docker failure calls for checking Linux mode, the local named-pipe
@@ -239,11 +235,11 @@ keep those administration decisions outside model-controlled tools. A process
 with the host account's privileges can modify private staging or use the signing
 key directly. Run hostile code inside the guest under a separate identity.
 
-The platform gate now requires `AGENT_GUARD_EXPECTED_HOST` (`Linux`, `macOS` or
+The platform check requires `AGENT_GUARD_EXPECTED_HOST` (`Linux`, `macOS` or
 `Windows`) to match the actual host, zero skipped/cancelled/todo tests, all three
 real isolation cases, the signed artifact import case and the durable shell
 approval/budget/cancellation case. A successful
-ordinary unit run with Docker tests skipped is not platform evidence.
+ordinary unit run with Docker tests skipped does not check the platform.
 
 
 ## Registering shell execution with the durable executor

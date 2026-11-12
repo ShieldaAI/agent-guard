@@ -306,7 +306,8 @@ test('list_agents asks the store for a flags read only when flags are requested'
     { summary: true },
     { flags: true, agentIds: ['e:agent'] },
     { flags: true },
-    { outsideGuard: true },
+    // A listing shows no policy evidence, so it asks the store for none.
+    { outsideGuard: true, policy: false },
   ]);
   // Showing flags reads only the page's agents; filtering by flag needs the whole index.
 });

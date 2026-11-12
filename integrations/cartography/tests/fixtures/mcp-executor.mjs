@@ -7,8 +7,8 @@ import { join } from 'node:path';
 import { InMemoryTransport } from '@modelcontextprotocol/client';
 import { McpServer, fromJsonSchema } from '@modelcontextprotocol/server';
 import { ManagedMcpConnection } from '../../../../packages/mcp/dist/index.js';
-import { DurableExecutor, composeInventorySnapshot, composeMcpInventorySnapshot,
-  createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/index.js';
+import { DurableExecutor } from '../../../../packages/executor/dist/index.js';
+import { composeInventorySnapshot, composeMcpInventorySnapshot, createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/entry-inventory.js';
 
 const directory = realpathSync(mkdtempSync(join(tmpdir(), 'guard-mcp-contract-')));
 const callbacks = { authorize: 0, register: 0, resolve: 0, execute: 0, send: 0, nativeSession: 0, foreignRead: 0 };

@@ -26,6 +26,9 @@ import { validateTls } from './tls-policy.mjs';
 
 const log = (event, details = {}) =>
   process.stdout.write(`${JSON.stringify({ at: new Date().toISOString(), event, ...details })}\n`);
+// The configuration key of the file that failed (for example "tls.keyFile"), as named by loadConfig.
+const fileRoleOf = error =>
+  typeof error?.role === 'string' && /^[A-Za-z][A-Za-z0-9.[\]]{0,63}$/.test(error.role) ? { file: error.role } : {};
 const usage = `Agent Ops single-owner Linux service
   node apps/agent-ops/cli.mjs onboard --manifest /private/company.json --output-dir /private/new-company-bundle
   node apps/agent-ops/cli.mjs preflight --config /absolute/private/config.json
@@ -44,6 +47,8 @@ const usage = `Agent Ops single-owner Linux service
 Init accepts new stores only. Check and key rotation require the running owner to be stopped.
 See deployment/production/README.md for enrollment, backup, rotation and recovery.`;
 let runtime, http;
+// What was being read or done when a start failed: a fixed option name or step, never a path or a value.
+let step = 'arguments';
 try {
   if (process.argv.slice(2).length === 1 && process.argv[2] === '--help') {
     process.stdout.write(usage + '\n');
@@ -100,19 +105,26 @@ try {
     fail('USAGE_INVALID');
   if (command === 'onboard') {
     if (!flags.manifest || !flags['output-dir']) fail('USAGE_INVALID');
+    step = '--manifest';
     log('ONBOARDING_PREPARED', onboard({ manifestFile: flags.manifest, outputDirectory: flags['output-dir'] }));
   } else {
     if (!flags.config) fail('USAGE_INVALID');
+    step = '--config';
     const config = loadConfig(flags.config);
     // The actual entry point enforces custody even when preflight was skipped.
+    step = 'storage-paths';
     if (command !== 'preflight') validateStoragePaths(config);
+    step = 'tls';
     if (command === 'serve' || command === 'init') validateTls(config.tls, config.publicOrigin);
+    step = command;
     if (command === 'init') {
       if (!flags.tickets) fail('USAGE_INVALID');
+      step = '--tickets';
       const seed = readTicketFile(flags.tickets);
       const enrolled = new Set(config.bindings.map(binding => binding.tenantId));
       if (!Array.isArray(seed.tickets) || seed.tickets.some(ticket => !enrolled.has(ticket?.tenantId)))
         fail('IMPORT_TENANT_NOT_ENROLLED');
+      step = command;
       log('INITIALIZED', initializeRuntime(config, seed.tickets));
     } else if (command === 'check') log('STORES_VERIFIED', openRuntime(config, { checkOnly: true }));
     else if (command === 'preflight') {
@@ -209,7 +221,9 @@ try {
     } else {
       const skew = flags['accept-clock-skew'];
       if (skew !== undefined && (!/^[1-9][0-9]{0,7}$/.test(skew) || Number(skew) > 86_400_000)) fail('USAGE_INVALID');
+      step = 'stores';
       runtime = openRuntime(config, skew === undefined ? {} : { acceptClockSkewMs: Number(skew) });
+      step = 'listen';
       http = await startOpsServer({
         ...config,
         host: config.listenHost,
@@ -229,8 +243,10 @@ try {
       };
       let stopping = false;
       // Only a stable uppercase code is logged, never a message or a path.
-      const reason = error =>
-        typeof error?.code === 'string' && /^[A-Z_]{1,64}$/.test(error.code) ? { code: error.code } : {};
+      const reason = error => ({
+        ...(typeof error?.code === 'string' && /^[A-Z_]{1,64}$/.test(error.code) ? { code: error.code } : {}),
+        ...fileRoleOf(error),
+      });
       const stop = async (event, exitCode = 0, details = {}) => {
         if (stopping) return;
         stopping = true;
@@ -285,7 +301,7 @@ try {
   const code =
     typeof error?.code === 'string' && /^[A-Z_]{1,64}$/.test(error.code) ? error.code : 'CONFIG_OR_STORE_UNAVAILABLE';
   process.stderr.write(
-    `${JSON.stringify({ event: 'START_FAILED', code, help: 'See deployment/production/README.md. Preserve existing state; do not initialize as a repair.' })}\n`,
+    `${JSON.stringify({ event: 'START_FAILED', code, step, ...fileRoleOf(error), help: 'See deployment/production/README.md. Preserve existing state; do not initialize as a repair.' })}\n`,
   );
   if (code === 'USAGE_INVALID') process.stderr.write(usage + '\n');
   process.exitCode = 1;

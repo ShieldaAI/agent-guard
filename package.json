@@ -1,7 +1,7 @@
 {
   "name": "shielda-agent-guard-workspace",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
@@ -25,8 +25,8 @@
     "demo": "npm run build && node examples/basic.mjs",
     "pack": "npm run build && node scripts/pack.mjs",
     "verify:mcp-isolation": "npm run build && node scripts/verify-mcp-isolation.mjs",
-    "format": "prettier --write \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\"",
-    "format:check": "prettier --check \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js}\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\""
+    "format": "prettier --write \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js,jsx}\" \"apps/agent-map/src/**/*.css\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\"",
+    "format:check": "prettier --check \"packages/**/*.{ts,mts,mjs,js}\" \"apps/**/*.{ts,mts,mjs,js,jsx}\" \"apps/agent-map/src/**/*.css\" \"scripts/**/*.{ts,mts,mjs,js}\" \"examples/**/*.{ts,mts,mjs,js}\""
   },
   "devDependencies": {
     "@modelcontextprotocol/client": "2.4.0",

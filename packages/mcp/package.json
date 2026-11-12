@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-mcp",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Authorize MCP tool calls in TypeScript with approved metadata, task-scoped resources and Agent Guard.",
   "license": "Apache-2.0",
   "type": "module",
@@ -35,7 +35,10 @@
     "url": "https://github.com/ShieldaAI/agent-guard/issues"
   },
   "keywords": [
+    "agent-guard",
     "ai-agents",
+    "security",
+    "authorization",
     "mcp",
     "model-context-protocol",
     "typescript",
@@ -51,7 +54,7 @@
   },
   "dependencies": {
     "jose": "6.2.13",
-    "@shieldaai/agent-guard": "0.1.0",
+    "@shieldaai/agent-guard": "1.0.0",
     "@modelcontextprotocol/client": "2.4.0"
   }
 }

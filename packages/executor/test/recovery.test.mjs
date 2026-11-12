@@ -33,14 +33,15 @@ for (const point of ['before-admission-commit', 'after-admission-commit', 'after
       import {writeFileSync} from 'node:fs';
       let armed=false;
       const original=LedgerStore.prototype.transaction;
-      LedgerStore.prototype.transaction=function(operation){
+      LedgerStore.prototype.transaction=function(operation,options){
         let observed;
+        // Admission and dispatch are one commit: an admitted action is RUNNING in the ledger.
         const result=original.call(this,state=>{
           const result=operation(state);observed=Object.values(state.actions)[0]?.status;
-          if(armed&&process.argv[3]==='before-admission-commit'&&observed==='ADMITTED')process.exit(17);
+          if(armed&&process.argv[3]==='before-admission-commit'&&observed==='RUNNING')process.exit(17);
           return result;
-        });
-        if(armed&&((process.argv[3]==='after-admission-commit'&&observed==='ADMITTED')||(process.argv[3]==='after-settlement-commit'&&observed==='SUCCEEDED')))process.exit(17);
+        },options);
+        if(armed&&((process.argv[3]==='after-admission-commit'&&observed==='RUNNING')||(process.argv[3]==='after-settlement-commit'&&observed==='SUCCEEDED')))process.exit(17);
         return result;
       };
       const e=new DurableExecutor({database:process.argv[1],encryptionKey:Buffer.alloc(32,7),clock:()=>1000});

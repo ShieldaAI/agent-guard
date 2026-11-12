@@ -58,7 +58,7 @@ custody --operation enroll
 custody --operation enroll --apply --digest REVIEWED_ENROLLMENT_DIGEST
 ```
 
-Review the returned counts and digest, then use that exact digest. The application command always enrolls its authority and ticket stores with their existing stable identities. The full original runtime key set is encrypted into migration escrow before any key can leave the active ring. It preserves keys for unknown older backups; it does not enumerate or invalidate them. Enrolled ledgers require at least schema 2 so older published readers fail closed; current-state mirrored ledgers preserve schema 3. A managed marker binds the runtime ring to the witnessed source stores; restoring an older unmarked ring cannot bypass that binding.
+Review the returned counts and digest, then use that exact digest. The application command always enrolls its authority and ticket stores with their existing stable identities. The full original runtime key set is encrypted into migration escrow before any key can leave the active ring. It preserves keys for unknown older backups. Enrolled ledgers require at least schema 2 so older published readers fail closed; current-state mirrored ledgers preserve schema 3. A managed marker binds the runtime ring to the witnessed source stores; restoring an older unmarked ring cannot bypass that binding.
 
 After enrollment, use `custody --operation rotate` instead of the generic runtime `rotate` command. Generic raw-ring export and runtime rotation reject managed rings. Runtime startup still needs only its active keyring and the existing stores; offline custody secrets are never required to serve requests.
 
@@ -86,7 +86,7 @@ custody --operation retire --key-id initial
 custody --operation retire --key-id initial --apply --digest REVIEWED_RETIREMENT_DIGEST
 ```
 
-Choose a fresh key ID that has never been issued in this custody catalog. Rotation first commits independent escrow, then atomically publishes the new active key, then rekeys both stores while preserving their plaintext authority and archived data. The pending journal permits either store to be on the old or new key after interruption. Retirement refuses a key still used by any enrolled store, the final active key, changed backups, missing history, or unregistered ring changes. The old key remains encrypted in escrow for old snapshots and unmanaged historical backups; it is never wiped from historical custody.
+Choose a fresh key ID that has never been issued in this custody catalog. Rotation first commits independent escrow, then atomically publishes the new active key, then rekeys both stores while preserving their plaintext authority and archived data. The pending journal permits either store to be on the old or new key after interruption. Retirement refuses a key still used by any enrolled store, the final active key, changed backups, missing history, or unregistered ring changes. The old key remains encrypted in escrow for old snapshots and unmanaged historical backups.
 
 Runtime keyring capacity remains its explicit policy (default 4, configurable 1..64). Retire a verified inactive key before adding another when full. Do not edit JSON to drop keys or reuse a retired ID. Key rotation changes outer-key-derived inventory/trace references; reenroll collectors with a new enrollment generation before resuming exports.
 
@@ -111,7 +111,7 @@ custody --operation restore --backup-id RETURNED_BACKUP_UUID --apply --digest RE
 
 Restore supports missing or corrupted data files **only when every saved snapshot commitment exactly matches its current independently retained witness**. Witness files are locked, never copied or rewritten. A service transaction or key rotation after the backup advances the witness; that older backup is then rejected as `CUSTODY_RESTORE_STALE`. This deliberately prevents replaying old approvals, budgets or external effects. A cold snapshot is not a promise of recovery to an earlier point after new external work.
 
-The supported restore is in place in the enrolled directories with their current identities. It does not re-enroll relocated history directories, restore lost witnesses, reconcile unconfirmed external effects or authorize data-loss rollback. If current witnesses have advanced beyond all available snapshots, the cold `custody restore` command cannot safely reconstruct missing transactions. For the enrolled current-state mirror profile, use the exact-current repair procedure below. Without that mirror, preserve the evidence and resolve recovery with the authoritative backend. Physical-host power loss and independent-volume durability require validation on the deployment’s actual storage.
+The supported restore is in place in the enrolled directories with their current identities. It does not re-enroll relocated history directories, restore lost witnesses, reconcile unconfirmed external effects or authorize data-loss rollback. If current witnesses have advanced beyond all available snapshots, the cold `custody restore` command cannot safely reconstruct missing transactions. For the enrolled current-state mirror profile, use the exact-current repair procedure below. Without that mirror, preserve the surviving files and resolve recovery with the authoritative backend.
 
 After successful recovery, run the existing offline `check` and inspect unconfirmed work before starting the service. The independent custody journal and all keys must remain intact until recovery is complete.
 
@@ -133,13 +133,6 @@ custody --operation verify --backup-id A_REGISTERED_BACKUP_UUID
 The new custody key encrypts the current catalog state and future escrow records/manifests. Old catalog records and backup envelopes remain readable using retained offline keys. Reuse the same next key ID if interrupted. Preserve every custody key; the current helper has a 64-key ceiling and refuses overflow. There is no automatic historical-envelope re-encryption or old custody-key destruction.
 
 If an old custody secret may have leaked, rotate custody first, then rotate runtime keys through managed custody so newly issued runtime keys and future archive keys are protected by the fresh custody secret. This cannot make already exposed backups or historical keys secret again. Recovering from a compromised host requires a trustworthy host and independently verified custody, not merely changing a file on that host. Record the incident scope and preserve required historical keys separately.
-
-## SDK use and evidence
-
-`manageLedgerCustody(options, request)` previews; pass `{expectedDigest: preview.digest}` as its third argument to apply. The options enroll an exact bounded store set and a host-only authoritative history adapter. The generic SDK CLI intentionally refuses ledgers with exported history unless such a host integration supplies the complete closure. All JSON outputs contain counts, limits, IDs, digests and outcomes, never raw keys or decrypted business records.
-
-Functional regressions cover both-store rotation, active retirement with old-backup readability, independent custody-key rotation, rollback/tamper refusal, complete business-history backup/restore, process termination after retirement intent, and partial restore-stage recovery. These are local functional/process-crash observations; deployment evidence and actual storage durability remain separately recorded.
-
 
 ## Repair the latest committed state after primary storage loss
 
@@ -171,9 +164,6 @@ If a history-compaction transition was pending, its required target segment is r
 
 For a legacy installation, provision the configured private `historyMirrorDirectory` under independent witness custody, then use `enroll-history-mirror --config PATH` and its exact `--apply --digest HASH`. That operation verifies and backfills the entire history closure, enables both native store mirrors, and publishes the directory enrollment. A crash between enrollment phases is fail-closed and retryable using a fresh preview; do not start an older binary. The generic SDK offers `manageLedgerRecovery(options, {operation:'enroll'})` and `agent-guard-ledger recovery enroll --config PATH`; application history must use the authoritative host adapter, never a user-selected partial file list.
 
-Current-state tests cover newer writes after a cold checkpoint, complete primary data/history loss, exact receipt preservation, rotation, archive/catalog replication, mode removal refusal, actual old-reader fencing, mirror-write rollback, process loss before/after commit, interrupted primary promotion, and a process killed after native super-journal publication with the entire primary directory removed. These are functional and process/storage-loss simulations. Physical power loss, controller flush behavior and simultaneous independent-domain loss remain deployment-specific validation responsibilities.
-
-
 ### Recover the independent custody catalog
 
 New custody catalogs also enable schema-3 current-state mirroring. If the catalog's primary database is lost after runtime-key retirement, its current escrow/index can be repaired from the surviving independent custody witness and retained offline custody keyring. This operation uses the `custody` profile because it explicitly needs those offline secrets; the ordinary application repair does not.
@@ -200,3 +190,11 @@ docker compose -f deployment/production/compose.yaml --profile custody run --rm 
 ```
 
 Existing pre-mirror custody catalogs must be migrated while their current primary database still authenticates: use the same two commands with `recovery enroll` in place of `recovery repair`. Enrollment atomically binds the current ciphertext and complete catalog rows under schema 3; it does not reset prior key issuance, retirements or backup inventory. After repair, run custody `status` and verify the registered backups before any new retirement. Lost current custody witnesses or all retained offline keys remain outside this recoverable-primary-loss guarantee.
+
+## SDK use and test coverage
+
+`manageLedgerCustody(options, request)` previews; pass `{expectedDigest: preview.digest}` as its third argument to apply. The options enroll an exact bounded store set and a host-only authoritative history adapter. The generic SDK CLI intentionally refuses ledgers with exported history unless such a host integration supplies the complete closure. All JSON outputs contain counts, limits, IDs, digests and outcomes, never raw keys or decrypted business records.
+
+The custody tests cover both-store rotation, active retirement with old-backup readability, independent custody-key rotation, rollback/tamper refusal, complete business-history backup/restore, process termination after retirement intent, and partial restore-stage recovery. The current-state tests cover newer writes after a cold checkpoint, complete primary data/history loss, exact receipt preservation, rotation, archive/catalog replication, mode removal refusal, actual old-reader fencing, mirror-write rollback, process loss before/after commit, interrupted primary promotion, and a process killed after native super-journal publication with the entire primary directory removed.
+
+These tests run locally and simulate process and storage loss. Physical power loss, controller flush behavior, independent-volume durability and simultaneous loss of independent domains must be validated on the deployment's actual storage.
