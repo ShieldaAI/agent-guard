@@ -223,7 +223,8 @@ test('HTTP limits simultaneous work and reports bounded query timeouts', async t
   const service = new MapService({ read: () => new Promise(() => {}) }, { queryTimeoutMs: 20 });
   const timed = await setup(t, { service, requestTimeoutMs: 1000 });
   const result = await timed.send();
-  assert.equal(result.status, 408);
+  // The request arrived in full; the store was slow.
+  assert.equal(result.status, 504);
   assert.equal(result.text, '{"error":"MAP_TIMEOUT"}');
 });
 test(
@@ -233,7 +234,8 @@ test(
   async t => {
     const dir = await mkdtemp(join(tmpdir(), 'agent-map-assets-'));
     t.after(() => rm(dir, { recursive: true, force: true }));
-    for (const name of ['index.html', 'app.js', 'app.css']) await writeFile(join(dir, name), `asset ${name}`);
+    for (const name of ['index.html', 'app.js', 'demo.js', 'app.css'])
+      await writeFile(join(dir, name), `asset ${name}`);
     await writeFile(join(dir, 'secret.txt'), 'not public');
     if (!assetOpensSupported) {
       await assert.rejects(
@@ -267,11 +269,11 @@ test(
     assert.equal(s.calls.length, 0);
   },
 );
-test('HTTP deadline flushes a 408 for slow queries and incomplete request bodies', async t => {
+test('HTTP deadline flushes a 504 for slow queries and a 408 for incomplete request bodies', async t => {
   const service = new MapService({ read: () => new Promise(() => {}) }, { queryTimeoutMs: 300 });
   const s = await setup(t, { service, requestTimeoutMs: 60 });
   const result = await s.send();
-  assert.equal(result.status, 408);
+  assert.equal(result.status, 504);
   assert.equal(result.text, '{"error":"MAP_TIMEOUT"}');
   const bodyTimeout = await new Promise((resolve, reject) => {
     const req = httpRequest(

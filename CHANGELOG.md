@@ -300,6 +300,15 @@ additions, then fixes.
 
 ### Agent Map and viewer (experimental)
 
+- Change (agent map): `MAP_TIMEOUT` answers 504 when the whole request had arrived and the
+  read (or, at sign-in, the identity provider) ran out of time. It stays 408 when the request
+  itself did not arrive in time. The error body is unchanged.
+- Change (agent map, viewer): the demo is built as its own file, `demo.js`, which the page
+  fetches only when a reader opens the demo (`app.js` went from 897 KB to 815 KB). The
+  directory given as `viewerDirectory` must now hold four files: `index.html`, `app.js`,
+  `demo.js` and `app.css`.
+- Change (viewer): the viewer's error class is `ViewerError`; it was named `ReferenceError`,
+  like the JavaScript built-in.
 - Fix (viewer): refreshing the agent list, or returning to a company page, keeps the
   current rows on screen while the same list is read again, so the page keeps its height,
   scroll position and keyboard focus. A different filter or page still shows "Loading

@@ -433,7 +433,7 @@ scopes, not secrets. The company launcher below is stricter.
 | `neo4j.maxNodes`, `neo4j.maxEdges`, `neo4j.maxBytes` | no | Per-read limits; see [Limits](#limits). |
 | `credentials[]` | yes | 1 to 128 entries of `{ "tokenEnv", "scope" }`. `tokenEnv` names the environment variable that holds an `agm_v1.` token from `createMapToken()`; `scope` is the reader's `ReadScope`. |
 | `port` | no | Loopback port; 8789 by default. |
-| `viewerDirectory` | no | Directory with the viewer's `index.html`, `app.js` and `app.css` (each at most 4 MiB, same ownership rule, no symbolic links). The viewer is built from the Agent Guard repository; it is not in this package. |
+| `viewerDirectory` | no | Directory with the viewer's `index.html`, `app.js`, `demo.js` and `app.css` (all four required, each at most 4 MiB, same ownership rule, no symbolic links). The viewer is built from the Agent Guard repository; it is not in this package. |
 
 The server binds `127.0.0.1` only and requires an exact Host header. Do not expose it
 through a proxy that does not check both. To rotate or revoke a token, change the
@@ -661,7 +661,7 @@ carries the same code. `service.query` and `store.read` throw a `MapQueryError` 
 | `MAP_REQUEST_DENIED` | 403 | Wrong host, origin, route, method or CSRF value. |
 | `MAP_SCOPE_INVALID` | 403 | The scope given to the service is not a valid `ReadScope`. |
 | `MAP_NOT_FOUND` | 404 | The source, agent, task or resource does not exist or is outside the reader's scope. |
-| `MAP_TIMEOUT` | 408 | The read or the request ran out of time. |
+| `MAP_TIMEOUT` | 408 or 504 | 408: the request did not arrive in time. 504: the request arrived, and the read (or, at sign-in, the identity provider) ran out of time. |
 | `MAP_LIMIT_EXCEEDED` | 413 | The answer needs more than one bounded read, or more work or bytes than allowed. Narrow the request. |
 | `MAP_REQUEST_TOO_LARGE` | 413 | The request body is over the limit. |
 | `MAP_RESPONSE_TOO_LARGE` | 413 | The response is over the transport limit. |

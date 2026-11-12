@@ -5,7 +5,7 @@ import cytoscape from 'cytoscape';
 import { MAP_OPERATIONS } from '@shieldaai/agent-map/service';
 import { queryDemo } from '../src/demo.mjs';
 import { DEMO_SOURCE_ID as sourceId } from '../src/demo-store.mjs';
-import { viewerBuildOptions } from '../build.mjs';
+import { demoBuildOptions, viewerBuildOptions } from '../build.mjs';
 import { errorMessage, graphElements, initialExplanation, OPERATIONS, policyEvidenceRows } from '../src/view-model.mjs';
 import { boundaryFlagRows, flagFilterArgs, outsideGuardRows } from '../src/boundary-model.mjs';
 import { undeclaredActivityLabel, unclaimedSummary } from '../src/discovery-model.mjs';
@@ -424,21 +424,33 @@ test('an open demo never drifts into stale: capture times follow each read', asy
   assert.equal((await access('agent-research')).data.boundaryFlags[0].status, 'exposed');
 });
 
-test('the viewer bundle carries the service and no Node-only import', async () => {
-  const result = await build({ ...viewerBuildOptions, write: false, logLevel: 'silent' });
-  const script = result.outputFiles.find(file => file.path.endsWith('app.js'));
-  assert.ok(script, 'the bundle has a script');
-  assert.equal(/\bfrom\s*["']node:|\brequire\(\s*["']node:|\bimport\(\s*["']node:/.test(script.text), false);
-  // A quoted `node:<built-in>` specifier; cytoscape's own `node:selected` selector is not one.
-  assert.equal(
-    /["']node:(?:buffer|crypto|util|fs|http|https|net|tls|path|url|module|os|stream|events|child_process|zlib)\b/.test(
-      script.text,
-    ),
-    false,
-  );
-  assert.equal(/neo4j/i.test(script.text), false);
-  // The service's own wording is in the page, not a copy of it.
-  assert.ok(script.text.includes('Explanation only; no action was prepared or executed.'));
-  // 809 KB before the service was bundled; this bound leaves room for it and little else.
-  assert.ok(script.contents.byteLength < 900 * 1024, `bundle is ${script.contents.byteLength} bytes`);
+test('the demo is its own file with the service in it, and neither file has a Node-only import', async () => {
+  const output = async (options, name) => {
+    const result = await build({ ...options, write: false, logLevel: 'silent' });
+    const script = result.outputFiles.find(file => file.path.endsWith(name));
+    assert.ok(script, `the build writes ${name}`);
+    assert.equal(/\bfrom\s*["']node:|\brequire\(\s*["']node:|\bimport\(\s*["']node:/.test(script.text), false);
+    // A quoted `node:<built-in>` specifier; cytoscape's own `node:selected` selector is not one.
+    assert.equal(
+      /["']node:(?:buffer|crypto|util|fs|http|https|net|tls|path|url|module|os|stream|events|child_process|zlib)\b/.test(
+        script.text,
+      ),
+      false,
+    );
+    assert.equal(/neo4j/i.test(script.text), false);
+    return script;
+  };
+  const app = await output(viewerBuildOptions, 'app.js'),
+    demo = await output(demoBuildOptions, 'demo.js');
+  // The service's own wording is in the demo file, not a copy of it, and not in the page's script.
+  const wording = 'Explanation only; no action was prepared or executed.';
+  assert.ok(demo.text.includes(wording));
+  assert.equal(app.text.includes(wording), false);
+  // The page asks for the demo by the one name the map service serves it under.
+  assert.equal(app.text.match(/import\(\s*["']([^"']+)["']\s*\)/g)?.length, 1);
+  assert.match(app.text, /import\(\s*["']\.\/demo\.js["']\s*\)/);
+  assert.equal(/\bimport\s*\(/.test(demo.text), false);
+  // The page's script was 809 KB before the demo existed; the bounds leave little room for more.
+  assert.ok(app.contents.byteLength < 820 * 1024, `app.js is ${app.contents.byteLength} bytes`);
+  assert.ok(demo.contents.byteLength < 120 * 1024, `demo.js is ${demo.contents.byteLength} bytes`);
 });

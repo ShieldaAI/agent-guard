@@ -12,10 +12,12 @@ import {
   watchCompanySession,
 } from '../view-model.mjs';
 import { flagFilterArgs } from '../boundary-model.mjs';
-import { queryDemo } from '../demo.mjs';
 
 export const PAGE_SIZE = 20;
 let workspaces = 0;
+// The demo (the map service and its fixture) is a file of its own, fetched when a reader first
+// opens the demo; a reader who signs in never downloads it.
+const queryDemo = async (operation, args) => (await import('../demo.mjs')).queryDemo(operation, args);
 const SESSION_ENDED = 'Your company session ended or its access changed. Check sign-in to continue.';
 
 /**

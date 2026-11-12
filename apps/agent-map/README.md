@@ -24,13 +24,13 @@ compiled map service (`@shieldaai/agent-map/service`, and through it
 build and tests fail until the packages have been compiled once. After that,
 `npm run build --workspace @shieldaai/agent-map-viewer` rebuilds the viewer alone.
 
-The build writes `dist/index.html`, `dist/app.js` and `dist/app.css`. Serve them with the
+The build writes `dist/index.html`, `dist/app.js`, `dist/demo.js` and `dist/app.css`. Serve them with the
 map service's `viewerDirectory` option (see the package README). Any static file server is
 enough for the demo.
 
 **Open synthetic demo** on the first screen needs no service at all. It runs the real
 `MapService` in the page over a small in-memory fixture (three agents, one per flag
-status), so every answer has the service's own shape, wording and limits. It makes no
+status), so every answer has the service's own shape, wording and limits. The demo is a file of its own (`demo.js`), fetched when you first open it; after that it makes no
 network requests, keeps a "Demo workspace" banner visible and is not evidence of a real
 executor or cloud account.
 
@@ -124,7 +124,7 @@ results of a closed session never reach a new one. Queries are not retried autom
 | `src/components/` | Shared parts: tables and paging, the identifier with its copy button, notices |
 | `src/labels.mjs` | The one table that turns service codes into words |
 | `src/*-model.mjs`, `src/view-model.mjs` | Pure presentation logic and the HTTP client, testable without a browser |
-| `src/demo.mjs`, `src/demo-store.mjs` | The demo: the real service over an in-memory fixture |
+| `src/demo.mjs`, `src/demo-store.mjs` | The demo: the real service over an in-memory fixture, built as `demo.js` and loaded on demand |
 | `src/shims/` | Browser stand-ins for the three Node modules the service's JSON helpers import |
 
 ## Limits

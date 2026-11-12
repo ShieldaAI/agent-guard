@@ -271,6 +271,7 @@ test('IdP top-level redirects can load only the public shell; protected routes k
   for (const [file, content] of [
     ['index.html', '<!doctype html><title>Public shell</title>'],
     ['app.js', '/* public script */'],
+    ['demo.js', '/* public demo script */'],
     ['app.css', '/* public style */'],
   ])
     await writeFile(join(directory, file), content, { mode: 0o600 });
@@ -850,7 +851,7 @@ test('request deadline and concurrency bound pending reads without leaving a usa
   await started;
   assert.equal((await s.client.send('/auth/session')).status, 503);
   const result = await pending;
-  assert.equal(result.status, 408);
+  assert.equal(result.status, 504);
   release();
   await sleep(10);
   assert.equal((await s.bootstrap()).data.authenticated, true);

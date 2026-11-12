@@ -471,7 +471,7 @@ export async function readInventoryHealth(query, options) {
     return { status: 'unavailable', message: errorMessage(error), error };
   }
 }
-export class ReferenceError extends Error {
+export class ViewerError extends Error {
   constructor(code, status = 0) {
     super(code);
     this.code = code;
@@ -483,8 +483,8 @@ export function createQuerySession(invoke) {
   const controller = new AbortController(),
     pending = [];
   let running = 0;
-  const ended = () => new ReferenceError('VIEWER_SESSION_ENDED');
-  const cancelled = () => new ReferenceError('VIEWER_REQUEST_CANCELLED');
+  const ended = () => new ViewerError('VIEWER_SESSION_ENDED');
+  const cancelled = () => new ViewerError('VIEWER_REQUEST_CANCELLED');
   function drain() {
     while (!controller.signal.aborted && running < 2 && pending.length) {
       const item = pending.shift();
@@ -553,7 +553,7 @@ export function errorMessage(error) {
 }
 const CSRF = /^agm_csrf_v1\.[A-Za-z0-9_-]{43}$/;
 function csrfHeaders(token) {
-  if (typeof token !== 'string' || !CSRF.test(token)) throw new ReferenceError('VIEWER_CSRF_INVALID', 401);
+  if (typeof token !== 'string' || !CSRF.test(token)) throw new ViewerError('VIEWER_CSRF_INVALID', 401);
   return { 'Content-Type': 'application/json', 'X-CSRF-Token': token };
 }
 function exactObject(value, names) {
@@ -567,7 +567,7 @@ function exactObject(value, names) {
 }
 async function requestJSON(path, request, maximum, { fetchImpl = fetch, timeoutMs = 12000, signal } = {}) {
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 30000)
-    throw new ReferenceError('VIEWER_REQUEST_INVALID');
+    throw new ViewerError('VIEWER_REQUEST_INVALID');
   const controller = new AbortController();
   const cancel = () => controller.abort();
   signal?.addEventListener('abort', cancel, { once: true });
@@ -585,17 +585,17 @@ async function requestJSON(path, request, maximum, { fetchImpl = fetch, timeoutM
     // A known authentication denial ends the session even when its body is invalid or never finishes.
     if (response.status === 401 || response.status === 403) {
       void response.body?.cancel().catch(() => {});
-      throw new ReferenceError('REFERENCE_UNAVAILABLE', response.status);
+      throw new ViewerError('REFERENCE_UNAVAILABLE', response.status);
     }
     const declared = response.headers.get('content-length');
     if (declared !== null && (!/^\d+$/.test(declared) || Number(declared) > maximum))
-      throw new ReferenceError('VIEWER_RESPONSE_LIMIT');
+      throw new ViewerError('VIEWER_RESPONSE_LIMIT');
     if (
       response.redirected ||
       !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(response.headers.get('content-type') ?? '') ||
       !response.body
     )
-      throw new ReferenceError('VIEWER_RESPONSE_INVALID');
+      throw new ViewerError('VIEWER_RESPONSE_INVALID');
     const chunks = [];
     let length = 0;
     const reader = response.body.getReader();
@@ -606,7 +606,7 @@ async function requestJSON(path, request, maximum, { fetchImpl = fetch, timeoutM
         length += value.byteLength;
         if (length > maximum) {
           await reader.cancel();
-          throw new ReferenceError('VIEWER_RESPONSE_LIMIT');
+          throw new ViewerError('VIEWER_RESPONSE_LIMIT');
         }
         chunks.push(value);
       }
@@ -623,10 +623,10 @@ async function requestJSON(path, request, maximum, { fetchImpl = fetch, timeoutM
     try {
       body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(joined));
     } catch {
-      throw new ReferenceError('VIEWER_RESPONSE_INVALID');
+      throw new ViewerError('VIEWER_RESPONSE_INVALID');
     }
     if (!response.ok)
-      throw new ReferenceError(
+      throw new ViewerError(
         typeof body?.error === 'string' && /^[A-Z][A-Z0-9_]{0,79}$/.test(body.error)
           ? body.error
           : 'REFERENCE_UNAVAILABLE',
@@ -641,13 +641,13 @@ async function requestJSON(path, request, maximum, { fetchImpl = fetch, timeoutM
 }
 function queryResult(body, operation) {
   if (!body || body.operation !== operation || !body.data || typeof body.data !== 'object' || Array.isArray(body.data))
-    throw new ReferenceError('VIEWER_RESPONSE_INVALID');
+    throw new ViewerError('VIEWER_RESPONSE_INVALID');
   return body;
 }
 export async function queryReference(token, operation, args = {}, options = {}) {
-  if (!OPERATIONS.includes(operation)) throw new ReferenceError('VIEWER_OPERATION_INVALID');
+  if (!OPERATIONS.includes(operation)) throw new ViewerError('VIEWER_OPERATION_INVALID');
   if (typeof token !== 'string' || !/^agm_v1\.[A-Za-z0-9_-]{43}$/.test(token))
-    throw new ReferenceError('VIEWER_CREDENTIAL_INVALID', 401);
+    throw new ViewerError('VIEWER_CREDENTIAL_INVALID', 401);
   return queryResult(
     await requestJSON(
       '/v1/query',
@@ -664,7 +664,7 @@ export async function queryReference(token, operation, args = {}, options = {}) 
   );
 }
 export async function queryCompanySession(csrfToken, operation, args = {}, options = {}) {
-  if (!OPERATIONS.includes(operation)) throw new ReferenceError('VIEWER_OPERATION_INVALID');
+  if (!OPERATIONS.includes(operation)) throw new ViewerError('VIEWER_OPERATION_INVALID');
   return queryResult(
     await requestJSON(
       '/v1/query',
@@ -693,8 +693,8 @@ export async function readCompanySession({ now = Date.now, ...options } = {}) {
     !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/.test(value.expiresAt) ||
     !Number.isFinite(Date.parse(value.expiresAt))
   )
-    throw new ReferenceError('VIEWER_SESSION_INVALID');
-  if (Date.parse(value.expiresAt) <= now()) throw new ReferenceError('VIEWER_SESSION_EXPIRED', 401);
+    throw new ViewerError('VIEWER_SESSION_INVALID');
+  if (Date.parse(value.expiresAt) <= now()) throw new ViewerError('VIEWER_SESSION_EXPIRED', 401);
   return Object.freeze({
     mode: 'oidc',
     authenticated: value.authenticated,
@@ -714,15 +714,15 @@ export async function startCompanyLogin(csrfToken, options = {}) {
     typeof value.authorizationUrl !== 'string' ||
     value.authorizationUrl.length > 8192
   )
-    throw new ReferenceError('VIEWER_SESSION_INVALID');
+    throw new ViewerError('VIEWER_SESSION_INVALID');
   let url;
   try {
     url = new URL(value.authorizationUrl);
   } catch {
-    throw new ReferenceError('VIEWER_SESSION_INVALID');
+    throw new ViewerError('VIEWER_SESSION_INVALID');
   }
   if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.href !== value.authorizationUrl)
-    throw new ReferenceError('VIEWER_SESSION_INVALID');
+    throw new ViewerError('VIEWER_SESSION_INVALID');
   return url.href;
 }
 export async function endCompanySession(csrfToken, options = {}) {
@@ -732,17 +732,17 @@ export async function endCompanySession(csrfToken, options = {}) {
     16 * 1024,
     options,
   );
-  if (!exactObject(value, ['ok']) || value.ok !== true) throw new ReferenceError('VIEWER_SESSION_INVALID');
+  if (!exactObject(value, ['ok']) || value.ok !== true) throw new ViewerError('VIEWER_SESSION_INVALID');
 }
 /** An explicit retry can confirm a lost logout response without reopening inventory. */
 export async function retryCompanyLogout(options = {}) {
   let value = await readCompanySession(options);
-  if (value.mode !== 'oidc') throw new ReferenceError('VIEWER_SESSION_INVALID');
+  if (value.mode !== 'oidc') throw new ViewerError('VIEWER_SESSION_INVALID');
   if (value.authenticated) {
     await endCompanySession(value.csrfToken, options);
     value = await readCompanySession(options);
   }
-  if (value.mode !== 'oidc' || value.authenticated) throw new ReferenceError('VIEWER_LOGOUT_UNCONFIRMED');
+  if (value.mode !== 'oidc' || value.authenticated) throw new ViewerError('VIEWER_LOGOUT_UNCONFIRMED');
   return value;
 }
 /** Authentication loss aborts sibling requests before their results can reach the page. */
@@ -836,7 +836,7 @@ export function watchCompanySession({
       Math.max(0, Math.min(wait, 2147483647)),
     );
   };
-  if (!Number.isFinite(Date.parse(expiresAt))) throw new ReferenceError('VIEWER_SESSION_INVALID');
+  if (!Number.isFinite(Date.parse(expiresAt))) throw new ViewerError('VIEWER_SESSION_INVALID');
   documentImpl.addEventListener('visibilitychange', visibility);
   windowImpl.addEventListener('pageshow', pageshow);
   arm();

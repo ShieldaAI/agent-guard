@@ -80,7 +80,7 @@ Edit that private copy of [identity.example.json](identity.example.json):
   configuration directory. Set the key to mode `0600` or `0400` and the public
   certificate chain to `0644` or stricter. Keep the private key outside the repo.
 - Set `viewerDirectory` to the absolute path of the built
-  `apps/agent-map/dist` directory. The three fixed viewer assets are loaded at
+  `apps/agent-map/dist` directory. The four fixed viewer assets are loaded at
   startup. The installed npm package does not bundle the viewer assets.
 - Configure a dedicated Neo4j reader account where privileges are available.
   Remote connections require verified `neo4j+s` or `bolt+s`; plaintext is allowed

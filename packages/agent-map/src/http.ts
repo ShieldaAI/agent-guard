@@ -16,6 +16,7 @@ import {
   queryEnvelope,
   rateLimit,
   readJsonBody,
+  timeoutStatus,
   refuseOtherTraffic,
   sendAsset,
   type Bucket,
@@ -104,7 +105,7 @@ export async function startMapServer(options: MapServerOptions) {
     request.on('error', () => {});
     response.on('error', () => {});
     // Once headers arrive, leave a short bounded flush window after the request
-    // deadline. A connection timer at the same instant would erase the 408.
+    // deadline. A connection timer at the same instant would erase the 408 or 504.
     clearTimeout(socketTimers.get(request.socket));
     const socketTimer = setTimeout(() => request.socket.destroy(), timeout + 250);
     socketTimer.unref();
@@ -112,6 +113,9 @@ export async function startMapServer(options: MapServerOptions) {
     const started = performance.now();
     const abort = new AbortController();
     let admitted = false;
+    // Whether the whole request has arrived (a GET has no body to wait for): a timeout after
+    // that is the service's (504), not the client's (408).
+    let received = request.method === 'GET';
     let timer: ReturnType<typeof setTimeout> | undefined;
     const check = (): void => {
       if (abort.signal.aborted || performance.now() - started > timeout) fail('MAP_TIMEOUT');
@@ -124,7 +128,7 @@ export async function startMapServer(options: MapServerOptions) {
       aborts.add(abort);
       timer = setTimeout(() => {
         abort.abort();
-        errorResponse(response, 'MAP_TIMEOUT');
+        errorResponse(response, 'MAP_TIMEOUT', timeoutStatus(received));
       }, timeout);
       timer.unref();
       if (
@@ -166,6 +170,7 @@ export async function startMapServer(options: MapServerOptions) {
       consume(credential.bucket, maxRequests, windowMs);
       // The credential and rate checks have passed; a refusal above already answered with its status.
       const parsed = await readJsonBody(request, response, requestLimit, abort.signal);
+      received = true;
       check();
       let output: Buffer;
       let status = 200;
@@ -235,7 +240,7 @@ export async function startMapServer(options: MapServerOptions) {
       response.writeHead(status);
       response.end(output);
     } catch (error) {
-      respondError(response, error);
+      respondError(response, error, received);
     } finally {
       if (timer) clearTimeout(timer);
       aborts.delete(abort);

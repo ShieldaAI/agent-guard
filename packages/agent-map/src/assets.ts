@@ -21,6 +21,8 @@ export async function loadMapAssets(directory: unknown): Promise<Map<string, { b
   for (const [name, mime] of [
     ['index.html', 'text/html; charset=utf-8'],
     ['app.js', 'text/javascript; charset=utf-8'],
+    // The synthetic demo, which app.js imports only when a reader opens it.
+    ['demo.js', 'text/javascript; charset=utf-8'],
     ['app.css', 'text/css; charset=utf-8'],
   ] as const) {
     try {

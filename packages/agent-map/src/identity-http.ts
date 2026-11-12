@@ -20,6 +20,7 @@ import {
   readJsonBody,
   refuseOtherTraffic,
   respondError,
+  timeoutStatus,
   sendAsset,
   type Bucket,
 } from './transport.js';
@@ -335,6 +336,9 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
     const abort = new AbortController(),
       started = performance.now();
     let admitted = false,
+      // Whether the whole request has arrived (a GET has no body to wait for): a timeout after
+      // that is the service's or the identity provider's (504), not the client's (408).
+      received = request.method === 'GET',
       timer: ReturnType<typeof setTimeout> | undefined;
     const disconnected = (): void => {
       if (!response.writableEnded) abort.abort();
@@ -354,7 +358,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       aborts.add(abort);
       timer = setTimeout(() => {
         abort.abort();
-        errorResponse(response, 'MAP_TIMEOUT');
+        errorResponse(response, 'MAP_TIMEOUT', timeoutStatus(received));
       }, timeout);
       timer.unref();
       if (
@@ -492,6 +496,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       consume(current.session.bucket, rateMax, rateWindow);
       // Session, CSRF and rate checks have passed; a refusal above already answered with its status.
       const parsed = await readJsonBody(request, response, requestLimit, abort.signal);
+      received = true;
       check();
       live(current.id, current.session);
       if (url.pathname === '/auth/logout') {
@@ -532,7 +537,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       live(current.id, current.session);
       json(response, result, responseLimit);
     } catch (error) {
-      respondError(response, error);
+      respondError(response, error, received);
     } finally {
       if (timer) clearTimeout(timer);
       request.off('aborted', disconnected);

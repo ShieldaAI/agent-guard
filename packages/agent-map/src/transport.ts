@@ -16,6 +16,7 @@ const CODES = new Map([
   ['MAP_LIMIT_EXCEEDED', 413],
   ['MAP_REQUEST_TOO_LARGE', 413],
   ['MAP_RESPONSE_TOO_LARGE', 413],
+  // 408 while the request is still arriving; 504 once it has (see `timeoutStatus`).
   ['MAP_TIMEOUT', 408],
   ['MAP_BUSY', 503],
   ['MAP_RATE_LIMITED', 429],
@@ -36,9 +37,22 @@ class StatusError extends MapQueryError {
     super(code);
   }
 }
-/** Answers a failed request with its safe code; nothing from the error itself is sent. */
-export function respondError(response: ServerResponse, error: unknown): void {
-  errorResponse(response, safeError(error), error instanceof StatusError ? error.status : undefined);
+/**
+ * The status of a timeout. 408 says the client was too slow to send its request; once the whole
+ * request has been received, the time was spent by the service or its database, which is 504.
+ */
+export const timeoutStatus = (received: boolean): number | undefined => (received ? 504 : undefined);
+/**
+ * Answers a failed request with its safe code; nothing from the error itself is sent.
+ * `received`: the request body had been read in full when the failure happened.
+ */
+export function respondError(response: ServerResponse, error: unknown, received = false): void {
+  const code = safeError(error);
+  errorResponse(
+    response,
+    code,
+    error instanceof StatusError ? error.status : code === 'MAP_TIMEOUT' ? timeoutStatus(received) : undefined,
+  );
 }
 export function headers(response: ServerResponse, size: number, mime = 'application/json'): void {
   response.setHeader('Content-Type', mime);
