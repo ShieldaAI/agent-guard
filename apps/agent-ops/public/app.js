@@ -162,8 +162,16 @@ function view() {
             'What was on screen may be out of date. Refresh before preparing or deciding anything.',
           ),
         );
-  const draw = { requests: requestsView, tickets: ticketsView, maintenance: maintenanceView, setup: setupView };
-  return draw[state.view](context());
+  // A view name that is not one of these (it never should be) shows the requests view.
+  const draw =
+    state.view === 'tickets'
+      ? ticketsView
+      : state.view === 'maintenance'
+        ? maintenanceView
+        : state.view === 'setup'
+          ? setupView
+          : requestsView;
+  return draw(context());
 }
 
 function footer() {

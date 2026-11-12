@@ -59,7 +59,7 @@ function FilterInput({ title, label, value, onChange, placeholder, choices }) {
  * the list itself stays in view; it opens by itself when a filter is set from another view.
  */
 export function AgentSidebar({ listing, filters, onFilter, onClearOwner, options, selection, onSelect, onPage }) {
-  const { agents, page, state, message } = listing;
+  const { agents, page, state, message, refreshing } = listing;
   const active = activeFilterCount(filters);
   const [open, setOpen] = useState(active > 0);
   // A filter set elsewhere (for example "View agents" in Owners) is shown, not hidden.
@@ -150,7 +150,7 @@ export function AgentSidebar({ listing, filters, onFilter, onClearOwner, options
         </p>
       )}
       <div className="agent-list" aria-busy={state === 'loading'}>
-        {state === 'loading' ? (
+        {state === 'loading' && !(refreshing && agents.length) ? (
           <p className="sidebar-empty" role="status">
             Loading agents…
           </p>

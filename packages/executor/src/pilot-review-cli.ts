@@ -11,6 +11,17 @@ import {
 } from './private-files.js';
 import { ExecutorError } from './store.js';
 
+// Node 22 prints "SQLite is an experimental feature" on standard error the first time
+// node:sqlite loads. This command's standard error carries its own error code and hint, so
+// that one warning is dropped; every other warning is printed as usual. The warning is
+// emitted after the imports above have run, so this filter is in place in time.
+const printWarning = process.listeners('warning');
+process.removeAllListeners('warning');
+process.on('warning', warning => {
+  if (warning.name === 'ExperimentalWarning' && /\bSQLite\b/.test(warning.message)) return;
+  for (const listener of printWarning) listener(warning);
+});
+
 const usage = 'agent-guard-pilot-review --policy PATH --candidate PATH --bundle PATH [--rehearsal]';
 const limits = { policy: 32 * 1024, candidate: 64 * 1024 * 1024, bundle: 1024 * 1024 };
 type Input = keyof typeof limits;

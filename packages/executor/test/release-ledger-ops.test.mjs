@@ -7,7 +7,7 @@ import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 import {
@@ -376,7 +376,7 @@ test('a failed private copy removes its partial destination and can be repeated'
   fs.writeFileSync(source, bytes, { mode: 0o600 });
   const digest = sha256(bytes);
   assert.throws(() => copyPrivate(source, destination, 'f'.repeat(64)), { code: 'CUSTODY_DIGEST_MISMATCH' });
-  assert.equal(fs.existsSync(destination), false);
+  assert.equal(fs.readdirSync(dirname(destination)).includes(basename(destination)), false);
   // The same call, now with the right digest, succeeds; repeating it is a no-op.
   assert.deepEqual(copyPrivate(source, destination, digest), { sha256: digest, bytes: bytes.length });
   assert.deepEqual(copyPrivate(source, destination, digest), { sha256: digest, bytes: bytes.length });

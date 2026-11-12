@@ -10,6 +10,17 @@ import {
 import { maintenanceHint, runLedgerCustodyCli, runLedgerRecoveryCli } from './custody-cli.js';
 import { ExecutorError } from './store.js';
 
+// Node 22 prints "SQLite is an experimental feature" on standard error the first time
+// node:sqlite loads. This command's standard error carries its own error code and hint, so
+// that one warning is dropped; every other warning is printed as usual. The warning is
+// emitted after the imports above have run, so this filter is in place in time.
+const printWarning = process.listeners('warning');
+process.removeAllListeners('warning');
+process.on('warning', warning => {
+  if (warning.name === 'ExperimentalWarning' && /\bSQLite\b/.test(warning.message)) return;
+  for (const listener of printWarning) listener(warning);
+});
+
 const usage = `agent-guard-ledger keygen --keyring PATH --key-id ID [--max-keys N]
 agent-guard-ledger configure --keyring PATH --max-keys N
 agent-guard-ledger status --keyring PATH [--database PATH [--witness PATH] [--max-bytes N]]

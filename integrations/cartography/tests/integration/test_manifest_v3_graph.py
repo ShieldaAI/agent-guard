@@ -118,6 +118,10 @@ def test_a_v2_manifest_reads_unknown_and_v3_cannot_roll_back_to_v2(neo4j_session
     upgraded["manifest"]["source"] = dict(old["source"])
     upgraded["snapshotId"] = uuid4().hex
     upgraded["manifest"]["revision"] = old["manifest"]["revision"] + 1
+    # The two fixtures were exported at different times. At the same ledger revision a
+    # capture older than the published one is refused (GENERATED_AT_ROLLBACK), so the
+    # upgrade carries the published capture time; the manifest change is what is tested.
+    upgraded["generatedAt"] = old["generatedAt"]
     second = import_snapshot(neo4j_session, validate_snapshot(upgraded), old["source"])
     assert second.published
 

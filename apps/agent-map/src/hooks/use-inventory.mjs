@@ -33,6 +33,8 @@ export function listingArgs(filters, offset) {
 }
 
 const NO_LISTING = Object.freeze({ agents: [], page: EMPTY_PAGE, state: 'ready', message: '' });
+// The arguments of the first page that connecting loads (default filters, first page).
+const OPENING_KEY = JSON.stringify(listingArgs(NO_FILTERS, 0));
 /**
  * What the agent list shows the moment a session opens: the first page that connecting already
  * loaded, or "loading" when it has none. Never an empty inventory, which would read as a fact.
@@ -42,7 +44,10 @@ export function openingListing(session) {
   if (!session) return { listing: NO_LISTING, options: NO_OPTIONS };
   if (!session.listing) return { listing: { ...NO_LISTING, state: 'loading' }, options: NO_OPTIONS };
   const agents = session.listing.agents ?? [];
-  return { listing: { agents, page: session.listing, state: 'ready', message: '' }, options: agentOptions(agents) };
+  return {
+    listing: { agents, page: session.listing, state: 'ready', message: '', key: OPENING_KEY },
+    options: agentOptions(agents),
+  };
 }
 
 /**
@@ -73,7 +78,12 @@ export function useAgentListing({ session, filters, offset, revision, reportErro
     let active = true;
     const controller = new AbortController();
     const update = change => setHeld(value => (value.session === session ? { ...value, ...change(value) } : value));
-    update(value => ({ listing: { ...value.listing, state: 'loading', message: '' } }));
+    // Reading the same list again (Refresh, or a session checked on return) keeps the rows on
+    // screen while it loads, so the page keeps its height, scroll position and focus. A
+    // different filter or page shows "Loading" instead: its old rows would be the wrong list.
+    update(value => ({
+      listing: { ...value.listing, state: 'loading', message: '', refreshing: value.listing.key === key },
+    }));
     const timer = setTimeout(() => {
       session
         .query('list_agents', JSON.parse(key), { signal: controller.signal })
@@ -81,7 +91,7 @@ export function useAgentListing({ session, filters, offset, revision, reportErro
           if (!active) return;
           const agents = result.data.agents ?? [];
           update(value => ({
-            listing: { agents, page: result.data, state: 'ready', message: '' },
+            listing: { agents, page: result.data, state: 'ready', message: '', key },
             options: agentOptions(agents, value.options),
           }));
         })

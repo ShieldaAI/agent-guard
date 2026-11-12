@@ -116,6 +116,9 @@ additions, then fixes.
 
 ### Executor
 
+- Fix (executor): on Node 22, `agent-guard-ledger` and `agent-guard-pilot-review` no longer
+  print Node's "SQLite is an experimental feature" warning between their error code and
+  hint; other warnings are printed as before.
 - Change (executor): a tool handler's error is always `TOOL_FAILED` (its safe code in
   `detail`) or `EXECUTION_ABORTED`; built-in tools keep their codes, and a memory version
   race settles `FAILED` at zero cost. Every public method throws only `GuardError` or
@@ -297,6 +300,10 @@ additions, then fixes.
 
 ### Agent Map and viewer (experimental)
 
+- Fix (viewer): refreshing the agent list, or returning to a company page, keeps the
+  current rows on screen while the same list is read again, so the page keeps its height,
+  scroll position and keyboard focus. A different filter or page still shows "Loading
+  agents…".
 - Change (agent map): `get_agent_access` and `get_agent_inventory` answer for an agent with
   more than 512 policy pairs (policy coverage `unknown / limit_exceeded`); an `Expect`
   header other than `100-continue` gets 417; every MCP tool and parameter has its own
