@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 — Unreleased
+## 1.0.0 — 2026-11-12
 
 The first stable release. The last published version was `0.1.0-alpha.3`; this entry
 covers everything since then, which is why it is long. The
