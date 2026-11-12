@@ -304,6 +304,9 @@ additions, then fixes.
   current rows on screen while the same list is read again, so the page keeps its height,
   scroll position and keyboard focus. A different filter or page still shows "Loading
   agents…".
+- Fix (viewer): after a company page returns and its session check passes, the scroll
+  position is put back even in browsers that scroll to the refocused element (WebKit on
+  Linux).
 - Change (agent map): `get_agent_access` and `get_agent_inventory` answer for an agent with
   more than 512 policy pairs (policy coverage `unknown / limit_exceeded`); an `Expect`
   header other than `100-continue` gets 417; every MCP tool and parameter has its own

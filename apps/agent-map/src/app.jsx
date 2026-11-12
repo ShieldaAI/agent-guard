@@ -80,13 +80,22 @@ function App() {
   // read out and not operable. Covering it takes keyboard focus away; it goes back once the
   // session check passes.
   covering.current = covered;
+  // Where the page was scrolled when the cover went on. It is put back after focus returns:
+  // some browsers (WebKit on Linux) scroll to a focused element despite `preventScroll`.
+  const coveredAt = useRef(null);
   useLayoutEffect(() => {
-    if (covered) return;
+    if (covered) {
+      coveredAt.current = [window.scrollX, window.scrollY];
+      return;
+    }
     const previous = focused.current;
     // Not when the reader has moved focus elsewhere meanwhile, or the element is gone.
     if (previous?.isConnected && (!document.activeElement || document.activeElement === document.body))
       previous.focus({ preventScroll: true });
     else focused.current = null;
+    const place = coveredAt.current;
+    coveredAt.current = null;
+    if (place && (window.scrollX !== place[0] || window.scrollY !== place[1])) window.scrollTo(place[0], place[1]);
   }, [covered]);
   const query = session?.query;
   return (
