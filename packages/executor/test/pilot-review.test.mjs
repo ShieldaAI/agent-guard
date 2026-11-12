@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { verifyPilotReview } from '../dist/index.js';
+import { verifyPilotReview } from '../dist/entry-pilot.js';
 import { createPilotReviewFixture as fixture } from './fixtures/pilot-review.mjs';
 
 const check = ({ policy, candidateBytes, bundle }) => verifyPilotReview(policy, candidateBytes, bundle, 'rehearsal');

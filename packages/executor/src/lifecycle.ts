@@ -7,6 +7,7 @@ import {
   randomUUID,
   timingSafeEqual,
 } from 'node:crypto';
+import { GuardError } from '@shieldaai/agent-guard';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { familyStubs, takeFamilyStubs, recordEvent, DEFAULT_RECENT_EVENTS_PER_TENANT } from './retention.js';
 import {
@@ -303,7 +304,7 @@ export const NUMBERED_TASK_PREFIX = 'ticket:';
 /** Builds a numbered task ID; throws INVALID_INPUT for a malformed namespace or sequence. */
 export function numberedTaskId(namespace: string, sequence: number): string {
   if (!namespaceValid(namespace) || !Number.isSafeInteger(sequence) || sequence < 1 || sequence >= 1e16)
-    throw new ExecutorError('INVALID_INPUT');
+    throw new GuardError('INVALID_INPUT');
   return `${NUMBERED_TASK_PREFIX}${namespace}-${sequence}`;
 }
 function namespaceValid(value: unknown): value is string {
@@ -461,6 +462,42 @@ function plan(state: Ledger, scope: TaskFamilyScope, active: ReadonlySet<string>
 function aad(ledgerId: string, archiveId: string, tenant: string): Buffer {
   return Buffer.from(JSON.stringify(['agent-guard-family-archive-v1', ledgerId, archiveId, tenant]));
 }
+/*
+ * The one family-archive envelope. On disk it is the JSON array `[nonce, tag, data]`, each
+ * base64: AES-256-GCM with a 12-byte nonce and a 16-byte tag, bound by `aad` to the ledger,
+ * the archive and the tenant. Every writer and reader below goes through these three functions.
+ */
+function sealArchive(key: Buffer, associated: Buffer, payload: string): string {
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, nonce);
+  cipher.setAAD(associated);
+  const data = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
+  return JSON.stringify([nonce.toString('base64'), cipher.getAuthTag().toString('base64'), data.toString('base64')]);
+}
+/**
+ * Authenticated plaintext, which the caller erases. Throws for a malformed or forged envelope.
+ * The nonce and tag lengths are pinned (Node before 26 accepts a truncated tag otherwise).
+ */
+function openArchive(key: Buffer, associated: Buffer, ciphertext: string): Buffer {
+  const [iv, tag, data] = JSON.parse(ciphertext) as string[];
+  const nonce = Buffer.from(iv!, 'base64');
+  const authTag = Buffer.from(tag!, 'base64');
+  if (nonce.length !== 12 || authTag.length !== 16) throw new Error('Archive envelope invalid');
+  const cipher = createDecipheriv('aes-256-gcm', key, nonce, { authTagLength: 16 });
+  cipher.setAAD(associated);
+  cipher.setAuthTag(authTag);
+  return Buffer.concat([cipher.update(Buffer.from(data!, 'base64')), cipher.final()]);
+}
+/**
+ * Unauthenticated plaintext, for one purpose only: reading the tenant that the AAD needs
+ * before `openArchive` authenticates the same bytes. Never act on anything else in it.
+ */
+function peekArchive(key: Buffer, ciphertext: string): Buffer {
+  const [iv, , data] = JSON.parse(ciphertext) as string[];
+  const nonce = Buffer.from(iv!, 'base64');
+  if (nonce.length !== 12) throw new Error('Archive envelope invalid');
+  return createDecipheriv('aes-256-gcm', key, nonce).update(Buffer.from(data!, 'base64'));
+}
 
 export interface TaskFamilyArchiveTransfer {
   archiveId: string;
@@ -494,11 +531,7 @@ export function verifyTransferredTaskFamilyArchive(
   const key = Buffer.from(entry.keyBase64, 'base64');
   let plaintext: Buffer | undefined;
   try {
-    const [iv, tag, data] = JSON.parse(ciphertext) as string[];
-    const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv!, 'base64'));
-    cipher.setAAD(aad(ledgerInstanceId, archiveId, tenantId));
-    cipher.setAuthTag(Buffer.from(tag!, 'base64'));
-    plaintext = Buffer.concat([cipher.update(Buffer.from(data!, 'base64')), cipher.final()]);
+    plaintext = openArchive(key, aad(ledgerInstanceId, archiveId, tenantId), ciphertext);
     if (plaintext.length !== entry.plainBytes || plaintext.length > MAX_PLAIN_BYTES) fail('ARCHIVE_INVALID');
     const decoded = JSON.parse(plaintext.toString('utf8')) as ArchivePayload;
     if (
@@ -558,8 +591,7 @@ export function verifyAllArchiveStorage(store: Pick<LedgerStore, 'read' | 'readA
       // The main ledger authenticates the exact ciphertext digest first. GCM's
       // bounded provisional plaintext supplies only the AAD tenant for a second,
       // fully authenticated decrypt; it never authorizes a result or mutation.
-      const [iv, , data] = JSON.parse(ciphertext) as string[];
-      candidate = createDecipheriv('aes-256-gcm', key, Buffer.from(iv!, 'base64')).update(Buffer.from(data!, 'base64'));
+      candidate = peekArchive(key, ciphertext);
       if (candidate.length > MAX_PLAIN_BYTES) fail('ARCHIVE_INVALID');
       const tenantId = (JSON.parse(candidate.toString('utf8')) as { tenantId: string }).tenantId;
       verifyTransferredTaskFamilyArchive(state.inventoryInstanceId, {
@@ -818,18 +850,10 @@ export class TaskFamilyLifecycle {
         prunedReceipts,
       });
       if (Buffer.byteLength(payload) > MAX_PLAIN_BYTES) fail('ARCHIVE_CAPACITY_EXCEEDED');
-      const key = randomBytes(32),
-        iv = randomBytes(12);
+      const key = randomBytes(32);
       let ciphertext: string;
       try {
-        const cipher = createCipheriv('aes-256-gcm', key, iv);
-        cipher.setAAD(aad(state.inventoryInstanceId, archiveId, current.tenantId));
-        const bytes = Buffer.concat([cipher.update(payload, 'utf8'), cipher.final()]);
-        ciphertext = JSON.stringify([
-          iv.toString('base64'),
-          cipher.getAuthTag().toString('base64'),
-          bytes.toString('base64'),
-        ]);
+        ciphertext = sealArchive(key, aad(state.inventoryInstanceId, archiveId, current.tenantId), payload);
         if (
           Object.values(retained.archives).reduce(
             (sum, entry) => sum + entry.cipherBytes,
@@ -907,11 +931,7 @@ export class TaskFamilyLifecycle {
     const key = Buffer.from(entry.keyBase64, 'base64');
     let plaintext: Buffer | undefined;
     try {
-      const [iv, tag, data] = JSON.parse(ciphertext) as string[];
-      const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv!, 'base64'));
-      cipher.setAAD(aad(state.inventoryInstanceId, archiveId, tenantId));
-      cipher.setAuthTag(Buffer.from(tag!, 'base64'));
-      plaintext = Buffer.concat([cipher.update(Buffer.from(data!, 'base64')), cipher.final()]);
+      plaintext = openArchive(key, aad(state.inventoryInstanceId, archiveId, tenantId), ciphertext);
       if (plaintext.length !== entry.plainBytes || plaintext.length > MAX_PLAIN_BYTES) fail('ARCHIVE_INVALID');
       const decoded = JSON.parse(plaintext.toString('utf8')) as {
         schemaVersion: number;

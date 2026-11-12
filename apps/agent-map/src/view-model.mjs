@@ -1,4 +1,5 @@
 import { assignBoxes, boxCrossing, flagBadge, outsideGuardElements } from './boundary-model.mjs';
+import { LABELS, hasLabel, label } from './labels.mjs';
 
 export const OPERATIONS = Object.freeze([
   'list_agents',
@@ -14,48 +15,30 @@ export const OPERATIONS = Object.freeze([
   'list_undeclared_activity',
   'list_unclaimed_identities',
 ]);
-const LABELS = Object.freeze({
-  GuardAgent: 'Agent',
-  GuardDeployment: 'Deployment',
-  GuardTask: 'Task',
-  GuardPrincipal: 'Principal',
-  GuardTool: 'Tool',
-  GuardGrant: 'Declared grant',
-  GuardResource: 'Resource',
-  GuardResourceBinding: 'Resource binding',
-  GuardExecutionBinding: 'Execution binding',
-  GuardExternalIdentity: 'Cloud identity',
-  GuardExternalResource: 'External resource',
-  GuardMcpConnection: 'MCP connection',
-  GuardMcpOperation: 'MCP operation',
-  GuardOwner: 'Owner',
-  GuardCredentialReference: 'Credential reference',
-  GuardDirectAccess: 'Direct access (outside guard)',
-});
-// Viewer-drawn nodes for outside-guard evidence; never accepted as graph input labels.
-const SYNTHETIC_LABELS = Object.freeze({
-  OutsideGuardAccess: 'Direct access (outside guard)',
-  OutsideGuardTarget: 'Direct path target',
-  OutsideGuardBucket: 'Bucket reached by tool identity (candidate)',
-});
+// The labels a focused graph may carry. The viewer's own outside-guard nodes have names too,
+// but are never accepted as graph input.
+const GRAPH_LABELS = new Set(Object.keys(LABELS.nodeKind).filter(name => name.startsWith('Guard')));
 
-export const kindName = label =>
-  Object.hasOwn(LABELS, label)
-    ? LABELS[label]
-    : Object.hasOwn(SYNTHETIC_LABELS, label)
-      ? SYNTHETIC_LABELS[label]
-      : 'Evidence';
+export const kindName = value => (hasLabel('nodeKind', value) ? LABELS.nodeKind[value] : 'Evidence');
+/** The table that names a node's lifecycle value, by the property that carries it. */
+const LIFECYCLE_TABLES = Object.freeze({
+  state: 'connectionState',
+  cloud_status: 'cloudStatus',
+  capture_status: 'captureStatus',
+});
 export function evidenceState(node) {
   const p = node?.properties ?? {};
   if (p.revoked === true) return { kind: 'blocked', label: 'Revoked at capture' };
-  const lifecycle = p.state ?? p.cloud_status ?? p.capture_status;
+  const field = ['state', 'cloud_status', 'capture_status'].find(name => p[name] !== undefined && p[name] !== null);
+  const lifecycle = field ? p[field] : undefined;
+  const words = field ? label(LIFECYCLE_TABLES[field], lifecycle) : null;
   if (p.cloud_reason === 'stale' || lifecycle === 'stale') return { kind: 'unavailable', label: 'Stale evidence' };
   if (['quarantined', 'closed', 'refreshing', 'connecting', 'unavailable', 'unresolved'].includes(lifecycle))
-    return { kind: 'unavailable', label: String(lifecycle).replaceAll('_', ' ') };
+    return { kind: 'unavailable', label: words };
   if (p.requires_approval === true) return { kind: 'conditional', label: 'Conditional · approval required' };
   if (p.assessment === 'unknown' || p.cloud_assessment === 'unknown')
-    return { kind: 'unknown', label: lifecycle ? `${lifecycle} · access unknown` : 'Access unknown' };
-  return { kind: 'observed', label: lifecycle ?? 'Observed evidence' };
+    return { kind: 'unknown', label: words ? `${words} · access unknown` : 'Access unknown' };
+  return { kind: 'observed', label: words ?? 'Observed evidence' };
 }
 export function nodeName(node) {
   const p = node.properties ?? {};
@@ -99,7 +82,7 @@ export function graphElements(graph, policyEvidence = [], options = {}) {
   const badge = flagStatus === null ? null : flagBadge(flagStatus);
   const ids = new Set();
   const nodes = graph.nodes.map(node => {
-    if (!node || typeof node.id !== 'string' || !node.id || ids.has(node.id) || !Object.hasOwn(LABELS, node.label))
+    if (!node || typeof node.id !== 'string' || !node.id || ids.has(node.id) || !GRAPH_LABELS.has(node.label))
       throw new Error('VIEWER_GRAPH_INVALID');
     ids.add(node.id);
     const state = evidenceState(node);
@@ -231,30 +214,6 @@ const POLICY_ACTIONS = Object.freeze({
   CAN_READ: 's3:GetObject',
   CAN_WRITE: 's3:PutObject',
   CAN_LIST: 's3:ListBucket',
-});
-const POLICY_REASONS = Object.freeze({
-  no_candidate: 'No policy candidate observed',
-  boundary_unresolved: 'Permissions boundary unresolved',
-  unsupported: 'Unsupported policy expression',
-  unsupported_policy: 'Unsupported policy expression',
-  unsupported_action: 'Action outside collected policy mappings',
-  stale: 'Policy evidence is stale',
-  changed: 'Provider evidence changed',
-  disabled: 'Policy collection disabled',
-  collection_missing: 'Policy collection unavailable',
-  identity_unresolved: 'Execution identity unresolved',
-  identity_not_static: 'Execution identity is selected at runtime',
-  cloud_unresolved: 'Cloud association unresolved',
-  cloud_not_collected: 'Cloud inventory not collected',
-  binding_ambiguous: 'Binding evidence is ambiguous',
-  unsupported_binding: 'Binding is outside collected policy mappings',
-  provider_missing: 'Provider evidence unavailable',
-  collection_invalid: 'Policy collection could not be verified',
-  evidence_invalid: 'Policy evidence could not be verified',
-  ambiguous: 'Ambiguous policy evidence',
-  malformed: 'Policy evidence unavailable',
-  missing: 'Policy evidence unavailable',
-  history_not_collected: 'Policy history not collected',
 });
 const policyText = value =>
   typeof value === 'string' &&
@@ -392,8 +351,11 @@ export function policyEvidenceRows(records = [], graph = null) {
               ? 'Conditional policy candidate'
               : 'Policy candidate'
             : 'No policy candidate observed'
-          : (POLICY_REASONS[record.reason] ??
-            (record.status === 'not_collected' ? 'Policy evidence not collected' : 'Policy evidence unavailable')),
+          : hasLabel('policyReason', record.reason)
+            ? LABELS.policyReason[record.reason]
+            : record.status === 'not_collected'
+              ? 'Policy evidence not collected'
+              : 'Policy evidence unavailable',
       candidates,
       identityNode: identity ?? null,
       resourceNode: resource ?? null,
@@ -401,15 +363,19 @@ export function policyEvidenceRows(records = [], graph = null) {
       deployment: deployment ? nodeName(deployment) : record.deploymentId,
       execution: execution ? nodeName(execution) : record.executionBindingId,
       target: resource ? nodeName(resource) : (record.resourceId ?? 'Target not resolved'),
-      bindingScope: typeof binding?.properties.scope === 'string' ? binding.properties.scope : 'Unknown',
-      resourceKind: typeof resource?.properties.kind === 'string' ? resource.properties.kind : 'Unknown',
+      bindingScope: label('matchScope', binding?.properties.scope),
+      resourceKind: label('kind', resource?.properties.kind),
     });
   }
   return rows;
 }
-export function agentOptions(agents) {
-  const owners = new Set(),
-    environments = new Set();
+/**
+ * Owner ids and environments named by the agents loaded so far, for the sidebar pickers.
+ * `known` carries the choices of earlier pages, so a picker never loses an option it offered.
+ */
+export function agentOptions(agents, known = { owners: [], environments: [] }) {
+  const owners = new Set(known.owners),
+    environments = new Set(known.environments);
   for (const agent of agents) {
     if (typeof agent.ownerId === 'string') owners.add(agent.ownerId);
     for (const environment of agent.environments ?? [])
@@ -417,16 +383,23 @@ export function agentOptions(agents) {
   }
   return { owners: [...owners].sort(), environments: [...environments].sort() };
 }
+/** How many sidebar filters are set; the search box is not one of them. */
+export const activeFilterCount = filters =>
+  ['owner', 'environment', 'ownership', 'lifecycle', 'flag'].filter(name => Boolean(filters?.[name])).length;
 export function initialExplanation(access) {
   const task = access.tasks?.[0];
-  const grant =
-    access.grants?.find(item => item.taskId === task?.taskId || item.task_id === task?.taskId) ?? access.grants?.[0];
+  const grant = access.grants?.find(item => item.taskId === task?.taskId) ?? access.grants?.[0];
   return { taskId: task?.taskId ?? '', tool: grant?.tool ?? '', resourceId: grant?.resources?.[0] ?? '' };
 }
-export function shortReference(value) {
-  return typeof value === 'string' && value.length > 25
-    ? `${value.slice(0, 12)}…${value.slice(-8)}`
-    : (value ?? 'Unknown');
+/** Identifiers longer than this are shown shortened, with the full value one click away. */
+export const IDENTIFIER_LIMIT = 24;
+/** `first 10 … last 6` for a long identifier (opaque references, source ids, ARNs); null when it is short enough. */
+export function shortIdentifier(value) {
+  if (typeof value !== 'string') return null;
+  const characters = Array.from(value);
+  return characters.length > IDENTIFIER_LIMIT
+    ? `${characters.slice(0, 10).join('')}…${characters.slice(-6).join('')}`
+    : null;
 }
 export function displayTime(value) {
   // A numeric deadline can be beyond the Date range; toISOString() would throw during render.
@@ -450,7 +423,9 @@ export function componentHealth(coverage) {
   const recent = captured && value.stale === false;
   const age = captured && Number.isFinite(value.ageSeconds) && value.ageSeconds >= 0 ? value.ageSeconds : null;
   return {
-    status: status.replaceAll('_', ' '),
+    status: label('coverageStatus', status),
+    // The policy component can read unknown because one read had too many pairs to evaluate.
+    reason: hasLabel('coverageReason', value.reason) ? LABELS.coverageReason[value.reason] : null,
     observedAt: captured ? value.observedAt : null,
     observedLabel: captured ? displayTime(value.observedAt) : 'Capture time unknown',
     freshness: !captured
@@ -470,6 +445,31 @@ export function componentHealth(coverage) {
             ? `${Math.floor(age / 60)} min old at query`
             : `${Math.floor(age / 3600)} hr old at query`,
   };
+}
+/** The service found more task/binding pairs than one read evaluates and loaded no policy evidence. */
+export const policyNotEvaluated = coverage => coverage?.status === 'unknown' && coverage?.reason === 'limit_exceeded';
+/**
+ * A `get_agent_inventory` answer whose policy evidence was not loaded: the coverage says so, or
+ * the count of the policies section (or the total of that section itself) is null. Its empty
+ * list means "not evaluated", never "none".
+ */
+export const policySectionNotEvaluated = data =>
+  policyNotEvaluated(data?.policyCoverage) ||
+  data?.counts?.policies === null ||
+  (data?.section === 'policies' && data?.total === null);
+/** get_agent_access left the graph out because it exceeds the display cap; its evidence still stands. */
+export const graphTooLarge = response => response?.data?.graphStatus === 'too_large' && response.graph === undefined;
+/**
+ * Health is optional to the workspace: a failed read resolves to `unavailable` (with the error,
+ * so the caller can end a rejected session) instead of rejecting.
+ */
+export async function readInventoryHealth(query, options) {
+  try {
+    const result = await query('get_inventory_health', {}, options);
+    return { status: 'ready', sources: Array.isArray(result?.data?.sources) ? result.data.sources : [] };
+  } catch (error) {
+    return { status: 'unavailable', message: errorMessage(error), error };
+  }
 }
 export class ReferenceError extends Error {
   constructor(code, status = 0) {
@@ -774,11 +774,23 @@ export function createBearerQuerySession(token, options = {}) {
 export function createCompanyQuerySession(csrfToken, options = {}) {
   return createAuthenticatedQuerySession((...args) => queryCompanySession(csrfToken, ...args), options);
 }
-/** Returning to a company workspace always revalidates before showing its cached data. */
+/** How long before a company session ends the viewer says so. */
+export const SESSION_WARNING_MS = 60_000;
+/**
+ * Watches one company session. Hiding the page unloads nothing (`onAway` lets the caller cover
+ * the evidence meanwhile); coming back to it (or being restored from the back/forward cache)
+ * asks the caller to check the session again before the evidence is shown
+ * (`onRevalidate('hidden' | 'restored')`). `onExpiring` fires once, a minute
+ * before `expiresAt`. At expiry the evidence is dropped (`onInvalidate('expired')`) and the
+ * session is checked (`onRevalidate('expired')`). Returns a function that stops the watch.
+ */
 export function watchCompanySession({
   expiresAt,
   onInvalidate,
   onRevalidate,
+  onExpiring = () => {},
+  onAway = () => {},
+  warnMs = SESSION_WARNING_MS,
   windowImpl = window,
   documentImpl = document,
   now = Date.now,
@@ -786,44 +798,42 @@ export function watchCompanySession({
   cancel = clearTimeout,
 }) {
   let ended = false,
-    invalidated = false,
+    away = false,
+    warned = false,
     revalidating = false,
-    reason,
     timer;
-  const invalidate = value => {
-    if (!ended && !invalidated) {
-      invalidated = true;
-      reason = value;
-      onInvalidate(value);
-    }
-  };
-  const revalidate = () => {
+  const revalidate = reason => {
     if (!ended && !revalidating) {
       revalidating = true;
       onRevalidate(reason);
     }
   };
   const visibility = () => {
-    if (documentImpl.visibilityState === 'hidden') invalidate('hidden');
-    else if (invalidated) revalidate();
+    if (documentImpl.visibilityState === 'hidden') {
+      away = true;
+      if (!ended && !revalidating) onAway();
+    } else if (away) revalidate('hidden');
   };
   const pageshow = event => {
-    if (event.persisted) {
-      invalidate('restored');
-      revalidate();
-    }
+    if (event.persisted) revalidate('restored');
   };
   const arm = () => {
     const remaining = Date.parse(expiresAt) - now();
+    if (!warned && remaining > 0 && remaining <= warnMs) {
+      warned = true;
+      onExpiring();
+    }
+    // Wake for the warning first, then for the expiry itself.
+    const wait = warned ? remaining : remaining - warnMs;
     timer = schedule(
       () => {
         if (ended) return;
         if (Date.parse(expiresAt) <= now()) {
-          invalidate('expired');
-          revalidate();
+          if (!revalidating) onInvalidate('expired');
+          revalidate('expired');
         } else arm();
       },
-      Math.max(0, Math.min(remaining, 2147483647)),
+      Math.max(0, Math.min(wait, 2147483647)),
     );
   };
   if (!Number.isFinite(Date.parse(expiresAt))) throw new ReferenceError('VIEWER_SESSION_INVALID');

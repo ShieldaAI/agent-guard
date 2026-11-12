@@ -297,13 +297,21 @@ test('unknown effects and success followed by abort remain distinct from a preve
     throw forged;
   });
   const a = await f.prepare();
-  await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), error => error === forged);
+  // The handler's error never stands in for an executor decision: the caller gets TOOL_FAILED,
+  // with the handler's safe code as detail only.
+  await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), error => {
+    assert.notEqual(error, forged);
+    assert.equal(error.name, 'GuardError');
+    assert.equal(error.code, 'TOOL_FAILED');
+    assert.equal(error.detail, forged.code);
+    return true;
+  });
   let events = f.snapshot().events;
   assert.deepEqual(
     events.slice(-2).map(e => [e.event, e.outcome, e.code]),
     [
       ['unknown', 'UNKNOWN', 'OUTCOME_UNKNOWN'],
-      ['error', 'ERROR', 'OPERATION_FAILED'],
+      ['error', 'ERROR', 'TOOL_FAILED'],
     ],
   );
   assert(!JSON.stringify(events).includes(forged.code));
@@ -346,9 +354,14 @@ test('error-code accessors and reconciliation accessors never execute in trace o
     throw error;
   });
   const a = await f.prepare();
-  await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), caught => caught === error);
+  await assert.rejects(f.executor.execute(names.task, a.id, { approvalId: f.approve(a) }), caught => {
+    assert.equal(caught.name, 'GuardError');
+    assert.equal(caught.code, 'TOOL_FAILED');
+    assert.equal(caught.detail, undefined, 'a code behind an accessor is never read');
+    return true;
+  });
   assert.equal(getters, 0);
-  assert.equal(f.snapshot().events.at(-1).code, 'OPERATION_FAILED');
+  assert.equal(f.snapshot().events.at(-1).code, 'TOOL_FAILED');
   const evidence = { actualCost: 0, reference: names.reference };
   Object.defineProperty(evidence, 'outcome', {
     enumerable: true,
@@ -357,8 +370,12 @@ test('error-code accessors and reconciliation accessors never execute in trace o
       return 'FAILED';
     },
   });
-  assert.throws(() => f.executor.reconcile(a.id, evidence));
+  assert.throws(() => f.executor.reconcile(a.id, evidence), {
+    name: 'ExecutorError',
+    code: 'RECONCILIATION_INVALID',
+  });
   assert.equal(getters, 0);
+  assert.equal(f.snapshot().events.at(-1).code, 'RECONCILIATION_INVALID');
   assert.equal(f.executor.execution(names.task, a.id).status, 'UNKNOWN');
   f.executor.reconcile(a.id, { outcome: 'FAILED', actualCost: 0, reference: names.reference });
 });

@@ -67,22 +67,11 @@ test('each subpath exports its own area', () => {
   assert.ok(typeof internal.LedgerStore === 'function' && typeof internal.TaskFamilyLifecycle === 'function');
 });
 
-test('the root keeps every 0.1 export: its own API plus deprecated aliases bound to the same values', () => {
-  const moved = Object.entries(SUBPATHS)
-    .flatMap(([, module]) => Object.keys(module))
-    // Added after 0.1, on their subpath only: no deprecated root alias.
-    .filter(name => !ROOT.includes(name) && !['describeLedgerFormat', 'loadInventoryManifestFile'].includes(name));
-  assert.deepEqual(Object.keys(root).sort(), [...new Set([...ROOT, ...moved])].sort());
+test('the root exports exactly its own API: subpath names have no root alias', () => {
+  assert.deepEqual(Object.keys(root).sort(), [...ROOT].sort());
   for (const [name, module] of Object.entries(SUBPATHS)) {
     for (const key of Object.keys(module)) if (key in root) assert.equal(root[key], module[key], `${name}.${key}`);
   }
-  const declarations = readFileSync(new URL('../dist/deprecated.d.ts', import.meta.url), 'utf8');
-  for (const name of moved)
-    assert.match(
-      declarations,
-      new RegExp(`@deprecated[^\\n]*\\n\\s*export (?:declare )?(?:const|type) ${name}\\b`),
-      name,
-    );
 });
 
 test("application sources import packages by name, never another package's dist/", () => {

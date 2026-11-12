@@ -4,10 +4,18 @@ from __future__ import annotations
 
 import time
 from dataclasses import asdict, dataclass
+from typing import Any
 
-from agent_guard_cartography.archive import ArchiveError, SnapshotArchive
-from agent_guard_cartography.cloud import CloudJoinError, CloudScope
-from agent_guard_cartography.collector import CollectionError, CollectorEnrollment, collect_snapshot
+from neo4j import Session
+
+from agent_guard_cartography.archive import (
+    DEFAULT_RETENTION_SECONDS,
+    PruneReport,
+    SnapshotArchive,
+)
+from agent_guard_cartography.cloud import CloudScope
+from agent_guard_cartography.collector import CollectorEnrollment, collect_snapshot
+from agent_guard_cartography.errors import AgentGuardCartographyError
 from agent_guard_cartography.graph import (
     GraphImportError,
     ImportResult,
@@ -15,7 +23,12 @@ from agent_guard_cartography.graph import (
     import_snapshot,
     retire_projection,
 )
-from agent_guard_cartography.inventory import InventoryValidationError
+
+# The graph already holds a newer view of the source than the snapshot offered. No
+# retry can publish it while that view stands, so a newly collected one is not kept:
+# kept, each poll of an executor whose clock stepped back would use one of the
+# source's pending receipts until every later poll was refused.
+SUPERSEDED_CODES = frozenset(("GENERATED_AT_ROLLBACK", "REVISION_ROLLBACK"))
 
 
 @dataclass(frozen=True)
@@ -25,15 +38,12 @@ class CollectionResult:
     generated_at: str
     duration_ms: int
 
-    def summary(self) -> dict:
+    def summary(self) -> dict[str, Any]:
         return {**asdict(self), "status": "complete"}
 
 
 def _code(error: Exception) -> str:
-    if isinstance(
-        error,
-        (ArchiveError, CloudJoinError, CollectionError, GraphImportError, InventoryValidationError),
-    ):
+    if isinstance(error, AgentGuardCartographyError):
         return error.code
     return "COLLECTION_FAILED"
 
@@ -49,7 +59,7 @@ def _failed_health(
 
 
 def collect_and_publish(
-    session,
+    session: Session,
     enrollment: CollectorEnrollment,
     token: str,
     archive: SnapshotArchive,
@@ -72,19 +82,27 @@ def collect_and_publish(
         receipt.receipt_id,
         cloud_scope=cloud_scope,
         started=started,
+        keep_superseded=False,
     )
 
 
 def publish_receipt(
-    session,
+    session: Session,
     enrollment: CollectorEnrollment,
     archive: SnapshotArchive,
     receipt_id: str,
     *,
     cloud_scope: CloudScope | None = None,
     started: float | None = None,
+    keep_superseded: bool = True,
 ) -> CollectionResult:
-    """Retry a protected receipt after restart; the graph enforces idempotency/revisions."""
+    """Retry a protected receipt after restart; the graph enforces idempotency/revisions.
+
+    A failed publication keeps its receipt pending and names it on the error. With
+    ``keep_superseded`` false (a snapshot collected just now), a pending receipt the
+    graph refuses with one of ``SUPERSEDED_CODES`` is removed instead; the error is
+    raised and recorded in the source's health either way.
+    """
     # Expected lifecycle/recovery fences must precede graph writes and receipt
     # failure bookkeeping, preserving the confirmed recovery evidence unchanged.
     archive.require_publishable_source(enrollment.source)
@@ -104,12 +122,33 @@ def publish_receipt(
             enrollment.source, enrollment.profile, result=result, snapshot=snapshot
         )
     except Exception as error:
+        retained = True
         if loaded:
-            try:
-                archive.record_failure(receipt_id, _code(error))
-            except Exception:
-                pass
+            if (
+                not keep_superseded
+                and isinstance(error, GraphImportError)
+                and error.code in SUPERSEDED_CODES
+            ):
+                try:
+                    # Only what was never published: an anchor or an already-known
+                    # receipt is evidence and stays.
+                    if archive.read_receipt(receipt_id)["status"] == "pending":
+                        archive.discard(receipt_id)
+                        retained = False
+                except Exception:
+                    pass
+            if retained:
+                try:
+                    archive.record_failure(receipt_id, _code(error))
+                except Exception:
+                    pass
         _failed_health(archive, enrollment, error)
+        if retained:
+            try:
+                # Name the retained receipt for the operator without changing the error type.
+                error.receipt_id = receipt_id
+            except AttributeError:
+                pass
         raise
     return CollectionResult(
         receipt_id,
@@ -120,7 +159,7 @@ def publish_receipt(
 
 
 def retire_obsolete(
-    session,
+    session: Session,
     source_id: str,
     *,
     minimum_retention_seconds: int = 3600,
@@ -171,7 +210,14 @@ def retire_obsolete(
     return retired
 
 
-def prune_archive(session, archive: SnapshotArchive) -> int:
+def prune_archive(
+    session: Session,
+    archive: SnapshotArchive,
+    *,
+    retention_seconds: int = DEFAULT_RETENTION_SECONDS,
+    reserve_snapshots: int = 0,
+    reserve_bytes: int = 0,
+) -> PruneReport:
     """Protect actual database pointers as well as the archive's local publication receipts."""
     pointers = list(
         session.run(
@@ -184,11 +230,16 @@ def prune_archive(session, archive: SnapshotArchive) -> int:
     protected = tuple(
         {row[key] for row in pointers for key in ("current", "previous") if row[key] is not None}
     )
-    return archive.prune(protected_projection_ids=protected)
+    return archive.maintain(
+        retention_seconds=retention_seconds,
+        protected_projection_ids=protected,
+        reserve_snapshots=reserve_snapshots,
+        reserve_bytes=reserve_bytes,
+    )
 
 
 def retire_superseded(
-    session,
+    session: Session,
     archive: SnapshotArchive,
     *,
     minimum_retention_seconds: int = 3600,

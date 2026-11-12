@@ -1,119 +1,126 @@
-# Choose a package for agent tools and model calls
+# Package guide
 
-Use these existing libraries to authorize AI agent tool calls, validate LLM
-responses, or monitor security advisories for your dependencies. Each works
-without a Shielda account. Start with the package that solves your current task.
+Agent Guard is five npm packages. Most projects start with the first and add
+others when they need them. Install the same version of each.
 
-## Find the right package
+## Which package do I need?
 
-| Your task | Package and documentation | Runtime and boundary |
+| I want to ... | Use | Needs |
 | --- | --- | --- |
-| Restrict which tools an AI agent can call and on which resources | [Agent Guard](../packages/core/README.md), `@shieldaai/agent-guard` | Node.js 22+; registered calls in one process, with in-memory state |
-| Approve MCP tool metadata and scope tool calls to a task | [MCP adapter](../packages/mcp/README.md), `@shieldaai/agent-guard-mcp` | Node.js 22+; the host supplies trusted identity, resource resolution and transport policy |
-| Persist approvals and budget admission across restarts | [Durable executor](../packages/executor/README.md), `@shieldaai/agent-guard-executor` | Node.js 22.13+; one authority owner, rather than distributed enforcement |
-| Run paired malicious and benign tool-authorization fixtures | [Conformance scenarios](../packages/scenarios/README.md), `@shieldaai/agent-guard-scenarios` | Node.js 22+; synthetic fixtures, not a production security certification |
-| Query AI agent and MCP inventory, changes and access explanations | [Agent Map](../packages/agent-map/README.md), `@shieldaai/agent-map` | Node.js 22.13+; a read-only service requiring configured inventory and Neo4j |
-| Validate JSON model responses with Zod and handle retries in TypeScript | [SafeCall Node](https://github.com/GuardianMesh/llm-safecall-node#readme), `llm-safecall` on npm | Node.js 22+ and Zod 4; model-call validation, not tool authorization |
-| Validate model responses with Pydantic and handle retries in Python | [SafeCall Python](https://github.com/GuardianMesh/llm-safecall#readme), `llm-safecall` on PyPI | Python 3.10+; independent Python package with its own version |
-| Monitor dependency advisories against an inventory with local evidence and alerts | [Security Watch](https://github.com/ShieldaAI/security-watch#readme), `@shieldaai/security-watch` | Node.js 24.10+; experimental advisory monitoring, with human review of applicability |
+| Control which tools an agent can call, on which resources, with approvals and budgets | [`@shieldaai/agent-guard`](#the-guard) (the guard) | Node.js 22+ |
+| Put the tools of a Model Context Protocol (MCP) server behind the same checks | [`@shieldaai/agent-guard-mcp`](#mcp-adapter) with the guard or the executor | Node.js 22+ |
+| Keep budgets, revocations and used approvals across restarts, or serve an agent in another process | [`@shieldaai/agent-guard-executor`](#the-executor) (the executor) | Node.js 22.13+ |
+| Run untrusted code with no network and no host credentials | The executor's `/sandbox` subpath and the [Docker isolation profile](../deployment/README.md) | Node.js 22.13+, Docker |
+| Give an agent memory with provenance, quarantine and rollback | The executor's memory tools | Node.js 22.13+ |
+| Test that my integration denies the hostile cases and allows the ordinary ones | [`@shieldaai/agent-guard-scenarios`](#scenarios) | Node.js 22+ |
+| See which agents exist and what they can reach | [`@shieldaai/agent-map`](#agent-map-experimental) (experimental) | Node.js 22.13+, Neo4j, the Cartography collector |
 
-The published Agent Guard packages remain experimental `0.1.0-alpha.3`; this
-checkout holds `0.1.0`, approved and not yet published.
-Security Watch has its separate experimental release policy. Read
-their boundaries before deploying them. Agent Guard controls calls routed through
-it; it is not an OS sandbox. SafeCall's known-pattern filters do not establish
-that text is safe to follow.
+Each package's limits are in [support and limits](support-and-limits.md).
 
-## Start with tool authorization
-
-Install the core when you need scoped resources, tenant checks, exact-action
-approvals or task budgets:
+## The guard
 
 ```sh
-npm install @shieldaai/agent-guard@alpha
+npm install @shieldaai/agent-guard
 ```
 
-The [tool-permissions walkthrough](guides/tool-permissions.md) registers a local
-tool, rejects an ungranted resource and missing approval, then runs one approved
-action and rejects replay. It needs no API key or external service. The trusted
-application creates task identities, resolves
-ownership and authenticates reviewers for actions requiring approval.
+```js
+import { AgentGuard } from '@shieldaai/agent-guard';
 
-For MCP tools, add `@shieldaai/agent-guard-mcp@alpha`. For persistent authority
-state, add `@shieldaai/agent-guard-executor@alpha`. Install matching Guard package
-versions. The install commands above select the published alpha. This checkout
-targets unpublished `0.1.0`; build and install its local tarballs together for
-candidate features. See the [release notes](releases/0.1.0.md) for the recorded scope decisions
-and the [alpha.3 notes](releases/0.1.0-alpha.3.md) for publication verification.
+const guard = new AgentGuard();
+const fingerprint = guard.registerTool({
+  name: 'report.read', description: 'Read one report',
+  resolve: args => ({ resourceId: args.id, tenantId: 'acme' }),
+  execute: args => ({ value: `Report ${args.id}` }),
+});
+guard.approveTool('report.read', fingerprint);
+```
 
-To evaluate the existing synthetic fixtures without a model provider:
+The guard runs inside your application and keeps its state in memory. Continue
+with the [tool-permissions walkthrough](guides/tool-permissions.md), which adds
+a task, a denial, an approval and a refused replay.
+
+## MCP adapter
 
 ```sh
-npm install @shieldaai/agent-guard-scenarios@alpha
-node --input-type=module -e "import { runConformance } from '@shieldaai/agent-guard-scenarios'; const r = await runConformance(); console.log(r.passed, r.passedCases, r.caseCount); if (!r.passed) process.exitCode = 1;"
+npm install @shieldaai/agent-guard @shieldaai/agent-guard-mcp
 ```
 
-The published alpha.3 catalog (1.2.0) runs twelve paired scenarios and prints `true 24 24`
-when all cases pass; this checkout's catalog (1.3.0) runs thirteen and prints `true 26 26`. The [scenario reference](scenarios.md) explains what they cover.
+```js
+import { AgentGuard } from '@shieldaai/agent-guard';
+import { registerMcpTool } from '@shieldaai/agent-guard-mcp';
 
-## Start with model response validation
+const guard = new AgentGuard();
+const tool = registerMcpTool(guard, {
+  serverId: 'docs',
+  tool: { name: 'read', description: 'Read a document', inputSchema: { type: 'object' } },
+  client: { callTool: async () => ({ content: [{ type: 'text', text: 'Hello' }] }) }, // your MCP SDK client
+  resolve: args => ({ resourceId: String(args.id), tenantId: 'acme' }),
+});
+guard.approveTool(tool.name, tool.fingerprint); // the tool is now 'mcp:docs:read'
+```
 
-For Zod validation and retry handling on Node.js:
+This wraps one tool of a client you already have. To let the adapter own the
+connection, pin reviewed tool definitions and stop calls when the server's tool
+list changes, use `ManagedMcpConnection`; see the
+[MCP README](../packages/mcp/README.md) and the
+[verified MCP credentials guide](guides/verified-mcp-credentials.md).
+
+## The executor
 
 ```sh
-npm install llm-safecall zod@^4.6.7
-LLM_PROVIDER=mock npx llm-safecall --prompt 'Hello'
+npm install @shieldaai/agent-guard-executor
 ```
 
-The mock command checks the installed CLI without provider credentials. Follow
-the [Node response-validation example](https://github.com/GuardianMesh/llm-safecall-node#validate-a-response)
-for typed JSON, or try the [local Zod walkthrough](https://github.com/GuardianMesh/llm-safecall-node/blob/main/docs/validated-responses.md)
-without credentials. SafeCall 0.4.0 raises errors by default; the optional display
-fallback is a string, not validated schema output.
+```js
+import { randomBytes } from 'node:crypto';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
 
-For the separate Python distribution, use an isolated environment:
+// ':memory:' is for trying it out. In production use a file and a key you keep safe.
+const executor = new DurableExecutor({ database: ':memory:', encryptionKey: randomBytes(32) });
+const { taskId, token } = executor.createTask({
+  id: 'report-task', principalId: 'user-7', tenantId: 'acme', grants: [],
+  budget: { maxCalls: 5, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
+});
+executor.close();
+```
+
+The executor applies the guard's rules and stores its state in an encrypted
+file. Each task gets a token, so an agent in another process can call it over
+HTTP while your application keeps the administration object. See the
+[executor README](../packages/executor/README.md).
+
+## Scenarios
 
 ```sh
-python3 -m venv .venv
-. .venv/bin/activate
-python -m pip install llm-safecall
-LLM_PROVIDER=mock llm-safecall --prompt 'Hello'
+npm install @shieldaai/agent-guard @shieldaai/agent-guard-scenarios
 ```
 
-See the [Python response-validation example](https://github.com/GuardianMesh/llm-safecall#validate-a-response)
-for Pydantic output and optional provider extras. Python and Node releases have
-different version numbers; do not transfer API names between them.
+```js
+import { runConformance } from '@shieldaai/agent-guard-scenarios';
 
-The [local Pydantic walkthrough](https://github.com/GuardianMesh/llm-safecall/blob/main/docs/validated-responses.md)
-demonstrates validation and retries without a live provider.
+const report = await runConformance();
+console.log(report.passed, report.passedCases, report.caseCount); // true 26 26
+```
 
-## Start with dependency advisory monitoring
+Thirteen scenarios, each with a hostile and an ordinary case. They use made-up
+data and need no API key. [Scenarios](scenarios.md) describes each one and how
+to run them against your own wrapper.
 
-Read the [Security Watch setup and dry-run instructions](https://github.com/ShieldaAI/security-watch#install-and-preview).
-The [offline advisory preview](https://github.com/ShieldaAI/security-watch/blob/main/docs/offline-advisory-preview.md)
-uses the published package's fictional inventory and advisory fixture.
-Begin with a fictional inventory, AI analysis disabled and notification routes
-disabled. Configure your actual inventory and review findings before activating
-Slack or email delivery. Advisories and coverage receipts are evidence for review;
-an empty result does not prove that dependencies are safe.
+## Agent Map (experimental)
 
-## Query inventory after it is configured
+```sh
+npm install @shieldaai/agent-map
+npx agent-guard-map --help
+```
 
-Agent Map supplies scoped HTTP and MCP reference queries over published
-Cartography inventory. It does not authorize or execute agent actions. The
-[package guide](../packages/agent-map/README.md) covers its required host-owned
-configuration; the viewer and Python collector are separate source components.
-Alpha.3 fixes the installed command launchers. For the older alpha.2 package on
-macOS, invoke the launcher directly with
-`node node_modules/@shieldaai/agent-map/dist/cli.js --help` if its npm command
-shortcut produces no output. See the [release notes](releases/0.1.0-alpha.2.md)
-for the release boundary.
+Agent Map is a read-only service that answers questions about an inventory of
+agents. It needs a host configuration file, a Neo4j database and the Cartography
+collector, so start with the [agent cartography guide](guides/agent-cartography.md).
+It can change in a minor release.
 
-## Select rows across server pages
+## Related projects
 
-[select-all-matching](https://github.com/ShieldaAI/select-all-matching#readme) is a
-separate framework-independent table-selection library. It represents every row
-matching a server-defined scope except selected exclusions, without loading all
-IDs. Install its release candidate with `npm install select-all-matching@next`.
-It supplies no table UI or authorization; the server must recheck access when a
-bulk operation runs.
+For validating what a model returns, see SafeCall for
+[Node.js](https://github.com/GuardianMesh/llm-safecall-node#readme) and
+[Python](https://github.com/GuardianMesh/llm-safecall#readme). For dependency
+advisories, see [Security Watch](https://github.com/ShieldaAI/security-watch#readme).

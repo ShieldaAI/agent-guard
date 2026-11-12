@@ -3,6 +3,7 @@ import { parseEvidenceJson } from './evidence-json.js';
 import { createHash, type KeyObject } from 'node:crypto';
 import { type Json } from '@shieldaai/agent-guard';
 import { digestJson, immutableJson } from '@shieldaai/agent-guard/internal';
+import { foldPath, pipelineError, portablePathProblem } from './path-rules.js';
 
 export interface BuildArtifactRule {
   readonly tenantId: string;
@@ -38,8 +39,9 @@ const MEDIA_TYPE = 'application/vnd.in-toto+json';
 const MAX_STATEMENT_BYTES = 128 * 1024;
 const hash = (value: Uint8Array): string => createHash('sha256').update(value).digest('hex');
 
+/** One fixed error for every rejection: it names no field and carries no supplied value. */
 function invalid(): never {
-  throw new Error('Build provenance validation failed');
+  throw pipelineError('BUILD_PROVENANCE_INVALID', 'Build provenance validation failed');
 }
 
 function record(value: Json | undefined): RecordValue {
@@ -69,25 +71,10 @@ function text(value: Json | undefined, maximum = 2048): string {
   return value;
 }
 
+/** The shared portable-path rule: the same paths the sandbox and artifact receipts accept. */
 function portablePath(value: Json | undefined): string {
-  const name = text(value, 1024);
-  if (
-    name !== name.normalize('NFC') ||
-    /[\\:*?"<>|]/u.test(name) ||
-    name.toLowerCase() === '.agent-guard-provenance.json' ||
-    name
-      .split('/')
-      .some(
-        part =>
-          !part ||
-          part === '.' ||
-          part === '..' ||
-          /[. ]$/u.test(part) ||
-          /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/iu.test(part),
-      )
-  )
-    invalid();
-  return name;
+  if (portablePathProblem(value)) invalid();
+  return value as string;
 }
 
 /** URIs are compared as enrolled strings. The verifier never retrieves their contents. */
@@ -187,7 +174,7 @@ export class BuildProvenancePolicy {
           sourceDigest: { algorithm, value: hexDigest(source.value, algorithm) },
           signerSha256,
         };
-        const location = JSON.stringify([rule.tenantId, rule.path.toLowerCase()]);
+        const location = JSON.stringify([rule.tenantId, foldPath(rule.path)]);
         if (occupied.has(location)) invalid();
         occupied.add(location);
         this.#rules.set(JSON.stringify([rule.tenantId, rule.path]), { rule, key });

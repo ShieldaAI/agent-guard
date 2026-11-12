@@ -7,10 +7,15 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import cytoscape from 'cytoscape';
 import { graphElements, policyEvidenceRows } from '../src/view-model.mjs';
 import { queryDemo } from '../src/demo.mjs';
+import { DEMO_SOURCE_ID } from '../src/demo-store.mjs';
 
+// One real service answer: the demo's research agent and its conditional S3 candidate.
 async function fixture() {
-  const result = await queryDemo('get_agent_access', { agentId: 'agent-research' });
-  return { graph: result.graph, record: result.data.policyEvidence[0] };
+  const result = await queryDemo('get_agent_access', { sourceId: DEMO_SOURCE_ID, agentId: 'research-assistant' });
+  return {
+    graph: result.graph,
+    record: result.data.policyEvidence.find(item => item.status === 'complete' && item.candidates.length),
+  };
 }
 const compiled = await build({
   entryPoints: [fileURLToPath(new URL('../src/policy-evidence.jsx', import.meta.url))],
@@ -30,7 +35,7 @@ test('policy graph draws a distinct candidate only between visible exact binding
   const { graph, record } = await fixture();
   const elements = graphElements(graph, [record]);
   const [candidate] = elements.filter(item => item.classes === 'policy-candidate');
-  assert.equal(candidate.data.source, 'identity');
+  assert.equal(candidate.data.source, 'identity-research');
   assert.equal(candidate.data.target, 'external-resource');
   assert.match(candidate.data.label, /s3:GetObject · policy candidate · condition unresolved/);
   assert.equal(candidate.data.label.includes('allowed'), false);
@@ -119,7 +124,7 @@ test('policy presentation preserves exact object scope and its independent obser
   const observedAt = '2026-10-30T01:02:03Z';
   const html = render([{ ...record, observedAt }], graph);
   assert.match(html, /arn:aws:s3:::company-reports\/quarterly\/summary.pdf/);
-  assert.match(html, /exact · object/);
+  assert.match(html, /Exact · Object/);
   assert.match(html, /Bucket-summary evidence/);
   assert.match(html, /original object or prefix restriction still applies/);
   assert.match(html, /datetime="2026-10-30T01:02:03Z"/i);
@@ -171,22 +176,4 @@ test('policy presentation refuses pair and graph edge overflow without partial r
   // Preserve the binding links while reaching the fixed graph edge budget.
   fullGraph.edges.splice(0, graph.edges.length, ...graph.edges);
   assert.throws(() => graphElements(fullGraph, [record]), /VIEWER_GRAPH_INVALID/);
-});
-
-test('synthetic demo supplies conditional, absent and boundary evidence without history claims', async t => {
-  t.mock.method(globalThis, 'fetch', () => assert.fail('Demo must stay local'));
-  const research = await queryDemo('get_agent_access', { agentId: 'agent-research' });
-  const release = await queryDemo('get_agent_access', { agentId: 'agent-release' });
-  const finance = await queryDemo('get_agent_access', { agentId: 'agent-finance' });
-  assert.equal(research.data.policyEvidence[0].candidates[0].hasCondition, true);
-  assert.equal(release.data.policyEvidence[0].reason, 'no_candidate');
-  assert.equal(finance.data.policyEvidence[0].reason, 'boundary_unresolved');
-  const explanation = await queryDemo('explain_access', {
-    taskId: research.data.tasks[0].taskId,
-    tool: research.data.grants[0].tool,
-    resourceId: research.data.grants[0].resources[0],
-  });
-  assert.deepEqual(explanation.data.externalEvidence.policyEvidence, research.data.policyEvidence);
-  const changes = await queryDemo('get_changes');
-  assert.equal(changes.data.policyHistory, 'not_collected');
 });

@@ -6,7 +6,8 @@ import { rootCertificates, createSecureContext } from 'node:tls';
 import type { LookupFunction } from 'node:net';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
 import * as oidc from 'openid-client';
-import { fields, integer, fail, parseRequest } from './boundary.js';
+import { integer, fail } from './common.js';
+import { fields, parseRequest } from './boundary.js';
 import { MapQueryError, mapIdentifier } from './types.js';
 
 export interface MapOidcOptions {
@@ -19,6 +20,11 @@ export interface MapOidcOptions {
   readonly ca?: string;
   readonly requestTimeoutMs?: number;
   readonly maxResponseBytes?: number;
+  /**
+   * Seconds an ID token's `iat` or `nbf` may lie ahead of this host's clock: default 5, at most
+   * 60, and 0 for none. Never applied to `exp`: an expired token is refused at its own time.
+   */
+  readonly clockToleranceSeconds?: number;
 }
 export interface MapOidcTransaction {
   readonly state: string;
@@ -71,6 +77,7 @@ export async function createMapOidcClient(options: MapOidcOptions): Promise<MapO
       'ca',
       'requestTimeoutMs',
       'maxResponseBytes',
+      'clockToleranceSeconds',
     ],
     ['issuer', 'clientId', 'clientSecret', 'redirectUri'],
   );
@@ -87,6 +94,9 @@ export async function createMapOidcClient(options: MapOidcOptions): Promise<MapO
     method === 'client_secret_basic' ? oidc.ClientSecretBasic(secret) : oidc.ClientSecretPost(secret);
   const timeout = integer(config.requestTimeoutMs, 5000, 50, 10_000);
   const maxBytes = integer(config.maxResponseBytes, 256 * 1024, 1024, 1024 * 1024);
+  // An identity provider's clock is rarely the same second as ours. The tolerance lets a token
+  // issued (or valid from) slightly in our future through; expiry is checked below without it.
+  const clockTolerance = integer(config.clockToleranceSeconds, 5, 0, 60);
   const origins = new Set([issuer.origin]);
   if (config.endpointOrigins !== undefined) {
     if (!Array.isArray(config.endpointOrigins) || config.endpointOrigins.length > 8) fail('MAP_CONFIG_INVALID');
@@ -277,7 +287,7 @@ export async function createMapOidcClient(options: MapOidcOptions): Promise<MapO
       },
     };
   }
-  const clientMetadata = { id_token_signed_response_alg: 'RS256', [oidc.clockTolerance]: 0 };
+  const clientMetadata = { id_token_signed_response_alg: 'RS256', [oidc.clockTolerance]: clockTolerance };
   const discovery = operation();
   let metadata: oidc.ServerMetadata;
   try {
@@ -393,9 +403,10 @@ export async function createMapOidcClient(options: MapOidcOptions): Promise<MapO
           (claims.azp !== undefined && claims.azp !== clientId) ||
           !Number.isSafeInteger(claims.exp) ||
           !Number.isSafeInteger(claims.iat) ||
-          claims.iat > Math.floor(now / 1000) ||
+          claims.iat > Math.floor(now / 1000) + clockTolerance ||
           claims.exp <= claims.iat ||
           !Number.isSafeInteger(claims.exp * 1000) ||
+          // The protocol library's tolerance also covers `exp`; this check does not.
           claims.exp * 1000 <= now
         )
           fail(INVALID);

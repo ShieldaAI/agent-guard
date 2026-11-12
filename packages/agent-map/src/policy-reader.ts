@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { taskLiveness, type TaskLiveness } from './boundary-flags.js';
 import { immutableJson } from '@shieldaai/agent-guard/internal';
+import { LIST_SHORTENED, buildGraphIndex, compareCodePoints, fail, parseS3Arn } from './common.js';
 import {
   MapQueryError,
   mapIdentifier,
@@ -9,6 +10,7 @@ import {
   type MapNode,
   type MapPolicyCandidate,
   type MapPolicyEvidence,
+  type MapPolicySelection,
   type MapIdentityExtraResource,
   type MapIdentityScope,
 } from './types.js';
@@ -28,9 +30,6 @@ const reason = (
 ): MapPolicyEvidence => ({ ...record, status, reason: code, observedAt, candidates: [] });
 function value(node: MapNode, name: string): string | null {
   return typeof node.properties[name] === 'string' ? (node.properties[name] as string) : null;
-}
-function fail(code = 'MAP_UNAVAILABLE'): never {
-  throw new MapQueryError(code);
 }
 
 interface Probe {
@@ -54,27 +53,13 @@ export interface PolicyPlan {
 
 /** Bounded adjacency over one projection's authorized nodes and edges. */
 function graphIndex(nodes: readonly MapNode[], edges: readonly MapEdge[]) {
-  const byId = new Map(nodes.map(node => [node.id, node]));
-  const outgoing = new Map<string, Map<string, string[]>>(),
-    incoming = new Map<string, Map<string, string[]>>();
-  for (const edge of edges) {
-    for (const [index, from, to] of [
-      [outgoing, edge.source, edge.target],
-      [incoming, edge.target, edge.source],
-    ] as const) {
-      let kinds = index.get(from);
-      if (!kinds) index.set(from, (kinds = new Map()));
-      let ids = kinds.get(edge.kind);
-      if (!ids) kinds.set(edge.kind, (ids = []));
-      ids.push(to);
-    }
-  }
+  const { nodes: byId, outgoing, incoming } = buildGraphIndex(nodes, edges);
   let work = 0;
   const step = (n = 1): void => {
     work += n;
     if (work > 100_000) fail('MAP_LIMIT_EXCEEDED');
   };
-  const linked = (node: MapNode, kind: string, label: MapNode['label'], reverse = false): MapNode[] => {
+  const linked = (node: MapNode, kind: MapEdge['kind'], label: MapNode['label'], reverse = false): MapNode[] => {
     const ids = (reverse ? incoming : outgoing).get(node.id)?.get(kind) ?? [];
     step(ids.length);
     return ids.flatMap(id => {
@@ -82,7 +67,7 @@ function graphIndex(nodes: readonly MapNode[], edges: readonly MapEdge[]) {
       return item?.label === label ? [item] : [];
     });
   };
-  const exact = (node: MapNode, kind: string, target: MapNode): boolean => {
+  const exact = (node: MapNode, kind: MapEdge['kind'], target: MapNode): boolean => {
     const ids = outgoing.get(node.id)?.get(kind) ?? [];
     step();
     return ids.length === 1 && ids[0] === target.id;
@@ -99,26 +84,33 @@ export function collectionKey(companyId: string, tenantId: string, partition: st
   return createHash('sha256').update(encoded).digest('hex');
 }
 
-/** Pair only the selected task's grants with its deployment's declared execution identity. */
+/**
+ * Pair only the selected task's grants with its deployment's declared execution identity.
+ * `select` narrows the pairs to one task, tool, resource reference (or mapped ARN) or action,
+ * so a read that shows a few pairs is not bound by the size of the whole fleet.
+ */
 export function policyPlan(
   companyId: string,
   tenantId: string,
   nodes: readonly MapNode[],
   edges: readonly MapEdge[],
   maximum: number,
+  select: MapPolicySelection = {},
 ): PolicyPlan {
   const { linked, exact, step } = graphIndex(nodes, edges);
   const records: MapPolicyEvidence[] = [],
     probes: Probe[] = [],
     seen = new Set<string>();
   for (const task of nodes.filter(node => node.label === 'GuardTask')) {
+    if (select.taskId !== undefined && task.entityId !== select.taskId && value(task, 'task_id') !== select.taskId)
+      continue;
     const deployments = linked(task, 'G_ASSIGNED_TO', 'GuardDeployment');
     for (const deployment of deployments) {
       const agents = linked(deployment, 'G_INSTANCE_OF', 'GuardAgent');
       const executions = linked(deployment, 'G_EXECUTES_FOR', 'GuardExecutionBinding', true);
       for (const grant of linked(task, 'G_HAS_GRANT', 'GuardGrant')) {
         const tool = value(grant, 'tool');
-        if (!tool) continue;
+        if (!tool || (select.tool !== undefined && tool !== select.tool)) continue;
         for (const selector of linked(grant, 'G_TARGETS', 'GuardResource')) {
           for (const binding of linked(selector, 'G_BINDS_SELECTOR', 'GuardResourceBinding', true)) {
             step();
@@ -127,6 +119,14 @@ export function policyPlan(
             if (selectorValue !== value(binding, 'resource_ref')) continue;
             const grantResources = grant.properties.resources;
             if (!Array.isArray(grantResources) || !grantResources.includes(selectorValue!)) continue;
+            if (
+              select.resourceRef !== undefined &&
+              selectorValue !== select.resourceRef &&
+              !linked(binding, 'G_MAPS_TO', 'GuardExternalResource').some(
+                resource => value(resource, 'arn') === select.resourceRef,
+              )
+            )
+              continue;
             const actions = binding.properties.actions;
             if (!Array.isArray(actions) || actions.length > 128) fail('MAP_UNAVAILABLE');
             for (const action of actions) mapIdentifier(action, 'MAP_UNAVAILABLE');
@@ -156,6 +156,7 @@ export function policyPlan(
                 exact(execution, 'G_EXECUTES_TOOL', executionTools[0]!);
               for (const action of actions as readonly string[]) {
                 step();
+                if (select.action !== undefined && action !== select.action) continue;
                 const key = JSON.stringify([task.id, deployment.id, execution.id, binding.id, action]);
                 if (seen.has(key)) continue;
                 seen.add(key);
@@ -201,7 +202,9 @@ export function policyPlan(
                 const principalArn = value(identity, 'arn'),
                   resourceArn = value(resource, 'arn');
                 const principal = /^arn:aws:iam::([0-9]{12}):(role|user)\/.+$/.exec(principalArn ?? '');
-                const bucket = /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(?:\/(.+))?$/.exec(resourceArn ?? '');
+                // A bucket ARN, or an object or prefix ARN with a non-empty key.
+                const parsed = parseS3Arn(resourceArn);
+                const bucket = parsed && parsed.key !== '' ? parsed : null;
                 const kind = value(resource, 'kind');
                 if (
                   value(identity, 'provider') !== 'aws' ||
@@ -215,7 +218,7 @@ export function policyPlan(
                   principal[1] !== accountId ||
                   !bucket ||
                   !['bucket', 'object', 'prefix'].includes(kind ?? '') ||
-                  (kind === 'bucket') !== (bucket[2] === undefined)
+                  (kind === 'bucket') !== (bucket.key === undefined)
                 ) {
                   records.push(reason(base, 'not_collected', 'unsupported_binding'));
                   continue;
@@ -244,8 +247,8 @@ export function policyPlan(
                   accountId,
                   partition,
                   principalArn: principalArn!,
-                  bucketArn: `arn:aws:s3:::${bucket[1]}`,
-                  bucketName: bucket[1]!,
+                  bucketArn: `arn:aws:s3:::${bucket.bucket}`,
+                  bucketName: bucket.bucket,
                   principalLabel: principal[2] === 'role' ? 'AWSRole' : 'AWSUser',
                   relationship,
                   collectionId: collectionKey(companyId, tenantId, partition, accountId),
@@ -434,15 +437,6 @@ function stamp(value: unknown, now: number): value is number {
 function hash(value: unknown): value is string {
   return typeof value === 'string' && HASH.test(value);
 }
-function unicodeOrder(a: string, b: string): number {
-  const left = [...a],
-    right = [...b];
-  for (let index = 0; index < Math.min(left.length, right.length); index++) {
-    const difference = left[index]!.codePointAt(0)! - right[index]!.codePointAt(0)!;
-    if (difference) return difference;
-  }
-  return left.length - right.length;
-}
 /** Condition keys are bounded, unique, sorted text, and present exactly when has_condition is. */
 function conditionKeysValid(candidate: Record<string, unknown>): boolean {
   const keys = candidate.condition_keys,
@@ -463,7 +457,7 @@ function conditionKeysValid(candidate: Record<string, unknown>): boolean {
         lengths[index] !== [...key].length,
     ) &&
     new Set(keys).size === keys.length &&
-    JSON.stringify(keys) === JSON.stringify([...(keys as string[])].sort(unicodeOrder)) &&
+    JSON.stringify(keys) === JSON.stringify([...(keys as string[])].sort(compareCodePoints)) &&
     candidate.has_condition === keys.length > 0
   );
 }
@@ -485,7 +479,7 @@ export function policyEvidence(
   const requested = new Set(plan.probes.map(probe => probe.key));
   for (const row of rows) {
     const key = row.key;
-    if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail();
+    if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail('MAP_UNAVAILABLE');
     const items = groups.get(key) ?? [];
     items.push(row);
     groups.set(key, items);
@@ -767,20 +761,6 @@ export interface IdentityScopePlan {
  * each record keeps its own list of at most this many buckets; a longer one is `truncated`.
  */
 const IDENTITY_SCOPE_RECORD_BUCKETS = 100;
-const LIST_SHORTENED = 'bucket_list_shortened';
-/**
- * A record with its bucket list cut to `keep` entries. Only the list changes: the status came
- * from the full comparison and stands.
- */
-export function shortenScopeList(record: MapIdentityScope, keep: number): MapIdentityScope {
-  if (record.extraResources.length <= keep) return record;
-  return {
-    ...record,
-    extraResources: record.extraResources.slice(0, keep),
-    truncated: true,
-    notes: record.notes?.includes(LIST_SHORTENED) ? record.notes : [...(record.notes ?? []), LIST_SHORTENED],
-  };
-}
 /** The reach read behind list_resources keeps fewer buckets per identity, bounding its rows. */
 const IDENTITY_REACH_BUCKETS = 100;
 
@@ -865,12 +845,10 @@ export function identityScopePlan(
             // The collector writes one target per binding; more is malformed, so nothing is bound.
             if (targets.length !== 1) item.ambiguous = true;
             for (const target of targets) {
-              const bucket = /^arn:aws:s3:::([a-z0-9][a-z0-9.-]{1,61}[a-z0-9])(\/.*)?$/.exec(
-                value(target, 'arn') ?? '',
-              );
+              const bucket = parseS3Arn(value(target, 'arn'));
               if (value(target, 'provider') !== 'aws' || !bucket) continue;
-              if (value(target, 'kind') === 'bucket' && bucket[2] === undefined) item.bound.add(bucket[1]!);
-              else item.partial.add(bucket[1]!);
+              if (value(target, 'kind') === 'bucket' && bucket.key === undefined) item.bound.add(bucket.bucket);
+              else item.partial.add(bucket.bucket);
             }
           }
         }
@@ -1007,12 +985,14 @@ export function identityScopePlan(
     links,
     buckets: filter,
     bucketLimit,
+    // At most three relationships per bucket, so one row past the limit always shows one more
+    // bucket; unique (bucket, relationship) pairs make that the only way to reach it.
     candidateLimit: bucketLimit * RELATIONSHIPS.length + 1,
   };
 }
 
-// The candidate's fixed fields are compared with its collection in Cypher, so each row
-// carries a compact boolean instead of repeating hashes for up to 1,500 candidates.
+// The declared chain behind one probe (execution binding -> deployment -> agent), re-checked in
+// the database for the reader's scope.
 const executionProof = `EXISTS {
   MATCH (execution:GuardExecutionBinding {id:pair.executionNodeId,entity_id:pair.executionEntityId})
     -[:G_EXECUTES_FOR]->(deployment:GuardDeployment {id:pair.deploymentNodeId,entity_id:pair.deploymentEntityId})
@@ -1026,6 +1006,8 @@ const executionProof = `EXISTS {
     AND COUNT { (execution)-[:G_USES_IDENTITY]->() } = 1
     AND EXISTS { (execution)-[:G_USES_IDENTITY]->(i) }
 }`;
+// The candidate's fixed fields are compared with its collection in Cypher, so each row
+// carries a compact boolean instead of repeating hashes for up to 1,500 candidates.
 export const IDENTITY_SCOPE_QUERY = `UNWIND $scopePairs AS pair
 OPTIONAL MATCH (i:GuardExternalIdentity {id:pair.identityNodeId,source_id:$sourceId,projection_id:$projectionId,tenant_id:$tenantId})
 OPTIONAL MATCH (i)-[ic:G_CLOUD_MATCH]->(p)
@@ -1078,11 +1060,6 @@ export const IDENTITY_SCOPE_COLUMNS = [
   'principalMember',
   'candidates',
 ] as const;
-/**
- * At most three relationships per bucket, so one row past 500 buckets x 3 always shows a
- * 501st bucket; unique (bucket, relationship) pairs make that the only way to reach it.
- */
-
 export function identityScopeParameters(plan: IdentityScopePlan): readonly Record<string, unknown>[] {
   return plan.probes.map(probe => ({
     ...probe.proof,
@@ -1256,7 +1233,7 @@ export function identityScopeEvidence(
   const requested = new Set(plan.probes.map(probe => probe.key));
   for (const row of rows) {
     const key = row.key;
-    if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail();
+    if (typeof key !== 'number' || !Number.isSafeInteger(key) || !requested.has(key)) fail('MAP_UNAVAILABLE');
     const items = groups.get(key) ?? [];
     items.push(row);
     groups.set(key, items);

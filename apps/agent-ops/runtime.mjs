@@ -15,7 +15,7 @@ import {
   identifier,
 } from './workflow.mjs';
 import { normalizeLimits, assertCapacity, LIMIT_BOUNDS } from './limits.mjs';
-import { validateIdentityEnrollment } from './server.mjs';
+import { validateIdentityEnrollment, validateServerLimits } from './server.mjs';
 import { historyState } from './history-state.mjs';
 import { historyDirectoryEnrollment, historyMirrorEnrollment, verifyHistoryStorage } from './retention.mjs';
 
@@ -91,32 +91,51 @@ export function privateFile(path, maximum = 256 * 1024) {
     closeSync(fd);
   }
 }
+/** Names which configured file failed by its fixed role; never its path or contents. */
+function fileRole(role, read) {
+  try {
+    return read();
+  } catch (error) {
+    if (error !== null && typeof error === 'object' && error.role === undefined) error.role = role;
+    throw error;
+  }
+}
 export function loadConfig(path) {
-  const config = fields(parseEvidenceJson(privateFile(path), 256 * 1024), [
-    'version',
-    'company',
-    'limits',
-    'historyDirectory',
-    'historyMirrorDirectory',
-    'publicOrigin',
-    'listenHost',
-    'port',
-    'ledgerDatabase',
-    'backendDatabase',
-    'ledgerWitness',
-    'backendWitness',
-    'keyringFile',
-    'tls',
-    'oidc',
-    'bindings',
-    'agents',
-    'requests',
-  ]);
+  const config = fields(
+    parseEvidenceJson(
+      fileRole('config', () => privateFile(path)),
+      256 * 1024,
+    ),
+    [
+      'version',
+      'company',
+      'limits',
+      'historyDirectory',
+      'historyMirrorDirectory',
+      'publicOrigin',
+      'listenHost',
+      'port',
+      'ledgerDatabase',
+      'backendDatabase',
+      'ledgerWitness',
+      'backendWitness',
+      'keyringFile',
+      'tls',
+      'oidc',
+      'bindings',
+      'agents',
+      'requests',
+      'sessionTtlMs',
+      'rateLimitPerMinute',
+      'signInFlowsPerClient',
+    ],
+  );
   if (config.version !== 1 || !Array.isArray(config.bindings)) fail('CONFIG_INVALID');
   if (config.agents !== undefined && !Array.isArray(config.agents)) fail('CONFIG_INVALID');
   validateConfiguredPaths(config);
   const limits = normalizeLimits(config.limits);
   if (config.requests !== undefined) normalizeRequestPolicy(config.requests);
+  validateServerLimits(config);
   if (
     config.historyDirectory !== undefined &&
     (typeof config.historyDirectory !== 'string' || !isAbsolute(config.historyDirectory))
@@ -165,10 +184,15 @@ export function loadConfig(path) {
   if (config.port !== undefined && (!Number.isInteger(config.port) || config.port < 1024 || config.port > 65535))
     fail('CONFIG_INVALID');
   if (config.agents !== undefined && !Array.isArray(config.agents)) fail('CONFIG_INVALID');
-  const agents = (config.agents ?? []).map(agent => {
+  const agents = (config.agents ?? []).map((agent, index) => {
     fields(agent, ['id', 'tenantId', 'tokenFile', 'allowedTicketIds']);
     const { tokenFile, ...value } = agent;
-    return { ...value, token: privateFile(tokenFile, 256).toString('utf8').trim() };
+    return {
+      ...value,
+      token: fileRole(`agents[${index}].tokenFile`, () => privateFile(tokenFile, 256))
+        .toString('utf8')
+        .trim(),
+    };
   });
   validateIdentityEnrollment(config.bindings, agents);
   const { clientSecretFile, caFile, ...oidc } = config.oidc;
@@ -178,10 +202,15 @@ export function loadConfig(path) {
     agents,
     oidc: {
       ...oidc,
-      clientSecret: privateFile(clientSecretFile, 4096).toString('utf8').trim(),
-      ...(caFile ? { ca: privateFile(caFile).toString('utf8') } : {}),
+      clientSecret: fileRole('oidc.clientSecretFile', () => privateFile(clientSecretFile, 4096))
+        .toString('utf8')
+        .trim(),
+      ...(caFile ? { ca: fileRole('oidc.caFile', () => privateFile(caFile)).toString('utf8') } : {}),
     },
-    tls: { key: privateFile(config.tls.keyFile), cert: privateFile(config.tls.certFile) },
+    tls: {
+      key: fileRole('tls.keyFile', () => privateFile(config.tls.keyFile)),
+      cert: fileRole('tls.certFile', () => privateFile(config.tls.certFile)),
+    },
   };
 }
 export function validateInitializationCapacity(tickets, policy) {

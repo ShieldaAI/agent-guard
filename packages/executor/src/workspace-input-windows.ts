@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { win32 } from 'node:path';
+import { ExecutorError } from './store.js';
 
 // Win32 path inspection followed by a pathname open cannot fence junction or rename
 // races. Open every component by its parent's HANDLE, retain the entire chain and
@@ -186,15 +187,13 @@ const encodedProgram = Buffer.from(program, 'utf16le').toString('base64');
 type Failure = 'selection' | 'startup' | 'timeout' | 'spawn' | 'exit' | 'protocol' | 'cleanup';
 type Stage = 'not-started' | 'compiling' | 'copying' | 'complete';
 
-class WorkspaceInputError extends Error {
-  readonly code = 'WORKSPACE_INPUT_UNAVAILABLE';
+class WorkspaceInputError extends ExecutorError {
   constructor(
     readonly reason: Failure,
     readonly stage: Stage,
   ) {
-    super(
-      `Workspace input unavailable or unsafe: symlinks, reparse points, hard links and oversized files are refused (${reason}; ${stage})`,
-    );
+    super('WORKSPACE_INPUT_UNAVAILABLE', { detail: reason.toUpperCase() });
+    this.message = `Workspace input unavailable or unsafe: symlinks, reparse points, hard links and oversized files are refused (${reason}; ${stage})`;
   }
 }
 

@@ -1,276 +1,240 @@
 # Support and limits
 
-This page states what Agent Guard protects, what it leaves to the host and the
-deployer, and the known limits of each package. Read it before you choose a
-deployment boundary. The [threat model](threat-model.md) gives the detailed
-assumptions, the [API contract](api-contract.md) gives the exact rules, and the
-[error catalog](errors.md) lists every denial and failure code.
+This page says what Agent Guard enforces, what you must do yourself, what it
+does not do, and the limits of each package. Read it before you decide where the
+guard sits in your system.
 
-## Summary
+Related pages: the [threat model](threat-model.md) explains the assumptions, the
+[API contract](api-contract.md) has the exact rules and numbers, and the
+[error catalog](errors.md) lists every code. Terms are in the
+[glossary](glossary.md).
 
-Agent Guard is Apache-2.0 software that authorizes the tool calls an AI agent
-makes. Its design decision is to mediate the effect: the model may believe a
-hostile email, ticket, tool description or another agent, but that belief must
-not give it a new identity, credential, destination, approval or spending limit.
+## In short
 
-The security claim is narrow. Given a trusted host, correct tool definitions and
-trusted task context, the executor applies the configured grants and checks to
-calls made through it. It does not detect all prompt injection, isolate ordinary
-in-process handlers, or protect operations performed outside the wrapper.
+Agent Guard authorizes the tool calls an AI agent makes. The model may believe a
+hostile email, ticket or tool description. That belief must not give it a new
+identity, credential, destination, approval or spending limit.
 
-Companies operate their own installation. They provide their own records,
-identity provider, credentials, TLS and storage. A product release does not
-certify an unknown installation.
+It limits what a misled agent can do. It does not detect prompt injection, it is
+not a sandbox for your own handlers, and it has no effect on operations that do
+not go through it.
 
-`0.1.0` does not promise a 1.x API contract, long-term support or production
-certification.
+No independent security assessment of Agent Guard has been done yet.
 
-[Risks and how Agent Guard handles them](risks.md) maps these protections to the OWASP
-Top 10 for Agentic Applications and names the package for each.
+## What it enforces
 
-## Maturity by package
+These rules apply to every call that goes through the guard or the executor. A
+call that is denied or lacks approval never starts the handler.
 
-| Package or component | Maturity | Notes |
-| --- | --- | --- |
-| `@shieldaai/agent-guard` (core) | stable | 1.0 target. In-memory guard for one process. |
-| `@shieldaai/agent-guard-mcp` | stable | 1.0 target. Routes MCP tools, resources and prompts through the same guard; not a second policy engine. |
-| `@shieldaai/agent-guard-scenarios` | stable | 1.0 target. Synthetic acceptance scenarios. |
-| `@shieldaai/agent-guard-executor` | not yet stable | Planned for 1.0 after the storage work. Single-owner durable ledger, task API, governed memory and Docker workload isolation. |
-| Inventory observer (`startInventoryServer()` in the executor) | experimental | No admission-latency promise under frequent polling. |
-| `@shieldaai/agent-map` and the Cartography integration | experimental | Read-only inventory. The React/Cytoscape viewer is private and not published. Python Cartography has its own version and deployment process. |
-| Agent Ops (`apps/agent-ops`) | reference app | Single-owner Linux service in the source deployment, not an npm package. |
+| Area | Rule |
+| --- | --- |
+| Tools and resources | A call needs a registered tool, an approved tool definition and a grant for the exact resource. `*` is an explicit wildcard. |
+| Tenant | The tenant comes from the task. A resource in another tenant is refused. |
+| Delegation | A child task holds the same or less than its parent. Revoking a parent revokes its children. |
+| Approval | An approval covers one exact action, works once and expires. A changed policy or tool invalidates it. |
+| Budgets | Calls, calls in flight and cost are reserved before the handler runs, for the task and each ancestor. |
+| Private data | After a task family reads data marked sensitive, it cannot send anything outside, even with approval. Outbound calls need a listed recipient. |
+| Secrets | Outbound arguments are searched for the literal secret values you configured. |
+| Outside content (opt-in) | After a task family runs a tool labeled `readsUntrusted`, tools set to `require_approval` need a new approval and tools set to `deny` are refused. |
+| Unknown outcomes (executor) | A call whose result was lost is held for a person to settle. It is never retried and its budget is never released on a timer. |
+| Restarts (executor) | Budgets, revocations, marks and used approvals survive a restart. With the rollback witness, restoring an old copy of the ledger is refused. |
+| Model Context Protocol (MCP) tools | A tool is callable only with an approved fingerprint of its current definition. A changed tool list stops all calls from that connection until you review again. |
+| Isolated code (Docker profile) | Code runs with no network, no host credentials and no writable host mount, as a non-root user with resource limits. |
 
-## What Agent Guard enforces
+## What you must do
 
-These checks apply to calls that go through the executor. A denied or unapproved
-call never starts the handler.
+- **Send every protected operation through the guard.** A shell, SDK client,
+  database connection, network client or second MCP connection the agent can
+  reach directly is not covered.
+- **Create tasks, grants and tenants in your own code.** Never take them from
+  model output, and never expose administration functions as agent tools.
+- **Authenticate users and reviewers.** An `approverId` is recorded as given. It
+  does not prove a person decided.
+- **Name resources precisely.** `resolve` must return your application's own IDs.
+  A free-text name that can point at another tenant, account, file or
+  destination is not enough.
+- **Check again in the backend.** Restrict each handler's credentials. Enforce
+  tenant, target, resource version and cost ceilings where the effect happens.
+- **Set the labels.** Mark calls that read private data as sensitive, label tools
+  that return outside content, and carry marks over when you copy data into a
+  new task.
+- **Handle unknown outcomes.** Make handlers idempotent, or be able to look up
+  what happened before anyone retries.
 
-**Tools and resources.** Tool names and resources match exactly; resource `*` is
-an explicit wildcard grant. Tool names and descriptions cannot grant authority.
-Registered metadata needs host approval. Arguments are validated and frozen, and
-extra authority fields are rejected. Coarse tool scope is checked before trusted
-parsing and resolution callbacks run. Custom policy can only tighten the
-mandatory checks.
+## What it does not do
 
-**Identity and delegation.** Task handles are recognized by object identity, not
-by a printed ID. Tenant identity comes from the host. A child task's authority is
-the intersection of the applicable grants, and revocation follows ancestry.
-Delegation is local to one executor and its shared context.
+- **Detect prompt injection.** An injected instruction can still steer the calls
+  that remain allowed.
+- **Protect against a compromised host.** Hostile code or a hostile dependency
+  in the guard's process can change or bypass it.
+- **Sandbox your handlers.** An allowed handler can use every credential its
+  process holds. Only the separate Docker profile isolates code.
+- **Commit together with a remote system.** Using an approval, reserving budget
+  and a remote effect are separate steps.
+- **Force a handler to stop.** Deadlines and revocation send an abort signal. A
+  handler can ignore it, and a remote service may already have acted.
+- **Find every secret.** Matching is literal. Encoded, split or paraphrased
+  values pass.
+- **Know real spending.** Cost limits use the maximum you declare and the usage
+  your handler reports.
+- **Provide a signed audit trail.** Decision events and local logs are
+  operational records.
+- **Work across hosts.** There are no distributed quotas, no distributed
+  revocation and no high availability.
 
-**Outside content (opt-in).** Tools labelled `readsUntrusted` mark their task
-family `untrusted` once they run. After that, tools in `require_approval` need a review
-and tools in `deny` are refused, and approvals given before the read are invalid. The
-labels are the host's claim; this limits what a fooled agent can do but does not detect
-prompt injection. See the [threat model](threat-model.md#outside-content).
+## Limits by package
 
-**Exact approval.** An approval binds the tenant, arguments, resource version,
-expiry and, for isolated workloads, the exact staged bytes. It is single use, and
-expiry is checked before dispatch. A policy change invalidates existing prepared
-actions and approvals. Approval does not override a revoked task, an explicit
-denial, sensitive-context restrictions or a failed resource check. Core rejects a
-clock that moves backwards. An empty or closed review never means yes.
+### The guard (`@shieldaai/agent-guard`)
 
-**Budgets and concurrency.** Admission reserves calls, concurrency and the tool's
-declared maximum cost before dispatch, across the task's ancestors. Calls that
-reach a handler count even when the handler fails. Concurrency stays reserved
-until the handler settles. Policy callbacks are bounded per task family and
-globally. Costs use nonnegative safe integer units chosen by the host.
+| Limit | Value |
+| --- | --- |
+| State | In memory. It ends with the process and is not shared between processes or between guards. |
+| One JSON value (arguments, result, definition) | 1 MiB, 100,000 values, 64 levels by default |
+| Live approvals per action | 4 by default |
+| Policy evaluations at once | 8 per task family, 64 per guard by default |
+| Policy run time | 30 seconds by default |
 
-**Sensitive data and egress.** A monotonic sensitive flag is shared across a
-task family. Once set by a trusted resolver, that context cannot perform external
-sends, even with approval. External actions require an explicitly allowed
-recipient. Configured literal secrets are scanned in outbound object keys and
-string values.
+All but the nesting depth can be changed; ranges are in the
+[API contract](api-contract.md#limits).
 
-**Unknown outcomes.** A lost or ambiguous result stops the run and keeps the
-reservation. Recovery uses a trusted backend receipt. The guard never dispatches
-another effect to learn whether the first one happened, and never releases budget
-on a timer.
+### MCP adapter (`@shieldaai/agent-guard-mcp`)
 
-**Durable executor** (optional). It adds cross-process authentication, durable
-approval replay protection, persisted budgets and an encrypted single-owner
-SQLite ledger. Acknowledged revocation survives restart. With the independently
-retained rollback witness enabled, restoring a stale ledger fails closed. Governed
-memory keeps provenance, sensitivity, quarantine and rollback across reopening.
+- It covers calls made through it. It does not sandbox the server or stop
+  another client from connecting to it.
+- The remote server must enforce its own authorization. An approved server can
+  still misbehave; reviewing a definition does not review the code behind it.
+- When a call is canceled, the server may keep working. Enforce concurrency,
+  cost and cancellation at the server too.
+- A failed call (timeout, error reply, invalid or oversized result) fails only
+  that call. Its effect is unknown and it is not retried.
+- Tool schemas must fit a bounded JSON Schema profile. `format` is not
+  validated. A tool whose schema does not fit is skipped and listed in
+  `connection.skipped`.
+- Sampling, elicitation, roots, subscriptions and MCP Apps are not supported.
+- Run a server you do not trust in its own container or service identity, with
+  no host socket, no secrets and no open network. The
+  [MCP isolation check](guides/mcp-isolation-acceptance.md) verifies that setup.
 
-**Isolated workloads** (optional Docker profile). Untrusted code runs with no
-network, host credentials, management socket or writable host mount, as nonroot
-with dropped capabilities, resource limits and bounded reviewed exports. File
-capture constrains each path lookup, and the broker checks the approved version
-against the exact buffers sent to the guest.
+| Limit | Default |
+| --- | --- |
+| Request time | 10 seconds |
+| Bound operations per connection | 64 |
+| One protocol message | 1 MiB |
+| Inbound messages | 10,000 per 10 seconds |
 
-**MCP.** Tool metadata generations, image digests, artifact bytes and enrolled
-builders are pinned. Drift is quarantined until reviewed; approving metadata does
-not authorize an action. A verified MCP session closes before decoded strings
-containing the enrolled raw token reach SDK consumers.
+### The executor (`@shieldaai/agent-guard-executor`)
 
-**Agent Map.** It is read-only evidence for the viewer's authorized scope, and it lists
-only agents a person declared in a host manifest. Its discovery views are leads for an
-all-teams reader, not a scan and not findings. It
-never grants permission, and an observation is never presented as an effective
-grant or a confirmed effect. Authentication loss clears protected data.
+- **One owner.** One process owns one ledger on a local file system. A second
+  process is refused.
+- **Tool approvals and prepared actions do not survive a restart.** Register and
+  approve tools again.
+- **The key is yours to keep.** The ledger is encrypted with a 32-byte key you
+  supply. Without the key the ledger cannot be read.
+- **Restoring an old ledger rolls back authority.** Enable the rollback witness
+  on a new ledger and keep the witness outside your backup and restore path; see
+  the [ledger rollback guide](guides/ledger-rollback.md).
+- **Repair needs surviving copies.** Recovery after storage loss needs the
+  witness or mirror and its keys. Losing both at once cannot be repaired.
+- **File permissions on Windows are yours to set.** On POSIX systems the
+  executor checks that its files are private; on Windows it cannot.
+- **The task server listens on `127.0.0.1` only.** It has no TLS and no login.
+  Put an authenticated transport in front of it for a remote agent.
+- **The inventory observer is experimental.** It makes no promise about
+  admission latency while it is polled often; the collector's default interval
+  is five minutes.
 
-## What it does not do (host responsibilities)
+| Limit | Default |
+| --- | --- |
+| Ledger size (decoded) | 16 MiB; 1 MiB to 64 MiB |
+| New work stops | 1 MiB below the ledger size (an eighth below it for ledgers under 8 MiB) |
+| Records | 10,000 |
+| Settled receipts kept per task family | 64 |
+| Recent audit events | 256 per tenant, 1,000 in total |
+| Memory value | 64 KiB; 128 versions per entry |
+| Archives | 4,096 per ledger, 256 MiB in total |
+| Task server | 600 requests a minute per token, 6,000 in total for task routes, 32 in flight (4 kept for admin routes) |
 
-**First deployment step:** list every way the agent can read, write, send, spawn a
-process, call a provider or start another agent. Remove or isolate unmediated
-paths. A direct shell, SDK client, database connection, network client or
-alternate MCP connection with the same credentials bypasses the guard.
+The rest are in the [API contract](api-contract.md#executor-shieldaaiagent-guard-executor).
 
-The host must:
+### Docker isolation profile (`.../sandbox`)
 
-- Authenticate users and reviewers. An `approverId` passed to the approval API is
-  not proof of a human decision or of a second person.
-- Create task handles, grants, tenants and parent relationships in trusted code.
-  Never accept them from model output, and never expose administration functions
-  as agent tools.
-- Register tools correctly and derive canonical resources, recipients and tenants
-  from validated arguments. Free-text names that can alias another tenant,
-  account, file or destination are not sufficient.
-- Route every protected operation through the executor, including MCP traffic.
-- Restrict handler credentials and enforce tenant, target, resource version,
-  credential scope and cost ceilings at the backend or provider.
-- Mark sensitive access before that data can affect another action, and carry
-  labels across reuse outside an existing task family.
-- Provide idempotency or reconciliation for any retry of a side effect.
+- Verify it on each kind of host you run. A result on Linux says nothing about
+  another host. Docker on Windows needs its own check.
+- It isolates the code it runs. It does not isolate handlers that run in your
+  own process.
 
-Agent Guard does not provide:
+See the [Docker isolation profile](../deployment/README.md).
 
-- Protection from a compromised host, an untrusted dependency or arbitrary code
-  running in the guard's process. Once allowed, a handler can use all authority
-  available to that process.
-- A sandbox for ordinary in-process handlers, a network firewall or isolation of
-  the model or application from the operating system.
-- A distributed transaction. Approval, budget reservation and a remote side
-  effect cannot commit as one operation.
-- Forced cancellation. Deadlines and abort signals are cooperative and cannot
-  retract a request already accepted by a remote service.
-- Complete secret or data-flow detection. Encoded, split, encrypted or
-  semantically equivalent data can evade checks; literal scanning alone does not
-  establish confidentiality.
-- A spending oracle. Cost limits depend on trusted upper bounds and reported
-  usage.
-- A signed, tamper-proof audit trail. In-memory events and local logs are
-  operational evidence.
-- Distributed quotas or revocation, high availability, federated agent identity,
-  company-wide secret custody, or protection against OS/runtime vulnerabilities,
-  malicious administrators or compromised credential stores.
+### Agent Map (`@shieldaai/agent-map`, experimental)
 
-The core keeps task state, approvals, revocation and counters in memory.
-Restarting or creating another guard is not continuity of the same security
-state, and separate in-memory guards do not share a limit.
+- It is read-only. It never grants permission and never runs a call.
+- It lists only agents a person declared in a host manifest. Its discovery views
+  are leads to follow up, not the result of a scan.
+- It needs a Neo4j database filled by the Cartography collector, which has its
+  own version and deployment.
+- The browser viewer is part of the source tree and is not published to npm.
 
-The deployer must also enroll real identities, tools and paths, test its own
-storage and backup custody, route alerts, size resources, and validate its
-operators and model/provider integration. The
-[deployment validation checklist](archive/protection-acceptance.md#deployment-validation-checklist)
-lists the evidence to collect on the enrolled target.
+### Agent Ops (reference app)
 
-## Durable executor limits
+- One owner, on Linux. It is part of the source tree, not an npm package.
+- Its backend is a local ticket store. Connecting Jira, Linear or another system
+  needs an adapter you write, with its own authorization and receipts.
+- It refuses new work when it reaches its configured capacity. Capacity settings
+  never widen an agent's grants or budget.
+- Finished requests can be moved to history files, up to 10,000 segments. See
+  the [company history guide](guides/company-history.md).
 
-- One trusted owner. The production profile uses local Linux POSIX storage. There
-  is no HA or distributed quota.
-- Repair requires surviving independent witnesses or mirrors and their keys. A
-  simultaneous loss or rollback of those domains cannot be repaired. Crash and
-  file-loss tests do not prove physical power-loss durability on a company's
-  storage.
-- Legacy stores need explicit recovery enrollment. Setup labels do not claim that
-  a backup exists or that a recovery drill occurred.
-- Sustainable ticket history is the single-root, no-memory profile. Its history
-  closure is capped at **10,000 segments** for backup, mirror enrollment and
-  repair. Switch to a reviewed replacement adapter before that ceiling; surviving
-  mirrors do not remove it. Existing over-cap history refuses startup.
-- Other SDK archives keep finite safe-stop limits, and full-chain verification
-  grows with history. Raising capacity does not guarantee memory or latency for
-  every maximum-sized combination. See the
-  [executor README](../packages/executor/README.md) for exact limits.
-- Historical key escrow remains necessary. Active-key retirement does not destroy
-  off-host historical copies or find backups outside the enrolled catalog.
-- Fixed `REQUEST_TIMEOUT` errors from the task HTTP server do not cause automatic
-  retries. Its request scheduling is not a fairness or real-time guarantee.
-- Docker isolation must be verified on each claimed host profile. Windows Docker
-  isolation is a separate candidate profile that needs its own evidence.
-- The inventory observer is experimental. 0.1.0 does not support running the
-  observer-owning service on one logical CPU with 250 ms polling. Admission
-  overhead measured under 250 ms polling is evidence for the recorded runner only;
-  the collector defaults to five minutes. The optional `linux-background` worker
-  scheduling lowers only the observer worker's JavaScript-thread priority, by up
-  to five nice points capped at 19. It gives no GC, helper-thread or real-time
-  guarantee.
-
-## MCP limits
-
-- The wrapper mediates only calls made through it. It does not sandbox the server
-  or stop a client from opening another connection.
-- A remote server must enforce its own resource authorization. An approved peer
-  can still lie or misuse its own authority.
-- The SDK can reject the bridge promise on cancellation before the remote server
-  stops. Local concurrency and cost settle with the bridge, so enforce remote
-  concurrency, cost ceilings and cancellation at the server or provider.
-- A stable name, schema or description does not prove the server is safe or
-  unchanged.
-- A failure local to one call (timeout, abort, error reply, invalid or oversized
-  result) fails only that call; connection-level failures quarantine every
-  operation until `refresh()` and re-approval. The effect of a failed call is
-  unknown and is never retried.
-- Tool schemas use a bounded JSON Schema profile. `format` is not validated,
-  `pattern` is accepted only with bounded backtracking, and a schema outside the
-  profile skips that one operation (listed in `connection.skipped`).
-- Passing linked-transport tests do not establish HTTP/stdio transport security,
-  authentication or remote-server isolation.
-- Hostile peers must run under the documented isolation profile: a separate OS or
-  service identity with no host socket, raw SDK, secrets, broad filesystem or
-  ambient network, and a pinned image or endpoint. See the
-  [MCP isolation procedure](guides/mcp-isolation-acceptance.md).
-
-## Agent Ops (reference app) limits
-
-- One owner on Linux. Only Linux is supported by the production CLI; POSIX library
-  tests also run on macOS. It is part of the source deployment, not an npm package.
-- The bundled backend is a local ticket store. There is no live Jira, Linear or
-  other third-party connector; connecting one needs a separately implemented
-  adapter with its own authorization, conditional writes and receipts.
-- No HA, distributed quota or universal model-resistance claim.
-- It fails closed at its configured capacity. Capacity settings never increase an
-  agent's grants or budget. The fixed 10,000-segment history limit above applies.
-- It starts no inventory observer.
-- Session, agent-token and rate limits are described in the
-  [threat model](threat-model.md#agent-ops-reference-app). Capacity defaults and
-  operations are in the [Agent Ops README](../apps/agent-ops/README.md) and the
-  [deployment runbook](../deployment/production/README.md).
-- Automated browser and accessibility checks are regression evidence, not a
-  representative human usability study.
+Sessions, tokens and rate limits are in the
+[Agent Ops README](../apps/agent-ops/README.md).
 
 ## Supported platforms
 
-- **Node.js:** core, MCP and scenarios require Node 22 or later; the executor and
-  Agent Map require 22.13.0 or later. CI runs Linux on Node 22, 24 and 26, and
-  macOS and Windows on Node 24.
-- **Agent Ops and the production image:** Linux only. Recovery checks run on
-  ARM64 and AMD64.
-- **Docker isolation:** verified on Linux by a required gate that refuses skipped
-  checks. Every other host profile, including Windows Docker, needs its own
-  unskipped evidence; Linux results do not extend to other hosts.
-- **Browsers:** Agent Ops and Agent Map are checked in Chromium, Firefox and WebKit.
-- **Node security releases:** supply-chain acceptance (R5) is withheld until the
-  November 2026 Node HIGH security issues are reviewed. Company deployments of the
-  production image must adopt the fixed Node runtime once it is released.
+| Component | Requirement |
+| --- | --- |
+| Guard, MCP adapter, scenarios | Node.js 22 or later |
+| Executor, Agent Map | Node.js 22.13 or later |
+| Rollback witness, key custody and recovery tools, manifest file loader | Linux and macOS |
+| Agent Ops and the production image | Linux |
+| Docker isolation profile | Verified on Linux; verify other hosts yourself |
+| Browser apps (Agent Ops, Agent Map viewer) | Tested in Chromium, Firefox and WebKit |
 
-## Verification status
+Continuous integration runs on Linux with Node.js 22, 24 and 26, and on macOS
+and Windows with Node.js 24.
 
-Tests, browser scans and internal category judgments are evidence for their
-recorded fixtures and profile. They are not a certification, an ASVS assessment,
-a penetration test or a guarantee of safety. There is no aggregate production
-score. No company pilot, representative operator study, paid live-provider trial
-or independent human security assessment has been completed; disposable fixtures
-are labeled synthetic. See the
-[historical assessment](archive/protection-assessment.md),
-[requirements and design](archive/protection-design.md) and
-[production readiness record](archive/production-readiness.md).
+The packages do not bundle Node.js. Run them on a patch release that has the
+current security fixes.
+
+## Stability by package
+
+| Package | Stability |
+| --- | --- |
+| `@shieldaai/agent-guard` | Stable |
+| `@shieldaai/agent-guard-mcp` | Stable |
+| `@shieldaai/agent-guard-scenarios` | Stable. The scenario catalog has its own version. |
+| `@shieldaai/agent-guard-executor` | Stable, except `/inventory` (experimental) and `/internal` (no promise). Every 1.x executor opens ledgers written by earlier 1.x versions and by `0.1.0-alpha.3`. |
+| `@shieldaai/agent-map` and the Cartography integration | Experimental. Published as 1.0.0 but outside the compatibility promise. |
+| Agent Ops | Reference app in the source tree |
+
+Stable exports follow semantic versioning from 1.0.0. Experimental exports can
+change in a minor release. There is no long-term-support line; security fixes go
+into the current release.
+
+## Before you deploy
+
+1. List every way the agent can read, write, send, start a process, call a
+   provider or start another agent. Remove or isolate each path that does not go
+   through the guard.
+2. Authenticate reviewers, and show them the action read back from the guard or
+   the executor, not a description from the agent.
+3. If you use the executor, back up the ledger and its key, and restore them in
+   a test. Keep the rollback witness outside that restore path.
+4. Send denials, unknown outcomes and quarantined MCP connections to someone who
+   will act on them.
+5. If you use the Docker profile, run its verification on your own host.
+6. Run the [scenarios](scenarios.md) against your integration.
 
 ## Reporting problems
 
 Report vulnerabilities privately as described in [SECURITY.md](../SECURITY.md).
-Include the affected version and a synthetic reproduction; do not include real
-credentials or customer data. Security fixes target the current maintained
-release.
+Include the affected version and a reproduction with made-up data; do not send
+real credentials or customer data.

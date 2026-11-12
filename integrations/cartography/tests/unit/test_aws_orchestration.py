@@ -7,9 +7,11 @@ from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
 
+import neo4j
 import pytest
 
 from agent_guard_cartography import cli
+from agent_guard_cartography.archive import PruneReport
 from agent_guard_cartography.aws_config import AwsCollectionError
 from agent_guard_cartography.graph import GraphImportError
 
@@ -84,7 +86,12 @@ def configured(tmp_path, monkeypatch):
     @contextmanager
     def archive(*_args, **_kwargs):
         assert_locked()
-        yield SimpleNamespace(require_recovery_complete=lambda: None)
+        yield SimpleNamespace(
+            require_recovery_complete=lambda: None,
+            refresh=lambda: events.append(("archive_refresh", clock.now)),
+            ignored=(),
+            damaged=(),
+        )
 
     def capture(enrollment):
         assert_locked()
@@ -117,12 +124,12 @@ def configured(tmp_path, monkeypatch):
 
     monkeypatch.setenv("NEO4J_PASSWORD", "database-secret-canary")
     monkeypatch.setenv("TEST_OBSERVER_TOKEN", "agi_v1." + "a" * 43)
-    monkeypatch.setattr(cli.GraphDatabase, "driver", create_driver)
+    monkeypatch.setattr(neo4j.GraphDatabase, "driver", create_driver)
     monkeypatch.setattr(cli, "SnapshotArchive", archive)
     monkeypatch.setattr(cli, "capture_aws", capture)
     monkeypatch.setattr(cli, "publish_aws_capture", publish)
     monkeypatch.setattr(cli, "collect_and_publish", collect)
-    monkeypatch.setattr(cli, "prune_archive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "prune_archive", lambda *_args, **_kwargs: PruneReport(0, 0, ()))
     monkeypatch.setattr(cli, "retire_obsolete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "retire_superseded", lambda *_args, **_kwargs: 0)
     monkeypatch.setattr(cli.time, "monotonic", lambda: clock.now)

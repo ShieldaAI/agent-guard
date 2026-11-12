@@ -1,5 +1,9 @@
 import { GuardError, type Json, type ToolDefinition } from '@shieldaai/agent-guard';
 import { ExecutorClient } from './client.js';
+import { builtInExecute, hostCallback } from './tool-errors.js';
+
+/** The model tool's own refusal; a provider error is a tool failure like any other. */
+const MODEL_CODES = ['RESULT_INVALID'];
 
 export interface ModelResult {
   text: string;
@@ -63,12 +67,15 @@ export function createModelTool(options: ModelToolOptions): ToolDefinition {
       return value;
     },
     resolve: () => ({ resourceId: model, tenantId, external: true, recipient }),
-    async execute(args, context) {
+    execute: builtInExecute(async (args, context) => {
       const input = args as { prompt: string; maxOutputTokens: number };
-      const result = await callProvider(input.prompt, {
-        maxOutputTokens: input.maxOutputTokens,
-        signal: context.signal,
-      });
+      // The provider is host code: whatever it throws is a tool failure, never this tool's refusal.
+      const result = await hostCallback(() =>
+        callProvider(input.prompt, {
+          maxOutputTokens: input.maxOutputTokens,
+          signal: context.signal,
+        }),
+      );
       const { text, inputTokens, outputTokens, cost, outputComplete } = result.response;
       if (
         typeof text !== 'string' ||
@@ -89,7 +96,7 @@ export function createModelTool(options: ModelToolOptions): ToolDefinition {
         ...(outputComplete === undefined ? {} : { outputComplete }),
       };
       return { value, ...(result.actualCost === undefined ? {} : { actualCost: result.actualCost }) };
-    },
+    }, MODEL_CODES),
   };
 }
 

@@ -13,7 +13,7 @@ import {
   rmdirSync,
   unlinkSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, isAbsolute, join } from 'node:path';
 import { LedgerStore, type Ledger } from './store.js';
 import { withLedgerKeyringState, type LedgerKey, type ParsedKeyring } from './ledger-maintenance.js';
 import { CustodySnapshot } from './custody-snapshot.js';
@@ -21,9 +21,14 @@ import { verifyAllArchiveStorage } from './lifecycle.js';
 import {
   checkPrivate,
   copyPrivate,
+  createPrivate,
   custodyFail as fail,
+  discardCreated,
+  discardStaged,
   independentDirectories,
+  openPrivate,
   privateDirectory,
+  storeOpenFailure,
   syncDirectory,
 } from './custody-files.js';
 import type { CustodyStore, CustodyHistoryAdapter } from './ledger-custody.js';
@@ -53,21 +58,37 @@ const stable = (value: unknown) =>
   );
 type Reader = Pick<LedgerStore, 'read' | 'readArchive'>;
 function validate(options: LedgerRecoveryOptions): void {
+  const path = (value: unknown): value is string =>
+    typeof value === 'string' && isAbsolute(value) && Buffer.byteLength(value) <= 512;
   if (
     !['linux', 'darwin'].includes(process.platform) ||
+    !options ||
+    typeof options !== 'object' ||
     !Array.isArray(options.stores) ||
     !options.stores.length ||
     options.stores.length > 16 ||
-    options.stores.some(s => !s || !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(s.id)) ||
-    new Set(options.stores.map(s => s.id)).size !== options.stores.length
+    // Exactly { id, database, witnessPath }: the reviewed digest covers each store as given.
+    options.stores.some(
+      s =>
+        !s ||
+        typeof s !== 'object' ||
+        Array.isArray(s) ||
+        Object.keys(s).sort().join(',') !== 'database,id,witnessPath' ||
+        typeof s.id !== 'string' ||
+        !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(s.id),
+    ) ||
+    new Set(options.stores.map(s => s.id)).size !== options.stores.length ||
+    (options.history !== undefined &&
+      (!options.history ||
+        typeof options.history !== 'object' ||
+        !path(options.history.directory) ||
+        !path(options.history.recoveryDirectory) ||
+        typeof options.history.verify !== 'function'))
   )
     fail('RECOVERY_CONFIG_INVALID');
   const paths = [options.keyringFile, ...options.stores.flatMap(s => [s.database, s.witnessPath])];
-  if (new Set(paths).size !== paths.length) fail('RECOVERY_CONFIG_INVALID');
-  paths.forEach(path => {
-    if (typeof path !== 'string' || path.length > 512) fail('RECOVERY_CONFIG_INVALID');
-    privateDirectory(dirname(path));
-  });
+  if (!paths.every(path) || new Set(paths).size !== paths.length) fail('RECOVERY_CONFIG_INVALID');
+  paths.forEach(file => privateDirectory(dirname(file)));
   const data = [...new Set(options.stores.map(s => dirname(s.database)))],
     witness = [...new Set(options.stores.map(s => dirname(s.witnessPath)))];
   independentDirectories([...data, ...witness, dirname(options.keyringFile)]);
@@ -121,7 +142,7 @@ class Mirror {
   readonly commitment: string;
   readonly key: LedgerKey;
   constructor(path: string, keys: readonly LedgerKey[]) {
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const fd = openPrivate(path);
     try {
       checkPrivate(fd, path);
     } finally {
@@ -179,7 +200,8 @@ class Mirror {
     }
   }
   snapshot(path: string): void {
-    const fd = openSync(path, constants.O_CREAT | constants.O_EXCL | constants.O_RDWR | constants.O_NOFOLLOW, 0o600);
+    const fd = createPrivate(path);
+    let complete = false;
     try {
       const output = new DatabaseSync(path);
       try {
@@ -220,7 +242,10 @@ class Mirror {
       syncDirectory(dirname(path));
       this.verifySnapshot(path);
       checkPrivate(fd, path);
+      complete = true;
     } finally {
+      // A snapshot that failed part-way is a full ciphertext copy nobody will use.
+      if (!complete) discardCreated(fd, path);
       closeSync(fd);
     }
   }
@@ -278,13 +303,13 @@ function publish(staged: string, target: string, verify: (path: string) => void)
     }
     const output = openSync(target, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
-      const linked = fstatSync(output);
+      const linked = fstatSync(output, { bigint: true });
       if (
         linked.dev !== original.dev ||
         linked.ino !== original.ino ||
         linked.size !== original.size ||
-        linked.mtimeMs !== original.mtimeMs ||
-        linked.nlink !== 2
+        linked.mtimeNs !== original.mtimeNs ||
+        linked.nlink !== 2n
       )
         fail('RECOVERY_PUBLICATION_CHANGED');
       fsyncSync(output);
@@ -292,7 +317,7 @@ function publish(staged: string, target: string, verify: (path: string) => void)
       unlinkSync(staged);
       syncDirectory(dirname(target));
       const published = checkPrivate(output, target);
-      if (published.size !== original.size || published.mtimeMs !== original.mtimeMs)
+      if (published.size !== original.size || published.mtimeNs !== original.mtimeNs)
         fail('RECOVERY_PUBLICATION_CHANGED');
       verify(target);
     } finally {
@@ -309,7 +334,13 @@ export function manageLedgerRecovery(
   apply?: { readonly expectedDigest: string },
 ): LedgerRecoveryResult {
   validate(options);
-  if (!['enroll', 'repair'].includes(request.operation) || (apply && !hashPattern.test(apply.expectedDigest)))
+  if (
+    !request ||
+    typeof request !== 'object' ||
+    !['enroll', 'repair'].includes(request.operation) ||
+    (apply !== undefined &&
+      (!apply || typeof apply.expectedDigest !== 'string' || !hashPattern.test(apply.expectedDigest)))
+  )
     fail('RECOVERY_REQUEST_INVALID');
   return withLedgerKeyringState(options.keyringFile, ring => {
     if (
@@ -334,7 +365,7 @@ export function manageLedgerRecovery(
           scope(ring, source, mirror.reader.read());
           readers.set(source.id, mirror.reader);
         } else {
-          let opened: LedgerStore | undefined;
+          let opened: LedgerStore | undefined, refused: unknown;
           for (const key of ring.keys) {
             try {
               opened = new LedgerStore(
@@ -345,9 +376,11 @@ export function manageLedgerRecovery(
                 { existingOnly: true },
               );
               break;
-            } catch {}
+            } catch (error) {
+              refused = error;
+            }
           }
-          if (!opened) fail('RECOVERY_STORE_UNAVAILABLE');
+          if (!opened) fail('RECOVERY_STORE_UNAVAILABLE', storeOpenFailure(source.database, refused));
           stores.set(source.id, opened);
           scope(ring, source, opened.read());
           readers.set(source.id, opened);
@@ -389,34 +422,40 @@ export function manageLedgerRecovery(
         return { ...result, alreadyMirrored: stores.size };
       }
       const id = randomUUID(),
-        staged = new Map<string, string>();
-      // Validate every staged current store before changing any primary path.
-      for (let index = 0; index < options.stores.length; index++) {
-        const source = options.stores[index]!,
-          path = join(dirname(source.database), `.guard-repair-${id}-${index}`);
-        mirrors.get(source.id)!.snapshot(path);
-        staged.set(source.id, path);
+        staged = new Map<string, string>(),
+        historyStages = new Map<string, string>();
+      try {
+        // Validate every staged current store before changing any primary path.
+        for (let index = 0; index < options.stores.length; index++) {
+          const source = options.stores[index]!,
+            path = join(dirname(source.database), `.guard-repair-${id}-${index}`);
+          mirrors.get(source.id)!.snapshot(path);
+          staged.set(source.id, path);
+        }
+        for (const file of files) {
+          const path = join(options.history!.directory, `.guard-history-repair-${id}-${sha(file.name)}`);
+          copyPrivate(join(options.history!.recoveryDirectory, file.name), path, file.sha256);
+          historyStages.set(file.name, path);
+        }
+        for (let index = 0; index < options.stores.length; index++) {
+          const source = options.stores[index]!;
+          for (const suffix of ['', '-journal', '-wal', '-shm'])
+            preserve(source.database + suffix, `.guard-original-${id}-${index}${suffix || '.sqlite'}`);
+          publish(staged.get(source.id)!, source.database, path => mirrors.get(source.id)!.verifySnapshot(path));
+        }
+        for (const file of files) {
+          const target = join(options.history!.directory, file.name);
+          preserve(target, `.guard-history-original-${id}-${sha(file.name)}`);
+          publish(historyStages.get(file.name)!, target, path => {
+            copyPrivate(path, undefined, file.sha256);
+          });
+        }
+        return result;
+      } finally {
+        // Publication unlinks each stage it used. Whatever is still here belongs to a
+        // step that failed: remove these full copies so a retry starts clean.
+        for (const path of [...staged.values(), ...historyStages.values()]) discardStaged(path);
       }
-      const historyStages = new Map<string, string>();
-      for (const file of files) {
-        const path = join(options.history!.directory, `.guard-history-repair-${id}-${sha(file.name)}`);
-        copyPrivate(join(options.history!.recoveryDirectory, file.name), path, file.sha256);
-        historyStages.set(file.name, path);
-      }
-      for (let index = 0; index < options.stores.length; index++) {
-        const source = options.stores[index]!;
-        for (const suffix of ['', '-journal', '-wal', '-shm'])
-          preserve(source.database + suffix, `.guard-original-${id}-${index}${suffix || '.sqlite'}`);
-        publish(staged.get(source.id)!, source.database, path => mirrors.get(source.id)!.verifySnapshot(path));
-      }
-      for (const file of files) {
-        const target = join(options.history!.directory, file.name);
-        preserve(target, `.guard-history-original-${id}-${sha(file.name)}`);
-        publish(historyStages.get(file.name)!, target, path => {
-          copyPrivate(path, undefined, file.sha256);
-        });
-      }
-      return result;
     } finally {
       for (const store of stores.values()) store.close();
       for (const mirror of mirrors.values()) mirror.close();

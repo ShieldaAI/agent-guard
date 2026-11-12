@@ -1,22 +1,55 @@
 # API contract
 
-The host owns `AgentGuard`. Give the model only a dispatcher, never administration methods or opaque handles. Authority is stored by object identity inside one guard instance. All state is in memory and lasts for that instance's lifetime.
+This is the reference for the stable API of Agent Guard 1.0.0: the types, the
+methods and the exact rules each package applies. For a first example, start with
+the [tool-permissions walkthrough](guides/tool-permissions.md). Terms are defined
+in the [glossary](glossary.md), and every error code is listed in the
+[error catalog](errors.md).
 
-The signatures and limits below describe the current source checkout. For a published version, consult its release notes and installed declarations.
+| Package | Section | Stability |
+| --- | --- | --- |
+| `@shieldaai/agent-guard` | [Core](#core-shieldaaiagent-guard) | stable |
+| `@shieldaai/agent-guard-mcp` | [Model Context Protocol (MCP) adapter](#mcp-adapter-shieldaaiagent-guard-mcp) | stable |
+| `@shieldaai/agent-guard-executor` | [Executor](#executor-shieldaaiagent-guard-executor) | stable, except `/inventory` (experimental) and `/internal` |
+| `@shieldaai/agent-guard-scenarios` | [Scenarios](#scenarios-shieldaaiagent-guard-scenarios) | stable |
+| `@shieldaai/agent-map` | [Agent Map](#agent-map-shieldaaiagent-map) | experimental |
 
-Exports from `@shieldaai/agent-guard`:
+Stable exports follow semantic versioning. Experimental exports can change in a
+minor release.
+
+## Core: `@shieldaai/agent-guard`
+
+The host creates one `AgentGuard` and keeps it. Give the model a function that
+calls `prepare` and `execute` for its task, and nothing else: never the guard
+object, a task handle or an approval method.
+
+The guard keeps all state in memory for the lifetime of that object. It
+recognizes task handles and prepared actions by object identity, so a copy with
+the same ID carries no authority.
+
+### Exports
+
+`AgentGuard`, `GuardError`, `GuardErrorCode`, `GuardErrorCatalog`, `isGuardError`,
+`InvalidJsonError`, `monotonicClock` and the types below.
+
+`@shieldaai/agent-guard/internal` holds building blocks shared with the other
+packages (`PolicyAdmission`, `assertActionAuthority`, `containsLiteralSecret`,
+`immutableJson`, `canonicalJson`, `digestJson`). It has no compatibility promise.
+
+### Types
 
 ```ts
 type Json = null | boolean | number | string | readonly Json[] | { readonly [key: string]: Json };
+
 interface Capability {
   tool: string;
-  resources: readonly string[];
+  resources: readonly string[]; // exact IDs; '*' means every resource of this tool
 }
 interface Budget {
-  maxCalls: number;
-  maxConcurrent: number;
-  maxCost: number;
-  deadline: number;
+  maxCalls: number;      // calls that reach a handler
+  maxConcurrent: number; // calls in flight at once
+  maxCost: number;       // nonnegative safe integer, in units the host chooses
+  deadline: number;      // clock milliseconds
 }
 interface TaskOptions {
   id: string;
@@ -27,45 +60,41 @@ interface TaskOptions {
   allowedRecipients?: readonly string[];
   allowControlPlane?: boolean;
 }
-interface TaskIdentity {
-  id: string;
-  principalId: string;
-  tenantId: string;
-}
-interface TaskHandle {
-  readonly id: string;
+interface TaskIdentity { id: string; principalId: string; tenantId: string }
+interface TaskHandle { readonly id: string }
+
+type UntrustedContextMode = 'allow' | 'require_approval' | 'deny';
+
+interface ToolDefinition {
+  name: string;
+  description: string;
+  inputSchema?: Json;         // fingerprinted, not evaluated; validate in parse()
+  metadata?: Json;            // fingerprinted
+  requiresApproval?: boolean; // every call needs approve()
+  controlPlane?: boolean;     // only tasks with allowControlPlane may call it
+  maxCost?: number;           // reserved before each call; default 0
+  readsUntrusted?: boolean;   // the tool returns outside content
+  untrustedContext?: UntrustedContextMode; // what this tool does once the family is untrusted
+  sendsExternal?: boolean;    // false is enforced; omitted means unknown
+  parse?(input: Json): Json;  // synchronous; validates and normalizes arguments
+  resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction; // synchronous
+  execute(
+    args: Json,
+    context: { signal: AbortSignal; action: Readonly<Action>; task: Readonly<TaskIdentity> },
+  ): Promise<ToolResult> | ToolResult;
 }
 interface ResolvedAction {
   resourceId: string;
   tenantId: string;
-  external?: boolean;
-  recipient?: string;
-  sensitive?: boolean;
-  resourceVersion?: string;
-}
-interface ToolDefinition {
-  name: string;
-  description: string;
-  inputSchema?: Json;
-  metadata?: Json;
-  requiresApproval?: boolean;
-  controlPlane?: boolean;
-  // Nonnegative safe integer cost units; the adapter enforces its provider-side bound.
-  maxCost?: number;
-  parse?(input: Json): Json;
-  resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
-  execute(
-    args: Json,
-    context: {
-      signal: AbortSignal;
-      action: Readonly<Action>;
-      task: Readonly<TaskIdentity>;
-    },
-  ): Promise<ToolResult> | ToolResult;
+  external?: boolean;       // the call sends data outside
+  recipient?: string;       // required when external is true
+  sensitive?: boolean;      // the call reads private data
+  resourceVersion?: string; // bound into the action and its approval
+  untrusted?: true;         // this call returns outside content; can only be set, never cleared
 }
 interface ToolResult {
   value: Json;
-  actualCost?: number;
+  actualCost?: number; // safe integer from 0 to the tool's maxCost
 }
 interface Action extends ResolvedAction {
   tool: string;
@@ -73,32 +102,54 @@ interface Action extends ResolvedAction {
   toolFingerprint: string;
   policyVersion: number;
 }
+interface PreparedAction {
+  readonly id: string;
+  readonly digest: string;
+  readonly action: Readonly<Action>;
+  readonly requiresApproval: boolean;
+}
+interface ExecutionResult {
+  readonly value: Json;
+  readonly charged: number;
+  readonly actionId: string;
+}
+
 interface TaskSnapshot extends TaskIdentity {
-  sensitive: boolean;
+  sensitive: boolean; // the task family has read private data
+  untrusted: boolean; // the task family has read outside content
   calls: number;
   concurrent: number;
   spent: number;
   reserved: number;
 }
+interface TaskStatus extends TaskSnapshot {
+  budget: Readonly<Budget>;
+  revoked: boolean; // this task or an ancestor is revoked
+}
+
 type PolicyDecision = 'allow' | 'deny' | 'require_approval';
 type Policy = (
   action: Readonly<Action>,
   task: Readonly<TaskSnapshot>,
   context?: Readonly<{ signal: AbortSignal }>,
 ) => PolicyDecision | Promise<PolicyDecision>;
+
 interface GuardOptions {
   policy?: Policy;
   secretValues?: readonly string[];
-  clock?: () => number; // milliseconds; default Date.now. monotonicClock() never steps backward.
-  maxPolicyAttempts?: number; // 1-16, default 5
-  onDecision?: (event: Readonly<GuardDecision>) => void; // observes only; a throwing hook is ignored
-  untrustedContextDefault?: 'allow' | 'require_approval' | 'deny'; // default 'allow'
-  limits?: {
-    maxApprovalsPerAction?: number;
-    maxPolicyEvaluations?: number;
-    maxPolicyEvaluationsPerFamily?: number;
-    policyTimeoutMs?: number;
-  }; // defaults 4, 64, 8, 30,000
+  clock?: () => number;        // milliseconds; default Date.now
+  maxPolicyAttempts?: number;  // 1-16, default 5
+  onDecision?: (event: Readonly<GuardDecision>) => void;
+  untrustedContextDefault?: UntrustedContextMode; // default 'allow'
+  limits?: GuardLimits;
+}
+interface GuardLimits {
+  maxApprovalsPerAction?: number;         // 1-64, default 4
+  maxPolicyEvaluations?: number;          // 1-1,024, default 64
+  maxPolicyEvaluationsPerFamily?: number; // 1-1,024, default 8
+  policyTimeoutMs?: number;               // 100-300,000, default 30,000
+  maxJsonBytes?: number;                  // 65,536-67,108,864, default 1,048,576
+  maxJsonNodes?: number;                  // 1,000-10,000,000, default 100,000
 }
 interface GuardDecision {
   operation: 'prepare' | 'approve' | 'execute';
@@ -106,214 +157,744 @@ interface GuardDecision {
   taskId: string;
   tenantId: string;
   principalId: string;
+  untrusted: boolean;
   tool?: string;
   actionId?: string;
   resourceId?: string;
   approverId?: string;
-  code?: string;
+  code?: GuardErrorCodeValue; // set when the outcome is denied or failed
 }
-interface TaskStatus extends TaskSnapshot {
-  budget: Readonly<Budget>;
-  revoked: boolean;
-}
-interface ExecutionResult {
-  readonly value: Json;
-  readonly charged: number;
-  readonly actionId: string;
-}
-interface PreparedAction {
-  readonly id: string;
-  readonly digest: string;
-  readonly action: Readonly<Action>;
-  readonly requiresApproval: boolean;
-}
+
 class GuardError extends Error {
-  readonly code: string;
+  readonly code: GuardErrorCodeValue;
+  readonly detail?: string; // a second, safe uppercase code; see "Errors"
 }
+function isGuardError(value: unknown): value is GuardError;
+const GuardErrorCode: Readonly<Record<GuardErrorCodeValue, GuardErrorCodeValue>>;
+const GuardErrorCatalog: Readonly<Record<GuardErrorCodeValue, GuardErrorInfo>>;
+interface GuardErrorInfo { meaning: string; retryable: boolean; cause: string }
+class InvalidJsonError extends Error {}
+function monotonicClock(): number;
+```
+
+### Methods
+
+```ts
 class AgentGuard {
   constructor(options?: GuardOptions);
-  registerTool(tool: ToolDefinition): string; // Returns the fingerprint. Approval is a separate step.
+  registerTool(definition: ToolDefinition): string;
   approveTool(name: string, fingerprint: string): void;
+  unapproveTool(name: string): void;
+  unregisterTool(name: string): void;
   createTask(options: TaskOptions): TaskHandle;
   delegateTask(parent: TaskHandle, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskHandle;
   revokeTask(task: TaskHandle): void;
-  retireTask(task: TaskHandle): void; // revokes, then forgets the task so its ID and memory are freed
-  unapproveTool(name: string): void;
-  unregisterTool(name: string): void;
-  setPolicy(policy: Policy): void; // Invalidates existing prepared actions and approvals.
+  retireTask(task: TaskHandle): void;
+  setPolicy(policy: Policy): void;
   prepare(task: TaskHandle, request: { tool: string; args: Json }): Promise<PreparedAction>;
   approve(prepared: PreparedAction, options: { approverId: string; expiresAt: number }): string;
   execute(prepared: PreparedAction, options?: { approvalId?: string }): Promise<Json>;
   executeDetailed(prepared: PreparedAction, options?: { approvalId?: string }): Promise<ExecutionResult>;
   snapshot(task: TaskHandle): Readonly<TaskStatus>;
 }
-// Internal SPI from '@shieldaai/agent-guard/internal' (no semver guarantees; the root
-// aliases are deprecated). Shared by executor implementations; AgentGuard manages its own pool.
-class PolicyAdmission {
-  assertCapacity(familyId: string): void;
-  evaluate(
-    policy: Policy,
-    action: Readonly<Action>,
-    snapshot: Readonly<TaskSnapshot>,
-    scope: { familyId: string; taskIds: readonly string[]; remainingMs: number },
-  ): Promise<'allow' | 'require_approval'>;
-  revokeTask(taskId: string): void;
-  invalidate(reason: 'TASK_REVOKED' | 'POLICY_CHANGED'): void;
-}
 ```
 
-## Execution rules
+| Method | What it does |
+| --- | --- |
+| `registerTool` | Registers or replaces a tool and returns its fingerprint. The tool cannot be called until it is approved. |
+| `approveTool` | Accepts one tool definition by its fingerprint. This is not an approval of any action. |
+| `unapproveTool` | Withdraws that approval. Calls fail with `TOOL_UNAPPROVED` until the tool is approved again. |
+| `unregisterTool` | Removes the tool. Prepared actions for it fail with `TOOL_CHANGED`. |
+| `createTask` | Creates a task with its own identity, grants and budget, and returns its handle. |
+| `delegateTask` | Creates a child task that holds the same or less than its parent. See the [delegation guide](guides/delegation.md). |
+| `revokeTask` | Stops a task and its descendants for good. It works even when the clock is failing. |
+| `retireTask` | Revokes the task and forgets it, so its ID and memory are freed. A later task may reuse the ID. |
+| `setPolicy` | Replaces the policy. Actions prepared under the old policy fail with `POLICY_CHANGED`. |
+| `prepare` | Checks one call and returns it as a frozen `PreparedAction`. The handler does not run. |
+| `approve` | Records a reviewer's approval of one prepared action and returns an approval ID. |
+| `execute` | Repeats every check, consumes the approval if one is needed, and runs the handler once. |
+| `executeDetailed` | Same as `execute`, and also returns the charged cost and the action ID. |
+| `snapshot` | Returns the task's counters, budget and revocation state. |
 
-### Grants and tool registration
+Identifiers (tool names, task IDs, tenants, principals, resources, recipients,
+approver IDs) are non-empty strings of at most 4,096 characters.
 
-Tool names and resource grants match exactly. The resource `*` is an explicit wildcard. Every grant in the task's ancestry must allow an operation. Child tasks inherit their principal and tenant; their grants, recipients, control-plane authority and budgets cannot exceed the parent's limits. Task IDs must be unique within a guard instance.
+### Tools and grants
 
-The host must approve tool metadata before preparing or executing a call. Fingerprints cover the description, schema and security configuration. Re-registering a tool invalidates its existing prepared actions, even if the metadata is unchanged. Approving metadata does not verify the implementation's safety.
+- A tool name and a granted resource match exactly. The resource `*` is an
+  explicit wildcard; nothing is granted by default.
+- A call is allowed only if every task in its ancestry grants the tool and
+  resource.
+- The fingerprint is a `sha256:` digest of the tool's name, description, schema,
+  metadata and flags. Approving it means the host accepts that definition. It
+  does not check what `execute` does.
+- Registering a tool again withdraws its approval and fails every action already
+  prepared for it with `TOOL_CHANGED`, even if the definition is unchanged.
+  Register again whenever `parse`, `resolve` or `execute` change.
 
-### Prepared actions and policy
+### Prepare
 
-The guard clones and freezes finite, plain JSON values. It rejects cycles, accessors, JavaScript proxies and other exotic objects. Each normalized envelope is limited to 1 MiB of canonical UTF-8 JSON, 100,000 nodes and 64 levels of depth. Proxy rejection happens before inspecting the proxy's properties or prototype.
+`prepare` runs these steps in order and stops at the first failure.
 
-Preparation checks tool-level grants and control-plane permission before calling the tool's parser or resolver. An optional synchronous `parse` validates and normalizes arguments once. The guard freezes its result for resource resolution, approval and dispatch. Invalid parser output produces `ARGUMENT_INVALID`. Invalid resolver output produces `RESOLUTION_FAILED`. A resolver for a granted tool may receive an out-of-scope resource ID, so keep lookups read-only and tenant-scoped.
+1. The task must be live: not revoked, not past its deadline, and the same for
+   each ancestor.
+2. The request is copied and frozen. It must be `{ tool, args }` and nothing else.
+3. The tool must be registered and approved, the task must hold a grant for it,
+   and a `controlPlane` tool needs `allowControlPlane`. These checks come before
+   any tool callback runs.
+4. `parse`, if present, validates and normalizes the arguments. A failure or a
+   promise gives `ARGUMENT_INVALID`.
+5. `resolve` names the resource, tenant and, for outbound calls, the recipient.
+   A failure, a promise or an unknown field gives `RESOLUTION_FAILED`.
+6. The built-in checks run: tenant, grant on the resolved resource, recipient,
+   sensitive data, configured secrets, outside content and budget.
+7. The policy, if any, runs.
 
-`resourceVersion` is an opaque host-supplied value bound into the action and its
-approval. The handler must compare it with current state at the actual effect; the
-core cannot perform an external compare-and-swap. Do not expose raw secrets or
-guessable secret-content digests in prepared metadata. The executor's private-file
-and sandbox adapters use private keyed versions for this reason. Parser code and
-resolver closures remain trusted implementation: re-register tools when they change.
+`resolve` can be called with a resource the task has no grant for, because the
+grant on the resource is checked afterwards. Keep it read-only and scoped to the
+task's tenant.
 
-Both preparation and execution apply the mandatory checks. Custom policy may add restrictions; it cannot relax them. If policy throws or returns an invalid decision, the call is denied. Without a custom policy, an action is allowed only if every mandatory check passes.
+The frozen arguments from step 4 are the ones used for the approval and passed to
+the handler. Arguments and results have no prototype: read fields directly and
+use `Object.hasOwn(args, 'id')`.
 
-After awaiting policy, the guard rechecks the policy version, grants, revocation, tool approval, tenant, sensitivity and deadline. If a counter or shared sensitivity value in the supplied task snapshot has changed, the decision is discarded and the policy is evaluated again on a fresh snapshot. Re-evaluations on one task take turns (first attempts stay parallel). After `maxPolicyAttempts` evaluations (`GuardOptions`, integer 1–16, default 5) the call fails with `POLICY_STATE_CHANGED`. That failure starts no handler and consumes no approval or budget. Each evaluation takes a policy slot and is bounded by the task deadline. The snapshot check, final reservations, approval consumption and handler invocation run without an intervening asynchronous pause.
+### Policy
 
-This check covers the supplied local snapshot. It cannot coordinate external mutable state or other tasks that a custom policy reads through a closure. Grants cannot be changed in place, administration APIs must remain with the trusted host, and the core does not require a remote policy service.
+A policy is an extra rule from the host. It runs after the built-in checks, on
+`prepare` and again on `execute`.
 
-Preparation and execution share capacity for eight outstanding policy evaluations per task family and 64 per guard. When either limit is full, the next evaluation rejects with `POLICY_BUSY` before starting another callback. Forward `context?.signal` to policy I/O. A waiting call rejects at the task deadline with `TASK_EXPIRED`, or after 30 seconds with `POLICY_TIMEOUT`, whichever comes first. Revoking a task or ancestor and replacing the policy also abort affected waits. A callback keeps its slot until it settles, even if it ignores cancellation. Synchronous work still occupies the host event loop. Limit request rates and root task creation per tenant, because multiple families can fill the shared pool.
+- It can return `deny` or `require_approval`. It cannot allow a call the built-in
+  checks refuse.
+- If it throws or returns anything else, the call fails with `POLICY_ERROR`.
+- Pass `context.signal` to any I/O the policy does. A policy is canceled at the
+  task deadline (`TASK_EXPIRED`), after `policyTimeoutMs` (`POLICY_TIMEOUT`), on
+  revocation and on `setPolicy`.
+- At most `maxPolicyEvaluationsPerFamily` evaluations per task family and
+  `maxPolicyEvaluations` per guard run at once. Beyond that the call fails with
+  `POLICY_BUSY` and no further callback starts. A policy that ignores
+  cancellation keeps its slot until it returns.
+- If the task's counters or its sensitive flag change while the policy runs, the
+  decision is discarded and the policy runs again on a fresh snapshot. After
+  `maxPolicyAttempts` tries the call fails with `POLICY_STATE_CHANGED`. Nothing
+  has run and no approval or budget is used.
 
-### Approval and dispatch
+The guard only compares the snapshot it gave the policy. If the policy reads
+other state (a database, another task), the host must coordinate that itself.
 
-Each prepared action can run at most once. A required approval is bound to that action and its policy and tool revisions. It must expire no later than the task deadline and is consumed immediately before dispatch. Only trusted host code may approve actions or tool metadata.
+### Approval
 
-The guard stores up to four live approvals on each exact prepared action. A fifth rejects with `ACTION_APPROVAL_LIMIT`. Expired records free space when the host next approves that action. Any single valid approval suffices. Dispatch consumes the action and clears all of its approvals. Dropping the action handle makes its records eligible for garbage collection. The host should bound its own review queue.
+- An action needs approval when its tool sets `requiresApproval`, when the policy
+  returns `require_approval`, or when the outside-content rule below applies.
+  `PreparedAction.requiresApproval` reports it.
+- `approve` binds to one prepared action: these arguments, this resource, this
+  tool registration and this policy version. `expiresAt` must be in the future
+  and no later than the deadline of the task and each ancestor
+  (`APPROVAL_INVALID` otherwise).
+- An action holds at most `maxApprovalsPerAction` live approvals
+  (`ACTION_APPROVAL_LIMIT`). Any one of them is enough.
+- `execute` consumes the approval immediately before the handler runs. An action
+  runs at most once, with or without approval; a second attempt fails with
+  `ACTION_USED`.
+- An approval never overrides a revoked task, a denial, the sensitive-data rule
+  or a failed grant check.
+
+The `approverId` is recorded as given. The host must authenticate the reviewer
+before it calls `approve`.
+
+`resourceVersion` is an opaque string from `resolve`. It is part of the approved
+action, so the reviewer approves that version. The guard cannot compare it with
+the real resource: the handler must do that at the moment it writes. Do not put
+secrets or guessable digests of secret content in it.
+
+### Outside content
+
+Outside content is text that people outside your trust boundary can write, such
+as email, web pages and customer tickets. In the API the mark is `untrusted`.
+
+| Label | Effect |
+| --- | --- |
+| `readsUntrusted: true` on a tool | When a call to the tool is dispatched, the whole task family is marked `untrusted` for good. |
+| `untrusted: true` from `resolve` | The same, for one call. |
+| `untrustedContext: 'require_approval'` | Once the family is marked, every call to this tool needs an approval given after the mark. An earlier approval fails with `APPROVAL_CONTEXT_CHANGED`. |
+| `untrustedContext: 'deny'` | Once the family is marked, every call to this tool fails with `UNTRUSTED_CONTEXT_DENIED`, even with an approval. |
+| `sendsExternal: false` | A `resolve` that returns `external: true` fails with `RESOLUTION_FAILED` (detail `INVALID_INPUT`). |
+
+Tools without `untrustedContext` use `GuardOptions.untrustedContextDefault`,
+which is `allow`. The labels are the host's statement about its tools. The guard
+does not inspect content.
 
 ### Sensitive data and outbound calls
 
-Outbound tools require an explicitly allowed recipient. Parent and descendant tasks share a sensitive flag. Once a trusted resolver marks the context sensitive, external sends are denied. The flag is set before dispatch and cannot be cleared.
+- An outbound call (`external: true`) needs a `recipient` listed in
+  `allowedRecipients` of the task and each ancestor (`RECIPIENT_DENIED`).
+- When `resolve` returns `sensitive: true`, the task family is marked sensitive
+  as the call is dispatched. From then on every outbound call in that family
+  fails with `SENSITIVE_EGRESS_DENIED`. The mark cannot be cleared and an
+  approval does not override it.
+- For outbound calls the guard searches every key and string in the arguments
+  for the literal values in `secretValues`. A match fails with
+  `SECRET_EGRESS_DENIED`. Encoded or split values are not found.
 
-For external actions the guard scans outbound argument object keys and string values at every depth for configured literal secrets or canaries. A match produces `SECRET_EGRESS_DENIED` without the argument value. Encoded or split data can evade literal matching.
+### Budgets, cost and deadlines
 
-### Budgets and cancellation
+- Each call counts against the task and each ancestor. `prepare` and `approve`
+  check the call count and spent cost. `execute` also checks calls in flight and
+  cost reserved by them, so a busy task can still prepare and collect approvals.
+- A call counts once it reaches the handler, even if the handler fails. Nothing
+  is retried or refunded.
+- Before the handler runs, the guard reserves the tool's `maxCost`. Afterwards it
+  charges `actualCost`, or `maxCost` when the handler reports none. A report that
+  is not a safe integer from 0 to `maxCost` fails with `COST_REPORT_INVALID`,
+  charges `maxCost` and revokes the task.
+- A handler result that is not plain JSON within the limits fails with
+  `RESULT_INVALID`, charges `maxCost` and revokes the task. The effect may
+  already have happened.
+- The guard's cost is bookkeeping. The host must enforce the real ceiling at the
+  provider.
+- Deadlines and approval expiries are clock milliseconds. If the clock goes
+  backward, time-dependent calls fail with `CLOCK_INVALID` until it catches up;
+  `revokeTask` still works. Pass `clock: monotonicClock` to avoid this.
+- At the deadline or on revocation the handler's `signal` aborts. The guard
+  cannot stop code that ignores the signal. A slot stays in use until the
+  handler's promise settles.
 
-Before dispatch, budget admission updates every ancestor synchronously. Calls count attempts that reach a handler. A failed call or an uncertain side effect is not automatically retried or refunded.
+### Errors
 
-Capacity is checked in two phases.
+Every refusal is a `GuardError`. `code` is one of the values in
+[the error catalog](errors.md), which also says whether a retry is safe. The same
+information is exported as `GuardErrorCatalog`. Error messages never contain
+arguments, results or policy output.
 
-- **Preparation and approval** (`prepare`, `approve`): authority gates and _permanent_ capacity apply. Permanent capacity is the call count and spent cost, which only grow.
-- **Dispatch** (`execute`): additionally enforces _transient_ capacity, meaning concurrent calls and cost reserved by calls still in flight.
+Use `isGuardError(error)` rather than `instanceof GuardError`. It also recognizes
+errors from a second installed copy of the package.
 
-So a call in flight does not refuse another preparation or lose a reviewer's approval. The approved action is refused at dispatch (`CONCURRENCY_EXCEEDED` or `COST_BUDGET_EXCEEDED`) until capacity frees, and its approval stays usable until it expires. The internal `assertActionAuthority` (from `@shieldaai/agent-guard/internal`) takes `phase: 'prepare' | 'dispatch'`; the default is `dispatch`.
+`detail` is an optional second code:
 
-The embedded guard remembers its highest observed clock reading. A lower reading yields `CLOCK_INVALID` on time-dependent operations until the clock catches up. Revocation remains available during rollback. This prevents an observed expiry from becoming valid again within that guard instance.
+| `code` | `detail` | Meaning |
+| --- | --- | --- |
+| `DELEGATION_DENIED` | `GRANT_EXCEEDS_PARENT` | The child asked for a tool or resource an ancestor does not hold. |
+| | `RECIPIENT_EXCEEDS_PARENT` | The child listed a recipient an ancestor does not. |
+| | `CONTROL_PLANE_EXCEEDS_PARENT` | The child asked for `allowControlPlane` and an ancestor lacks it. |
+| | `BUDGET_EXCEEDS_PARENT` | `maxCalls`, `maxConcurrent` or `maxCost` is larger than an ancestor's. |
+| | `DEADLINE_EXCEEDS_PARENT` | The deadline is later than an ancestor's. |
+| `EXECUTION_ABORTED` | `EFFECT_COMMITTED` | The handler returned, but after the task was revoked or expired. A handler that returns is taken to have performed its effect; the result is withheld. Do not retry. A handler aborted before its effect must throw instead (for example `signal.throwIfAborted()`). |
+| `EXECUTION_ABORTED` | none | The handler was canceled and threw. Whether the effect happened is unknown. |
+| `RESOLUTION_FAILED`, `ARGUMENT_INVALID`, `TOOL_FAILED` | an adapter code | The safe uppercase `code` of the error the tool callback threw, for example `IDENTITY_DENIED` from the MCP adapter. |
 
-Budget `maxCost`, tool `maxCost` and reported `actualCost` use nonnegative safe integers in the same unit chosen by the host, such as microcurrency units. Fractional values and unsafe integers are rejected. The guard reserves `maxCost` and then settles the charge using `actualCost`, which must not exceed the reservation. If usage is omitted, it charges `maxCost`. An invalid or excessive cost report fails the call and revokes the task, charging the full reservation. The host must enforce the provider's actual cost ceiling.
+Errors after the handler started (`TOOL_FAILED`, `EXECUTION_ABORTED`,
+`RESULT_INVALID`, `COST_REPORT_INVALID`) do not prove that nothing happened.
 
-Concurrency stays reserved until the registered handler's promise settles, including after cancellation. Revocation or a task or ancestor deadline signals cancellation through `AbortSignal`; it cannot forcibly stop arbitrary code. The guard also checks the clock when a result settles, so a handler that blocks the timer cannot return a successful result after its deadline. There is no hard process timeout.
+`InvalidJsonError` is thrown by the JSON helpers in `/internal`. The guard's own
+methods report the same problem as a `GuardError` with code `INVALID_JSON`.
 
-An MCP client may settle its request before the remote server stops working. Local accounting therefore cannot bound the remaining remote work. An error after invocation does not prove that no side effect occurred.
+### Limits
 
-## Packages
+| Limit | Default | Range | Option |
+| --- | --- | --- | --- |
+| Size of one JSON value | 1 MiB | 64 KiB to 64 MiB | `limits.maxJsonBytes` |
+| Values in one JSON value | 100,000 | 1,000 to 10,000,000 | `limits.maxJsonNodes` |
+| JSON nesting | 64 levels | fixed | |
+| Live approvals per action | 4 | 1 to 64 | `limits.maxApprovalsPerAction` |
+| Policy evaluations at once, per guard | 64 | 1 to 1,024 | `limits.maxPolicyEvaluations` |
+| Policy evaluations at once, per task family | 8 | 1 to 1,024 | `limits.maxPolicyEvaluationsPerFamily` |
+| Policy run time | 30 s | 100 ms to 300 s | `limits.policyTimeoutMs` |
+| Policy re-evaluations per call | 5 | 1 to 16 | `maxPolicyAttempts` |
+
+The JSON limits apply to each value the guard copies: a tool definition, task
+options, a `prepare` request, parsed arguments and a handler result. Values must
+be plain JSON; cycles, accessors, proxies and class instances are rejected.
+Arguments over the limit fail `prepare` with `INVALID_JSON` before any callback
+runs.
+
+### Decision events
+
+`onDecision` is called once for every `prepare`, `approve` and `execute` on a known
+task, allowed or not. The event holds identifiers and the error code only, never arguments or
+results. The hook cannot change the outcome, and an exception it throws is
+ignored. See the [audit log guide](guides/audit-log.md).
+
+## MCP adapter: `@shieldaai/agent-guard-mcp`
+
+The adapter registers the tools of a Model Context Protocol (MCP) server with the
+guard. It adds no second set of rules: every call still needs a grant, an approved
+fingerprint and, where required, an approval. Usage and the supported protocol
+features are in the [MCP README](../packages/mcp/README.md).
+
+### Managed connection
+
+```ts
+class ManagedMcpConnection {
+  static connect(options: ManagedMcpOptions): Promise<ManagedMcpConnection>;
+  get status(): 'connecting' | 'refreshing' | 'ready' | 'quarantined' | 'closed';
+  get sessionId(): string;
+  get revision(): number;
+  get inventoryRevision(): number;
+  get registrations(): readonly ManagedMcpRegistration[];
+  get failureReason(): McpBoundaryErrorCode | undefined;
+  get skipped(): readonly McpSkippedOperation[];
+  inventory(): McpConnectionInventory; // experimental
+  refresh(): Promise<void>;
+  close(): Promise<void>;
+}
+interface ManagedMcpOptions {
+  guard: Pick<AgentGuard, 'registerTool'>; // an AgentGuard or a DurableExecutor
+  identity: { serverId: string; transportIdentity: string; principalId: string; tenantId: string };
+  transport: Transport;                    // owned by the connection from now on
+  authorize?: () => void;                  // synchronous; throws to deny
+  protectedValues?: readonly string[];
+  tools?: readonly McpBinding[];
+  resources?: readonly McpResourceBinding[]; // McpBinding plus an exact uri
+  prompts?: readonly McpBinding[];
+  readsUntrusted?: boolean;                // label every operation on this connection
+  limits?: { /* see the table below */ };
+}
+interface McpBinding {
+  name: string;
+  resolve(args: Record<string, Json>, task: Readonly<TaskIdentity>): ResolvedAction;
+  requiresApproval?: boolean;
+  controlPlane?: boolean;
+  maxCost?: number;
+  measureCost?: (result: Json) => number;
+  readsUntrusted?: boolean;
+  untrustedContext?: 'allow' | 'require_approval' | 'deny';
+  sendsExternal?: boolean;
+}
+interface ManagedMcpRegistration {
+  readonly name: string;        // the name registered with the guard
+  readonly fingerprint: string; // pass to approveTool(); new on every connection and refresh
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  readonly descriptor: Json;
+  readonly descriptorDigest: string;
+}
+interface McpSkippedOperation {
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  readonly reason: string; // for example SCHEMA_UNSUPPORTED
+}
+```
+
+- **Only bound operations exist.** The connection registers the tools, resources
+  and prompts the host lists, and nothing else the server advertises.
+- **`descriptorDigest`** is a `sha256:` digest of the kind, remote name and
+  accepted definition. It stays the same while the server advertises the same
+  definition. Store it when a person reviews the tool, and approve a
+  registration only when its digest matches. The digest does not include the
+  server: record it under the server ID and the remote name (for example under
+  the registration's `name`), or a review of one server's tool would also
+  approve an identically described tool on another server.
+- **`fingerprint`** changes on every connection and every `refresh()`, so each
+  refresh needs `approveTool` again and invalidates prepared actions.
+- **`skipped`** lists bound operations the server advertised but the adapter
+  could not accept, with a reason code. They are never callable.
+- **`status`** is `ready` only while operations can be prepared and run. A
+  changed tool list, a failed send, an authorization failure, or too many inbound
+  messages moves the connection to `quarantined`. Call `refresh()`, review, and
+  approve again. A lost transport closes the connection; create a new one.
+- **`failureReason`** is the code behind the last quarantine or forced close, for
+  example `REGISTRY_CHANGED`, `MESSAGE_BUDGET`, `AUTHORIZATION_DENIED`, or
+  `CONNECTION_UNAVAILABLE` when the transport closed or a send failed. A
+  successful refresh clears it.
+- A failure of one call (timeout, error reply, invalid or oversized result) fails
+  only that call with `TOOL_FAILED`. A call cut short because its task was revoked
+  or reached its deadline fails with `EXECUTION_ABORTED`. The adapter never retries.
+- A closed connection cannot be refreshed. Connect again and review again.
+
+| Limit (`limits`) | Default | Range |
+| --- | --- | --- |
+| `requestTimeoutMs` | 10,000 | 1 to 120,000 |
+| `maxEntries` (bindings, and definitions the server may advertise) | 64 | 1 to 256 |
+| `maxMessages` per `messageWindowMs` | 10,000 | 1 to 100,000 |
+| `messageWindowMs` | 10,000 | 1 to 600,000 |
+| `maxPages` per list request | 4 | 1 to 16 |
+| `maxMessageBytes` | 1 MiB | 1 MiB to 16 MiB |
+
+If you raise `maxMessageBytes`, raise the guard's `limits.maxJsonBytes` to at
+least the same value. A result the guard refuses fails with `RESULT_INVALID` and
+revokes the task. This applies to the in-memory `AgentGuard`. `DurableExecutor`
+has no `limits.maxJsonBytes` and accepts results up to a fixed 1 MiB, so leave
+`maxMessageBytes` at its default there.
+
+MCP errors are `McpBoundaryError` with a `code`; `McpBoundaryErrorCatalog`
+explains each code.
+
+### Verified HTTP session
+
+`VerifiedMcpHttpSession` verifies a JWT access token before it opens a managed
+connection to a remote server. The [verified MCP credentials
+guide](guides/verified-mcp-credentials.md) shows how to use it.
+
+```ts
+class VerifiedMcpHttpSession {
+  static connect(options: VerifiedMcpHttpOptions, accessToken: string): Promise<VerifiedMcpHttpSession>;
+  get status(): McpConnectionState;
+  get sessionId(): string | undefined;
+  get registrations(): readonly ManagedMcpRegistration[];
+  get skipped(): readonly McpSkippedOperation[];
+  get failureReason(): McpBoundaryErrorCode | undefined;
+  inventory(): McpConnectionInventory | undefined; // experimental
+  refresh(): Promise<void>;
+  replaceCredential(accessToken: string): Promise<void>;
+  revoke(): Promise<void>;
+  close(): Promise<void>;
+}
+interface VerifiedMcpHttpOptions {
+  guard; tools?; resources?; prompts?; limits?; readsUntrusted?; // as in ManagedMcpOptions
+  identity: { serverId: string; principalId: string; tenantId: string };
+  endpoint: string; // exact HTTPS URL
+  authorization: {
+    issuer: string;
+    jwksUri: string;  // exact HTTPS URL enrolled by the host
+    audience: string;
+    subject: string;
+    requiredScopes?: readonly string[];
+    algorithms?: readonly ('RS256' | 'ES256')[];
+  };
+  fetch: FetchLike; // host-supplied; must enforce TLS and network policy
+  verificationTimeoutMs?: number;
+  maxJwksBytes?: number;
+  maxResponseBytes?: number;
+  maxTokenLifetimeSeconds?: number;
+}
+```
+
+- The session does not log in, fetch tokens or renew them. The host supplies each
+  token.
+- `replaceCredential` ends the old session first. If the new token fails
+  verification, the old one is not restored.
+- `revoke` and `close` are final.
+- If the server sends back the token in any message, the session closes.
+
+Two smaller helpers are exported for hosts that manage their own connection:
+`createRestrictedMcpHttpTransport(options)` (one exact endpoint, no redirects, no
+reconnection, bounded responses) and `assertVerifiedMcpClaims(claims, policy,
+now?)`, which checks issuer, audience, subject, scopes and expiry on claims the
+host has already verified cryptographically.
+
+### Single-tool bridge
+
+```ts
+function registerMcpTool(guard: Pick<AgentGuard, 'registerTool'>, registration: McpRegistration): RegisteredMcpTool;
+function mcpToolName(serverId: string, toolName: string): string;
+
+interface McpRegistration {
+  serverId: string;
+  tool: { name: string; description?: string; inputSchema: Json; [key: string]: Json | undefined };
+  client: { callTool(request: { name: string; arguments: Record<string, Json> }, options: { signal: AbortSignal }): Promise<Json> };
+  resolve(args: Record<string, Json>, task: Readonly<TaskIdentity>): ResolvedAction;
+  requiresApproval?: boolean;
+  controlPlane?: boolean;
+  maxCost?: number;
+  measureCost?: (result: Json) => number;
+  readsUntrusted?: boolean;
+  untrustedContext?: 'allow' | 'require_approval' | 'deny';
+  sendsExternal?: boolean;
+}
+interface RegisteredMcpTool { readonly name: string; readonly fingerprint: string }
+```
+
+`registerMcpTool` wraps one tool of an MCP client the host already owns. It
+registers the tool without approving it. Every field of the definition is part of
+the fingerprint, so call it again when the server's tool list changes. It does not
+watch the connection, validate schemas or restrict the transport; use a managed
+connection for that.
+
+## Executor: `@shieldaai/agent-guard-executor`
+
+The executor applies the same rules as the guard and keeps its state in an
+encrypted SQLite file, the ledger, so budgets, revocations and used approvals
+survive a restart. It gives each task a bearer token, so an agent in another
+process can call it over HTTP. One process owns one ledger.
+
+| Import path | Contents | Stability |
+| --- | --- | --- |
+| `@shieldaai/agent-guard-executor` | `DurableExecutor`, `startExecutorServer`, `ExecutorClient`, `ExecutorError`, tool adapters, `createRestrictedFetch`, model tools | stable |
+| `.../sandbox` | Docker sandbox, artifact broker, build provenance | stable |
+| `.../pilot` | `verifyPilotReview` | stable |
+| `.../ops` | Key ring, key custody, recovery, ledger format | stable |
+| `.../inventory` | Inventory observer, host manifest, MCP inventory | experimental |
+| `.../internal` | Building blocks for Agent Ops | no compatibility promise |
+
+Operation, key handling and recovery are covered in the
+[executor README](../packages/executor/README.md).
+
+### Host API
+
+`DurableExecutor` is an administration object. Keep it in the host and never
+expose it to an agent.
+
+```ts
+class DurableExecutor {
+  constructor(options: ExecutorOptions);
+  registerTool(definition: ToolDefinition): string;
+  approveTool(name: string, fingerprint: string): void;
+  unapproveTool(name: string): void;
+  unregisterTool(name: string): void;
+  setPolicy(policy: Policy): void;
+
+  createTask(options: TaskOptions, provenance?: { sensitive?: boolean; sourceTaskId?: string }): TaskCredential;
+  delegateTask(parentId: string, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskCredential;
+  authenticate(token: string): string; // returns the task ID
+  knowsToken(token: string): boolean; // in-memory lookup only; not authentication
+  revokeTask(taskId: string): void; // OPERATION_FAILED / REVOCATION_NOT_DURABLE when the ledger write fails
+  markSensitive(taskId: string): void;
+  snapshot(taskId: string): Readonly<TaskSnapshot>;
+
+  prepare(taskId: string, request: { tool: string; args: Json }): Promise<PreparedAction>;
+  preparedAction(actionId: string): Readonly<{
+    id: string; taskId: string; digest: string;
+    action: Action; requiresApproval: boolean; status: ExecutionStatus;
+  }>;
+  approve(actionId: string, options: { approverId: string; expiresAt: number }): string;
+  recordReviewDecision(actionId: string, decision: 'denied'): void;
+  cancel(taskId: string, actionId: string): void;
+  execute(taskId: string, actionId: string, options?: { approvalId?: string }): Promise<Json>;
+  execution(taskId: string, actionId: string): ExecutionReceipt;
+  reconcile(actionId: string, evidence: { outcome: 'SUCCEEDED' | 'FAILED'; actualCost: number; reference: string }): void;
+
+  audit(scope?: { tenantId?: string }): readonly AuditEvent[];
+  ledgerFormat(): LedgerFormat;
+  close(): void;
+  // Memory, task-family maintenance, decision traces and inventory: see below.
+}
+interface TaskCredential { taskId: string; token: string }
+interface ExecutorOptions {
+  database: string;          // path of the SQLite file
+  encryptionKey: Uint8Array; // exactly 32 random bytes
+  rollbackWitness?: { path: string; mode: 'create' | 'resume'; recovery?: 'mirror' };
+  clock?: () => number;
+  policy?: Policy;
+  secretValues?: readonly string[];
+  maxPolicyAttempts?: number;                     // 1-16, default 5
+  untrustedContextDefault?: UntrustedContextMode; // default 'allow'
+  acceptClockSkewMs?: number;                     // one-time override at startup, up to 24 hours
+  maxLedgerBytes?: number;                        // 1 MiB-64 MiB, default 16 MiB
+  maxRecords?: number;                            // default 10,000
+  maxReceiptsPerFamily?: number;                  // 1-4,096, default 64
+  maxApprovalsPerAction?: number;                 // 1-64, default 4
+  maxRecentEventsPerTenant?: number;              // 16-1,000, default 256
+  maxPendingActionsPerFamily?: number;
+  maxPendingBytesPerFamily?: number;
+  maxTasksPerFamily?: number;
+  maxTaskBytesPerFamily?: number;
+  decisionTraces?: DecisionTraceOptions;
+  inventory?: InventoryOptions;                   // experimental
+}
+```
+
+Differences from the guard:
+
+- Tasks and actions are named by ID. `createTask` returns the task ID and a
+  bearer token; give the agent only the token.
+- **Read the action back before a person approves it.** `preparedAction(actionId)`
+  returns the stored tool, arguments, resource and recipient from the ledger.
+  Show that to the reviewer, not a description supplied by the agent.
+- When a reviewer refuses, call `cancel(taskId, actionId)` so the action can never
+  run. `recordReviewDecision` only records the refusal.
+- `markSensitive` and the `provenance` argument of `createTask` let the host carry
+  the sensitive mark, and a link to the task the data came from, into a new task.
+- After a restart, budgets, revocations, marks and used approvals are kept. Tool
+  approvals and prepared actions are not: register and approve tools again.
+
+### Action states and receipts
+
+```text
+PREPARED -> RUNNING -> SUCCEEDED | FAILED | UNKNOWN
+```
+
+```ts
+type ExecutionStatus = 'PREPARED' | 'ADMITTED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN';
+interface ExecutionReceipt {
+  readonly id: string;
+  readonly status: ExecutionStatus | 'PRUNED';
+  readonly outcome?: 'SUCCEEDED' | 'FAILED'; // only when status is PRUNED, and absent once the stub is dropped
+  readonly charged?: number;
+  readonly reconciliation?: { readonly referenceHash: string; readonly time: number };
+}
+```
+
+- The approval, the budget reservation and the move to `RUNNING` are one ledger
+  transaction, written before the handler starts. `ADMITTED` stays in the type only
+  because ledgers written by the alphas can contain it.
+- Whatever a host handler throws, `execute` fails with `TOOL_FAILED` (the handler's
+  own safe code in `detail`), or with `EXECUTION_ABORTED` if the call was canceled,
+  revoked or past its deadline. The built-in tools keep their own codes.
+- If a host handler fails or the process stops after admission, the action is
+  `UNKNOWN`. The executor keeps the reservation and never retries. A built-in tool's
+  refusal that provably changed nothing settles as `FAILED` at no cost.
+- An operator settles an `UNKNOWN` action with `reconcile`, giving the real
+  outcome, the real cost and a reference to the evidence. `reconcile` also accepts
+  an action left `RUNNING` or `ADMITTED` with no handler in flight. An action can be
+  reconciled once.
+- A handler that returns after its task was canceled, revoked or expired is
+  recorded as `SUCCEEDED` and charged. `execute` fails with `EXECUTION_ABORTED`
+  and detail `EFFECT_COMMITTED`.
+- After a failed or lost `execute`, read `execution(taskId, actionId)` before
+  doing anything else. Starting a new action can repeat the effect.
+
+### HTTP task server
+
+`startExecutorServer({ executor, adminToken, operatorId, ... })` listens on
+`127.0.0.1` and returns `{ server, url, close }`. Every route is a `POST` with a
+JSON object body and `Authorization: Bearer <token>`. Requests from a browser
+(with an `Origin` header) are refused.
+
+Task routes take a task's token. The task is always the token's task.
+
+| Route | Body | Response |
+| --- | --- | --- |
+| `/v1/task/prepare` | `{ tool, args }` | the `PreparedAction` |
+| `/v1/task/execute` | `{ actionId, approvalId? }` | `{ value }` |
+| `/v1/task/snapshot` | `{}` | the `TaskSnapshot` |
+| `/v1/task/execution` | `{ actionId }` | the `ExecutionReceipt` |
+| `/v1/task/cancel` | `{ actionId }` | `{ cancellationRequested: true }` |
+| `/v1/task/delegate` | `{ options }` (`id`, `grants`, `budget`, `allowedRecipients?`, `allowControlPlane?`) | the child's `{ taskId, token }` |
+
+Administration routes take the `adminToken`.
+
+| Route | Body | Response |
+| --- | --- | --- |
+| `/v1/admin/create-task` | `{ options, provenance? }` | `{ taskId, token }` |
+| `/v1/admin/action` | `{ actionId }` | the stored action, as `preparedAction()` |
+| `/v1/admin/approve` | `{ actionId, expiresAt }` | `{ approvalId }` |
+| `/v1/admin/revoke` | `{ taskId }` | `{ revoked: true }` |
+| `/v1/admin/reconcile` | `{ actionId, outcome, actualCost, reference }` | `{ reconciled: true }` |
+| `/v1/admin/audit` | `{}` | recent events |
+
+The approver recorded by `/v1/admin/approve` is the server's `operatorId`. It
+cannot be set in the request.
+
+An error response is `{ "error": CODE, "retryable": boolean }`. `retryable` is
+true only when sending the same request again later cannot repeat an effect.
+
+One response adds a `detail`. When `/v1/admin/revoke` could not record the
+revocation in the ledger, it answers 503 with `"error": "OPERATION_FAILED"`,
+`"retryable": true` and `"detail": "REVOCATION_NOT_DURABLE"`. The task is denied
+in the running process, and the executor records the revocation with its next
+successful ledger write or when it closes. Repeat the request until it succeeds:
+if the process exits before any ledger write succeeds, the revocation is lost and
+the task is valid again after a restart.
+
+| Status | Meaning | Examples |
+| --- | --- | --- |
+| 400 | Malformed request | `REQUEST_INVALID`, `REQUEST_TOO_LARGE`, `REQUEST_TIMEOUT`, `INVALID_INPUT`, `ARGUMENT_INVALID` |
+| 401 | Missing or wrong token | `UNAUTHENTICATED` |
+| 403 | Not allowed | `GRANT_DENIED`, `APPROVAL_REQUIRED`, `TASK_REVOKED`, `CALL_BUDGET_EXCEEDED`, `REQUEST_DENIED` |
+| 404 | Unknown action, task or tool | `INVALID_PREPARED`, `INVALID_TASK`, `TOOL_UNKNOWN` |
+| 409 | State changed or already used | `ACTION_USED`, `POLICY_CHANGED`, `TOOL_CHANGED`, `APPROVAL_CONTEXT_CHANGED` |
+| 429 | Over a capacity limit | `REQUEST_RATE_LIMITED`, `CONCURRENCY_EXCEEDED`, `POLICY_BUSY`, `CAPACITY_EXCEEDED` |
+| 503 | Store, policy or tool failure | `TOOL_FAILED`, `EXECUTION_ABORTED`, `POLICY_ERROR`, `CLOCK_INVALID`, `OPERATION_FAILED` |
+
+The status of every guard code is in the [error catalog](errors.md).
+
+| Server limit | Default | Option |
+| --- | --- | --- |
+| Request body | 256 KiB | `maxRequestBytes` |
+| Request time | 10 s | `requestTimeoutMs` |
+| Open connections | 64 | `maxConnections` (1 to 4,096) |
+| Requests in flight | 32, of which an eighth (at least 1) is kept for admin routes | `maxActiveRequests` (1 to 1,024) |
+| Requests per minute per token | 600; an unknown token is refused before it is counted | `requestsPerMinutePerCredential` |
+| Requests per minute, all task tokens | 6,000; only authenticated task requests count, admin routes do not | `requestsPerMinute` |
+
+Every limit is checked before the ledger is read, so a token over its limit costs
+no ledger read.
+
+`ExecutorClient` is the matching client for an agent process. It has task
+operations only: `prepare(tool, args)`, `execute(actionId, { approvalId? })`,
+`snapshot()` and `execution(actionId)`. Its errors carry the same `code` and
+`retryable`.
 
 ### Governed memory
 
-These methods belong to the trusted `DurableExecutor` host. They are not model
-tools or task-client administration operations:
+Memory entries are stored in the ledger and read and written through two
+ordinary tools, so grants, tenants and approvals apply to them.
 
 ```ts
 importMemory(entry: {
   id: string; tenantId: string; origin: string; value: Json;
-  sensitive?: boolean; trusted?: boolean;
+  sensitive?: boolean; trusted?: boolean; untrusted?: boolean;
 }): void;
 registerMemoryTools(prefix?: string): Readonly<{ read: string; write: string }>;
 quarantineMemory(tenantId: string, entryId: string): void;
 rollbackMemory(tenantId: string, entryId: string, version: number): void;
 ```
 
-`registerMemoryTools()` defaults to the `memory` prefix and returns fingerprints,
-which the host must approve separately as `memory.read` and `memory.write`.
-Register and approve the tools again after reopening an executor. Grants name
-entry IDs; each lookup uses the task's authenticated tenant, so identical IDs in
-different tenants name different records. Delegated tasks use their inherited
-tenant and narrowed grants.
+`registerMemoryTools()` registers `memory.read` and `memory.write` (or another
+prefix) and returns their fingerprints for `approveTool`. Grants name entry IDs.
+Each lookup uses the task's own tenant, so the same ID in two tenants is two
+entries.
 
-| Tool           | Exact arguments            | Successful value from `execute()`                                                                        |
-| -------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `memory.read`  | `{ id }`                   | `{ id, tenantId, origin, value, version, sensitive, trusted, parentIds, quarantined: false, familyId? }` |
-| `memory.write` | `{ id, value, ifVersion }` | `{ id, version, sensitive, trusted: false }`                                                             |
+| Tool | Arguments | Result |
+| --- | --- | --- |
+| `memory.read` | `{ id }` | `{ id, tenantId, origin, value, version, sensitive, trusted, parentIds, quarantined: false, familyId? }` |
+| `memory.write` | `{ id, value, ifVersion }` | `{ id, version, sensitive, trusted: false }` |
 
-Extra argument fields are rejected. Use `ifVersion: 0` to create an entry and the
-current positive version to replace it. Reads and writes bind a version during
-preparation and check it again at execution. An unavailable/quarantined entry or
-stale version during preparation yields `RESOLUTION_FAILED`; an execution-time
-version change yields `MEMORY_VERSION_CHANGED`. A race with quarantine can yield
-`MEMORY_UNAVAILABLE`. These handler failures follow the durable executor's normal
-uncertain-result accounting; inspect the execution receipt and reconcile before
-retrying.
+- **Versions.** Use `ifVersion: 0` to create an entry and the current version to
+  replace it. The version is checked at `prepare` (`RESOLUTION_FAILED`) and again
+  at `execute` (`MEMORY_VERSION_CHANGED`).
+- **Sensitivity.** An import is sensitive unless the host says otherwise, and an
+  entry's sensitivity is never lowered. A write by a sensitive task family is
+  sensitive.
+- **Outside content.** An entry written by a family that had read outside
+  content, or imported with `untrusted: true`, carries the `untrusted` mark.
+  Reading it marks the reader's family.
+- **`trusted`** is a label for the host's own use. It grants nothing. Writes by
+  tools are never trusted.
+- **Quarantine** makes every version of an entry, and the entries derived from
+  it, unavailable in that tenant (`MEMORY_UNAVAILABLE`). It survives a restart
+  and cannot be undone by rollback.
+- **Rollback** adds a new version with the value of an old one. History is kept.
 
-Host imports append versions, default to sensitive and untrusted, and cannot
-lower an existing entry's sensitivity. Tool writes are always untrusted and
-inherit family sensitivity and known memory-read lineage. Neither text nor the
-`trusted` metadata field grants permission or approves an action. Route reuse
-through the governed read/import paths; unrelated raw copies do not acquire
-provenance automatically.
+| Memory limit | Value | Error |
+| --- | --- | --- |
+| One value | 64 KiB of JSON | `MEMORY_LIMIT` |
+| Versions per entry | 128 | `MEMORY_LIMIT` |
+| Writes per task family | 256 | `FAMILY_MEMORY_LIMIT` |
+| Stored bytes per task family | 512 KiB | `FAMILY_MEMORY_LIMIT` |
 
-Quarantine marks all versions of the named entry and its known descendants in
-that tenant unavailable. It persists across reopening. Rollback appends a new
-version with the selected old value; it preserves all known parent IDs and never
-lowers sensitivity. A missing or quarantined rollback source yields
-`MEMORY_UNAVAILABLE`. Rollback cannot undo quarantine; a deliberate host import
-can append a replacement record, so the operator must separately review its
-content and provenance. History remains encrypted and retained rather than erased.
+### Audit events, decision traces and retention
 
-Values are limited to 64 KiB of canonical JSON, each entry to 128 versions, and
-task-family memory history to 256 writes and 512 KiB of stored records. The host's
-configured record limit also bounds the number of entries. Exhaustion yields
-`MEMORY_LIMIT` or `FAMILY_MEMORY_LIMIT`; it does not silently drop history. See the
-[executor guide](../packages/executor/README.md) for source-task handoffs and
-reconciliation.
+`audit({ tenantId? })` returns recent events, oldest first:
 
-### Durable receipts and recent events
+```ts
+interface AuditEvent {
+  time: number;
+  event: string;
+  sequence?: number; // strictly increasing
+  tenantId?: string;
+  taskId?: string;
+  actionId?: string;
+}
+```
 
-`execution(taskId, actionId)` returns the action's status. Settled receipts are
-kept per task family (`maxReceiptsPerFamily`, default 64). Shared count and byte
-caps then remove receipts from the family with the most retained receipts,
-oldest first, so one tenant's traffic does not evict another tenant's receipts.
-Pruning runs on the next preparation, approval or task creation.
+It is a window, not a full history. To keep everything, poll it, store the events
+elsewhere and treat a gap in `sequence` as lost events. Decision traces
+(`decisionTraces`, `decisionTraceSnapshot`, `exportDecisionTraces`) are a second,
+optional stream without raw identifiers; see the
+[decision traces guide](guides/decision-traces.md). The
+[audit log guide](guides/audit-log.md) compares the options.
 
-A pruned settled receipt returns `{ id, status: 'PRUNED', outcome, charged?,
-reconciliation? }`, where `outcome` is `SUCCEEDED` or `FAILED`. Treat it like the
-outcome: it is not an unknown effect, and it never permits a retry. These stubs
-are bounded (256 per family, 1,024 in total, busiest family trimmed first). Once a
-stub is gone too, the call returns `INVALID_PREPARED`, as before. Archiving a
-family moves its stubs into the encrypted archive. Expired or invalidated
-preparations are deleted without a stub.
+| Kept | Limit | What happens at the limit |
+| --- | --- | --- |
+| Audit events per tenant | `maxRecentEventsPerTenant`, default 256 | The oldest are dropped. |
+| Audit events in total | 1,000 | The busiest tenant is trimmed first. |
+| Settled receipts per task family | `maxReceiptsPerFamily`, default 64 | The oldest become `PRUNED` stubs that keep `outcome` and `charged`. |
+| Settled receipts per tenant | 256, or `maxReceiptsPerFamily` if that is larger | The same. |
+| `PRUNED` stubs | 256 per family, 1,024 per tenant, 4,096 per ledger at the default ledger size | The oldest are dropped; `execution()` then returns `status: 'PRUNED'` without `outcome` or `charged` while the action's settlement event is still in the audit window, and fails with `INVALID_PREPARED` after that. |
+| Ledger size (decoded) | `maxLedgerBytes`, default 16 MiB | Calls that add state fail with `STORE_CAPACITY_EXCEEDED` (`detail: 'SOFT_LIMIT'`) once the ledger would pass `maxLedgerBytes` minus a reserve of one eighth, at most 1 MiB. Revoke, cancel, settlement and `reconcile` use the reserve; if that is full too, they drop the oldest half of the audit events. Receipts, budgets and reservations are never deleted. |
 
-`audit({ tenantId? })` returns recent metadata events, not a complete history.
-Each tenant keeps at most `maxRecentEventsPerTenant` events (16–1,000, default
-256). Host events without a tenant share their own bucket. The total stays at
-1,000, trimmed from the busiest tenant first. Events carry a strictly increasing
-`sequence`. A host that needs a durable audit trail polls and exports events, and
-treats a sequence gap as evicted events. Events recorded before this version have
-no `tenantId` or `sequence`.
+A tenant's traffic removes only that tenant's oldest entries. When a
+ledger-wide limit is reached, the tenant holding the most loses its oldest. The one
+exception is the full reserve described above, which drops audit events of every
+tenant.
 
-The new ledger fields are additive. Older executors ignore them, so no schema
-change is needed.
+A `PRUNED` receipt is a settled result. It never means the outcome is unknown and
+never permits a retry. Budgets and unresolved reservations are always kept.
 
 ### Task-family retirement and archival
 
-The following `DurableExecutor` methods are host-only. They add no task/admin HTTP
-routes. An application must authenticate its maintenance operator and choose the
-authorized tenant before calling them:
+These host-only methods free ledger space for finished work. They have no HTTP
+routes. Authenticate the operator and choose the tenant before calling them.
 
 ```ts
 previewTaskFamilyRetirement(scope: { tenantId: string; taskId: string }): TaskFamilyRetirementPreview;
@@ -321,598 +902,114 @@ retireTaskFamily(scope: { tenantId: string; taskId: string; expectedDigest: stri
 archiveTaskFamily(scope: { tenantId: string; taskId: string; expectedDigest: string }): TaskFamilyArchiveReceipt;
 verifyTaskFamilyArchive(scope: { tenantId: string; archiveId: string }): TaskFamilyArchiveReceipt;
 findTaskFamilyArchive(scope: { tenantId: string; taskId: string }): TaskFamilyArchiveReceipt | null;
-listExecutions(scope: {
-  tenantId: string; statuses?: readonly ExecutionStatus[]; limit?: number; cursor?: string;
-}): ExecutionList;
+listExecutions(scope: { tenantId: string; statuses?: readonly ExecutionStatus[]; limit?: number; cursor?: string }): ExecutionList;
 maintenanceStatistics(scope: { tenantId: string }): MaintenanceStatistics;
 ```
 
-The preview selects the **whole family**, including delegated tasks and linked
-root handoffs, from any member's task ID. It returns `tenantId`, `taskId`,
-`familyId`, ledger `revision`, `reviewDigest`, `retired`, bounded `counts`,
-`retirementBlockers` and `archiveBlockers`. Counts cover tasks, retained actions,
-prepared/unresolved actions, memory entries and memory versions. Arguments, bearer
-hashes, memory values and encryption keys are absent. The digest is bound to this
-executor instance, exact scope and ledger revision. Any intervening ledger write
-or process restart invalidates it with `LIFECYCLE_PREVIEW_STALE`. The host should
-also impose its own review expiry and user binding.
+1. **Preview.** Pass any task of the family. The preview covers the whole family
+   and returns counts, `retirementBlockers`, `archiveBlockers` and a
+   `reviewDigest`. It contains no arguments, memory values or keys.
+2. **Retire.** Pass the digest back as `expectedDigest`. Any ledger write or
+   restart since the preview fails with `LIFECYCLE_PREVIEW_STALE`. Retirement
+   revokes every task, cancels prepared actions and quarantines the family's
+   memory. It refuses while work is admitted, running or `UNKNOWN`
+   (`FAMILY_UNRESOLVED_WORK`, `FAMILY_ACTIVE_WORK`); reconcile first.
+3. **Archive.** Preview again, then archive. The family's records move into one
+   encrypted archive inside the ledger and leave the live state. A family that is
+   not retired fails with `FAMILY_NOT_RETIRED`. A family whose memory or tasks
+   are referenced by another family fails with `FAMILY_EXTERNAL_REFERENCE`.
+4. **Verify.** `verifyTaskFamilyArchive` decrypts and checks the archive and
+   returns its receipt. `findTaskFamilyArchive` finds the receipt from any task
+   ID of the family, which lets the host recover if it crashed before saving it.
 
-Retirement refuses `ADMITTED`, `RUNNING` or `UNKNOWN` effects, active handlers and
-outstanding reservations (`FAMILY_UNRESOLVED_WORK` / `FAMILY_ACTIVE_WORK`). It does
-not reconcile or refund work. On success, one transaction revokes every family
-member, cancels prepared actions as zero-cost failures, quarantines the family's
-known memory and descendants, and records retirement. Waiting policy evaluations
-are canceled; ignored cancellation cannot produce a later dispatch. Request a
-fresh preview after retirement before archiving.
+An archived task ID can never be used again in that ledger (`DUPLICATE_TASK`),
+and an archived memory ID cannot be recreated in its tenant. Old tokens stay
+invalid. Archiving frees live capacity; it does not erase data.
 
-Archival requires explicit retirement (`FAMILY_NOT_RETIRED`) and repeats every
-check in the commit transaction. Cross-family task references, other families'
-recorded reads/derived memory, and mixed ownership of one memory history yield
-`FAMILY_EXTERNAL_REFERENCE`. Shared references are never silently detached. An
-independent reader family can be retired/archived before its source family;
-cycles or mixed histories remain blocked. Use linked handoffs for work whose
-provenance and lifetime should remain one family.
+| Archive limit | Value |
+| --- | --- |
+| Archives per ledger | 4,096 |
+| Archived task and memory IDs | 65,536 |
+| Archive ciphertext in total | 256 MiB |
+| One archive, decoded | 16 MiB |
 
-The archive retains the available task budgets, counters, revocation and ancestry,
-family labels, actions/arguments, approval records, memory and relevant retained
-audit events. Previously pruned history is not reconstructed. A fresh random key
-encrypts each archive with AES-256-GCM; that key and the exact ciphertext digest
-remain inside the main encrypted, authenticated ledger. The archive blob,
-catalog, non-reuse markers and removal of live records commit in the same SQLite
-transaction, including the rollback witness when enabled. Failure leaves live
-authority intact. Outer ledger-key rotation preserves existing archives; future
-archives receive independently generated keys.
-
-Receipts contain identity, timestamps, counts, ciphertext SHA-256/byte length and
-decimal-string root usage totals (`rootUsage.calls` / `spent`), without private
-contents or keys. `verifyTaskFamilyArchive()` authenticates and decrypts the blob
-internally before returning its receipt. Missing/substituted evidence fails closed
-(`STORE_ARCHIVE_UNAVAILABLE` / `ARCHIVE_INVALID`). `findTaskFamilyArchive()` finds
-and verifies a receipt from **any original member ID**, or returns `null` for an
-unknown/foreign tenant scope. Use it to recover after the SDK archive committed
-but the application did not yet save its business receipt. The application must
-keep its own backend operation/receipt mapping and make that final update idempotent.
-
-Archived task IDs can never be reused in this ledger, even under another tenant
-(`DUPLICATE_TASK`). Archived memory names cannot be recreated in their original
-tenant (`MEMORY_UNAVAILABLE`); new names or a separate tenant remain possible.
-Old task credentials and artifact provenance cannot regain authority. Ordinary
-task snapshots, execution lookup and inventory no longer expose archived records.
-The archive APIs expose only bounded receipt metadata.
-
-Limits are **4,096 archives**, **65,536 combined task/memory non-reuse markers**,
-**256 MiB of archive ciphertext**, and **16 MiB of decoded state per archive**.
-The main ledger's configured bound still applies and may be reached sooner.
-`ExecutorOptions.maxLedgerBytes` defaults to 16 MiB and accepts safe integers
-from 1 MiB through 64 MiB. It bounds decoded snapshot bytes rather than SQLite
-file size; opening a larger retained snapshot under a smaller limit fails before
-recovery mutation. Increasing it does not change archive or record-count bounds.
-Neither archives nor markers are automatically evicted. Exhaustion rejects with
+Nothing is evicted at these limits. Further archives fail with
 `ARCHIVE_CAPACITY_EXCEEDED`, `STORE_ARCHIVE_CAPACITY` or
-`STORE_CAPACITY_EXCEEDED`, without deleting live state. Logical live-record
-capacity is reclaimed; this is not secure erasure, unlimited retention or an
-automatic authority reset. Keep the main ledger, archives and independent witness
-within the documented backup/custody procedure.
+`STORE_CAPACITY_EXCEEDED`, and live state is left alone. To move finished
+single-task families out of the ledger into files you own, see the
+[company history guide](guides/company-history.md).
 
-The Agent Ops [reviewed company-history profile](guides/company-history.md) can
-export authenticated single-root ticket families to immutable encrypted segments
-before removing their local archive rows. Permanent namespace fences preserve
-task-ID non-reuse; legacy IDs and unresolved sequence gaps retain individual
-markers. This internal offline protocol is not a general SDK compaction API:
-delegated or memory-bearing families remain subject to the limits above.
-`findTaskFamilyArchive()` reports `ARCHIVE_EXPORTED` for an exported identity;
-the host's history lookup verifies its external evidence. Lifecycle authority
-changes use ledger schema 2, which older schema-1-only binaries must reject.
-Schema-3 stores with native recovery mirroring keep that stronger format through
-all lifecycle mutations; history mirroring never downgrades them to schema 2.
+`listExecutions` returns `UNKNOWN` actions by default, 25 per page and at most
+100, without arguments or results. If the ledger changes between pages the cursor
+fails with `LIFECYCLE_CURSOR_STALE`; start again from the first page.
 
-Execution listing defaults to `UNKNOWN`, with 25 items and a maximum of 100.
-Valid status filters use `ExecutionStatus`; results contain action/task IDs, tool,
-status, charged cost when present and `reservedMaximum`, never arguments/results.
-`nextCursor` is authenticated and bound to tenant, filter, process and revision.
-Mutation yields `LIFECYCLE_CURSOR_STALE`; refresh from the first page instead of
-silently skipping work. Invalid/mismatched cursors yield `LIFECYCLE_CURSOR_INVALID`.
-Statistics expose the selected tenant's live/retired/archive counts plus
-the fixed global retention limits and deployment-wide `ledgerBytes` and
-`ledgerByteLimit`. These byte fields describe the decoded live snapshot, not
-SQLite or external-history disk usage. Maintenance reference scans stop at 100,000
-records with `LIFECYCLE_LIMIT_EXCEEDED`; they never return a partial safe preview.
+### Inventory (experimental)
 
-### Executor inventory (experimental)
+`@shieldaai/agent-guard-executor/inventory` exports a read-only description of
+the tasks, tools and grants in a ledger, for [Agent Map](#agent-map-shieldaaiagent-map).
+It can change in a minor release.
 
-The optional executor package exposes `inventorySnapshot({ tenantId })` only on
-the trusted `DurableExecutor` host object. Enable it with constructor
-`inventory: { companyId, sourceId, enrollmentGeneration, referenceMode? }`.
-`referenceMode` defaults to `opaque`; `raw` is an explicit host choice for reviewed
-non-secret resource aliases and recipients. This does not add a task/admin HTTP
-route or an `ExecutorClient` operation. The host must select the authorized tenant.
+| Export | Purpose |
+| --- | --- |
+| `executor.inventorySnapshot({ tenantId })` | One tenant's tasks, grants and tools. Needs the `inventory` constructor option. |
+| `startInventoryServer`, `createInventoryObserverToken` | A separate loopback listener with one route, `POST /v1/inventory/snapshot`, and its own tokens. |
+| `validateInventoryManifest`, `loadInventoryManifestFile`, `composeInventorySnapshot` | Add a host manifest: the agents, owners and deployments a person declared. |
+| `validateMcpConnectionInventory`, `validateMcpInventorySources`, `composeMcpInventorySnapshot` | Add observations from `ManagedMcpConnection.inventory()`. |
 
-The readonly `InventorySnapshot` implements the
-[version-1 core schema](../schemas/agent-guard-inventory-v1.schema.json). It contains
-all live-ledger tasks in the tenant, normalized grants and referenced tool records,
-including revoked/expired tasks and unavailable handlers. Delegation and provenance
-are separate edges. Tool fingerprint strings are bare SHA-256 hex; unavailable
-definition flags are `null`. Other enrichment coverage is `not_collected`.
+A snapshot is complete or it fails; it is never truncated. Reading it runs no
+policy or tool callback and changes no ledger state. Errors use `INVENTORY_*`
+codes and contain no source values.
 
-When any tool declares an outside-content label (`readsUntrusted`, `untrustedContext`,
-`sendsExternal`) or any task family is `untrusted`, the snapshot uses the
-[version-2 schema](../schemas/agent-guard-inventory-v2.schema.json) instead: every task
-adds `untrusted`, and every tool adds the three labels, `null` when undeclared or
-unregistered. A v2 snapshot also carries `untrustedContextDefault`, the executor's mode
-for tools that set none, so a reader can work out each tool's effective mode. v2 is a
-`$ref` envelope over v1; every other shape is unchanged. A
-collector that only knows v1 refuses v2 rather than dropping the fields. Without
-those labels the output is exactly v1. A host snapshot composed with a
-[manifest v3](../schemas/agent-guard-inventory-manifest-v3.schema.json) is always v2,
-since only the v2 schema accepts that manifest; the lifted fields are `untrusted: false`
-and `null` labels.
+The file formats are described in
+[Inventory formats](agent-cartography-contract.md). Options, limits and the
+observer's HTTP behavior are in the
+[executor README](../packages/executor/README.md).
 
-Manifest v3 is manifest v2 plus a required `directAccess` list: paths the host says
-act without the guard. Each entry has an opaque `id`, a declared `deploymentId`, a
-`kind` (`shell`, `database`, `network`, `sdk`, `mcp` or `other`), an opaque
-`targetRef` or `null`, and a `description` of at most 1,024 characters. At most 32
-entries per deployment and 1,000 in total. `[]` means the host declared none; the
-map reports it as `none_declared`, never as checked or safe.
+## Scenarios: `@shieldaai/agent-guard-scenarios`
 
-One synchronous ledger read produces an immutable, detached snapshot. Export does
-not run authorization callbacks or change ledger revision, budgets, approvals or
-audit. Observation timestamps use wall time, independent of the execution clock.
-The random ledger identity persists across restarts and additive schema-1 migration;
-the snapshot ID changes per export. Rotate enrollment after restore/clone, key
-changes or reference-mode changes. See the
-[executor guide](../packages/executor/README.md#inventory-for-the-trusted-host) for
-data minimization, limits and lifecycle requirements.
+```ts
+function runConformance(options?: ConformanceOptions): Promise<ConformanceReport>;
+const scenarioCatalog: readonly ScenarioDefinition[];
+const SCENARIO_CATALOG_VERSION: '1.3.0';
 
-| Error code                 | Meaning                                                      |
-| -------------------------- | ------------------------------------------------------------ |
-| `INVENTORY_DISABLED`       | No inventory enrollment configured.                          |
-| `INVENTORY_CONFIG_INVALID` | Invalid enrollment or reference mode.                        |
-| `INVENTORY_SCOPE_INVALID`  | Missing/invalid tenant or attempted filtering.               |
-| `INVENTORY_STATE_INVALID`  | State cannot be represented by the inventory contract.       |
-| `INVENTORY_LIMIT_EXCEEDED` | Complete output exceeds a record, work or byte limit.        |
-| `INVENTORY_CLOCK_INVALID`  | Observation time cannot be encoded as a valid UTC timestamp. |
+interface ConformanceOptions {
+  scenarioIds?: readonly ScenarioId[]; // 'S01' to 'S13'; default all
+  caseTimeoutMs?: number;              // per case; default 5,000
+  createGuard?: (options: GuardOptions) => GuardLike; // default: new AgentGuard(options)
+}
+interface ConformanceReport {
+  catalogVersion: string;
+  passed: boolean;
+  scenarioCount: number;
+  caseCount: number;
+  passedCases: number;
+  failedCases: number;
+  results: readonly ConformanceCaseResult[];
+}
+interface ConformanceCaseResult {
+  scenarioId: ScenarioId;
+  variant: 'malicious' | 'benign'; // the hostile case and the ordinary case
+  passed: boolean;
+  assertions: number;
+  handlerInvocations: number;
+  denialCodes: readonly string[];
+  failure?: string;
+}
+```
 
-Store errors such as `STORE_CLOSED` or `STORE_CORRUPT` are preserved. Error messages
-contain stable codes, not source values. Failure never returns a truncated snapshot.
+`GuardLike` is the subset of `AgentGuard` the scenarios call: `registerTool`,
+`approveTool`, `createTask`, `delegateTask`, `revokeTask`, `setPolicy`, `prepare`,
+`approve`, `execute` and `snapshot`. The catalog has its own version, so compare
+two reports by `catalogVersion`. [Scenarios](scenarios.md) describes each case and
+how to run them against your own integration.
 
-### Observer HTTP (experimental)
+## Agent Map: `@shieldaai/agent-map`
 
-`startInventoryServer({ executor, observers, ...limits })` returns a loopback `url`,
-the Node `server` and an idempotent async `close()`. Each `InventoryObserverCredential`
-has an independent `token` from `createInventoryObserverToken()`, fixed `tenantIds`
-and optional host-selected `profile: 'core' | 'host' | 'host-mcp'` (default `core`). A host
-credential requires a valid entry in `manifests` for every permitted tenant. The sole route is
-`POST /v1/inventory/snapshot`, with `Authorization: Bearer agi_v1.…` and exactly
-one JSON property, `tenantId`. The tenant must be enrolled for that credential;
-task filters and profile overrides are invalid. Configuration is detached at
-startup and cannot be changed by a request.
+Agent Map is an experimental, read-only service that answers questions about an
+inventory of agents: which agents exist, what they can reach and what changed. It
+reads inventory that the Cartography collector has loaded into Neo4j. It never
+authorizes or runs a call, and it is outside the compatibility promise.
 
-The optional trusted-host `workerScheduling` setting is `'default'` (unchanged
-native priority) or `'linux-background'`. The latter requires Linux and verifies
-the worker's own native thread before lowering its priority by up to five nice
-levels (`min(19, initial nice + 5)`); no raised priority or `CAP_SYS_NICE` is required. Exact native
-identity and priority readback must succeed before the listener starts, otherwise
-startup fails with `INVENTORY_SCHEDULING_UNAVAILABLE`. Concurrent listeners sharing
-an executor must agree on the policy; conflicts fail with the same code, and
-replacement workers retain the selected policy. This does not assign a guaranteed
-priority to V8 helper/GC threads or guarantee latency. Caller-selected PIDs and
-priority values are not accepted, and no scheduling metadata is exposed by HTTP.
-Non-Linux hosts retain default behavior and refuse the explicit Linux policy.
-
-Success returns the complete `InventorySnapshot` directly with an exact encoded
-content length and `Cache-Control: no-store`. The listener authenticates independently
-of task/admin HTTP and exposes no authority mutations. Its default limits are 16 KiB
-request bodies, 8 MiB responses, a 10-second deadline, four active requests,
-32 connections and 60 attempts per credential per minute, plus a global quota.
-See the [observer guide](../packages/executor/README.md#observer-http-transport)
-for configurable bounds, strict parsing and remote TLS bridge requirements.
-
-| HTTP status | Error codes                                                                     |
-| ----------- | ------------------------------------------------------------------------------- |
-| 400         | `REQUEST_INVALID`                                                               |
-| 401         | `UNAUTHENTICATED` (Bearer challenge; no credential details)                     |
-| 403         | `REQUEST_DENIED`, `INVENTORY_SCOPE_DENIED`                                      |
-| 408         | `REQUEST_TIMEOUT`                                                               |
-| 413         | `REQUEST_TOO_LARGE`, `INVENTORY_RESPONSE_TOO_LARGE`, `INVENTORY_LIMIT_EXCEEDED` |
-| 429         | `INVENTORY_RATE_LIMITED`, with `Retry-After`                                    |
-| 431         | `REQUEST_TOO_LARGE` for parser header overflow                                  |
-| 503         | `INVENTORY_BUSY`, `INVENTORY_UNAVAILABLE`, or a safe exporter availability code |
-
-Errors are bounded `{ "error": "CODE" }` JSON without task data. Store and unexpected
-internal failures map to `INVENTORY_UNAVAILABLE`. Startup validation uses
-`INVENTORY_SERVER_CONFIG_INVALID`; socket bind failures retain Node's error code.
-Slow/disconnected sockets may close without a body. Deadlines are checked after
-synchronous generation and serialization before success; they cannot interrupt
-JavaScript work. Snapshot byte-limit failures send no partial snapshot. A collector
-must reject incomplete responses and unexpected redirects.
-
-### Host manifest (experimental)
-
-`validateInventoryManifest(value: unknown): InventoryManifest` returns a detached,
-deeply frozen configuration. The standalone
-[manifest schema](../schemas/agent-guard-inventory-manifest-v1.schema.json) is closed
-at every level. Its envelope is `{schemaVersion: 1, evidenceKind: 'host_asserted',
-source, manifestId, revision, observedAt, agents, deployments, taskBindings,
-resourceBindings, executionBindings}`. The full source tuple fixes company,
-installation, enrollment, ledger instance and tenant. Bindings use exact task IDs,
-deployment IDs, tool names and exported resource references; local wildcards cannot
-be bound to external resources. Resource kinds/scopes and actions are explicit.
-Static execution identities require a supported exact AWS ARN, while dynamic and
-unknown selection require `identity: null`.
-
-`composeInventorySnapshot(core: InventorySnapshot, manifest: InventoryManifest):
-HostInventorySnapshot` validates both inputs, checks source equality and referenced
-entities, and returns `profile: 'host'` with the manifest and complete manifest
-coverage. It assigns a fresh snapshot ID/time while preserving every core task,
-tool, grant, budget, counter, authority revision and component capture timestamp.
-Unassigned tasks remain present. The manifest's separate observation time/revision
-does not claim an atomic snapshot or grant runtime permissions.
-
-The observer composes its own fresh executor snapshot with its startup-validated
-manifest only for host-profile credentials. Requests cannot supply or override a
-manifest. Core-profile credentials never receive host metadata. Invalid runtime
-bindings fail the host request with a safe availability error; they do not disable
-core observation or mutate authority. Manifests are configuration outside the
-ledger. Replace the observer to install an updated version.
-
-`loadInventoryManifestFile(path: string): InventoryManifest` (from
-`@shieldaai/agent-guard-executor/inventory`) reads one manifest from a private file and
-returns the result of `validateInventoryManifest`. The path must be absolute and come from
-host configuration. The file must be a regular file with one link, owned by the process
-user, with no group or other permission bits, at most 2 MiB of UTF-8 JSON with no
-duplicate object member; a symbolic link is refused. It is read once, synchronously, at
-the call: later edits need a host restart. File problems throw
-`INVENTORY_MANIFEST_FILE_INVALID`; a platform without POSIX ownership and permissions
-throws `INVENTORY_MANIFEST_FILE_UNSUPPORTED`; content problems keep the validation codes
-below. No message includes file content.
-
-Manifest validation uses `INVENTORY_MANIFEST_INVALID`,
-`INVENTORY_MANIFEST_LIMIT_EXCEEDED`, `INVENTORY_MANIFEST_REFERENCE_INVALID` and
-`INVENTORY_MANIFEST_SOURCE_MISMATCH`. Invalid core input uses
-`INVENTORY_SNAPSHOT_INVALID`; combined-output limits use
-`INVENTORY_LIMIT_EXCEEDED`. All messages omit source values. See the
-[host binding guide](../packages/executor/README.md#host-owned-manifest-and-bindings)
-for supported reference syntax, numeric/size limits and enrollment lifecycle.
-
-### MCP inventory (experimental)
-
-`ManagedMcpConnection.inventory(): McpConnectionInventory` exposes a closed
-version-1 observation: host identity with opaque transport reference, manager
-session ID, inventory revision, authorization epoch, descriptor metadata revision,
-state, metadata state, observation time and bounded operations. Only `ready`
-has current operations; all other states have an empty list. This synchronous
-method does not consult the transport, authorization, policies or resolvers.
-
-The executor exports `validateMcpConnectionInventory`, `validateMcpInventorySources`
-and `composeMcpInventorySnapshot(host, sources): McpInventorySnapshot`.
-Sources have exact `{tenantId, connectionId, source: {inventory()}}` configuration.
-The `host-mcp` profile requires a manifest and `mcp: {observedAt, connections}`.
-Each expected connection is either `{connectionId, status: 'observed', inventory}`
-or `{connectionId, status: 'unavailable', reason}`. Reasons are `missing`,
-`capture_failed`, `changed`, `scope_mismatch` or `registration_mismatch`.
-Coverage records complete/partial/unavailable observations with their own time.
-
-Composition validates the host envelope, reads only bound sources in the tenant,
-checks before/after observations and matches exported operations to registered
-core tool fingerprints. It preserves all authority fields. Optional failures
-omit current operation evidence; no previous ready registry is carried forward.
-The HTTP `mcpSources` option captures host readers at startup and is used only by
-`host-mcp` credentials. See the [composition guide](../packages/executor/README.md#mcp-inventory-composition)
-for bounds and the [connection schema](../schemas/agent-guard-mcp-inventory-v1.schema.json)
-for the full allowlist.
-
-### Published packages
-
-- `@shieldaai/agent-guard`: core above.
-- `@shieldaai/agent-guard-mcp`: thin registered-tool adapter for a host-supplied MCP client, without a separate policy engine or automatic metadata approval.
-- `@shieldaai/agent-guard-scenarios`: versioned scenario catalog plus executable conformance checks over the public core API. Synthetic effects only.
-- `@shieldaai/agent-guard-executor`: experimental durable executor with an encrypted ledger, task and inventory HTTP servers, and Docker workload isolation.
-- `@shieldaai/agent-map`: experimental read-only reference service over Cartography inventory.
-
-The trusted resolver runs during preparation. Execution checks its bound resource and tenant context; it does not query changing ownership again. A handler/resource service must revalidate mutable ownership or resource versions before performing an effect.
-
-Each normalized JSON value is limited to 1 MiB of canonical UTF-8 JSON, 100,000 nodes and 64 levels of depth. Bytes are counted during traversal, including escaped strings, keys and punctuation, so oversized inputs are rejected before constructing their complete serialization. The limit applies to complete request/result envelopes, metadata and other normalized structures, including the prepared-action digest envelope. Leave room for enclosing fields when sizing payloads. A malformed or oversized handler result produces `RESULT_INVALID`, charges the declared maximum and revokes that task; the operation may already have performed an effect.
-
-## Optional inventory reference service
-
-`@shieldaai/agent-map` consumes published Cartography inventory independently of
-executor admission. Its [public contract](../packages/agent-map/README.md) defines
-twelve read-only operations, shared by `POST /v1/query` and the official SDK MCP
-endpoint at `POST /mcp`. The host maps distinct `agm_v1` credentials to immutable
-company, tenant and team scope; request arguments cannot select a broader scope.
-The local viewer uses the same operations and retains its credential only in
-page memory.
-
-Neo4j reads use fixed parameterized templates, property/relationship allowlists,
-visibility filtering before materialization, explicit bounds and a publication
-pointer recheck. Hidden and absent entities return the same lookup error. Team
-responses omit source-wide revisions and hidden delegation/family identifiers;
-shared graph nodes do not grant visibility to their other neighbors. Snapshot
-comparisons apply the same scope to historical evidence and expose retention
-gaps. Arbitrary Cypher, database procedures, mutations, executor dispatch and
-subscription methods are unavailable through this interface.
-
-Two of the operations are discovery leads for a reader with `allTeams: true`.
-`list_undeclared_activity {sourceId, kind?, offset?, limit?}` lists the tasks or caller
-principals of one source that no manifest task binding assigns to a declared agent, and
-`get_inventory_health` reports their count per source as `undeclaredActivity`.
-`list_unclaimed_identities {offset?, limit?}` lists the IAM roles and users of the
-enrolled AWS collections whose exact ARN no declared execution binding names, as
-candidates with `assessment: unknown`. A missing, stale or inconsistent collection reads
-`unknown` and lists nothing. Both use their own bounded store reads, load no graph
-nodes, and are subject to the same publication recheck. A team-scoped reader receives
-`{visibility: 'all_teams_required', status: 'not_visible', note}` with no names and no
-counts, and the store is not read. A failed count leaves `get_inventory_health`
-answering with `undeclaredActivity.status: 'unknown'`. Neither operation creates an
-agent or affects admission. The [package contract](../packages/agent-map/README.md#discovery)
-has the fields and limits.
-
-Every access result remains evidence: matching a grant or an exact cloud binding
-does not establish effective permission. Explanations preserve unknown live
-policy, arguments, approvals, backend authorization and out-of-scope ancestry.
-The reference service remains optional and experimental. Company browser access
-uses a separate `startMapIdentityServer` HTTPS boundary and the same `MapService`.
-The [identity guide](../deployment/cartography/IDENTITY.md) documents its private
-launcher and deployment contract. An exact issuer/client and verified signed
-subject select a host-defined `ReadScope`; provider groups/email/team claims never
-create scope. The host binding's `subject` is the issuer subject; `scope.subject`
-may be an explicit internal reader alias. Every binding must match the configured
-company. Request arguments, proxy identity headers and bearer credentials cannot
-override this mapping.
-
-GET `/auth/session` returns the explicit authentication mode. The bearer listener
-returns only `{mode: 'bearer'}`. The HTTPS listener returns `mode: 'oidc'`,
-`authenticated`, a session-bound CSRF token and an ISO expiry time. It sets opaque
-Secure/HttpOnly/host-only cookies; it never returns provider tokens or claims.
-POST `/auth/login`, `/auth/logout` and `/v1/query` require the same Origin, session
-cookie and `X-CSRF-Token`. Login/logout accept only `{}`; query retains the existing
-operation envelope. Login returns the configured provider's authorization URL;
-GET `/auth/callback` consumes a browser-bound one-use PKCE/state/nonce transaction,
-rotates the session and redirects only to `/` or `/?auth_error=1`. Cookie-based
-MCP and caller-selected redirects are unavailable.
-
-Sessions expire within fifteen minutes and no later than the ID token, with
-monotonic deadlines as well as wall-clock checks. Login/anonymous sessions last
-at most five minutes. `replaceBindings`, `revokeSubject` and `invalidateSessions`
-are trusted-host methods, never HTTP routes; each invalidates all sessions and
-pending logins, including results of in-flight queries. Logout affects only the
-local browser session. Restart reloads private configuration and drops all
-sessions. There is no provider refresh token, distributed session store, or IdP
-global logout. Existing bearer HTTP/MCP behavior remains a separate local boundary.
-
-The isolated [pilot tooling](../deployment/cartography/RUNBOOK.md) now exercises
-real collection, scoped HTTP reads, private backup and fresh-graph reconstruction,
-and executor admission while the graph/observer/reference processes are stopped.
-Reconstruction preserves logical entity/source/snapshot identity and regenerates
-physical projection IDs into a new working archive. It refuses an occupied Guard
-graph and never reads or restores authority-ledger files. Packaged operational
-reports retain only bounded per-label difference counts and opaque graph IDs for
-30 days with pruning on each report write. Operators must apply retention cleanup
-if reporting stops. Reports are neither raw inventory exports nor complete execution logs.
-The corrected pilot admission stress benchmark passed its provisional latency
-target after bounded per-snapshot reference caching; representative deployment
-measurements remain required.
-Organization-specific SSO/TLS, live cloud-account validation and rollout review
-remain explicit deployment gates.
-
-The Python collector's optional `--aws-enrollment` mode captures metadata for one
-explicit commercial account, checking STS account and exact caller ARN before
-inventory reads. It requires three named temporary credential values and uses
-five fixed read APIs with bounded HTTPS responses, pagination and a process
-deadline. It exports only allowlisted IAM role/user and general-purpose S3 bucket
-identity/region metadata by default. A separate `includeIamPolicyEvidence: true`
-enrollment flag permits bounded `GetAccountAuthorizationDetails` collection and
-minimized S3 candidate edges. See the [AWS guide](../deployment/cartography/AWS.md) for the config and
-operational limits.
-
-One atomic graph transaction updates canonical provider metadata and scoped
-`GuardAwsCollection`/`G_AWS_OBSERVED` membership. Failure leaves the last complete
-capture unchanged. Missing members become unresolved without deleting shared
-provider nodes; managed joins independently check capture freshness and provider
-consistency before Guard publication. Legacy unmanaged provider joins retain
-their existing rules. AWS refresh runs within the existing observer lock owner
-on a separate monotonic cadence, with safe failure output and continued Guard
-polling. This remains inventory evidence and never participates in admission.
-
-Opt-in `policyEvidence` carries schema/mapping version, a census digest, bounded
-counts, per-principal status and candidate relationships for the three packaged
-S3 mappings. The publication boundary validates the complete allowlisted shape
-and references against the same capture. Raw policies and condition values stay
-in the worker. All candidates have unknown assessments and bucket-summary scope;
-boundaries and unsupported expressions suppress the principal's candidates.
-The atomic transaction replaces only owned `G_AWS_POLICY_CANDIDATE` relationships,
-including their removal after a successful opt-out. Shared `CAN_*` edges remain
-untouched. Missing evidence is never a denial.
-
-The reference API exposes these observations through optional
-`MapProjection.policyEvidence` records. `get_agent_access` returns
-`data.policyEvidence`; `explain_access` returns it under `externalEvidence`;
-`find_agents_with_access` filters it to the requested action and exact task/binding.
-
-For a read focused on one agent, the store also runs the reverse direction and sets
-`MapProjection.identityScope`: for each static execution identity, every collected
-bucket in the same account the identity has a candidate on, compared with the buckets
-that tool's own grants bind for that deployment. `get_agent_access` returns it as
-`data.outsideGuard.identityScope`, one record per execution binding with `status`
-`broader_than_grants`, `matches_grants` or `unknown` (with a `reason`), the bound
-bucket names, and `extraResources` (bucket, relationship, condition flag and keys).
-More than 500 candidate buckets for one identity leaves the comparison incomplete:
-`unknown` with reason `truncated` and `truncated: true`, still listing the first 100
-buckets. An identity row too large to keep reads the same, with no bucket list. Only identity policies are
-evaluated, so extra buckets are candidates; a bucket policy, SCP or permission
-boundary can still remove the access, and `matches_grants` does not mean safe. The
-comparison is per bucket, not per action: an identity that can write a bucket the tool
-only declares reading still reads `matches_grants`.
-
-For `get_agent_access`, the same one-agent read also loads the in-scope delegation
-ancestors of the agent's tasks (only their task records, stopping at the first ancestor
-outside the reader's scope, and only if they fit the read's remaining node, edge and byte
-budget; otherwise none, with the flag note `delegation_ancestors_not_loaded`) and asks, for each tool the agent holds a `*` grant on,
-whether any in-scope binding of that tool is marked confidential or restricted (up to
-five, as evidence). Both follow the team-wide visibility rules: a binding is in a team
-reader's scope only when a task of an in-scope agent holds an exact grant on it, so a `*`
-grant alone reads `unknown` for private data to a team reader. `get_agent_access` uses them for `data.boundaryFlags`.
-`dangerous_three` reports whether a live task can:
-
-- read private data: a granted binding marked `confidential` or `restricted`, or a task
-  that is already sensitive (a task without a boolean `sensitive` makes this leg and its
-  declared sends `unknown`);
-- read outside content: a granted tool with `readsUntrusted: true`, or an untrusted task.
-  Only an explicit `readsUntrusted: false` rules a tool out, since a resolver can mark any
-  call untrusted;
-- send out: a granted tool with `sendsExternal: true`. The core refuses those sends when
-  the effective recipient set (intersected over every ancestor) is empty or the task is
-  sensitive, so either makes that tool's contribution `absent`. An undeclared or
-  unregistered tool may send without marking the call external and stays `unknown`.
-
-Each leg is `present`, `absent` or `unknown`. The status is `exposed` when all three are
-present and a declared sending tool's effective mode (`untrustedContext`, else the
-executor's `untrustedContextDefault`) is `allow`; `mitigated` when every possible sender
-uses `require_approval` or `deny`; `unknown` when no leg is known to be absent but one
-(or the mode of a possible sender) is unknown; and `absent` otherwise. The agent's status is its worst live task (ranked
-exposed, unknown, mitigated, absent, so a mitigated task never hides an unknown one), and
-`taskId`, `legs` and `evidence` all describe that task. Evidence lists up to eight items
-per leg (and for mitigation), so every present leg keeps some; `evidenceTruncated` says
-when items were left out. Revoked and expired tasks (expiry judged at the snapshot's `generatedAt`, including through a
-delegation ancestor, and revocation also through a handoff source, as the executor checks)
-don't count; an agent with no live task is `unknown` with the note
-`no_live_tasks`. Other notes:
-
-- `ancestor_evidence_outside_visible_scope`: a parent or handoff source is outside a team
-  reader's scope.
-- `delegation_parent_missing`: an all-teams reader's read lacks a recorded parent or source.
-- `delegation_not_recorded`: an import from before `delegated`/`derived` existed.
-- `delegation_depth_exceeded`: a recorded parent or source lies more than 16 links away.
-- `delegation_ancestors_not_loaded`: no room was left in the read for the ancestors.
-- `delegation_evidence_ambiguous`: a task has more than one parent or handoff source.
-- `task_liveness_unverified`: a `revoked` or `deadline` on the chain is missing, or the
-  snapshot time does not parse.
-- `flags_limit_exceeded` / `flags_timeout`: the flag alone ran out of work or time; the rest
-  of `get_agent_access` still answers.
-
-In every delegation and liveness case above the task may have a revoked or expired
-ancestor, so it is never `absent`: at most `unknown`.
-
-`list_agents` with `includeFlags: true` adds `boundaryFlags.dangerousThree` to the page it
-returns, computed by a second read of only those agents under the one-agent rules, so a
-badge matches `get_agent_access` (when a read has no room for an agent's ancestors, that
-read reports `unknown` instead). Filtering with `flag: 'dangerous_three'` (everything
-but `absent`) or `flagStatus` needs every agent's flags, so it reads the full scoped
-graph and is bounded by the store's node limit.
-If that second read exceeds the store's limits or fails, the listing still answers: every
-agent on the page gets `dangerousThree: unknown`, and the response adds
-`flagsUnavailable` (`flags_limit_exceeded`, `flags_timeout` or `flags_read_unavailable`).
-The page flags use what is left of the query's time and their own work budget, so a
-slow or large page degrades its flags, not the listing. `flag` with `flagStatus: absent`
-is a contradiction and returns `MAP_REQUEST_INVALID`.
-`get_agent_inventory` does not load this boundary evidence.
-
-`list_resources` and `get_resource_access` read the reverse identity evidence for the
-buckets that visible bindings map to: at most 32 identities (the rest report
-`not_evaluated`) and 100 buckets per identity (more is `truncated`, so `unknown`). A record
-whose bucket list was cut keeps resources `unknown`, since it may reach buckets it no
-longer names. Each resource row gets `outsideGuard`:
-
-- `yes`: a declared direct path targets its host resource, or a tool identity has a
-  candidate on its bucket that the tool's own live grants don't bind.
-  `get_resource_access` lists them under `data.outsideGuard`: at most 100 identity rows
-  (one per execution binding and relationship) and 100 declared paths, with
-  `identitiesTruncated` and `directAccessTruncated`.
-- `none_found`: only for an S3-backed resource whose bucket the AWS collection resolved,
-  when every visible execution binding has a reach record, every visible deployment declared its
-  direct paths (and a `found` deployment has entries), every declared path has a target
-  this read can match, every visible granted tool has an execution identity that was
-  evaluated in the bucket's own AWS account, and nothing in the source lies outside the
-  reader's scope.
-- `unknown` otherwise, with `unknownReasons`: `binding_ambiguous`, `resource_not_collected`
-  (the AWS collection has not resolved the bucket, so no identity was compared with it),
-  `direct_access_undeclared`,
-  `direct_access_untargeted` (a path with no target, such as a shell),
-  `direct_access_target_unresolved`, `execution_identity_undeclared`,
-  `identity_scope_unknown`, `identity_scope_other_account` (candidates are collected per
-  account, so an identity elsewhere was never compared and a cross-account bucket policy
-  could still let it in), `identity_scope_not_collected[_for_resource]` (always for a
-  non-S3 resource), `outside_visible_scope` and `reach_not_evaluated`. A team reader gets
-  `outside_visible_scope` whenever any deployment or task of the source is outside its
-  scope, so `none_found` is mostly an all-teams answer. A task assigned to several
-  deployments needs an execution binding for each granted tool on every one of them.
-  Reach has its own work budget, shared by the rows of one response: when judging a
-  resource would exceed that budget or the time left, the rest of the response is still
-  returned, and that resource and every later row read `unknown` with the single reason
-  `reach_not_evaluated` and empty lists; rows judged earlier keep their status. Reach is judged within the resource's own source: identities and
-  paths of other sources are not compared. It is never proof that no path exists.
-
-A manifest v3 `targetRef` must name a host resource declared in `resourceBindings`;
-anything else is declared with `targetRef: null`. In `get_agent_access`, each declared
-path has `targetStatus`: `none`, `visible`, or `outside_visible_scope` when the target is
-a resource outside the reader's scope; the `targetRef` is then withheld (`null`) in the
-response, its graph and `get_changes`. Past 20,000 in-scope targets the check falls back
-to the resources this read holds, which can only withhold more.
-
-A tool's own binding covers a bucket-level candidate only when it binds the whole bucket;
-a bucket bound only as an object or prefix gives `unknown` with reason
-`binding_narrower_than_candidate`, since the candidate may reach past it. Grants of
-revoked or expired tasks (revoked through any ancestor or handoff source, expired through a
-delegation ancestor) don't count as
-bound; a grant whose task's chain this read cannot finish gives `unknown` with reason
-`grant_lineage_unknown`, as does a task or ancestor without a boolean `revoked` or (on the
-delegation chain) a numeric `deadline`, or a snapshot time that does not parse. Tools that
-share one role share one
-probe; a one-agent read evaluates at most 8 distinct identities (the rest are
-`not_evaluated`). Each execution binding lists at most 100 extra buckets (with all their
-relationships). A cut list sets `truncated: true` and the note `bucket_list_shortened`,
-and keeps its status: the comparison was complete, only the listing is shorter. The same
-applies when lists are dropped because the records pass 1 MiB in one read (or what is left
-of the read's 4 MiB budget after 64 KiB of headroom), when the read's final copy does not
-fit with them, and when the `get_agent_access` response does not fit its
-size limit with the lists: they are shortened to 25, 5, then no entries before the
-response is refused. If even the bare records do not fit the read, it answers without
-identity scope (`not_evaluated`). If comparing grants with
-identities needs more work than one read allows, the read answers without it: every
-execution binding reads `unknown` with reason `not_evaluated`, and resources read
-`unknown` (`identity_scope_not_collected`).
-
-A team reader's `identityScope` names only buckets that a binding reachable from an
-in-scope agent maps to. Any other bucket (another team's, or one no binding maps) is
-replaced by the note `evidence_outside_visible_scope`, with no name or count, and the
-status stays `broader_than_grants`. A tool with a `*` grant reports `unknown` with
-reason `wildcard_grant`, since there is no narrower grant to compare its identity with.
-Each record has stable entity IDs for `taskId`, `deploymentId`,
-`executionBindingId`, `resourceBindingId`, `identityId` and `resourceId` (the last
-two may be null for unresolved bindings), plus `action`, `status`, `reason`,
-`observedAt`, `assessment: unknown`, and `candidates`. A complete record has zero
-or one candidate with `relationship`, `hasCondition`, `conditionKeys` and
-`resourceScope: bucket_summary`. An empty complete record uses `reason: no_candidate`
-and does not mean denial. Noncomplete records contain no candidates and retain a
-fixed unavailable/not-collected reason. Policy coverage is reported separately
-from snapshot freshness.
-
-The reader derives at most 512 pairs per request through visible exact task,
-deployment, grant, tool and binding paths. It validates the company/tenant/account
-collection, provider ownership and timestamps, current membership, candidate
-hash/time and original cloud links. Current and enrolled cloud-age limits both
-apply; the reader repeats its bounded observation before returning. Another
-deployment's identity, another collector's candidate and shared `CAN_*` edges
-cannot satisfy the pair. No raw provider documents, condition values, account-wide
-policy hashes or counts are exposed. The HTTP and MCP tools share this contract.
-Custom stores' supplied records receive closed-shape and exact-path validation.
-Complete records require singular owning-agent, tool and binding links and unique
-task/grant and grant/selector pairs. Multiple distinct grants/selectors are valid;
-an ambiguous binding can only be reported as noncomplete evidence without candidates.
-
-Policy evidence is live at query time and never attached to previous projections.
-`get_changes` explicitly returns `policyHistory: not_collected`, and excludes this
-layer from inventory snapshot diffs. The viewer uses separate unknown-assessment
-cards and dashed candidate edges; it retains original object/prefix bindings and
-independent observation times. No policy observation changes executor authority.
-
-### Inventory source lifecycle
-
-The trusted host can explicitly supersede an inventory generation after its
-successor is completely published and archived. Both exact five-field source
-identities must share company, native source ID and tenant, use the same profile,
-and have different enrollment generations. A private pending/completed journal
-and atomic graph tombstone fence old-generation publication and survive recovery.
-Normal reference operations exclude superseded sources; concurrent supersession
-invalidates the whole read. There is no reference HTTP/MCP lifecycle mutation API.
-See the [operational contract](../deployment/cartography/SOURCE-LIFECYCLE.md).
+Its HTTP and MCP operations, configuration and limits are documented in the
+[Agent Map README](../packages/agent-map/README.md). To set up the whole
+pipeline, follow the [agent cartography guide](guides/agent-cartography.md).

@@ -502,7 +502,7 @@ test('unknown query arguments and invalid source credentials fail before driver 
     'bolt://127.0.0.1/?query=secret',
   ]) {
     assert.throws(() => createNeo4jMapStore({ uri, username: 'u', password: 'private-canary' }), {
-      code: 'MAP_REQUEST_INVALID',
+      code: 'MAP_CONFIG_INVALID',
     });
   }
 });

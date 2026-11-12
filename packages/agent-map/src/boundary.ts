@@ -1,9 +1,7 @@
-import type { Stats } from 'node:fs';
-import { MapQueryError } from './types.js';
+import { constants, type Stats } from 'node:fs';
+import { open } from 'node:fs/promises';
+import { fail } from './common.js';
 
-export function fail(code: string): never {
-  throw new MapQueryError(code);
-}
 // Configuration selects credential destinations. Viewer assets run in authenticated browsers.
 // Check the descriptor after open so the test applies to the bytes that will be used.
 export function trustedHostFile(info: Stats): boolean {
@@ -13,6 +11,57 @@ export function trustedHostFile(info: Stats): boolean {
     (info.uid === 0 || info.uid === process.geteuid()) &&
     (info.mode & 0o022) === 0
   );
+}
+/** Which files a launcher accepts. The rules differ by what the file is for, and each caller states its own. */
+export interface HostFileRule {
+  /** Refuse a symbolic link at the path itself. */
+  readonly noFollow: boolean;
+  /** `service`: owned by this user. `service-or-root`: owned by the effective user or by root. */
+  readonly owner: 'service' | 'service-or-root';
+  /** Refuse a file with more than one hard link. */
+  readonly singleLink: boolean;
+  /** Refuse any group or other access, as for a key or a file that names secrets. */
+  readonly private: boolean;
+}
+/**
+ * Reads at most `maximum` bytes of a regular file that is not writable by group or others.
+ * The checks and the read use one non-blocking descriptor, so they apply to the bytes that
+ * are used, and a file that grows after the check is refused rather than read without bound.
+ */
+export async function readHostFile(path: string, maximum: number, rule: HostFileRule): Promise<Buffer> {
+  if (
+    typeof constants.O_NONBLOCK !== 'number' ||
+    (rule.noFollow && !constants.O_NOFOLLOW) ||
+    (rule.owner === 'service' && typeof process.getuid !== 'function')
+  )
+    fail('MAP_CONFIG_INVALID');
+  const file = await open(path, constants.O_RDONLY | constants.O_NONBLOCK | (rule.noFollow ? constants.O_NOFOLLOW : 0));
+  try {
+    const info = await file.stat();
+    const owned =
+      rule.owner === 'service'
+        ? info.isFile() && info.uid === process.getuid!() && (info.mode & 0o022) === 0
+        : trustedHostFile(info);
+    if (
+      !owned ||
+      info.size > maximum ||
+      (rule.singleLink && info.nlink !== 1) ||
+      (rule.private && (info.mode & 0o077) !== 0)
+    )
+      fail('MAP_CONFIG_INVALID');
+    const data = Buffer.alloc(maximum + 1);
+    let bytes = 0;
+    while (bytes < data.length) {
+      const read = await file.read(data, bytes, data.length - bytes, null);
+      if (!read.bytesRead) break;
+      bytes += read.bytesRead;
+    }
+    if (bytes > maximum) fail('MAP_CONFIG_INVALID');
+    // Do not retain the full maximum-sized allocation for a small file.
+    return Buffer.from(data.subarray(0, bytes));
+  } finally {
+    await file.close();
+  }
 }
 export function fields(
   value: unknown,
@@ -39,13 +88,6 @@ export function fields(
   if (required.some(key => !Object.hasOwn(result, key))) fail('MAP_CONFIG_INVALID');
   return result;
 }
-export function integer(value: unknown, fallback: number, min: number, max: number): number {
-  const result = value === undefined ? fallback : value;
-  if (typeof result !== 'number' || !Number.isSafeInteger(result) || result < min || result > max)
-    fail('MAP_CONFIG_INVALID');
-  return result;
-}
-
 /** Bounded strict JSON, including duplicate decoded keys that JSON.parse would discard. */
 export function parseRequest(bytes: Uint8Array, maximum = 65_536): unknown {
   if (bytes.byteLength > maximum) fail('MAP_REQUEST_TOO_LARGE');

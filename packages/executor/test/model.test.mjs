@@ -47,7 +47,12 @@ test('provider requests use authenticated executor admission and sensitive famil
   });
   assert.equal((await provider.complete('hello')).text, 'accepted:hello');
   assert.deepEqual(await Array.fromAsync(provider.stream('world')), ['accepted:world']);
-  await assert.rejects(provider.complete('over budget'));
+  // maxCalls is 2: the third call is refused at admission, over the authenticated task API.
+  await assert.rejects(provider.complete('over budget'), {
+    name: 'ExecutorError',
+    code: 'CALL_BUDGET_EXCEEDED',
+    retryable: false,
+  });
   assert.equal(providerCalls, 2);
   assert.equal(executor.snapshot('task').spent, 6);
   executor.createTask({ ...options, id: 'sensitive' }, { sensitive: true });
@@ -103,8 +108,9 @@ test('cancellation during asynchronous policy prevents admission and later repla
   await waiting;
   executor.cancel('task', action.id);
   unblock();
-  await assert.rejects(pending);
-  await assert.rejects(executor.execute('task', action.id), { code: 'ACTION_USED' });
+  // The cancelled action is refused at admission exactly like a replay: nothing was dispatched.
+  await assert.rejects(pending, { name: 'GuardError', code: 'ACTION_USED' });
+  await assert.rejects(executor.execute('task', action.id), { name: 'GuardError', code: 'ACTION_USED' });
   assert.equal(effects, 0);
   assert.equal(executor.snapshot('task').calls, 0);
 });

@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ArtifactBroker, createSandboxTool, DurableExecutor } from '../dist/index.js';
+import { DurableExecutor } from '../dist/index.js';
+import { ArtifactBroker, createSandboxTool } from '../dist/entry-sandbox.js';
 
 const fixture = JSON.parse(readFileSync(new URL('./fixtures/packed-build-attestation.json', import.meta.url), 'utf8'));
 const original = Buffer.from('fixture');
@@ -112,7 +113,9 @@ for (const profile of ['raw', 'attested']) {
       await assert.rejects(executor.execute(id, prepared.id, { approvalId }), error => {
         assert.equal(brokerCalls, replace ? 1 : 2);
         assert.equal(dockerCalls, replace ? 0 : 1, 'only unchanged approved bytes may reach Docker');
-        assert.equal(error.code, replace ? 'TOOL_CHANGED' : 'TOOL_FAILED');
+        // The executor may relay the tool's own code or flatten it to TOOL_FAILED with that code as detail.
+        const reason = error.code === 'TOOL_FAILED' ? error.detail : error.code;
+        assert.equal(reason, replace ? 'TOOL_CHANGED' : 'SANDBOX_DOCKER_FAILED');
         return true;
       });
       replace = false;

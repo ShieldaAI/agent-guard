@@ -4,12 +4,11 @@ from copy import deepcopy
 
 import pytest
 from cartography.config import Config
+from faults import import_snapshot
 
 from agent_guard_cartography.graph import (
     GraphImportError,
-    cleanup_projection_rows,
     cleanup_staging,
-    import_snapshot,
     retire_projection,
     source_key,
 )
@@ -402,42 +401,36 @@ def test_cartography_cleanup_is_scoped_and_preserves_cloud_node(neo4j_session, s
     source_id = source_key(alpha["source"])
     sentinel = f"arn:aws:s3:::synthetic-{source_id}"
     neo4j_session.run("CREATE (:AWSS3Bucket {id:$id})", id=sentinel).consume()
-    cleaned = []
+    staged = []
 
-    def exercise_cleanup():
+    def link_provider_then_fail():
         projection = neo4j_session.run(
             "MATCH (p:GuardSnapshot {source_id:$source,status:'staging'}) RETURN p.id AS id",
             source=source_id,
         ).single(strict=True)["id"]
-        stale_id = f"{projection}-stale-resource"
+        # A staged resource that points at a provider node the integration does not own.
         neo4j_session.run(
-            "MATCH (p:GuardSnapshot {id:$projection}),(cloud:AWSS3Bucket {id:$cloud}) "
-            "CREATE (r:GuardResource {id:$id,projection_id:$projection,source_id:$source,"
-            "lastupdated:1,entity_id:'synthetic-stale',tenant_id:'alpha',resource_id:'old',tool:'records.read'}) "
-            "CREATE (r)-[:G_IN_SNAPSHOT {lastupdated:1}]->(p) CREATE (r)-[:G_MAPS_TO]->(cloud)",
+            "MATCH (r:GuardResource {projection_id:$projection}) WITH r LIMIT 1 "
+            "MATCH (cloud:AWSS3Bucket {id:$cloud}) CREATE (r)-[:G_MAPS_TO]->(cloud)",
             projection=projection,
             cloud=sentinel,
-            id=stale_id,
-            source=source_id,
         ).consume()
-        cleanup_projection_rows(neo4j_session, projection, update_tag=801)
-        assert (
-            neo4j_session.run(
-                "MATCH (r:GuardResource {id:$id}) RETURN count(r) AS count",
-                id=stale_id,
-            ).single(strict=True)["count"]
-            == 0
-        )
-        cleaned.append(projection)
+        staged.append(projection)
+        raise RuntimeError("synthetic interruption before publication")
 
-    current = import_snapshot(
-        neo4j_session,
-        alpha,
-        alpha["source"],
-        update_tag=801,
-        _after_load=exercise_cleanup,
-    )
-    assert cleaned == [current.projection_id]
+    with pytest.raises(RuntimeError, match="synthetic interruption"):
+        import_snapshot(
+            neo4j_session,
+            alpha,
+            alpha["source"],
+            update_tag=801,
+            _after_load=link_provider_then_fail,
+        )
+    (failed,) = staged
+    assert node_count(neo4j_session, "GuardResource", failed) > 0
+    cleanup_staging(neo4j_session, failed)
+    for label in ("GuardTask", "GuardTool", "GuardResource", "GuardGrant", "GuardPrincipal"):
+        assert node_count(neo4j_session, label, failed) == 0
     assert node_count(neo4j_session, "GuardTask", other.projection_id) == 3
     assert (
         source_state(neo4j_session, other.source_id)["current_snapshot_id"] == other.projection_id
@@ -449,8 +442,9 @@ def test_cartography_cleanup_is_scoped_and_preserves_cloud_node(neo4j_session, s
         ).single(strict=True)["count"]
         == 1
     )
+    current = import_snapshot(neo4j_session, alpha, alpha["source"], update_tag=802)
     with pytest.raises(GraphImportError, match="PROJECTION_PROTECTED"):
-        cleanup_projection_rows(neo4j_session, current.projection_id, update_tag=802)
+        cleanup_staging(neo4j_session, current.projection_id)
 
 
 def test_retirement_keeps_current_previous_other_tenant_and_cloud(neo4j_session, snapshot_factory):

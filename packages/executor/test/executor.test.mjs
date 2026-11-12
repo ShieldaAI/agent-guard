@@ -181,8 +181,9 @@ test('clock rollback and policy-time revocation prevent dispatch', async t => {
   executor.createTask(task());
   const action = await executor.prepare('task', { tool: 'test', args: null });
   revoke = 'task';
-  await assert.rejects(executor.execute('task', action.id));
+  await assert.rejects(executor.execute('task', action.id), { name: 'GuardError', code: 'TASK_REVOKED' });
   assert.equal(effects, 0);
+  assert.equal(executor.snapshot('task').calls, 0, 'a refused admission consumes no call');
   now = 999;
   assert.throws(() => executor.markSensitive('task'), { code: 'CLOCK_INVALID' });
 });
@@ -376,7 +377,8 @@ test('task clients distinguish an approval request from an unknown effect withou
     headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' },
     body: JSON.stringify({ actionId: id, approvalId }),
   });
-  assert.deepEqual(await response.json(), { error: 'OPERATION_FAILED', retryable: false });
+  // A handler error is always TOOL_FAILED on the wire: the handler's own code and message stay in the host.
+  assert.deepEqual(await response.json(), { error: 'TOOL_FAILED', retryable: false });
   assert.equal((await client.execution(id)).status, 'UNKNOWN');
   assert.equal(effects, 1);
   await assert.rejects(client.execute(id), { code: 'ACTION_USED' });

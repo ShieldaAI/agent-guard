@@ -584,7 +584,7 @@ test('fixed policy query projects only allowlisted fields and limits without an 
   assert.match(POLICY_QUERY, /LIMIT \$policyRowLimit/);
   assert.match(POLICY_QUERY, /condition_keys\[\.\.129\]/);
   for (const options of [{ policyMaxAgeSeconds: 0 }, { policyMaxAgeSeconds: 86401 }, { clock: 5 }]) {
-    assert.throws(() => new Neo4jMapStore({}, options), { code: 'MAP_REQUEST_INVALID' });
+    assert.throws(() => new Neo4jMapStore({}, options), { code: 'MAP_CONFIG_INVALID' });
   }
 });
 

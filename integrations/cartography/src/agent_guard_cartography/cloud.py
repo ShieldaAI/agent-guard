@@ -9,8 +9,12 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
+
+from agent_guard_cartography._ids import SHA256_HEX, is_identifier
+from agent_guard_cartography.errors import AgentGuardCartographyError
 
 MAX_CLOUD_REFERENCES = 1024
 CLOUD_QUERY_SECONDS = 5
@@ -19,10 +23,8 @@ REFERENCE_LABELS = ("GuardExternalIdentity", "GuardExternalResource")
 CLOUD_RELATIONSHIPS = ("G_CLOUD_MATCH", "G_CLOUD_CONTAINER")
 
 
-class CloudJoinError(ValueError):
-    def __init__(self, code: str):
-        self.code = code
-        super().__init__(code)
+class CloudJoinError(AgentGuardCartographyError, ValueError):
+    """A cloud scope or join failure; the code never contains provider values."""
 
 
 @dataclass(frozen=True)
@@ -34,13 +36,7 @@ class CloudScope:
 
 
 def _identifier(value: Any) -> str:
-    if (
-        type(value) is not str
-        or len(value) > 4096
-        or not any(character != "\ufeff" and not character.isspace() for character in value)
-        or "\0" in value
-        or any(0xD800 <= ord(char) <= 0xDFFF for char in value)
-    ):
+    if not is_identifier(value):
         raise CloudJoinError("CLOUD_CONFIG_INVALID")
     return value
 
@@ -84,12 +80,12 @@ def validate_cloud_scope(value: Any) -> CloudScope:
     return CloudScope(company, tenant, tuple(sorted(selected)), maximum_age)
 
 
-def check_cloud_scope(scope: CloudScope, source: dict) -> None:
+def check_cloud_scope(scope: CloudScope, source: Mapping[str, str]) -> None:
     if scope.company_id != source["companyId"] or scope.tenant_id != source["tenantId"]:
         raise CloudJoinError("CLOUD_SCOPE_MISMATCH")
 
 
-def provider_target(reference: dict, scope: CloudScope) -> dict | None:
+def provider_target(reference: dict[str, Any], scope: CloudScope) -> dict[str, str] | None:
     """Select a fixed pinned-provider matcher. Object/prefix links mean containment."""
     if reference.get("provider", "aws") != "aws":
         return None
@@ -117,7 +113,9 @@ def provider_target(reference: dict, scope: CloudScope) -> dict | None:
     }
 
 
-def _lookup(tx, reference: dict, target: dict, scope: CloudScope) -> list[dict]:
+def _lookup(
+    tx: Any, reference: dict[str, Any], target: dict[str, str], scope: CloudScope
+) -> list[dict[str, Any]]:
     label = target["label"]
     if label not in PROVIDER_LABELS:
         raise CloudJoinError("CLOUD_TARGET_INVALID")
@@ -145,8 +143,13 @@ def _lookup(tx, reference: dict, target: dict, scope: CloudScope) -> list[dict]:
 
 
 def classify_provider(
-    reference: dict, target: dict, matches: list[dict], scope: CloudScope, now: int
-) -> dict:
+    reference: dict[str, Any],
+    target: dict[str, str],
+    matches: list[dict[str, Any]],
+    scope: CloudScope,
+    now: int,
+) -> dict[str, Any]:
+    """One reference's observation: resolved only by a unique, fresh, consistent match."""
     base = {"reference": reference, "target": target, "match": None}
     if not matches:
         return {**base, "status": "unresolved", "reason": "missing"}
@@ -158,21 +161,17 @@ def classify_provider(
         return {**base, "status": "unresolved", "reason": "missing"}
     if managed and (
         type(match.get("collection_id")) is not str
-        or not re.fullmatch(r"[a-f0-9]{64}", match["collection_id"])
+        or not SHA256_HEX.fullmatch(match["collection_id"])
         or match.get("collection_version") != 1
         or match.get("collection_status") != "complete"
         or type(match.get("collection_hash")) is not str
-        or not re.fullmatch(r"[a-f0-9]{64}", match["collection_hash"])
+        or not SHA256_HEX.fullmatch(match["collection_hash"])
         or match["collection_hash"] != match.get("member_hash")
         or match.get("collection_updated") != match.get("member_updated")
     ):
         return {**base, "status": "unavailable", "reason": "freshness_unknown"}
-    if (
-        reference["region"]
-        and target["label"] == "AWSS3Bucket"
-        and reference["region"] != match["region"]
-    ):
-        return {**base, "status": "unresolved", "reason": "region_mismatch"}
+    # A bucket reference never states a region to compare: S3 ARNs have none, and the
+    # snapshot validator requires the reference's region to equal its ARN's.
     timestamps = [
         match[field] for field in ("node_updated", "ownership_updated", "account_updated")
     ]
@@ -191,7 +190,7 @@ def classify_provider(
     return {**base, "status": "resolved", "reason": None, "match": match}
 
 
-def _unavailable(reference: dict, reason: str) -> dict:
+def _unavailable(reference: dict[str, Any], reason: str) -> dict[str, Any]:
     return {
         "reference": reference,
         "target": None,
@@ -201,11 +200,13 @@ def _unavailable(reference: dict, reason: str) -> dict:
     }
 
 
-def _host_observation(reference: dict) -> dict:
+def _host_observation(reference: dict[str, Any]) -> dict[str, Any]:
     return {**_unavailable(reference, "unsupported_provider"), "status": "not_collected"}
 
 
-def collect_cloud(session, rows: dict[str, list[dict]], scope: CloudScope) -> dict:
+def collect_cloud(
+    session: Any, rows: Mapping[str, list[dict[str, Any]]], scope: CloudScope
+) -> dict[str, Any]:
     """Read bounded provider evidence in a separate timed transaction before staging."""
     now = int(time.time())
     all_references = [{**row, "label": label} for label in REFERENCE_LABELS for row in rows[label]]
@@ -246,7 +247,9 @@ def collect_cloud(session, rows: dict[str, list[dict]], scope: CloudScope) -> di
     return {"observed_at": now, "scope": scope, "observations": host_observations + observations}
 
 
-def publish_cloud(tx, source_id: str, projection_id: str, capture: dict | None) -> None:
+def publish_cloud(
+    tx: Any, source_id: str, projection_id: str, capture: dict[str, Any] | None
+) -> None:
     """Publish exact links with the mandatory graph, never writing shared providers.
 
     Provider data may change independently after this transaction. Capture times
@@ -376,7 +379,7 @@ def publish_cloud(tx, source_id: str, projection_id: str, capture: dict | None) 
     ).consume()
 
 
-def unavailable_cloud(capture: dict) -> dict:
+def unavailable_cloud(capture: dict[str, Any]) -> dict[str, Any]:
     """Discard a failed optional publication attempt before the mandatory retry."""
     return {
         **capture,

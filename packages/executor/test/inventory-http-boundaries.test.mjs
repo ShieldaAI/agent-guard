@@ -3,10 +3,26 @@ import assert from 'node:assert/strict';
 import { connect } from 'node:net';
 import { request as httpRequest } from 'node:http';
 import { once } from 'node:events';
-import { setTimeout as delay } from 'node:timers/promises';
+import { performance } from 'node:perf_hooks';
 import { InventoryObservationSession } from '../dist/inventory-observer.js';
 import { DurableExecutor } from '../dist/index.js';
 import { createInventoryObserverToken, startInventoryServer } from '../dist/inventory-http.js';
+
+/**
+ * The observer's rate windows read the process monotonic clock. These helpers pin it and
+ * move it forward, so a window boundary is tested exactly and without a real-time wait.
+ */
+let frozen;
+function freeze(t) {
+  // A whole number of milliseconds: adding a whole offset is then exact at the window boundary.
+  const at = Math.ceil(performance.now());
+  frozen = { skew: 0 };
+  const state = frozen;
+  t.mock.method(performance, 'now', () => at + state.skew);
+}
+function elapse(milliseconds) {
+  frozen.skew += milliseconds;
+}
 
 const route = '/v1/inventory/snapshot';
 const requestBody = '{"tenantId":"tenant"}';
@@ -309,6 +325,7 @@ test('observer bounds incomplete-header socket lifetime and connections', async 
 test('observer rate limits each credential independently while counting denied scope attempts', async t => {
   const first = createInventoryObserverToken(),
     second = createInventoryObserverToken();
+  freeze(t);
   const service = await setup(t, { rateLimit: { maxRequests: 1, windowMs: 1000 } }, [
     { token: first, tenantIds: ['tenant'] },
     { token: second, tenantIds: ['tenant'] },
@@ -320,21 +337,31 @@ test('observer rate limits each credential independently while counting denied s
   assert.match(denied.headers.get('retry-after'), /^\d+$/);
   // This attempt may consume the global rate budget even though this credential still has quota.
   assert.equal(service.exports(), 0);
-  await delay(1050);
+  // One millisecond short of the window nothing has reset for the limited credential.
+  elapse(999);
+  assert.equal((await post(service, first)).status, 429);
+  assert.equal(service.exports(), 0);
+  elapse(1);
   assert.equal((await post(service, second)).status, 200);
   assert.equal((await post(service, first)).status, 200);
+  assert.equal(service.exports(), 2);
 });
 
 test('observer globally bounds unknown credential attempts and resets its fixed window', async t => {
+  freeze(t);
   const service = await setup(t, { rateLimit: { maxRequests: 2, windowMs: 1000 } });
   assert.equal((await post(service, createInventoryObserverToken())).status, 401);
   assert.equal((await post(service, createInventoryObserverToken())).status, 401);
   const denied = await post(service);
   assert.equal(denied.status, 429);
   assert.equal(denied.body.error, 'INVENTORY_RATE_LIMITED');
+  assert.equal(denied.headers.get('retry-after'), '1');
   assert.equal(service.exports(), 0);
-  await delay(1050);
+  elapse(999);
+  assert.equal((await post(service)).status, 429, 'the window has not ended yet');
+  elapse(1);
   assert.equal((await post(service)).status, 200);
+  assert.equal(service.exports(), 1);
 });
 
 for (const [name, special] of [

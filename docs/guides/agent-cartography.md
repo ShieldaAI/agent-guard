@@ -1,270 +1,239 @@
-# Company agent cartography
+# Put your agents on the Agent Map
 
-Agent Map gives a company a read-only inventory of its agents, accountable owners,
-declared permissions, resources, deployments, MCP connections and permission-related
-changes. Each company operates its own collector, graph and identity provider.
-No hosted maintainer account or customer data submission is required.
+Agent Map is a read-only inventory of your company's agents: who owns each one, where it
+runs, which tools and resources its tasks were given, and what changed. This guide shows
+how to declare an agent so it appears there.
 
-## How agents get onto the map
+Agent Map is experimental. You run every part of it yourself; nothing is sent to a hosted
+service. It grants and blocks nothing.
 
-**An agent appears on the map only when a person lists it in the host manifest.** Nothing
-adds an agent automatically. Two discovery views point at what the manifest may be
-missing, so a person can decide whether to declare it; they never create an agent.
+## What you will achieve
 
-| Way to find an agent | Status | What it gives you |
-| --- | --- | --- |
-| Declare it in the host manifest | **Supported. The only way an agent is created.** | The agent, its owner and team, deployments, resource and execution bindings, credential references and (manifest v3) paths that act without the guard. You can declare an agent that has never run a task. The manifest can be built in host code or [loaded from a reviewed file](#declare-agents-from-a-file). |
-| Activity nobody declared (through the executor) | **Discovery lead, all-teams readers** | Tasks and caller principals that ran through an enrolled executor and belong to no declared agent: a count per source in `get_inventory_health`, and the list in `list_undeclared_activity`. |
-| Unclaimed cloud identities (AWS collection) | **Discovery lead, all-teams readers** | IAM roles and users of an enrolled AWS account that no declared agent's execution binding names, in `list_unclaimed_identities`. Candidates, not findings. |
-| Runtime observation through the executor | Evidence only | Tasks, grants, tools and caller principals of each enrolled executor. A task is linked to an agent only if the manifest's `taskBindings` names it. |
-| MCP inventory | Evidence only | Connections and operations for execution bindings the manifest declared. It does not list other MCP servers or tools. |
-| AWS collection | Evidence only | IAM roles, IAM users and S3 buckets of one enrolled account, joined to the ARNs your manifest names, plus optional S3 policy candidates. |
-| Snapshot file import | Supported for a sandbox | `agent-guard-cartography --snapshot FILE --expected-source FILE --neo4j-uri URI` (with `NEO4J_PASSWORD` set) imports one prepared snapshot, including the agents its manifest declares. |
-| Scanning infrastructure for agents (Bedrock, SageMaker, Lambda, containers, Kubernetes, other clouds) | Not available | |
-| Scanning code or repositories (agent frameworks, MCP configuration files) | Not available | |
-| Scanning the network or running processes | Not available | |
-| Listing identity-provider or SaaS apps (OAuth apps, service accounts) | Not available | |
-| Importing from a CSV, CMDB or service catalog | Not available | |
+- A manifest file that declares one agent and its owner.
+- A host that serves that manifest, together with the executor's tasks and tools, to a
+  collector.
+- A clear picture of what the map shows and what it cannot see.
 
-What this means in practice:
+## Prerequisites
 
-- **The map is as complete as your manifest.** It is an inventory of declared agents. The
-  discovery views give leads, but there is still no figure for how much of your fleet the
-  map covers.
-- **An undeclared agent is not listed as an agent**, even if it runs tasks through the
-  guard. `list_agents`, `list_resources` and the per-agent views do not show it. Its tasks
-  and callers appear in the undeclared-activity view below.
-- **A declared agent stays listed** until someone edits the manifest, whether or not it
-  still runs.
-- **Declaring is manual.** A person writes the manifest, in host code or in a reviewed
-  file the host loads at startup. There is no viewer form for it, and a change means
-  restarting that host.
-- **Each executor is enrolled by hand**, up to 128 sources per collector.
+- Node.js 22.13 or later, and this repository built:
 
-To keep the map accurate, generate the manifest from the system that deploys your agents,
-review it whenever an agent is added or retired, and work through the two discovery views
-below after each change.
+  ```sh
+  npm ci --ignore-scripts
+  npm run build
+  ```
 
-### Find what the manifest is missing
+- A host that uses the executor (`@shieldaai/agent-guard-executor`). The sample below
+  creates a throwaway one.
+- Linux or macOS. Loading a manifest from a file does not work on Windows.
+- To see the map in a browser you also need Docker, Python 3.13 and `uv`. The
+  [Cartography runbook](../../deployment/cartography/RUNBOOK.md) lists exact versions.
 
-Both views are read-only, grant or block nothing, and are shown only to a reader with
-all-teams visibility: what they list belongs to no team. A team-scoped reader gets one
-fixed note with no names and no counts, and the same note whether or not anything would
-be listed. In the viewer they are on the **Discovery** tab.
+## Steps
 
-**Activity nobody declared.** `get_inventory_health` adds `undeclaredActivity` to each
-source: how many tasks, and how many caller principals, ran through that executor without
-belonging to a declared agent. `list_undeclared_activity` (`sourceId`, `kind` of `tasks`
-or `principals`) lists them a page at a time.
-
-- A task is undeclared when no manifest `taskBindings` entry assigns it to a deployment of
-  a declared agent. A caller is undeclared when none of its tasks is assigned.
-- `parentDeclared: true` marks a task whose direct parent is assigned. That is usually a
-  sub-task of a declared agent that only lacks its own binding, not an unknown agent.
-- A source enrolled without a manifest counts every task, and says `manifest:
-  not_collected`.
-- Counting stops at 10,000 per source; the result is then marked as a minimum. If the
-  count cannot be read, health still answers and the count reads `unknown`.
-- Limit: only activity that goes through an enrolled executor is seen. An agent that does
-  not use the guard leaves nothing here.
-
-**Unclaimed cloud identities.** `list_unclaimed_identities` lists the IAM roles and users
-of your enrolled AWS accounts whose exact ARN no declared agent's execution binding names.
-
-- These are candidates to review, not findings. Most IAM roles are not agents, and the
-  map cannot tell which are.
-- An account whose collection is missing, older than the enrolled age limit, or
-  inconsistent reads `unknown`, and none of its identities is listed. With no AWS account
-  collected at all, the whole answer is `unknown`, never an empty list.
-- `bindingsWithoutIdentity: true` means some declared execution binding names no
-  identity, so a listed role may be the one it uses.
-- Limits: role assumption, instance profiles and federation are not followed, and only
-  enrolled AWS accounts are collected (IAM roles and users, nothing else).
-
-Still not available: scanning infrastructure, code, networks or identity providers, and
-importing from a CSV, CMDB or service catalog. A coverage figure (declared agents against
-observed callers and identities) is also later work.
-
-### Declare agents from a file
-
-`loadInventoryManifestFile(path)` from `@shieldaai/agent-guard-executor/inventory` loads a
-reviewed manifest file, so adding an agent is a file change and a restart, not a code
-change. It is the manual route for an agent the discovery views turned up, including one
-that has never run a task:
-
-```js
-import { loadInventoryManifestFile, startInventoryServer } from '@shieldaai/agent-guard-executor/inventory';
-
-const observer = await startInventoryServer({
-  executor,
-  observers: [{ token, tenantIds: ['example-tenant'], profile: 'host' }],
-  manifests: [loadInventoryManifestFile('/etc/agent-guard/manifest.json')],
-});
-```
-
-A minimal file declares the agent, its owner and nothing else
-([examples/agent-manifest.example.json](../../examples/agent-manifest.example.json)):
-
-```json
-{
-  "schemaVersion": 2,
-  "evidenceKind": "host_asserted",
-  "source": {
-    "companyId": "example-company",
-    "sourceId": "company-host",
-    "enrollmentGeneration": "catalog-1",
-    "inventoryInstanceId": "00000000-0000-4000-8000-000000000001",
-    "tenantId": "example-tenant"
-  },
-  "authorityId": "platform-team",
-  "manifestId": "company-catalog",
-  "revision": 1,
-  "observedAt": "2026-11-11T00:00:00.000Z",
-  "owners": [{ "id": "finance-team", "name": "Finance team", "kind": "team" }],
-  "credentialReferences": [],
-  "agents": [
-    {
-      "id": "invoice-agent",
-      "name": "Invoice assistant",
-      "ownerId": "finance-team",
-      "teamId": "finance",
-      "purpose": "Drafts supplier invoices for review",
-      "lifecycleState": "active",
-      "ownershipStatus": "assigned",
-      "ownershipSource": "platform-team"
-    }
-  ],
-  "deployments": [],
-  "taskBindings": [],
-  "resourceBindings": [],
-  "executionBindings": []
-}
-```
-
-- **`source` must be your executor's own.** Copy it from
-  `executor.inventorySnapshot({ tenantId }).source`; the example values will not match and
-  the observer will refuse the snapshot. One file covers one tenant.
-- **Keep the file private.** It must be a regular file owned by the user the host runs as,
-  with no group or other access (`chmod 600`), at most 2 MiB. A symbolic link, a second
-  hard link, invalid UTF-8, invalid JSON or a duplicate member is refused with
-  `INVENTORY_MANIFEST_FILE_INVALID`. Never put secrets in it.
-- **The path comes from your host's configuration**, as an absolute path. Never take it
-  from a request, a task or an agent.
-- **It is read once.** The host keeps the validated copy; an edit takes effect when you
-  restart the host. Raise `revision` whenever the content changes.
-- **The content gets the same checks as a manifest built in code**
-  (`validateInventoryManifest`), with the same error codes.
-- Limit: POSIX only. On Windows the loader throws `INVENTORY_MANIFEST_FILE_UNSUPPORTED`;
-  build the manifest in host code there.
-
-## Connect your catalog
-
-1. Deploy the current collector and Map service using the existing
-   [Cartography runbook](../../deployment/cartography/RUNBOOK.md) and
-   [company sign-in guide](../../deployment/cartography/IDENTITY.md).
-2. Enroll each executor source and tenant with the trusted host. Obtain its exact
-   source identity and exported resource selectors from a core inventory snapshot.
-3. Provide a private, operator-reviewed version-2 host manifest, in host code or as a
-   [file loaded at startup](#declare-agents-from-a-file). Use the
-   [runnable example](../../examples/agent-cartography.mjs) and
-   [closed schema](../../schemas/agent-guard-inventory-manifest-v2.schema.json).
-   Supply agent/owner names, purpose and lifecycle, deployment details, resource
-   bindings, and credential references from company-owned systems. To also record
-   paths that act without the guard (an ops shell, a direct database connection),
-   use [manifest v3](../../schemas/agent-guard-inventory-manifest-v3.schema.json)
-   and list them in `directAccess`; `[]` declares none.
-4. Validate the manifest with `validateInventoryManifest`, then enroll it in the
-   existing authenticated observer with profile `host` or `host-mcp`. Collection
-   composes the company's assertions with the executor's actual declared grants;
-   no resolver or execution callback is invoked.
-5. Publish through the enrolled collector. Sign in as an authorized viewer and
-   inspect Agents, Owners and Resources. Verify a known agent, a known resource,
-   and an intentionally hidden team before expanding access.
-
-For a disposable example after building the repository:
+### 1. Run the example
 
 ```sh
 node examples/agent-cartography.mjs
 ```
 
-The example emits a synthetic version-2 snapshot through a real authenticated
-observer. It uses no company credential, cloud API or effectful tool. Production
-hosts retain their own source identity, key custody and reviewed configuration.
+It builds a manifest in code, starts a local observer and prints the snapshot a collector
+would receive. It uses made-up data and no cloud account.
 
-## What to provide
+### 2. Write a manifest file
 
-Use a stable agent ID independently of task IDs or caller identities. Assign an
-owner from the owner directory and retain the separate team field used by existing
-visibility bindings. Mark ownership `unassigned` only when the company source
-explicitly confirms it; use `unknown` when the source cannot establish ownership.
-Version-1 records remain readable and do not acquire invented version-2 details.
+Copy [examples/agent-manifest.example.json](../../examples/agent-manifest.example.json). It
+declares one agent, "Invoice assistant", and its owner, "Finance team".
 
-Resource bindings join an exact exported `(tool, selector)` to an AWS target or a
-generic host resource. Names are display labels, never join keys. Preserve exact
-versus prefix scope. Resource dependencies are observations between enrolled
-bindings; only visible endpoints appear in relationships. A dependency does not
-grant access to its target.
+Change these parts:
 
-Credential references describe intended issuer/audience/recipient, lifecycle,
-expiry and rotation status. Reference values must have the form `opaque:` plus
-64 lowercase hexadecimal digits. Generate them on the trusted host with a
-tenant-scoped keyed hash or an equivalent stable opaque mapping; retain that
-mapping under company custody. Never put tokens, private keys, passwords,
-credential-bearing URLs or request payloads in the manifest. Names and purpose
-are also operator-reviewed nonsecret metadata, not automatically sanitized text.
+- **`source`** must be your executor's own. Step 3 shows how to read it. The example
+  values will not match yours.
+- **`agents` and `owners`**: one entry per agent and per owner. Give each agent an `id`
+  that stays the same for its whole life; do not reuse a task id or a caller name.
+- **`deployments`, `taskBindings`, `resourceBindings`, `executionBindings`**: add these
+  when you want the map to show where an agent runs and what its tools reach.
 
-Every version-2 record retains the source, tenant, assertion authority, manifest
-revision and capture time. Runtime/build references and sensitivity labels are
-host assertions. They do not attest a running binary or change execution policy.
+The [data format reference](../agent-cartography-contract.md) lists every field and limit.
+To also record paths that act without the guard, such as an operations shell or a direct
+database connection, use manifest version 3 and its `directAccess` list.
+
+Make the file private. The loader refuses a file that other users can read:
+
+```sh
+chmod 600 /etc/agent-guard/manifest.json
+```
+
+### 3. Serve the manifest from your host
+
+Save this as `map-demo.mjs` in the repository root and run `node map-demo.mjs`. It does
+what a real host does at startup, using a temporary copy of the example file.
+
+```js
+import { randomBytes } from 'node:crypto';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { DurableExecutor } from '@shieldaai/agent-guard-executor';
+import {
+  createInventoryObserverToken,
+  loadInventoryManifestFile,
+  startInventoryServer,
+} from '@shieldaai/agent-guard-executor/inventory';
+
+// An executor enrolled for inventory. A real host uses its own database and key.
+const executor = new DurableExecutor({
+  database: ':memory:',
+  encryptionKey: randomBytes(32),
+  inventory: { companyId: 'example-company', sourceId: 'company-host', enrollmentGeneration: 'catalog-1' },
+});
+
+// Copy the example manifest and give it this executor's source.
+const manifest = JSON.parse(readFileSync('examples/agent-manifest.example.json', 'utf8'));
+manifest.source = executor.inventorySnapshot({ tenantId: 'example-tenant' }).source;
+const file = join(mkdtempSync(join(tmpdir(), 'agent-map-')), 'manifest.json');
+writeFileSync(file, JSON.stringify(manifest, null, 2), { mode: 0o600 });
+
+// Load the private file and serve it to a collector.
+const token = createInventoryObserverToken();
+const observer = await startInventoryServer({
+  executor,
+  observers: [{ token, tenantIds: ['example-tenant'], profile: 'host' }],
+  manifests: [loadInventoryManifestFile(file)],
+});
+
+// Ask for a snapshot the way the collector does.
+const response = await fetch(`${observer.url}/v1/inventory/snapshot`, {
+  method: 'POST',
+  headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+  body: JSON.stringify({ tenantId: 'example-tenant' }),
+});
+const snapshot = await response.json();
+console.log(snapshot.profile, snapshot.manifest.agents.map(agent => agent.name));
+
+await observer.close();
+executor.close();
+```
+
+In your own host, keep three things from this sample: the `inventory` option on the
+executor, `loadInventoryManifestFile` with an absolute path from your configuration, and
+`startInventoryServer`. Give the token to the collector only. Never put it in a URL or a
+log.
+
+### 4. Start the collector, the map service and the viewer
+
+Follow the [Cartography runbook](../../deployment/cartography/RUNBOOK.md) to run the
+collector and the map service, and the
+[company sign-in guide](../../deployment/cartography/IDENTITY.md) to let people sign in
+with your identity provider. Enroll each executor and tenant with the collector by hand.
+One collector accepts up to 128 enrollments.
+
+### 5. Check the map
+
+Sign in to the viewer and open **Agent inventory**, **Owners** and **Resources**. Before
+you give more people access, confirm three things: an agent you know is listed, a resource
+you know is listed, and a reader from another team cannot see a team you meant to hide.
+
+### 6. Keep the manifest current
+
+When an agent is added, retired or changes owner, edit the file, raise `revision` and
+restart the host. The file is read once at startup. Then open the **Discovery** view and
+work through [what the manifest is missing](#find-what-the-manifest-is-missing).
+
+## What you should see
+
+Step 1 prints one line of JSON that starts with `{"coverage":` and contains
+`"profile":"host"`.
+
+Step 3 prints:
+
+```text
+host [ 'Invoice assistant' ]
+```
+
+After step 5, the viewer lists the agents your manifest declares, each with its owner.
+
+## What can go wrong
+
+| Symptom | Cause | Fix |
+| --- | --- | --- |
+| `INVENTORY_DISABLED` | The executor was created without the `inventory` option. | Add `inventory: { companyId, sourceId, enrollmentGeneration }`. |
+| `INVENTORY_MANIFEST_FILE_INVALID` | The file is readable by other users, is not owned by the user the host runs as, is a symbolic link or has a second hard link, is over 2 MiB, is not valid UTF-8 JSON, repeats a field name, or the path is not absolute. | Use a regular file with `chmod 600`, owned by the host's user, and pass its absolute path. |
+| `INVENTORY_MANIFEST_FILE_UNSUPPORTED` | The host runs on Windows. | Build the manifest in host code and pass it through `validateInventoryManifest`. |
+| `INVENTORY_MANIFEST_INVALID` | A field is missing, unknown or malformed, or an id is used twice. | Compare the file with the [data format reference](../agent-cartography-contract.md). |
+| `INVENTORY_MANIFEST_REFERENCE_INVALID` | An entry names an owner, agent, deployment or binding that is not declared. | Declare the missing entry or correct the id. |
+| `INVENTORY_SERVER_CONFIG_INVALID` at startup | An observer has profile `host` or `host-mcp` but no manifest covers one of its tenants. | Pass one manifest per tenant in `manifests`. |
+| The observer answers `503` with `INVENTORY_UNAVAILABLE` | Most often the manifest's `source` is not the executor's, or a binding names a task, tool or resource the executor does not have. | Run `composeInventorySnapshot(executor.inventorySnapshot({ tenantId }), manifest)` in host code. It throws the specific code. |
+| The collector refuses the snapshot with `MANIFEST_CONTENT_CONFLICT` | The manifest changed but `revision` did not. | Raise `revision`. |
+| An agent runs tasks but is not on the map | Nobody declared it. | Add it to the manifest. Its tasks show up under Discovery until you do. |
+| A team-scoped reader sees one fixed note under Discovery | Discovery is for readers who can see all teams. | Ask a reader with all-teams access. |
+
+## How agents get onto the map
+
+**An agent appears on the map only when a person lists it in the host manifest.** Nothing
+adds an agent automatically.
+
+| Source | What it gives you |
+| --- | --- |
+| The host manifest | The agent, its owner and team, deployments, bindings, credential references and declared paths around the guard. This is the only way an agent is created. You can declare an agent that has never run a task. |
+| The executor | Tasks, grants, tools and callers. A task is linked to an agent only if `taskBindings` names it. |
+| MCP inventory | The state of the Model Context Protocol (MCP) connections that the manifest's execution bindings name. It does not find other MCP servers. |
+| AWS collection | IAM roles, IAM users and S3 buckets of one enrolled account, joined to the ARNs the manifest names. See the [AWS guide](../../deployment/cartography/AWS.md). |
+| A snapshot file | For a sandbox, the collector can import one prepared snapshot. See the [collector README](../../integrations/cartography/README.md#file-import-into-a-dedicated-sandbox). |
+
+Agent Map does not scan infrastructure, code, repositories, networks or running
+processes. It does not list identity-provider or SaaS apps, and it does not import from a
+CSV, CMDB or service catalog.
+
+The map is as complete as your manifest and gives no figure for how much of your fleet
+it covers. A declared agent stays listed until someone removes it, whether or not it still
+runs. To keep the manifest accurate, generate it from the system that deploys your agents.
+
+## Declare agents from a file
+
+`loadInventoryManifestFile(path)` from `@shieldaai/agent-guard-executor/inventory` loads a
+manifest file, so adding an agent is a file change and a restart, not a code change. One
+file covers one tenant. Take the path from your host's own configuration, never from a
+request, a task or an agent. Never put secrets in the file: names and purposes are shown
+to readers as written.
+
+## Find what the manifest is missing
+
+Two views point at agents you may not have declared. They are leads for a person to
+review. They never create an agent, and only a reader with all-teams access sees them.
+
+| View | What it lists | What it cannot see |
+| --- | --- | --- |
+| Undeclared activity | Tasks and callers that ran through an enrolled executor and belong to no declared agent. | An agent that does not use the guard. |
+| Unclaimed cloud identities | IAM roles and users of your enrolled AWS accounts that no declared agent's execution binding names. | Role assumption, instance profiles, federation, and accounts you have not enrolled. |
+
+A task marked `parentDeclared: true` is usually a sub-task of a declared agent that lacks
+its own binding. Most IAM roles are not agents. An account whose collection is missing or
+out of date reads `unknown`; it is never shown as an empty list.
+
+The operations behind these views are `get_inventory_health`,
+`list_undeclared_activity` and `list_unclaimed_identities`. The
+[Agent Map package README](../../packages/agent-map/README.md#discovery) documents their
+fields and limits.
 
 ## Read the map
 
-Start with an agent or resource, then inspect its structured evidence and
-relationships. Indexes page within your authorized scope. Shared resources,
-owners and credential references cannot reveal agents in another hidden team.
-The focused graph supplements accessible lists and tables; a large graph does
-not require rendering the entire company inventory.
-
-The evidence labels have distinct meanings:
+Each fact carries a label that says where it came from:
 
 | Label | Meaning |
 | --- | --- |
-| Declared permission | A retained task grant with its exact tool/resource selectors and task constraints. It is not a current backend authorization decision. |
-| Policy candidate | A separately collected mapped cloud relationship, with its conditions, freshness and known limitations. |
-| Host assertion | Company-provided ownership, deployment, resource or credential metadata. |
-| Unknown / not collected | The available source cannot establish that fact; this is not proof of no access. |
+| Declared permission | A grant on a task, with its exact tool and resources. It is what the task was given, not a statement that a call will succeed. |
+| Policy candidate | A cloud relationship collected separately from AWS, with its conditions and age. |
+| Host assertion | Something your manifest says: ownership, deployment, resource or credential details. |
+| Unknown / not collected | The map has no source for this fact. It does not mean "no access". |
 
-Approval events, request-time authorization decisions and backend receipt history
-are explicitly not collected by this catalog. Current task gates can explain a
-known blocker; a clear gate never means a future action will succeed. Use Agent
-Ops and the trusted execution/backend audit workflow for actual approvals and
-receipts.
+The map does not collect approvals, individual allow or deny decisions, or backend
+receipts. For those, use the executor's audit records.
 
-## Review permission changes
+The **Changes** view shows the difference between the current snapshot and the previous
+one. It is not a log of every event, and a removed grant does not prove that every other
+way to reach the resource is closed.
 
-Compare the current publication with its retained predecessor. Inspect safe
-before/after fields, added/removed relationships and the visible affected agents.
-Filters can focus on permissions, ownership or bindings. Ownership transfers,
-grant edits, resource remapping, deployment credentials and MCP drift are separate
-observations. A removed grant is not a claim that every ambient access path was
-revoked, and a new graph edge is not proof of effective permission expansion.
-
-Comparison is a net difference between retained snapshots, not a complete event
-log. A missing baseline is a coverage gap. Current cloud policy evidence does not
-create policy history. Changes hidden by current team visibility are not exposed
-through names, old values, relationships or counts.
-
-## Change and recover the catalog safely
-
-Keep the manifest ID stable and increment its revision whenever content changes.
-Upgrade collector/query readers before publishing version 2. Publication rejects
-same-revision content changes and a version-2-to-version-1 downgrade within a
-source generation. An older reader must fail on unsupported data, not strip it.
-Retained snapshots, supersession fences and the existing source recovery workflow
-continue to govern restoration. Use the reviewed source-generation replacement
-procedure for an intentional protocol reset; do not edit graph rows or reuse a
-retired source to bypass a fence.
-
-Keep independently captured timestamps intact. A fresh collection of old host
-metadata does not make the metadata fresh. Validate the company's actual catalog
-source, IdP bindings, retention, backup and operator workflow before rollout.
+For the viewer, see the [viewer README](../../apps/agent-map/README.md). For queries,
+limits and capacity, see the [Agent Map package README](../../packages/agent-map/README.md).
+For general limits of Agent Guard, see [Support and limits](../support-and-limits.md).

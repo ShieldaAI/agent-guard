@@ -13,15 +13,12 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from faults import import_snapshot
 from test_reference_queries import query, scope
 from test_reference_queries import reference_snapshot as reference_snapshot
 
 from agent_guard_cartography.archive import SnapshotArchive
-from agent_guard_cartography.graph import (
-    GraphImportError,
-    import_snapshot,
-    retire_projection,
-)
+from agent_guard_cartography.graph import GraphImportError, retire_projection
 from agent_guard_cartography.lifecycle import (
     LifecycleError,
     preflight_transition,
@@ -369,6 +366,8 @@ def test_cli_missing_successor_leaves_no_pending_intent_or_predecessor_fence(
     value = transition(before, successor(before))
     path = tmp_path / "transition.json"
     path.write_text(json.dumps(value))
+    # The lifecycle command requires an existing archive; it never creates one unasked.
+    (tmp_path / "archive").mkdir(mode=0o700)
     configuration = json.loads(Path(os.environ["AGENT_GUARD_TEST_NEO4J_CONFIG"]).read_text())
     process = subprocess.run(
         [
@@ -393,7 +392,10 @@ def test_cli_missing_successor_leaves_no_pending_intent_or_predecessor_fence(
         timeout=30,
     )
     assert process.returncode == 2
-    assert json.loads(process.stderr) == {"error": "SOURCE_TRANSITION_SOURCE_MISSING"}
+    assert json.loads(process.stderr) == {
+        "status": "failed",
+        "code": "SOURCE_TRANSITION_SOURCE_MISSING",
+    }
     assert not process.stdout and configuration["password"] not in process.stderr
     with SnapshotArchive(tmp_path / "archive") as archive:
         assert not archive.list_transitions()
@@ -416,6 +418,8 @@ def test_cli_requires_exact_archived_endpoints_then_commits_and_retries_safely(
             for snapshot, imported in ((before, previous), (after, current)):
                 stored = archive.store(snapshot)
                 archive.record_result(stored.receipt_id, imported)
+    else:
+        folder.mkdir(mode=0o700)
     configuration = json.loads(Path(os.environ["AGENT_GUARD_TEST_NEO4J_CONFIG"]).read_text())
     command = [
         sys.executable,
@@ -439,7 +443,10 @@ def test_cli_requires_exact_archived_endpoints_then_commits_and_retries_safely(
     assert configuration["password"] not in result.stdout + result.stderr
     if not with_evidence:
         assert result.returncode == 2
-        assert json.loads(result.stderr) == {"error": "ARCHIVE_TRANSITION_EVIDENCE_MISSING"}
+        assert json.loads(result.stderr) == {
+            "status": "failed",
+            "code": "ARCHIVE_TRANSITION_EVIDENCE_MISSING",
+        }
         assert not result.stdout
         with SnapshotArchive(folder) as archive:
             assert not archive.list_transitions()

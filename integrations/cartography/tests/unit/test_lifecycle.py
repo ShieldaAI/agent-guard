@@ -4,7 +4,9 @@ import json
 from copy import deepcopy
 from hashlib import sha256
 
+import neo4j
 import pytest
+from neo4j.exceptions import ServiceUnavailable
 
 from agent_guard_cartography import archive as archive_module
 from agent_guard_cartography import lifecycle, publish
@@ -165,7 +167,13 @@ def test_cli_preflights_then_journals_before_graph_and_finishes_after_commit(
 
     class Archive(Context):
         def __init__(self, _path, **options):
-            assert options == {"max_snapshots": 4096, "max_bytes": 256 * 1024 * 1024}
+            # A mistyped archive path must fail: the command never creates it unasked.
+            assert options == {
+                "create": False,
+                "max_snapshots": 4096,
+                "max_bytes": 256 * 1024 * 1024,
+                "max_pending": 16,
+            }
 
         def require_transition_evidence(self, value, *, projection_ids):
             assert value == transition and set(projection_ids) == {
@@ -199,8 +207,8 @@ def test_cli_preflights_then_journals_before_graph_and_finishes_after_commit(
             raise RuntimeError("private-diagnostic-canary")
         return result
 
-    monkeypatch.setattr(archive_module, "SnapshotArchive", Archive)
-    monkeypatch.setattr(lifecycle.GraphDatabase, "driver", lambda *_a, **_k: Context())
+    monkeypatch.setattr(lifecycle, "SnapshotArchive", Archive)
+    monkeypatch.setattr(neo4j.GraphDatabase, "driver", lambda *_a, **_k: Context())
     monkeypatch.setattr(lifecycle, "preflight_transition", preflight)
     monkeypatch.setattr(
         lifecycle,
@@ -214,6 +222,16 @@ def test_cli_preflights_then_journals_before_graph_and_finishes_after_commit(
     monkeypatch.setenv("TEST_LIFECYCLE_PASSWORD", "private-password-canary")
     path = tmp_path / "transition.json"
     path.write_text(json.dumps(transition))
+    # The command requires an existing archive, and holds the lock beside it.
+    (tmp_path / "archive").mkdir(mode=0o700)
+    held = []
+    real_lock = lifecycle.ingestion_lock
+
+    def lock(*paths):
+        held.extend(paths)
+        return real_lock(*paths)
+
+    monkeypatch.setattr(lifecycle, "ingestion_lock", lock)
     status = lifecycle.main(
         [
             "--transition",
@@ -228,6 +246,7 @@ def test_cli_preflights_then_journals_before_graph_and_finishes_after_commit(
             str(tmp_path / "lock"),
         ]
     )
+    assert held == [tmp_path / "archive.lock", tmp_path / "lock"]
     captured = capsys.readouterr()
     assert "private-" not in captured.out + captured.err
     if failure == "preflight":
@@ -287,3 +306,64 @@ def test_superseded_maintenance_skips_pending_and_mismatched_graphs_and_caps_tot
 def test_retirement_options_are_validated_before_archive_or_graph_access(options):
     with pytest.raises(GraphImportError, match="^RETENTION_INVALID$"):
         publish.retire_superseded(None, None, **options)
+
+
+def test_cli_failures_use_the_collector_error_shape_and_specific_codes(
+    tmp_path, transition, monkeypatch, capsys
+):
+    arguments = [
+        "--transition",
+        str(tmp_path / "missing-canary.json"),
+        "--archive-dir",
+        str(tmp_path / "archive"),
+        "--neo4j-uri",
+        "bolt://127.0.0.1:7687",
+        "--neo4j-password-env-var",
+        "TEST_LIFECYCLE_PASSWORD",
+        "--lock-file",
+        str(tmp_path / "lock"),
+    ]
+    assert lifecycle.main(arguments) == 2
+    assert json.loads(capsys.readouterr().err) == {
+        "status": "failed",
+        "code": "SOURCE_TRANSITION_NOT_FOUND",
+    }
+    path = tmp_path / "transition.json"
+    path.write_text(json.dumps(transition))
+    arguments[1] = str(path)
+    monkeypatch.delenv("TEST_LIFECYCLE_PASSWORD", raising=False)
+    assert lifecycle.main(arguments) == 2
+    assert json.loads(capsys.readouterr().err) == {
+        "status": "failed",
+        "code": "NEO4J_PASSWORD_REQUIRED",
+    }
+    monkeypatch.setenv("TEST_LIFECYCLE_PASSWORD", "private-password-canary")
+    # A missing archive directory is a typo until the operator says otherwise.
+    assert lifecycle.main(arguments) == 2
+    assert json.loads(capsys.readouterr().err) == {
+        "status": "failed",
+        "code": "ARCHIVE_DIRECTORY_NOT_FOUND",
+    }
+    # Neither the archive nor a lock file beside the mistyped path is left behind.
+    assert not (tmp_path / "archive").exists() and not (tmp_path / "archive.lock").exists()
+
+    def unreachable(*_args, **_kwargs):
+        raise ServiceUnavailable("refused with private-password-canary")
+
+    monkeypatch.setattr(neo4j.GraphDatabase, "driver", unreachable)
+    assert (
+        lifecycle.main(
+            [*arguments, "--create", "--verbose", "--archive-retention-seconds", "86400"]
+        )
+        == 2
+    )
+    assert (tmp_path / "archive").stat().st_mode & 0o777 == 0o700
+    failure, detail = (json.loads(line) for line in capsys.readouterr().err.splitlines())
+    assert failure == {"status": "failed", "code": "NEO4J_UNAVAILABLE"}
+    assert detail == {
+        "status": "debug",
+        "exception": "ServiceUnavailable",
+        "message": "refused with [REDACTED]",
+    }
+    with pytest.raises(SystemExit):
+        lifecycle.main([*arguments, "--archive-retention-seconds", "1"])

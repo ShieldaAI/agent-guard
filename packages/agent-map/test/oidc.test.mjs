@@ -338,3 +338,45 @@ test('late DNS completion after deadline never dispatches client credentials', a
   assert.equal(mocked.mock.callCount(), 1);
   assert.equal(calls(provider, '/token'), 0);
 });
+
+test('a provider clock a few seconds ahead still signs in, and expiry is never extended', async t => {
+  const provider = await createTestIdentityProvider(t),
+    client = await createMapOidcClient(configuration(provider));
+  const seconds = () => Math.floor(Date.now() / 1000);
+  // Issued, or valid from, three seconds in this host's future: inside the default five.
+  for (const overrides of [
+    () => ({ claims: { iat: seconds() + 3 } }),
+    () => ({ notBefore: Date.now() + 3000 }),
+    () => ({ claims: { iat: seconds() + 3 }, notBefore: Date.now() + 3000 }),
+  ]) {
+    const { start, callback } = await flow(client, provider, overrides());
+    assert.equal((await client.complete(callback, transaction(start))).subject, 'reader-1');
+  }
+  for (const [name, overrides] of [
+    // The tolerance is for iat and nbf only: a token two seconds past its expiry is refused.
+    ['expired inside the tolerance', () => ({ claims: { iat: seconds() - 100, exp: seconds() - 2 } })],
+    ['issued beyond the tolerance', () => ({ claims: { iat: seconds() + 30 } })],
+    ['not valid until beyond the tolerance', () => ({ notBefore: Date.now() + 30_000 })],
+  ])
+    await t.test(name, async () => {
+      const { start, callback } = await flow(client, provider, overrides());
+      await assert.rejects(client.complete(callback, transaction(start)), { code: 'MAP_IDENTITY_INVALID' });
+    });
+  // The session still ends at the token's own expiry.
+  const expiresAt = seconds() * 1000 + 120_000;
+  const ahead = await flow(client, provider, { claims: { iat: seconds() + 3 }, expiresAt });
+  assert.equal((await client.complete(ahead.callback, transaction(ahead.start))).expiresAt, expiresAt);
+  // A host may turn the tolerance off, and cannot raise it past a minute.
+  const strict = await createMapOidcClient(configuration(provider, { clockToleranceSeconds: 0 }));
+  for (const overrides of [() => ({ claims: { iat: seconds() + 3 } }), () => ({ notBefore: Date.now() + 3000 })]) {
+    const { start, callback } = await flow(strict, provider, overrides());
+    await assert.rejects(strict.complete(callback, transaction(start)), { code: 'MAP_IDENTITY_INVALID' });
+  }
+  const wide = await createMapOidcClient(configuration(provider, { clockToleranceSeconds: 60 }));
+  const far = await flow(wide, provider, { claims: { iat: seconds() + 30 } });
+  assert.equal((await wide.complete(far.callback, transaction(far.start))).subject, 'reader-1');
+  for (const clockToleranceSeconds of [-1, 61, 1.5, '5', null])
+    await assert.rejects(createMapOidcClient(configuration(provider, { clockToleranceSeconds })), {
+      code: 'MAP_CONFIG_INVALID',
+    });
+});

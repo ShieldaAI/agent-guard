@@ -108,16 +108,24 @@ test('identity reload revokes existing sessions and agent proposals cannot appro
     (await request(`/agent/requests/${human.id}`, { headers: { Authorization: `Bearer ${token}` } })).status,
     404,
   );
-  assert.equal(
-    (
+  // No existence oracle: outside the allowlist a foreign ticket and a nonexistent one get the same answer.
+  const outside = [];
+  for (const ticketId of ['T-2', 'T-404'])
+    outside.push(
       await request('/agent/requests', {
         method: 'POST',
         headers,
-        body: JSON.stringify({ ticketId: 'T-2', status: 'resolved' }),
-      })
-    ).status,
-    404,
+        body: JSON.stringify({ ticketId, status: 'resolved' }),
+      }),
+    );
+  assert.deepEqual(
+    outside.map(result => [result.status, result.text]),
+    [
+      [403, outside[0].text],
+      [403, outside[0].text],
+    ],
   );
+  assert.equal(outside[0].json().error.code, 'FORBIDDEN');
   assert.equal(
     (await request(`/api/requests/${proposal.json().request.id}/approve`, { method: 'POST', headers, body: '{}' }))
       .status,
@@ -153,13 +161,22 @@ test('login callbacks are browser-bound, single-use and reject unenrolled or inv
       },
       body: '{}',
     });
-    return { cookie, authorizationUrl: login.json().authorizationUrl };
+    assert.equal(login.status, 200, login.text);
+    const renewed = login.headers['set-cookie'][0];
+    assert.match(renewed, /^__Host-agent_ops=a\.[^;]+; Path=\/; Secure; HttpOnly; SameSite=Lax; Max-Age=300$/);
+    return { stale: cookie, cookie: renewed.split(';')[0], authorizationUrl: login.json().authorizationUrl };
   }
   const first = await begin(),
     second = await begin(),
     callback = await provider.authorize(first.authorizationUrl, { subject: 'owner' });
   assert.equal(
     (await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: second.cookie } })).status,
+    401,
+  );
+  // The flow is bound to the cookie renewed at sign-in start, so an old page never outlives its flow.
+  assert.notEqual(first.cookie, first.stale);
+  assert.equal(
+    (await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: first.stale } })).status,
     401,
   );
   assert.equal(
@@ -294,5 +311,137 @@ test('pagination accepts only exact fields and rejects reserved, duplicate and m
     }
   }
   assert.deepEqual(Object.getOwnPropertyNames(Object.prototype), prototypeKeys);
+  assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 1);
+});
+
+async function beginSignIn({ request, origin }) {
+  const initial = await request('/api/session'),
+    cookie = initial.headers['set-cookie'][0].split(';')[0];
+  const login = await request('/auth/login', {
+    method: 'POST',
+    headers: {
+      Cookie: cookie,
+      Origin: origin,
+      'X-CSRF-Token': initial.json().csrfToken,
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  });
+  return {
+    status: login.status,
+    cookie: login.headers['set-cookie']?.[0].split(';')[0],
+    authorizationUrl: login.status === 200 ? login.json().authorizationUrl : undefined,
+  };
+}
+test('abandoned sign-ins behind one address evict the oldest instead of locking everyone out', async t => {
+  const fixture = await httpsSetup(t),
+    { request, provider } = fixture;
+  // Four people behind one proxy address start and abandon a sign-in; the fifth must still get in.
+  const flows = [];
+  for (let index = 0; index < 5; index++) flows.push(await beginSignIn(fixture));
+  assert.deepEqual(
+    flows.map(flow => flow.status),
+    [200, 200, 200, 200, 200],
+  );
+  const complete = async flow => {
+    const callback = await provider.authorize(flow.authorizationUrl, { subject: 'owner' });
+    return (await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: flow.cookie } })).status;
+  };
+  assert.equal(await complete(flows[0]), 401, 'only the oldest pending flow gave way');
+  assert.equal(await complete(flows[1]), 303);
+  assert.equal(await complete(flows[4]), 303);
+});
+test('the per-address sign-in cap, rate limit and session lifetime are configurable within safe bounds', async t => {
+  const fixture = await httpsSetup(t, { server: { signInFlowsPerClient: 1, rateLimitPerMinute: 60 } }),
+    { request, provider } = fixture;
+  const first = await beginSignIn(fixture),
+    second = await beginSignIn(fixture);
+  const callback = await provider.authorize(first.authorizationUrl, { subject: 'owner' });
+  assert.equal(
+    (await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: first.cookie } })).status,
+    401,
+  );
+  const kept = await provider.authorize(second.authorizationUrl, { subject: 'owner' });
+  assert.equal((await request(`${kept.pathname}${kept.search}`, { headers: { Cookie: second.cookie } })).status, 303);
+  let last;
+  for (let index = 0; index < 60; index++) last = await request('/health/ready');
+  assert.equal(last.status, 429, 'the configured 60 per minute applies');
+  for (const [server, code] of [
+    [{ signInFlowsPerClient: 0 }, 'SIGN_IN_CONFIG_INVALID'],
+    [{ signInFlowsPerClient: 129 }, 'SIGN_IN_CONFIG_INVALID'],
+    [{ rateLimitPerMinute: 59 }, 'RATE_LIMIT_CONFIG_INVALID'],
+    [{ sessionTtlMs: 15 * 60_000 + 1 }, 'SESSION_CONFIG_INVALID'],
+  ])
+    await assert.rejects(httpsSetup(t, { server }), { code }, code);
+});
+test('an unparseable request target is a client error and an unexpected failure leaves one coded trace', async t => {
+  const events = [],
+    fixture = await httpsSetup(t, { server: { onSecurityEvent: event => events.push(event) } }),
+    operator = await fixture.login();
+  for (const target of ['//', '//?x=1', 'https://[', '*']) {
+    const refused = await fixture.raw(target);
+    assert.equal(refused.status, 400, target);
+    assert.equal(refused.json().error.code, 'REQUEST_ORIGIN_INVALID');
+  }
+  assert.equal((await operator.get('/api/status')).json().http.lifetime.serverErrors, 0);
+  assert.deepEqual(
+    events.filter(event => event.event === 'REQUEST_FAILED'),
+    [],
+  );
+  const tickets = fixture.workflow.tickets.bind(fixture.workflow);
+  fixture.workflow.tickets = () => {
+    throw Object.assign(Error('PRIVATE store detail /srv/data/tickets.sqlite'), { code: 'STORE_CORRUPT' });
+  };
+  const failed = await operator.get('/api/tickets');
+  assert.equal(failed.status, 503);
+  assert.equal(failed.json().error.code, 'SERVICE_UNAVAILABLE');
+  fixture.workflow.tickets = () => {
+    throw Object.assign(Error('PRIVATE'), { code: 'not a safe code: /srv/data' });
+  };
+  assert.equal((await operator.get('/api/tickets')).status, 503);
+  fixture.workflow.tickets = tickets;
+  assert.deepEqual(
+    events.filter(event => event.event === 'REQUEST_FAILED'),
+    [
+      {
+        event: 'REQUEST_FAILED',
+        operatorId: 'owner',
+        tenantId: 'acme',
+        code: 'SERVICE_UNAVAILABLE',
+        cause: 'STORE_CORRUPT',
+      },
+      { event: 'REQUEST_FAILED', operatorId: 'owner', tenantId: 'acme', code: 'SERVICE_UNAVAILABLE', cause: 'UNCODED' },
+    ],
+  );
+  assert.equal(/PRIVATE|srv/.test(JSON.stringify(events)), false);
+  assert.equal(/PRIVATE|srv/.test(failed.text), false);
+  // An ordinary refusal is not a server failure and leaves no such event.
+  assert.equal((await operator.get('/api/tickets?limit=0')).status, 400);
+  assert.equal(events.filter(event => event.event === 'REQUEST_FAILED').length, 2);
+});
+test('close-out over HTTP is operator-only, previews without a digest and never touches a request that is not unconfirmed', async t => {
+  const fixture = await httpsSetup(t),
+    operator = await fixture.login(),
+    requester = await fixture.login('requester');
+  const pending = (await requester.post('/api/requests', { ticketId: 'T-1', status: 'resolved' })).json().request;
+  assert.equal((await requester.post(`/api/requests/${pending.id}/close-out`, {})).status, 403);
+  const refused = await operator.post(`/api/requests/${pending.id}/close-out`, {});
+  assert.equal(refused.status, 409);
+  assert.equal(refused.json().error.code, 'RECONCILIATION_UNAVAILABLE');
+  assert.equal((await operator.post(`/api/requests/${pending.id}/close-out`, { other: 1 })).status, 400);
+  // The state a crash leaves between the recorded approval and the dispatch.
+  fixture.runtime.backend.transaction(state => {
+    Object.assign(state.ticketService.requests[pending.id], { state: 'dispatching', reviewerId: 'owner' });
+  });
+  const missing = await operator.post(`/api/requests/${pending.id}/reconcile`, {});
+  assert.equal(missing.json().error.code, 'RECEIPT_NOT_FOUND');
+  const preview = (await operator.post(`/api/requests/${pending.id}/close-out`, {})).json().closeOut;
+  assert.equal(preview.receipt, 'absent');
+  assert.equal((await operator.get('/api/requests')).json().requests[0].state, 'unconfirmed');
+  const stale = await operator.post(`/api/requests/${pending.id}/close-out`, { digest: '0'.repeat(64) });
+  assert.equal(stale.json().error.code, 'CLOSE_OUT_STALE');
+  const closed = await operator.post(`/api/requests/${pending.id}/close-out`, { digest: preview.digest });
+  assert.equal(closed.status, 200, closed.text);
+  assert.deepEqual([closed.json().request.state, closed.json().request.cause], ['failed', 'CLOSED_WITHOUT_RECEIPT']);
   assert.equal(fixture.workflow.tickets('acme').tickets[0].version, 1);
 });

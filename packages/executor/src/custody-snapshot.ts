@@ -1,9 +1,9 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createDecipheriv, createHash } from 'node:crypto';
-import { closeSync, constants, openSync } from 'node:fs';
+import { closeSync } from 'node:fs';
 import { dirname } from 'node:path';
 import type { Ledger } from './store.js';
-import { checkPrivate, custodyFail, privateDirectory } from './custody-files.js';
+import { checkPrivate, custodyFail, openPrivate, privateDirectory } from './custody-files.js';
 
 /** Reads immutable encrypted snapshots against an independently authenticated commitment. */
 export class CustodySnapshot {
@@ -17,7 +17,7 @@ export class CustodySnapshot {
     options: { database?: DatabaseSync } = {},
   ) {
     privateDirectory(dirname(path));
-    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const fd = openPrivate(path);
     try {
       checkPrivate(fd, path);
     } finally {

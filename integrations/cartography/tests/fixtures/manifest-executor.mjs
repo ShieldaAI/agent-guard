@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DurableExecutor, composeInventorySnapshot, validateInventoryManifest,
-  createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/index.js';
+import { DurableExecutor } from '../../../../packages/executor/dist/index.js';
+import { composeInventorySnapshot, validateInventoryManifest, createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/entry-inventory.js';
 
 const directory = realpathSync(mkdtempSync(join(tmpdir(), 'guard-manifest-contract-')));
 let executor;

@@ -5,7 +5,9 @@
 Every `GuardError.code` is listed here. Codes are stable identifiers and never carry
 request data. **Retryable** means repeating the same request later may succeed and
 cannot repeat an effect. **HTTP** is the durable executor task server's status; its
-JSON error body is `{ "error": code, "retryable": boolean }`.
+JSON error body is `{ "error": code, "retryable": boolean }`. One admin response adds a
+`detail`: a revocation the ledger could not record answers `OPERATION_FAILED` with
+`"retryable": true` and `"detail": "REVOCATION_NOT_DURABLE"`.
 
 `RESOLUTION_FAILED`, `ARGUMENT_INVALID` and `TOOL_FAILED` flatten adapter errors. When
 the adapter error has a safe uppercase `code`, the `GuardError` keeps it as `detail`
@@ -13,47 +15,47 @@ the adapter error has a safe uppercase `code`, the `GuardError` keeps it as `det
 
 | Code | Meaning | Retryable | HTTP | Typical cause |
 | --- | --- | --- | --- | --- |
-| `INVALID_INPUT` | A host-supplied option or argument is malformed. | no | 400 | Wrong type, empty identifier or out-of-range number in a host call. |
-| `INVALID_JSON` | A value is not bounded plain JSON. | no | 400 | Cycles, accessors, non-finite numbers or values above the JSON limits. |
-| `INVALID_TASK` | The task handle is unknown to this guard. | no | 404 | A handle from another guard instance, or a task that was never created. |
-| `ARGUMENT_INVALID` | The tool rejected the call arguments. | no | 400 | The tool's parse() or input schema refused the arguments. |
-| `DUPLICATE_TASK` | A task with this ID already exists. | no | 409 | Task IDs must be unique within one guard. |
-| `INVALID_PREPARED` | The prepared action is unknown, foreign or no longer valid. | no | 404 | The action was never prepared here, belongs to another task, or was pruned. |
-| `TOOL_UNKNOWN` | No tool with this name is registered. | no | 404 | A typo, or a tool that was never registered. |
-| `TOOL_UNAPPROVED` | The tool's current fingerprint is not approved. | no | 403 | The host has not called approveTool() for this registration yet. |
-| `TOOL_CHANGED` | The tool registration changed after preparation. | no | 409 | The tool was re-registered; prepare and review again. |
-| `TASK_REVOKED` | The task or one of its ancestors was revoked. | no | 403 | revokeTask() was called on this task or a parent. |
-| `TASK_EXPIRED` | The task deadline has passed. | no | 403 | The budget deadline is in the past; create a new task. |
-| `GRANT_DENIED` | No grant in the task ancestry allows this tool and resource. | no | 403 | The resolved resource is outside the task's grants. |
-| `DELEGATION_DENIED` | A child task would exceed its parent's authority. | no | 403 | Delegated grants, recipients or budget exceed the parent. |
-| `TENANT_DENIED` | The resolved tenant differs from the task tenant. | no | 403 | The tool resolved a resource belonging to another tenant. |
-| `CONTROL_PLANE_DENIED` | The tool is control-plane and the task does not allow it. | no | 403 | Set allowControlPlane on the task only for administrative work. |
-| `RECIPIENT_DENIED` | The external recipient is not in the task's allowed recipients. | no | 403 | An outbound call targets a recipient the task did not list. |
-| `SENSITIVE_EGRESS_DENIED` | Sensitive data may not leave through this external call. | no | 403 | The task family read sensitive data earlier and the call is external. |
-| `SECRET_EGRESS_DENIED` | The arguments contain a protected host secret. | no | 403 | A configured secret value appears in the outbound arguments. |
-| `RESOLUTION_FAILED` | The tool could not resolve its resource. | no | 400 | The tool's resolve() threw; see the error detail code when the adapter supplies one. |
-| `POLICY_DENIED` | The policy denied the action. | no | 403 | The configured policy returned deny. |
-| `POLICY_ERROR` | The policy threw or returned an invalid decision. | no | 503 | A bug or invalid return value in the host policy. |
-| `POLICY_CHANGED` | The policy changed after preparation. | no | 409 | setPolicy() was called; prepare and review again. |
-| `POLICY_STATE_CHANGED` | The task changed while the policy was evaluating, beyond the retry bound. | yes | 409 | Heavy parallel use of one task; retry, or raise maxPolicyAttempts. |
-| `POLICY_BUSY` | Too many policy evaluations are in flight for this task family. | yes | 429 | Parallel calls exceeded the policy admission slots; retry shortly. |
-| `POLICY_TIMEOUT` | The policy did not decide within the policy time limit (limits.policyTimeoutMs, 30 seconds by default). | yes | 503 | A slow asynchronous policy; retry with more time or a faster policy. |
-| `ACTION_APPROVAL_LIMIT` | The action already has the maximum number of approvals. | no | 409 | Use an existing approval instead of issuing more. |
-| `ACTION_USED` | The prepared action was already dispatched. | no | 409 | Each prepared action runs at most once; prepare a new one. |
-| `APPROVAL_REQUIRED` | The action needs a human approval before dispatch. | no | 403 | Show the prepared action to a reviewer and pass the approval ID. |
-| `APPROVAL_INVALID` | The approval does not match this action. | no | 403 | A wrong, foreign or tampered approval ID. |
-| `APPROVAL_EXPIRED` | The approval expired. | no | 403 | Ask the reviewer to approve again. |
-| `APPROVAL_USED` | The approval was already consumed. | no | 409 | Each approval authorizes one dispatch. |
-| `CALL_BUDGET_EXCEEDED` | The task has no calls left. | no | 403 | maxCalls is exhausted; create a new task. |
-| `CONCURRENCY_EXCEEDED` | The task is at its concurrent-call limit. | yes | 429 | Other calls are in flight; retry when one finishes. |
-| `COST_BUDGET_EXCEEDED` | The call would exceed the task's cost budget. | no | 403 | Spent plus reserved cost would pass maxCost. |
-| `COST_REPORT_INVALID` | The tool reported an invalid actual cost. | no | 503 | actualCost was negative, fractional or above the declared maximum; the maximum was charged. |
-| `RESULT_INVALID` | The tool returned a malformed result. | no | 503 | The result was not bounded JSON; the effect may already have happened. |
-| `TOOL_FAILED` | The tool handler failed; the outcome is unknown. | no | 503 | The handler threw. Do not retry blindly: the effect may have happened. |
-| `EXECUTION_ABORTED` | The call was aborted; the outcome is unknown. | no | 503 | Deadline, revocation or cancellation during dispatch. Check the backend before retrying. |
-| `UNTRUSTED_CONTEXT_DENIED` | This tool can't run after the task family read outside content. | no | 403 | The tool sets untrustedContext deny (or inherits it) and an earlier call read outside content. |
-| `APPROVAL_CONTEXT_CHANGED` | The task family read outside content after this approval was given. | no | 409 | A call that reads outside content ran after approval; ask the reviewer to approve the current state. |
-| `CLOCK_INVALID` | The guard clock returned an invalid or backward time. | no | 503 | A broken clock option, or a large backward wall-clock step. |
+| `INVALID_INPUT` | A host-supplied option or argument is malformed. | no | 400 | A wrong type, an empty identifier or an out-of-range number in a host call. Fix the calling code. |
+| `INVALID_JSON` | A value is not plain JSON within the size limits. | no | 400 | The value has a cycle, an accessor, a class instance or a non-finite number, or it exceeds limits.maxJsonBytes, limits.maxJsonNodes or 64 levels of nesting. Send plain data, make it smaller, or raise the limit. |
+| `INVALID_TASK` | The task handle is unknown to this guard. | no | 404 | The handle came from another guard, is a copy of the object createTask() returned, or the task was retired with retireTask(). Create a new task and use its handle. |
+| `ARGUMENT_INVALID` | The tool rejected the call arguments. | no | 400 | The tool's parse() threw or returned something that is not plain JSON. Correct the arguments and prepare again; the error detail carries the parser's code when it supplies one. |
+| `DUPLICATE_TASK` | A task with this ID already exists. | no | 409 | Task IDs are unique among the tasks a guard has not retired. Use a new ID, or call retireTask() on the finished task first. |
+| `INVALID_PREPARED` | The prepared action is unknown here or no longer waiting to run. | no | 404 | The action is not one this guard prepared (it came from another guard or is a copy), or, in the executor, it belongs to another task or has already run or been pruned. Call prepare() again and use what it returns. |
+| `TOOL_UNKNOWN` | No tool with this name is registered. | no | 404 | The name is misspelled, the tool was never registered, or it was removed with unregisterTool(). Register the tool or correct the name. |
+| `TOOL_UNAPPROVED` | The tool's current registration is not approved. | no | 403 | approveTool() has not been called for this registration, the tool was registered again since, or unapproveTool() withdrew the approval. Review the definition, call approveTool() with its current fingerprint, then prepare again. |
+| `TOOL_CHANGED` | The tool registration is not the one this call refers to. | no | 409 | The tool was registered again or removed with unregisterTool() after the action was prepared, or approveTool() was given a fingerprint that is not the current one. Approve the current fingerprint, then prepare and review the action again. |
+| `TASK_REVOKED` | The task or one of its ancestors was revoked. | no | 403 | revokeTask() or retireTask() was called on this task or a parent, or a tool returned an invalid result. Create a new task if the work should continue. |
+| `TASK_EXPIRED` | The task deadline has passed. | no | 403 | The budget deadline of the task or a parent is in the past. Create a new task with a later deadline. |
+| `GRANT_DENIED` | No grant in the task ancestry allows this tool and resource. | no | 403 | The tool or the resolved resource is outside the grants of the task or one of its parents. Grant the resource when creating the task if the call is legitimate; otherwise treat it as a blocked attempt. |
+| `DELEGATION_DENIED` | A child task would exceed its parent's authority. | no | 403 | Delegated grants, recipients or budget exceed the parent. The error detail names which: GRANT_, RECIPIENT_, CONTROL_PLANE_, BUDGET_ or DEADLINE_EXCEEDS_PARENT. Ask for the same or less than the parent holds. |
+| `TENANT_DENIED` | The resolved tenant differs from the task tenant. | no | 403 | The tool's resolve() returned a resource that belongs to another tenant. Nothing to fix when the request was hostile; otherwise correct the resource lookup. |
+| `CONTROL_PLANE_DENIED` | The tool is control-plane and the task does not allow it. | no | 403 | The tool is registered with controlPlane: true and the task (or a parent) was created without allowControlPlane. Set allowControlPlane only on tasks that do administrative work. |
+| `RECIPIENT_DENIED` | The external recipient is not in the task's allowed recipients. | no | 403 | An external call targets a recipient that the task or a parent did not list, or names none. Add the exact recipient to allowedRecipients when creating the task if it is legitimate. |
+| `SENSITIVE_EGRESS_DENIED` | Sensitive data may not leave through this external call. | no | 403 | The call is external and either reads sensitive data itself or runs in a task family that already did. Do the send from a separate task that has not read sensitive data. |
+| `SECRET_EGRESS_DENIED` | The arguments contain a protected host secret. | no | 403 | A value listed in secretValues appears in the arguments of an external call. Remove the secret from the arguments. |
+| `RESOLUTION_FAILED` | The tool could not resolve its resource. | no | 400 | The tool's resolve() threw or returned a malformed result. Check the arguments and the lookup; the error detail carries the adapter's code when it supplies one. |
+| `POLICY_DENIED` | The policy denied the action. | no | 403 | The configured policy returned deny. Change the request or the policy; repeating the call gives the same answer. |
+| `POLICY_ERROR` | The policy threw or returned an invalid decision. | no | 503 | The host policy has a bug or returned something other than allow, deny or require_approval. Fix the policy; the call was not run. |
+| `POLICY_CHANGED` | The policy changed after preparation. | no | 409 | setPolicy() was called after the action was prepared, or the durable executor restarted (a restart ends every prepared action). Prepare the action again and have it reviewed. |
+| `POLICY_STATE_CHANGED` | The task changed while the policy was evaluating, beyond the retry bound. | yes | 409 | Other calls on the same task kept starting or finishing while the policy ran. Retry, run fewer calls in parallel on one task, or raise maxPolicyAttempts. |
+| `POLICY_BUSY` | Too many policy evaluations are in flight for this task family. | yes | 429 | Parallel calls used every policy slot (limits.maxPolicyEvaluations and limits.maxPolicyEvaluationsPerFamily). Retry shortly, or raise the limits. |
+| `POLICY_TIMEOUT` | The policy did not decide within the policy time limit (limits.policyTimeoutMs, 30 seconds by default). | yes | 503 | An asynchronous policy was too slow. Retry, make the policy faster, or raise limits.policyTimeoutMs. |
+| `ACTION_APPROVAL_LIMIT` | The action already has the maximum number of approvals. | no | 409 | approve() was called more often than limits.maxApprovalsPerAction allows for one action. Use an approval ID already issued, or wait for one to expire. |
+| `ACTION_USED` | The prepared action was already dispatched. | no | 409 | Each prepared action runs at most once, even when the first run failed. Call prepare() again for another call. |
+| `APPROVAL_REQUIRED` | The action needs a human approval before dispatch. | no | 403 | The tool, the policy or the outside-content rule requires approval and execute() was called without an approval ID. Show the prepared action to a reviewer, call approve(), and pass the approval ID to execute(). |
+| `APPROVAL_INVALID` | The approval does not match this action. | no | 403 | The approval ID is unknown for this action (it was issued for another action or never issued), or approve() was given an expiry in the past or after the task deadline. Call approve() for this exact action with a valid expiry. |
+| `APPROVAL_EXPIRED` | The approval expired. | no | 403 | execute() ran after the expiresAt given to approve(). Ask the reviewer to approve the action again. |
+| `APPROVAL_USED` | The approval was already consumed. | no | 409 | Each approval authorizes one dispatch. The in-memory guard never returns this code (it reports ACTION_USED); only the executor does. Prepare and approve a new action. |
+| `CALL_BUDGET_EXCEEDED` | The task has no calls left. | no | 403 | The task or a parent has dispatched maxCalls calls. Create a new task with a budget for the remaining work. |
+| `CONCURRENCY_EXCEEDED` | The task is at its concurrent-call limit. | yes | 429 | maxConcurrent calls are already in flight on the task or a parent. Retry when one finishes. |
+| `COST_BUDGET_EXCEEDED` | The call would exceed the task's cost budget. | no | 403 | Spent cost plus cost reserved by calls in flight plus this tool's maxCost would pass the budget's maxCost for the task or a parent. Create a new task with a larger budget if the spend is intended. |
+| `COST_REPORT_INVALID` | The tool reported an invalid actual cost. | no | 503 | The handler returned an actualCost that is negative, fractional or above the tool's maxCost. The maximum was charged and the task was revoked; the effect may have happened, so check the backend, then fix the handler. |
+| `RESULT_INVALID` | The tool returned a malformed result. | no | 503 | The handler returned something other than { value } in plain JSON, or a result larger than limits.maxJsonBytes or limits.maxJsonNodes. The task was revoked and the effect may have happened: check the backend, then fix the handler or raise the limit. |
+| `TOOL_FAILED` | The tool handler failed; the outcome is unknown. | no | 503 | The handler threw. The effect may have happened, so check the backend before preparing the call again. |
+| `EXECUTION_ABORTED` | The call was aborted; the outcome is unknown. | no | 503 | The task deadline passed or the task was revoked while the handler was running. Detail EFFECT_COMMITTED means the handler finished; otherwise check the backend before preparing the call again. |
+| `UNTRUSTED_CONTEXT_DENIED` | This tool can't run after the task family read outside content. | no | 403 | The tool sets untrustedContext deny (or inherits it) and an earlier call in the task family read outside content. Run the tool from a separate task that has not read outside content. |
+| `APPROVAL_CONTEXT_CHANGED` | The task family read outside content after this approval was given. | no | 409 | A call that reads outside content ran between approve() and execute(). Ask the reviewer to approve the action again, knowing what was read. |
+| `CLOCK_INVALID` | The guard clock returned an invalid or backward time. | no | 503 | The clock option threw or returned a bad value, or the system clock stepped backward. Calls work again once the clock passes the last time the guard saw; pass clock: monotonicClock to avoid this. |
 
 ## Durable executor codes
 
@@ -83,4 +85,4 @@ The task server can also return these executor codes.
 
 `McpBoundaryError.code` is typed as `McpBoundaryErrorCode`:
 
-`ACTIVE_CONTENT_DENIED`, `ARGUMENTS_INVALID`, `AUTHORIZATION_DENIED`, `CAPABILITY_DENIED`, `CONNECTION_CHANGED`, `CONNECTION_FAILED`, `CONNECTION_UNAVAILABLE`, `CREDENTIAL_REFLECTED`, `CREDENTIAL_REPLACEMENT_PENDING`, `ENDPOINT_DENIED`, `IDENTITY_DENIED`, `INVALID_ARGUMENTS`, `INVALID_CONFIGURATION`, `INVALID_JSON`, `JSON_LIMIT`, `MCP_INVENTORY_CLOCK_INVALID`, `MCP_INVENTORY_INVALID`, `MCP_INVENTORY_LIMIT_EXCEEDED`, `MCP_OPERATION_FAILED`, `MESSAGE_BUDGET`, `MESSAGE_REJECTED`, `REDIRECT_DENIED`, `REGISTRY_LIMIT`, `REGISTRY_REJECTED`, `RESOURCE_MISMATCH`, `RESPONSE_LIMIT`, `SCHEMA_INVALID`, `SCHEMA_LIMIT`, `SCHEMA_REFERENCE_DENIED`, `SCHEMA_UNSUPPORTED`.
+`ACTIVE_CONTENT_DENIED`, `ARGUMENTS_INVALID`, `AUTHORIZATION_DENIED`, `CAPABILITY_DENIED`, `CONNECTION_CHANGED`, `CONNECTION_FAILED`, `CONNECTION_UNAVAILABLE`, `CREDENTIAL_REFLECTED`, `CREDENTIAL_REPLACEMENT_PENDING`, `ENDPOINT_DENIED`, `IDENTITY_DENIED`, `INVALID_CONFIGURATION`, `INVALID_JSON`, `JSON_LIMIT`, `MCP_INVENTORY_CLOCK_INVALID`, `MCP_INVENTORY_INVALID`, `MCP_INVENTORY_LIMIT_EXCEEDED`, `MCP_OPERATION_FAILED`, `MESSAGE_BUDGET`, `MESSAGE_REJECTED`, `REDIRECT_DENIED`, `REGISTRY_CHANGED`, `REGISTRY_LIMIT`, `REGISTRY_REJECTED`, `RESOURCE_MISMATCH`, `RESPONSE_LIMIT`, `SCHEMA_INVALID`, `SCHEMA_LIMIT`, `SCHEMA_REFERENCE_DENIED`, `SCHEMA_UNSUPPORTED`.

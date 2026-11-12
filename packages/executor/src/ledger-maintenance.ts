@@ -1,21 +1,21 @@
 import { DatabaseSync } from 'node:sqlite';
 import { randomBytes } from 'node:crypto';
-import {
-  closeSync,
-  constants,
-  fstatSync,
-  fsyncSync,
-  lstatSync,
-  openSync,
-  readSync,
-  realpathSync,
-  renameSync,
-  rmSync,
-  writeFileSync,
-} from 'node:fs';
+import { closeSync, constants, fsyncSync, lstatSync, openSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 import { parseEvidenceJson } from './evidence-json.js';
+import { isGuardError } from '@shieldaai/agent-guard';
 import { ExecutorError, LedgerStore, validatePublicLedgerMaxBytes } from './store.js';
+import {
+  PRIVATE_FILE,
+  checkOpenFile,
+  openChecked,
+  privateDirectory,
+  readPrivateFile,
+  trustedDirectoryChain,
+  type PrivateFileProblem,
+  type Refuse,
+} from './private-files.js';
+import { storeOpenFailure } from './custody-files.js';
 
 export interface LedgerKey {
   readonly keyId: string;
@@ -52,73 +52,45 @@ export interface LedgerRotationResult {
 const maxKeyringBytes = 32 * 1024;
 const keyIdPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 
-function fail(code = 'KEYRING_INVALID'): never {
-  throw new ExecutorError(code);
+function fail(code = 'KEYRING_INVALID', options: { detail?: string; cause?: unknown } = {}): never {
+  throw new ExecutorError(code, options);
+}
+/** A public option bag that is not an object is a config error, never a TypeError. */
+function checked<T>(options: T): T {
+  if (!options || typeof options !== 'object') fail('MAINTENANCE_CONFIG_INVALID');
+  return options;
 }
 function validateMaxKeys(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 1 || value > 64)
     fail('KEYRING_LIMIT_INVALID');
   return value;
 }
+/** One mapping from a shared path refusal (private-files.ts) to the keyring codes. */
+const refuse: Refuse = (problem: PrivateFileProblem, cause?: unknown) =>
+  fail(
+    problem === 'DIRECTORY_UNSAFE'
+      ? 'KEYRING_PATH_UNSAFE'
+      : problem === 'FILE_UNSAFE' || problem === 'FILE_TOO_LARGE'
+        ? 'KEYRING_FILE_UNSAFE'
+        : problem === 'FILE_CHANGED'
+          ? 'KEYRING_INVALID'
+          : problem === 'FILE_EXISTS'
+            ? 'KEYRING_EXISTS'
+            : 'KEYRING_UNAVAILABLE',
+    { detail: problem, cause },
+  );
+const keyringFile = Object.freeze({ ...PRIVATE_FILE, maximum: maxKeyringBytes });
 function privateLocation(path: string): string {
   if (!['linux', 'darwin'].includes(process.platform) || typeof path !== 'string' || !isAbsolute(path))
     fail('MAINTENANCE_CONFIG_INVALID');
   const directory = dirname(path);
-  if (realpathSync(directory) !== directory) fail('KEYRING_PATH_UNSAFE');
-  for (let parent = directory; ; parent = dirname(parent)) {
-    const stat = lstatSync(parent);
-    if (
-      !stat.isDirectory() ||
-      stat.isSymbolicLink() ||
-      (stat.uid !== 0 && stat.uid !== process.geteuid!()) ||
-      ((stat.mode & 0o022) !== 0 && (stat.mode & 0o1000) === 0)
-    )
-      fail('KEYRING_PATH_UNSAFE');
-    if (parent === directory && (stat.uid !== process.geteuid!() || (stat.mode & 0o077) !== 0))
-      fail('KEYRING_PATH_UNSAFE');
-    if (parent === dirname(parent)) break;
-  }
+  privateDirectory(directory, refuse);
+  trustedDirectoryChain(directory, refuse);
   return path;
-}
-function privateDescriptor(fd: number, path: string, maximum: number): ReturnType<typeof fstatSync> {
-  const stat = fstatSync(fd),
-    named = lstatSync(path);
-  if (
-    !stat.isFile() ||
-    stat.nlink !== 1 ||
-    stat.uid !== process.geteuid!() ||
-    (stat.mode & 0o077) !== 0 ||
-    stat.size > maximum ||
-    !named.isFile() ||
-    stat.dev !== named.dev ||
-    stat.ino !== named.ino ||
-    stat.size !== named.size ||
-    stat.ctimeMs !== named.ctimeMs
-  )
-    fail('KEYRING_FILE_UNSAFE');
-  return stat;
 }
 function readPrivate(path: string): Buffer {
   privateLocation(path);
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const before = privateDescriptor(fd, path, maxKeyringBytes);
-    const bytes = Buffer.alloc(Number(before.size) + 1);
-    let count = 0;
-    while (count < bytes.length) {
-      const next = readSync(fd, bytes, count, bytes.length - count, null);
-      if (!next) break;
-      count += next;
-    }
-    const after = privateDescriptor(fd, path, maxKeyringBytes);
-    if (count !== before.size || before.ctimeMs !== after.ctimeMs || before.mtimeMs !== after.mtimeMs) {
-      bytes.fill(0);
-      fail();
-    }
-    return bytes.subarray(0, count);
-  } finally {
-    closeSync(fd);
-  }
+  return readPrivateFile(path, keyringFile, refuse);
 }
 function parseKeyring(bytes: Buffer): ParsedKeyring {
   const keys: LedgerKey[] = [];
@@ -203,13 +175,17 @@ function parseKeyring(bytes: Buffer): ParsedKeyring {
       managed = group;
     }
     return { keys, maxKeys, explicitLimit, ...(managed ? { managed } : {}) };
-  } catch {
+  } catch (error) {
     for (const entry of keys) entry.key.fill(0);
+    // Keep a specific refusal (KEYRING_LIMIT_INVALID). A parser error gets no cause:
+    // its message could quote key material.
+    if (error instanceof ExecutorError) throw error;
     return fail();
   }
 }
 /** Trusted initialization/maintenance only. The caller owns and must erase each returned key buffer. */
 export function readLedgerKeyring(options: { keyringFile: string }): readonly LedgerKey[] {
+  checked(options);
   let bytes: Buffer | undefined;
   try {
     bytes = readPrivate(options.keyringFile);
@@ -221,13 +197,14 @@ export function readLedgerKeyring(options: { keyringFile: string }): readonly Le
     return Object.freeze(parsed.keys);
   } catch (error) {
     if (error instanceof ExecutorError) throw error;
-    return fail('KEYRING_UNAVAILABLE');
+    return fail('KEYRING_UNAVAILABLE', { cause: error });
   } finally {
     bytes?.fill(0);
   }
 }
 /** Read only the public retention policy; key material never appears in the result. */
 export function readLedgerKeyringPolicy(options: { keyringFile: string }): LedgerKeyringPolicy {
+  checked(options);
   let bytes: Buffer | undefined, parsed: ParsedKeyring | undefined;
   try {
     bytes = readPrivate(options.keyringFile);
@@ -235,7 +212,7 @@ export function readLedgerKeyringPolicy(options: { keyringFile: string }): Ledge
     return Object.freeze({ keyCount: parsed.keys.length, maxKeys: parsed.maxKeys });
   } catch (error) {
     if (error instanceof ExecutorError) throw error;
-    return fail('KEYRING_UNAVAILABLE');
+    return fail('KEYRING_UNAVAILABLE', { cause: error });
   } finally {
     bytes?.fill(0);
     parsed?.keys.forEach(entry => entry.key.fill(0));
@@ -244,9 +221,10 @@ export function readLedgerKeyringPolicy(options: { keyringFile: string }): Ledge
 function openExisting(database: string, key: Uint8Array, witnessPath?: string, maxBytes?: number): LedgerStore {
   if (
     !['linux', 'darwin'].includes(process.platform) ||
+    typeof database !== 'string' ||
     !isAbsolute(database) ||
     database === ':memory:' ||
-    (witnessPath !== undefined && !isAbsolute(witnessPath))
+    (witnessPath !== undefined && (typeof witnessPath !== 'string' || !isAbsolute(witnessPath)))
   )
     fail('MAINTENANCE_CONFIG_INVALID');
   return new LedgerStore(
@@ -257,19 +235,30 @@ function openExisting(database: string, key: Uint8Array, witnessPath?: string, m
     { existingOnly: true },
   );
 }
+/** Refusals that no key could change: report them as they are instead of as a key problem. */
+const keyIndependent = new Set([
+  'MAINTENANCE_CONFIG_INVALID',
+  'STORE_CONFIG_INVALID',
+  'STORE_DIRECTORY_UNSAFE',
+  'STORE_FILE_UNSAFE',
+]);
 function matchingStore(options: LedgerKeyOptions, keys: readonly LedgerKey[]): { store: LedgerStore; key: LedgerKey } {
   validatePublicLedgerMaxBytes(options.maxBytes);
+  let last: unknown;
   for (const key of keys) {
     try {
       return { store: openExisting(options.database, key.key, options.witnessPath, options.maxBytes), key };
-    } catch {
+    } catch (error) {
       /* Each attempted owner closes before trying the next authenticated key. */
+      if (error instanceof ExecutorError && keyIndependent.has(error.code)) throw error;
+      last = error;
     }
   }
-  return fail('LEDGER_KEY_UNAVAILABLE');
+  return fail('LEDGER_KEY_UNAVAILABLE', storeOpenFailure(options.database, last));
 }
 /** Authenticate existing authority without changing epochs, approvals, budgets or plaintext state. */
 export function loadLedgerKey(options: LedgerKeyOptions): LedgerKey {
+  checked(options);
   validatePublicLedgerMaxBytes(options.maxBytes);
   let bytes: Buffer | undefined, parsed: ParsedKeyring;
   try {
@@ -277,7 +266,7 @@ export function loadLedgerKey(options: LedgerKeyOptions): LedgerKey {
     parsed = parseKeyring(bytes);
   } catch (error) {
     if (error instanceof ExecutorError) throw error;
-    return fail('KEYRING_UNAVAILABLE');
+    return fail('KEYRING_UNAVAILABLE', { cause: error });
   } finally {
     bytes?.fill(0);
   }
@@ -304,24 +293,44 @@ export function loadLedgerKey(options: LedgerKeyOptions): LedgerKey {
     for (const entry of keys) entry.key.fill(0);
   }
 }
+/** The original failure behind KEYRING_MAINTENANCE_FAILED, plus its errno name when it has one. */
+function maintenanceFailure(error: unknown): { detail?: string; cause: unknown } {
+  const code = (error as NodeJS.ErrnoException | undefined)?.code;
+  return {
+    ...(typeof code === 'string' && /^E[A-Z0-9]{1,30}$/.test(code) ? { detail: code } : {}),
+    cause: error,
+  };
+}
 function withKeyringLock<T>(path: string, operation: () => T): T {
   privateLocation(path);
   const lock = path + '.maintenance.sqlite';
-  const fd = openSync(lock, constants.O_CREAT | constants.O_RDWR | constants.O_NOFOLLOW | constants.O_NONBLOCK, 0o600);
+  const fd = openChecked(lock, constants.O_CREAT | constants.O_RDWR, refuse);
   try {
-    privateDescriptor(fd, lock, 1024 * 1024);
+    checkOpenFile(fd, lock, { ...PRIVATE_FILE, maximum: 1024 * 1024 }, refuse);
   } finally {
     closeSync(fd);
   }
-  const db = new DatabaseSync(lock);
+  let db: DatabaseSync;
   try {
-    db.exec(
-      'PRAGMA busy_timeout=0; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS maintenance_lock (id INTEGER PRIMARY KEY);',
-    );
+    db = new DatabaseSync(lock);
+  } catch (error) {
+    return fail('KEYRING_MAINTENANCE_FAILED', maintenanceFailure(error));
+  }
+  try {
+    try {
+      db.exec(
+        'PRAGMA busy_timeout=0; PRAGMA locking_mode=EXCLUSIVE; BEGIN EXCLUSIVE; CREATE TABLE IF NOT EXISTS maintenance_lock (id INTEGER PRIMARY KEY);',
+      );
+    } catch (error) {
+      // Another maintenance command holds this keyring. Nothing was read or changed.
+      const busy = (error as { errcode?: unknown }).errcode === 5 || /locked/i.test(String((error as Error).message));
+      return fail(busy ? 'KEYRING_BUSY' : 'KEYRING_MAINTENANCE_FAILED', maintenanceFailure(error));
+    }
     return operation();
   } catch (error) {
-    if (error instanceof ExecutorError) throw error;
-    throw new ExecutorError('KEYRING_MAINTENANCE_FAILED');
+    // Coded refusals pass through unchanged; anything else keeps its original as the cause.
+    if (error instanceof ExecutorError || isGuardError(error)) throw error;
+    return fail('KEYRING_MAINTENANCE_FAILED', maintenanceFailure(error));
   } finally {
     db.close();
   }
@@ -415,7 +424,8 @@ export function withLedgerKeyringState<T>(
 export function createLedgerKeyring(options: { keyringFile: string; keyId: string; maxKeys?: number }): {
   keyId: string;
 } {
-  if (!keyIdPattern.test(options.keyId)) fail();
+  checked(options);
+  if (typeof options.keyId !== 'string' || !keyIdPattern.test(options.keyId)) fail();
   if (options.maxKeys !== undefined) validateMaxKeys(options.maxKeys);
   return withKeyringLock(options.keyringFile, () => {
     const key = randomBytes(32);
@@ -429,7 +439,7 @@ export function createLedgerKeyring(options: { keyringFile: string; keyId: strin
 }
 /** Offline policy change only. Keeps every existing key; never changes any ledger or backup. */
 export function configureLedgerKeyring(options: { keyringFile: string; maxKeys: number }): LedgerKeyringPolicy {
-  const maxKeys = validateMaxKeys(options.maxKeys);
+  const maxKeys = validateMaxKeys(checked(options).maxKeys);
   return withKeyringLock(options.keyringFile, () => {
     const previous = readPrivate(options.keyringFile);
     let parsed: ParsedKeyring | undefined;
@@ -453,8 +463,10 @@ export function rotateLedgerKey(options: {
   witnessPath?: string;
   maxBytes?: number;
 }): LedgerRotationResult {
-  validatePublicLedgerMaxBytes(options.maxBytes);
+  validatePublicLedgerMaxBytes(checked(options).maxBytes);
   if (
+    !(options.currentKey instanceof Uint8Array) ||
+    !(options.nextKey instanceof Uint8Array) ||
     options.currentKey.byteLength !== 32 ||
     options.nextKey.byteLength !== 32 ||
     Buffer.compare(options.currentKey, options.nextKey) === 0
@@ -463,16 +475,18 @@ export function rotateLedgerKey(options: {
   let store: LedgerStore;
   try {
     store = openExisting(options.database, options.currentKey, options.witnessPath, options.maxBytes);
-  } catch {
+  } catch (first) {
+    if (first instanceof ExecutorError && keyIndependent.has(first.code)) throw first;
+    let current: LedgerStore;
     try {
-      const current = openExisting(options.database, options.nextKey, options.witnessPath, options.maxBytes);
-      try {
-        return rotationResult(current, 'already-rotated', options.witnessPath);
-      } finally {
-        current.close();
-      }
+      current = openExisting(options.database, options.nextKey, options.witnessPath, options.maxBytes);
     } catch {
-      return fail('LEDGER_KEY_UNAVAILABLE');
+      return fail('LEDGER_KEY_UNAVAILABLE', storeOpenFailure(options.database, first));
+    }
+    try {
+      return rotationResult(current, 'already-rotated', options.witnessPath);
+    } finally {
+      current.close();
     }
   }
   try {
@@ -513,7 +527,8 @@ function rotationResult(
 export function rotateLedgerKeyring(
   options: LedgerKeyOptions & { nextKeyId: string },
 ): LedgerRotationResult & { keyId: string } {
-  if (!keyIdPattern.test(options.nextKeyId)) fail();
+  checked(options);
+  if (typeof options.nextKeyId !== 'string' || !keyIdPattern.test(options.nextKeyId)) fail();
   validatePublicLedgerMaxBytes(options.maxBytes);
   return withKeyringLock(options.keyringFile, () => {
     const previous = readPrivate(options.keyringFile);

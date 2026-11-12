@@ -270,7 +270,9 @@ def test_manifest_revision_advance_is_permitted_without_core_authority_changes()
     candidate.update(manifest_revision=2, manifest_hash="new-declared-metadata")
     _check_component_versions(current, candidate)
     with pytest.raises(GraphImportError, match="^PROFILE_CONFLICT$"):
-        _check_component_versions({"current_snapshot_id": "legacy-core"}, candidate)
+        _check_component_versions({"profile": "core", "current_snapshot_id": "core-1"}, candidate)
+    # A source is created with its profile, so a new source accepts its first snapshot.
+    _check_component_versions({}, candidate)
 
 
 def test_manifest_limits_reject_entire_optional_component():

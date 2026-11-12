@@ -22,10 +22,12 @@ import {
 import {
   ExecutorError,
   LedgerStore,
-  MIN_LEDGER_BYTES,
+  validatePublicLedgerMaxBytes,
+  type AuditEvent,
   type ExecutionReceipt,
   type Ledger,
   type LedgerWitness,
+  type LedgerWriteOptions,
   type MemoryRecord,
   type StoredAction,
   type StoredTask,
@@ -70,10 +72,13 @@ import {
   recordEvent,
   recordPruned,
   prunedReceipt,
+  stubLimits,
   DEFAULT_RECENT_EVENTS_PER_TENANT,
   RECENT_EVENTS_TOTAL,
   type EventScope,
+  type StubLimits,
 } from './retention.js';
+import { toolRefusal, toolRefusalOf } from './tool-errors.js';
 import { migrateLedger, describeLedgerFormat, type LedgerFormat } from './ledger-format.js';
 
 function id(value: unknown): string {
@@ -90,6 +95,42 @@ function own<T>(record: Record<string, T>, key: string): T | undefined {
 function clone<T>(value: T): T {
   return immutableJson(value) as T;
 }
+/** A detached copy of a host argument. Data that is not bounded JSON is INVALID_JSON, as in the guard. */
+function input<T>(value: T): T {
+  try {
+    return immutableJson(value) as T;
+  } catch {
+    throw new GuardError('INVALID_JSON');
+  }
+}
+function plain(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+/** A handler error's `code`, read without running accessors and kept only if it is a safe identifier. */
+function safeDetail(error: unknown): string | undefined {
+  try {
+    if (error === null || typeof error !== 'object') return undefined;
+    const descriptor = Object.getOwnPropertyDescriptor(error, 'code');
+    const code: unknown = descriptor && 'value' in descriptor ? descriptor.value : undefined;
+    return typeof code === 'string' && /^[A-Z][A-Z0-9_]{0,63}$/.test(code) ? code : undefined;
+  } catch {
+    return undefined;
+  }
+}
+/** Operations that only add state stop at the ledger's soft limit. */
+const GROWTH: LedgerWriteOptions = Object.freeze({ growth: true });
+/**
+ * Writes that must not fail (revoke, cancel, settle, mark UNKNOWN, reconcile, withdrawing or removing
+ * a tool, recovery at open) may use the reserve; if even that is full they drop the oldest half of
+ * the recent-event ring, which readers detect as a gap in `sequence`.
+ */
+const CRITICAL: LedgerWriteOptions = Object.freeze({
+  relief: (state: Ledger): boolean => {
+    if (!state.audit.length) return false;
+    state.audit.splice(0, Math.ceil(state.audit.length / 2));
+    return true;
+  },
+});
 /** Internal signal: a policy decision was made on a task snapshot that has since changed. */
 class StalePolicyDecision extends Error {}
 type Registered = { definition: ToolDefinition; fingerprint: string; revision: number };
@@ -106,9 +147,11 @@ export interface ExecutorOptions {
   maxRecords?: number;
   /**
    * Settled receipts kept per task family before the oldest are pruned to a PRUNED stub
-   * (integer 1-4096, default 64). Shared caps then prune from the busiest family first.
+   * (integer 1-4096, default 64). Each tenant then keeps at most 256 (or this value, if larger).
    */
   maxReceiptsPerFamily?: number;
+  /** Unused, unexpired approvals one prepared action may hold (integer 1-64, default 4). */
+  maxApprovalsPerAction?: number;
   /** Recent events kept per tenant (integer 16-1000, default 256); the busiest tenant is trimmed first. */
   maxRecentEventsPerTenant?: number;
   /**
@@ -117,7 +160,7 @@ export interface ExecutorOptions {
    * never invalidate a decision. Integer 1-16, default 5; 1 keeps single-evaluation behaviour.
    */
   maxPolicyAttempts?: number;
-  /** untrustedContext for tools that do not set it. Default 'allow' in 0.x. */
+  /** untrustedContext for tools that do not set it. Default 'allow'. */
   untrustedContextDefault?: UntrustedContextMode;
   /**
    * Operator override for a backward system-clock step, in milliseconds (up to 24 hours).
@@ -151,6 +194,16 @@ export class DurableExecutor {
   readonly #secrets: readonly string[];
   readonly #maxRecords: number;
   readonly #maxReceiptsPerFamily: number;
+  readonly #maxReceiptsPerTenant: number;
+  readonly #maxApprovalsPerAction: number;
+  readonly #stubLimits: StubLimits;
+  /** Serialized size of each settled receipt. A settled record never changes, so its size is computed once. */
+  #receiptBytes = new Map<string, number>();
+  /**
+   * Revocations the ledger could not record. These tasks are denied in this process, and every later
+   * ledger write first tries to record them, so the next write that succeeds makes them durable.
+   */
+  readonly #unsavedRevocations = new Set<string>();
   readonly #maxRecentEventsPerTenant: number;
   readonly #maxPolicyAttempts: number;
   readonly #untrustedDefault: UntrustedContextMode;
@@ -165,7 +218,7 @@ export class DurableExecutor {
   readonly #traces: DecisionTraces | undefined;
   readonly #lifecycle: TaskFamilyLifecycle;
   readonly #tools = new Map<string, Registered>();
-  readonly #active = new Map<string, { taskIds: string[]; controller: AbortController }>();
+  readonly #active = new Map<string, { taskId: string; taskIds: string[]; controller: AbortController }>();
   readonly #policyAdmission = new PolicyAdmission();
   /**
    * Token hash -> task ID, maintained after each committed task creation. This process owns
@@ -177,13 +230,26 @@ export class DurableExecutor {
   #observedClock = 0;
 
   constructor(options: ExecutorOptions) {
+    if (!plain(options)) throw new GuardError('INVALID_INPUT');
+    if (
+      (options.clock !== undefined && typeof options.clock !== 'function') ||
+      (options.policy !== undefined && typeof options.policy !== 'function') ||
+      (options.secretValues !== undefined && !Array.isArray(options.secretValues))
+    )
+      throw new GuardError('INVALID_INPUT');
+    // Store configuration (database, key, ledger size) is STORE_CONFIG_INVALID, here and in the /ops tools.
+    if (
+      typeof options.database !== 'string' ||
+      !options.database ||
+      !(options.encryptionKey instanceof Uint8Array) ||
+      options.encryptionKey.byteLength !== 32
+    )
+      throw new ExecutorError('STORE_CONFIG_INVALID');
+    const maxLedgerBytes = validatePublicLedgerMaxBytes(options.maxLedgerBytes);
     this.#clock = options.clock ?? Date.now;
     this.#policy = options.policy;
     this.#maxRecords = options.maxRecords ?? 10_000;
     if (!Number.isSafeInteger(this.#maxRecords) || this.#maxRecords < 1) throw new GuardError('INVALID_INPUT');
-    const maxLedgerBytes = options.maxLedgerBytes === undefined ? 16 * 1024 * 1024 : options.maxLedgerBytes;
-    if (!Number.isSafeInteger(maxLedgerBytes) || maxLedgerBytes < MIN_LEDGER_BYTES || maxLedgerBytes > 64 * 1024 * 1024)
-      throw new GuardError('INVALID_INPUT');
     const familyShare = Math.max(1, Math.floor(this.#maxRecords / 4));
     const bounded = (value: number | undefined, fallback: number, maximum: number): number => {
       const selected = value ?? fallback;
@@ -195,6 +261,12 @@ export class DurableExecutor {
     if (!['allow', 'require_approval', 'deny'].includes(untrustedDefault)) throw new GuardError('INVALID_INPUT');
     this.#untrustedDefault = untrustedDefault;
     this.#maxReceiptsPerFamily = bounded(options.maxReceiptsPerFamily, 64, 4096);
+    this.#maxReceiptsPerTenant = Math.min(
+      Math.max(256, this.#maxReceiptsPerFamily),
+      Math.max(1, Math.floor(this.#maxRecords / 2)),
+    );
+    this.#maxApprovalsPerAction = bounded(options.maxApprovalsPerAction, 4, 64);
+    this.#stubLimits = stubLimits(maxLedgerBytes);
     this.#maxRecentEventsPerTenant = bounded(
       options.maxRecentEventsPerTenant,
       DEFAULT_RECENT_EVENTS_PER_TENANT,
@@ -292,7 +364,7 @@ export class DurableExecutor {
         }
         this.#audit(state, now, 'EXECUTOR_STARTED');
         return recovered;
-      });
+      }, CRITICAL);
       for (const context of recovered) this.#record(context, 'unknown', 'UNKNOWN', 'RECOVERY_UNKNOWN');
     } catch (error) {
       this.#store.close();
@@ -333,9 +405,12 @@ export class DurableExecutor {
     return this.#lifecycle.preview(scope);
   }
   retireTaskFamily(scope: TaskFamilyDecision): TaskFamilyRetirementResult {
+    this.#saveRevocations();
     return this.#lifecycle.retire(scope);
   }
   archiveTaskFamily(scope: TaskFamilyDecision): TaskFamilyArchiveReceipt {
+    // A pending revocation must reach the ledger before its task can leave it.
+    this.#saveRevocations();
     return this.#lifecycle.archive(scope);
   }
   verifyTaskFamilyArchive(scope: TaskFamilyArchiveScope): TaskFamilyArchiveReceipt {
@@ -388,7 +463,13 @@ export class DurableExecutor {
   /** Host-only tenant-scoped observation. Authentication must precede choosing this scope. */
   decisionTraceSnapshot(scope: DecisionTraceScope): DecisionTraceSnapshot {
     if (!this.#traces) throw new ExecutorError('TRACE_DISABLED');
-    const selected = clone(scope);
+    let selected: DecisionTraceScope;
+    try {
+      selected = clone(scope);
+    } catch {
+      throw new ExecutorError('TRACE_SCOPE_INVALID');
+    }
+    if (!plain(selected)) throw new ExecutorError('TRACE_SCOPE_INVALID');
     if (
       selected.taskId !== undefined &&
       this.#task(this.#store.read(), selected.taskId).options.tenantId !== selected.tenantId
@@ -396,8 +477,8 @@ export class DurableExecutor {
       throw new ExecutorError('TRACE_SCOPE_DENIED');
     return this.#traces.snapshot(selected);
   }
-  /** Explicit host export. No trace callback is registered on the execution path. */
-  exportDecisionTraces(
+  /** Explicit host export. No trace callback is registered on the execution path. Every failure is a rejection. */
+  async exportDecisionTraces(
     scope: { tenantId: string },
     sink: DecisionTraceSink,
     options?: { timeoutMs?: number },
@@ -482,16 +563,85 @@ export class DurableExecutor {
       ...(actionId === undefined ? {} : { actionId }),
     });
   }
+  /** Revoked in the ledger, or revoked in this process while the ledger write failed. */
+  #isRevoked(task: StoredTask): boolean {
+    return task.revoked || this.#unsavedRevocations.has(task.options.id);
+  }
+  /** The ledger effect of one revocation: the task, everything derived from it and the memory those tasks wrote. */
+  #revokeIn(state: Ledger, taskId: string, time: number): void {
+    const revoked = this.#task(state, taskId);
+    revoked.revoked = true;
+    // One pass builds the reverse links; the walk then visits only the revoked task's descendants.
+    const derived = new Map<string, string[]>();
+    const link = (from: string, to: string): void => {
+      const list = derived.get(from);
+      if (list) list.push(to);
+      else derived.set(from, [to]);
+    };
+    for (const task of Object.values(state.tasks)) {
+      if (task.parent !== null) link(task.parent, task.options.id);
+      if (task.sourceTaskId !== undefined) link(task.sourceTaskId, task.options.id);
+    }
+    const descendants = new Set([taskId]);
+    const pending = [taskId];
+    while (pending.length)
+      for (const next of derived.get(pending.pop()!) ?? [])
+        if (!descendants.has(next)) {
+          descendants.add(next);
+          pending.push(next);
+        }
+    const entries = new Set(
+      Object.values(state.memory)
+        .filter(history =>
+          history.some(
+            entry =>
+              entry.tenantId === revoked.options.tenantId &&
+              entry.origin.startsWith('task:') &&
+              descendants.has(entry.origin.slice(5)),
+          ),
+        )
+        .map(history => history.at(-1)!.id),
+    );
+    this.#quarantine(state, revoked.options.tenantId, entries);
+    this.#audit(state, time, 'TASK_REVOKED', taskId);
+  }
+  /**
+   * Records the revocations whose own write failed, in one commit of their own. Runs before every
+   * ledger write of this executor and in close(). A failure leaves them pending: the tasks stay
+   * denied in this process and the next write tries again.
+   */
+  #saveRevocations(): boolean {
+    if (!this.#unsavedRevocations.size) return true;
+    try {
+      this.#store.transaction(state => {
+        const now = this.#now(state);
+        // A task archived since then has nothing left to revoke.
+        for (const taskId of this.#unsavedRevocations) if (own(state.tasks, taskId)) this.#revokeIn(state, taskId, now);
+      }, CRITICAL);
+      this.#unsavedRevocations.clear();
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  /** Every ledger write of this executor: pending revocations are recorded first, then the operation commits. */
+  #write<T>(operation: (state: Ledger) => T, options?: LedgerWriteOptions): T {
+    this.#saveRevocations();
+    return this.#store.transaction(operation, options);
+  }
   /**
    * Pruning never changes cumulative counters or releases unresolved reservations.
-   * Settled receipts are kept per family; shared caps prune the busiest family first,
-   * so one tenant's traffic cannot evict another tenant's receipts.
+   * Settled receipts are kept per family, then per tenant: a tenant's traffic evicts only its own
+   * oldest receipts. Only the ledger-wide bounds (an eighth of the ledger bytes, the action table)
+   * evict across tenants, and then from the tenant holding the most.
    */
   #prune(state: Ledger, now: number): void {
-    const settled = new Map<string, { action: StoredAction; bytes: number }[]>();
-    let count = 0;
+    type Kept = { action: StoredAction; bytes: number };
+    type Holder = { count: number; families: Map<string, Kept[]> };
+    const tenants = new Map<string, Holder>();
     let bytes = 0;
     let records = 0;
+    let settled = 0;
     for (const [actionId, action] of Object.entries(state.actions)) {
       records++;
       if (action.status === 'PREPARED') {
@@ -500,41 +650,65 @@ export class DurableExecutor {
           action.action.policyVersion !== state.epoch ||
           !tool ||
           tool.revision !== action.toolRevision ||
-          this.#provenance(state, action.taskId).some(task => task.revoked) ||
+          this.#provenance(state, action.taskId).some(task => this.#isRevoked(task)) ||
           this.#lineage(state, action.taskId).some(task => now >= task.options.budget.deadline)
         ) {
           delete state.actions[actionId];
           records--;
         }
       } else if (action.status === 'SUCCEEDED' || action.status === 'FAILED') {
-        const family = this.#task(state, action.taskId).family;
-        const size = Buffer.byteLength(JSON.stringify(action));
-        let list = settled.get(family);
-        if (!list) settled.set(family, (list = []));
+        const task = this.#task(state, action.taskId);
+        let size = this.#receiptBytes.get(actionId);
+        if (size === undefined) {
+          size = Buffer.byteLength(JSON.stringify(action));
+          this.#receiptBytes.set(actionId, size);
+        }
+        let holder = tenants.get(task.options.tenantId);
+        if (!holder) tenants.set(task.options.tenantId, (holder = { count: 0, families: new Map() }));
+        let list = holder.families.get(task.family);
+        if (!list) holder.families.set(task.family, (list = []));
         list.push({ action, bytes: size });
-        count++;
+        holder.count++;
+        settled++;
         bytes += size;
       }
     }
-    const evict = (family: string): void => {
-      const oldest = settled.get(family)!.shift()!;
+    // Sizes of receipts that left the ledger (archived, retired or pruned) are forgotten.
+    if (this.#receiptBytes.size > settled)
+      for (const actionId of this.#receiptBytes.keys())
+        if (!own(state.actions, actionId)) this.#receiptBytes.delete(actionId);
+    const evict = (holder: Holder, family: string): void => {
+      const list = holder.families.get(family)!;
+      const oldest = list.shift()!;
+      if (!list.length) holder.families.delete(family);
       delete state.actions[oldest.action.id];
-      recordPruned(state, family, oldest.action);
-      count--;
+      this.#receiptBytes.delete(oldest.action.id);
+      recordPruned(state, family, oldest.action, this.#stubLimits);
+      holder.count--;
       bytes -= oldest.bytes;
       records--;
     };
-    for (const [family, list] of settled) while (list.length > this.#maxReceiptsPerFamily) evict(family);
-    const retained = Math.min(256, Math.floor(this.#maxRecords / 2));
-    while (count > 0 && (count > retained || bytes > this.#store.maxBytes / 8 || records >= this.#maxRecords)) {
+    /** The tenant's oldest receipt in the family that holds the most. */
+    const evictFrom = (holder: Holder): void => {
       let busiest = '';
       let size = 0;
-      for (const [family, list] of settled)
+      for (const [family, list] of holder.families)
         if (list.length > size) {
           busiest = family;
           size = list.length;
         }
-      evict(busiest);
+      evict(holder, busiest);
+    };
+    for (const holder of tenants.values()) {
+      for (const [family, list] of [...holder.families])
+        while (list.length > this.#maxReceiptsPerFamily) evict(holder, family);
+      while (holder.count > this.#maxReceiptsPerTenant) evictFrom(holder);
+    }
+    while (bytes > this.#store.maxBytes / 8 || records >= this.#maxRecords) {
+      let largest: Holder | undefined;
+      for (const holder of tenants.values()) if (holder.count > (largest?.count ?? 0)) largest = holder;
+      if (!largest) break;
+      evictFrom(largest);
     }
     for (const [approvalId, approval] of Object.entries(state.approvals)) {
       const action = own(state.actions, approval.actionId);
@@ -567,11 +741,12 @@ export class DurableExecutor {
       allowControlPlane: task.options.allowControlPlane ?? false,
       budget: task.options.budget,
       snapshot: this.#snapshot(state, task),
-      revoked: task.revoked,
+      revoked: this.#isRevoked(task),
     }));
   }
   #gates(state: Ledger, action: StoredAction, phase: AuthorityPhase = 'dispatch'): void {
-    if (this.#provenance(state, action.taskId).some(task => task.revoked)) throw new GuardError('TASK_REVOKED');
+    if (this.#provenance(state, action.taskId).some(task => this.#isRevoked(task)))
+      throw new GuardError('TASK_REVOKED');
     const current = own(state.tools, action.action.tool);
     if (action.action.policyVersion !== state.epoch) throw new GuardError('POLICY_CHANGED');
     if (!current || current.revision !== action.toolRevision || current.fingerprint !== action.action.toolFingerprint)
@@ -635,34 +810,87 @@ export class DurableExecutor {
     });
   }
 
+  /**
+   * Registers a tool and returns its fingerprint; the tool then needs approveTool(). A new or changed
+   * tool adds to the ledger and is refused at its soft limit. A tool the ledger already records with
+   * the same fingerprint is not: the first registration after a start writes nothing at all, so a
+   * process can always register its tools again, and a repeated one only resets the approval.
+   */
   registerTool(definition: ToolDefinition): string {
     // Reuse the core's definition validation and canonical fingerprint.
     const verifier = new AgentGuard({ clock: this.#clock });
     const fingerprint = verifier.registerTool(definition);
     const trusted = Object.freeze({ ...definition });
-    const revision = this.#store.transaction(state => {
+    const recorded = own(this.#store.read().tools, definition.name);
+    const unchanged = recorded !== undefined && recorded.fingerprint === fingerprint;
+    // Opening the executor withdrew every approval and ended every earlier preparation, so the record
+    // of a tool this process has not registered yet is already what registering it again would write.
+    if (unchanged && !recorded.approved && !this.#tools.has(definition.name)) {
+      this.#tools.set(definition.name, { definition: trusted, fingerprint, revision: recorded.revision });
+      return fingerprint;
+    }
+    // Replacing a record with the same fingerprint only withdraws its approval: that is not growth.
+    const growth = unchanged ? undefined : GROWTH;
+    const revision = this.#write(state => {
       const now = this.#now(state);
       const old = own(state.tools, definition.name);
-      if (!old && Object.keys(state.tools).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
-      const revision = (old?.revision ?? 0) + 1;
+      if (!old && Object.keys(state.tools).length >= this.#maxRecords) {
+        // Records left by earlier runs for tools this process has not registered are reclaimed first.
+        for (const name of Object.keys(state.tools)) if (!this.#tools.has(name)) delete state.tools[name];
+        if (Object.keys(state.tools).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
+      }
+      let revision = (old?.revision ?? 0) + 1;
+      // A name registered again after its record was removed must not match an action prepared before.
+      if (!old)
+        for (const action of Object.values(state.actions))
+          if (action.action.tool === definition.name && action.toolRevision >= revision)
+            revision = action.toolRevision + 1;
       state.tools[definition.name] = { fingerprint, revision, approved: false };
       this.#audit(state, now, 'TOOL_REGISTERED');
       return revision;
-    });
+    }, growth);
     this.#tools.set(definition.name, { definition: trusted, fingerprint, revision });
     return fingerprint;
   }
+  /** TOOL_UNKNOWN for a name this process has not registered; TOOL_CHANGED when the fingerprint is not current. */
   approveTool(name: string, fingerprint: string): void {
-    this.#store.transaction(state => {
+    this.#write(state => {
       const tool = own(state.tools, id(name));
-      if (!tool || tool.fingerprint !== fingerprint || !this.#tools.has(name)) throw new GuardError('TOOL_CHANGED');
+      if (!tool || !this.#tools.has(name)) throw new GuardError('TOOL_UNKNOWN');
+      if (tool.fingerprint !== fingerprint) throw new GuardError('TOOL_CHANGED');
       tool.approved = true;
       this.#audit(state, this.#now(state), 'TOOL_APPROVED');
     });
   }
+  /**
+   * Withdraws a tool's approval: new and prepared actions for it fail with TOOL_UNAPPROVED until
+   * approveTool() is called again. TOOL_UNKNOWN for a name this process has not registered.
+   */
+  unapproveTool(name: string): void {
+    this.#write(state => {
+      const tool = own(state.tools, id(name));
+      if (!tool || !this.#tools.has(name)) throw new GuardError('TOOL_UNKNOWN');
+      tool.approved = false;
+      this.#audit(state, this.#now(state), 'TOOL_APPROVAL_WITHDRAWN');
+    }, CRITICAL);
+  }
+  /**
+   * Removes a tool and its ledger record. Actions already prepared for it fail with TOOL_CHANGED and
+   * new ones with TOOL_UNKNOWN; a later registration needs a new approval. A call already dispatched
+   * runs to completion. TOOL_UNKNOWN when neither this process nor the ledger knows the name.
+   */
+  unregisterTool(name: string): void {
+    id(name);
+    this.#write(state => {
+      if (!this.#tools.has(name) && !own(state.tools, name)) throw new GuardError('TOOL_UNKNOWN');
+      delete state.tools[name];
+      this.#audit(state, this.#now(state), 'TOOL_UNREGISTERED');
+    }, CRITICAL);
+    this.#tools.delete(name);
+  }
   setPolicy(policy: Policy): void {
     if (typeof policy !== 'function') throw new GuardError('INVALID_INPUT');
-    this.#store.transaction(state => {
+    this.#write(state => {
       state.epoch++;
       this.#audit(state, this.#now(state), 'POLICY_CHANGED');
     });
@@ -670,9 +898,11 @@ export class DurableExecutor {
     this.#policyAdmission.invalidate('POLICY_CHANGED');
   }
   createTask(options: TaskOptions, provenance: { sensitive?: boolean; sourceTaskId?: string } = {}): TaskCredential {
+    if (!plain(provenance)) throw new GuardError('INVALID_INPUT');
     return this.#newTask(options, null, provenance);
   }
   delegateTask(parentId: string, options: Omit<TaskOptions, 'principalId' | 'tenantId'>): TaskCredential {
+    if (!plain(options)) throw new GuardError('INVALID_INPUT');
     const parent = this.#task(this.#store.read(), parentId);
     return this.#newTask(
       { ...options, principalId: parent.options.principalId, tenantId: parent.options.tenantId },
@@ -681,13 +911,14 @@ export class DurableExecutor {
     );
   }
   #newTask(
-    input: TaskOptions,
+    source: TaskOptions,
     parentId: string | null,
     provenance: { sensitive?: boolean; sourceTaskId?: string },
   ): TaskCredential {
-    const options = clone(input);
+    const options = input(source);
+    if (!plain(options)) throw new GuardError('INVALID_INPUT');
     const token = randomBytes(32).toString('base64url');
-    this.#store.transaction(state => {
+    this.#write(state => {
       const now = this.#now(state);
       this.#prune(state, now);
       if (own(state.tasks, options.id) || archivedTaskIdUsed(state, options.id)) throw new GuardError('DUPLICATE_TASK');
@@ -696,7 +927,7 @@ export class DurableExecutor {
       if (parentId !== null) {
         let handle;
         for (const parent of this.#lineage(state, parentId).reverse()) {
-          if (parent.revoked) throw new GuardError('TASK_REVOKED');
+          if (this.#isRevoked(parent)) throw new GuardError('TASK_REVOKED');
           handle = handle ? validator.delegateTask(handle, parent.options) : validator.createTask(parent.options);
         }
         validator.delegateTask(handle!, options);
@@ -704,7 +935,7 @@ export class DurableExecutor {
       let family = parentId === null ? options.id : this.#task(state, parentId).family;
       if (provenance.sourceTaskId !== undefined) {
         const source = this.#task(state, provenance.sourceTaskId);
-        if (this.#provenance(state, provenance.sourceTaskId).some(task => task.revoked))
+        if (this.#provenance(state, provenance.sourceTaskId).some(task => this.#isRevoked(task)))
           throw new GuardError('TASK_REVOKED');
         if (source.options.tenantId !== options.tenantId) throw new GuardError('TENANT_DENIED');
         family = source.family; // Handoffs share a monotonic family, including later sensitive reads.
@@ -729,10 +960,22 @@ export class DurableExecutor {
         reserved: 0,
         ...(provenance.sourceTaskId === undefined ? {} : { sourceTaskId: provenance.sourceTaskId }),
       };
+      // Refuse a task whose own ancestry or provenance is past the bounds every later check
+      // (authentication, revocation) relies on; the transaction rolls back.
+      this.#lineage(state, options.id);
+      this.#provenance(state, options.id);
       this.#audit(state, now, 'TASK_CREATED', options.id);
-    });
+    }, GROWTH);
     this.#tokenIndex.set(hash(token), options.id);
     return Object.freeze({ taskId: options.id, token });
+  }
+  /**
+   * Whether a task of this executor holds the token: an in-memory lookup that never reads the ledger.
+   * It is not authentication, because the task may be revoked or expired. A server uses it to refuse
+   * unknown tokens and to charge rate limits before authenticate() reads the ledger.
+   */
+  knowsToken(token: string): boolean {
+    return typeof token === 'string' && /^[A-Za-z0-9_-]{43}$/.test(token) && this.#tokenIndex.has(hash(token));
   }
   authenticate(token: string): string {
     // Issued tokens are exactly 32 random bytes in base64url; anything else never reaches the ledger.
@@ -746,62 +989,76 @@ export class DurableExecutor {
       if (!task) this.#tokenIndex.delete(tokenHash);
       throw new ExecutorError('UNAUTHENTICATED');
     }
-    if (this.#provenance(state, task.options.id).some(task => task.revoked)) throw new ExecutorError('UNAUTHENTICATED');
+    if (this.#provenance(state, task.options.id).some(task => this.#isRevoked(task)))
+      throw new ExecutorError('UNAUTHENTICATED');
     const now = this.#now(state);
     for (const ancestor of this.#lineage(state, task.options.id)) {
-      if (ancestor.revoked || now >= ancestor.options.budget.deadline) throw new ExecutorError('UNAUTHENTICATED');
+      if (this.#isRevoked(ancestor) || now >= ancestor.options.budget.deadline)
+        throw new ExecutorError('UNAUTHENTICATED');
     }
     return task.options.id;
   }
+  /**
+   * Revokes a task, everything derived from it and the memory those tasks wrote, and aborts their
+   * running handlers.
+   *
+   * If the ledger write fails, the handlers are still aborted and the task is denied in this process,
+   * and the call throws OPERATION_FAILED with `detail: 'REVOCATION_NOT_DURABLE'` (the store error is
+   * the `cause`). The revocation is then recorded by the next ledger write that succeeds, by close(),
+   * or by calling revokeTask() again, which is always safe. If the process exits before any write
+   * succeeds, the revocation is lost: the task is valid again after a restart.
+   */
   revokeTask(taskId: string): void {
-    this.#store.transaction(state => {
-      const revoked = this.#task(state, taskId);
-      revoked.revoked = true;
-      const descendants = new Set(
-        Object.keys(state.tasks).filter(candidate =>
-          this.#provenance(state, candidate).some(task => task.options.id === taskId),
-        ),
-      );
-      const entries = new Set(
-        Object.values(state.memory)
-          .filter(history =>
-            history.some(
-              entry =>
-                entry.tenantId === revoked.options.tenantId &&
-                entry.origin.startsWith('task:') &&
-                descendants.has(entry.origin.slice(5)),
-            ),
-          )
-          .map(history => history.at(-1)!.id),
-      );
-      this.#quarantine(state, revoked.options.tenantId, entries);
-      this.#audit(state, this.#now(state), 'TASK_REVOKED', taskId);
-    });
-    this.#policyAdmission.revokeTask(taskId);
-    for (const active of this.#active.values()) if (active.taskIds.includes(taskId)) active.controller.abort();
+    id(taskId);
+    try {
+      this.#store.transaction(state => {
+        this.#task(state, taskId);
+        const now = this.#now(state);
+        // Revocations whose own write failed earlier are recorded in the same commit.
+        for (const earlier of this.#unsavedRevocations)
+          if (earlier !== taskId && own(state.tasks, earlier)) this.#revokeIn(state, earlier, now);
+        this.#revokeIn(state, taskId, now);
+      }, CRITICAL);
+      this.#unsavedRevocations.clear();
+    } catch (error) {
+      // Only an existing task is remembered, so unknown IDs cannot grow this set.
+      let known = false;
+      if (!(error instanceof GuardError && error.code === 'INVALID_TASK'))
+        for (const candidate of this.#tokenIndex.values())
+          if (candidate === taskId) {
+            known = true;
+            break;
+          }
+      if (!known) throw error;
+      this.#unsavedRevocations.add(taskId);
+      throw new ExecutorError('OPERATION_FAILED', { detail: 'REVOCATION_NOT_DURABLE', cause: error });
+    } finally {
+      this.#policyAdmission.revokeTask(taskId);
+      for (const active of this.#active.values()) if (active.taskIds.includes(taskId)) active.controller.abort();
+    }
   }
   markSensitive(taskId: string): void {
-    this.#store.transaction(state => {
+    this.#write(state => {
       state.families[this.#task(state, taskId).family]!.sensitive = true;
       this.#now(state);
-    });
+    }, CRITICAL);
   }
   /** Host-only artifact verification: historical expiry does not remove labels; revocation invalidates the source. */
   assertProvenance(taskId: string): Readonly<TaskSnapshot> {
     const state = this.#store.read();
-    if (this.#provenance(state, taskId).some(task => task.revoked)) throw new GuardError('TASK_REVOKED');
+    if (this.#provenance(state, taskId).some(task => this.#isRevoked(task))) throw new GuardError('TASK_REVOKED');
     return clone(this.#snapshot(state, this.#task(state, taskId)));
   }
   provenanceTaskIds(taskId: string): readonly string[] {
     const tasks = this.#provenance(this.#store.read(), taskId);
-    if (tasks.some(task => task.revoked)) throw new GuardError('TASK_REVOKED');
+    if (tasks.some(task => this.#isRevoked(task))) throw new GuardError('TASK_REVOKED');
     return Object.freeze(tasks.map(task => task.options.id));
   }
   cancel(taskId: string, actionId: string): void {
     const trace = this.#traceStart(taskId, actionId);
     let cancelled: boolean;
     try {
-      cancelled = this.#store.transaction(state => {
+      cancelled = this.#write(state => {
         const action = own(state.actions, actionId);
         if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
         const cancelled = action.status === 'PREPARED';
@@ -811,8 +1068,11 @@ export class DurableExecutor {
         }
         this.#audit(state, this.#now(state), 'CANCELLATION_REQUESTED', taskId, actionId);
         return cancelled;
-      });
+      }, CRITICAL);
     } catch (error) {
+      // The running handler belongs to this task: stop it even though the ledger did not record the request.
+      const active = this.#active.get(actionId);
+      if (active && active.taskId === taskId) active.controller.abort();
       this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error));
       throw error;
     }
@@ -857,22 +1117,27 @@ export class DurableExecutor {
     actionId: string,
     trace: TraceContext | undefined,
   ): Promise<PreparedAction> {
-    const input = clone(request);
-    if (Object.keys(input).some(key => key !== 'tool' && key !== 'args') || !Object.hasOwn(input, 'args'))
+    const wanted = input(request);
+    if (
+      !plain(wanted) ||
+      Object.keys(wanted).some(key => key !== 'tool' && key !== 'args') ||
+      !Object.hasOwn(wanted, 'args')
+    )
       throw new GuardError('INVALID_INPUT');
-    const registration = this.#tools.get(id(input.tool));
+    const registration = this.#tools.get(id(wanted.tool));
     if (!registration) throw new GuardError('TOOL_UNKNOWN');
     const state = this.#store.read();
     const task = this.#task(state, taskId);
-    if (this.#provenance(state, taskId).some(ancestor => ancestor.revoked)) throw new GuardError('TASK_REVOKED');
-    if (!own(state.tools, input.tool)?.approved) throw new GuardError('TOOL_UNAPPROVED');
+    if (this.#provenance(state, taskId).some(ancestor => this.#isRevoked(ancestor)))
+      throw new GuardError('TASK_REVOKED');
+    if (!own(state.tools, wanted.tool)?.approved) throw new GuardError('TOOL_UNAPPROVED');
     if (this.#policy) this.#policyAdmission.assertCapacity(task.family);
     // Core preparation validates resolver output, mandatory gates and immutable argument binding.
     const verifier = new AgentGuard({ clock: () => this.#now(state), secretValues: this.#secrets });
     const fp = verifier.registerTool(registration.definition);
-    verifier.approveTool(input.tool, fp);
+    verifier.approveTool(wanted.tool, fp);
     const handle = verifier.createTask(task.options);
-    const verified = await verifier.prepare(handle, input);
+    const verified = await verifier.prepare(handle, wanted);
     const action = clone({ ...verified.action, toolFingerprint: registration.fingerprint, policyVersion: state.epoch });
     const stored: StoredAction = {
       id: actionId,
@@ -907,7 +1172,7 @@ export class DurableExecutor {
           toolRequiresApproval || decision === 'require_approval' || this.#untrustedApproval(evaluated, stored);
         const expected = this.#policy ? this.#policyInputs(evaluated, taskId) : undefined;
         try {
-          this.#store.transaction(current => {
+          this.#write(current => {
             if (expected !== undefined && this.#policyInputs(current, taskId) !== expected)
               throw new StalePolicyDecision();
             this.#gates(current, stored, 'prepare');
@@ -916,7 +1181,7 @@ export class DurableExecutor {
             if (Object.keys(current.actions).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
             current.actions[actionId] = stored;
             this.#audit(current, this.#now(current), 'ACTION_PREPARED', taskId, actionId);
-          });
+          }, GROWTH);
           break;
         } catch (error) {
           if (!(error instanceof StalePolicyDecision)) throw error;
@@ -945,8 +1210,10 @@ export class DurableExecutor {
     }
   }
   #approve(actionId: string, options: { approverId: string; expiresAt: number }): string {
+    if (!plain(options)) throw new GuardError('INVALID_INPUT');
+    const approverId = id(options.approverId);
     const approvalId = randomUUID();
-    this.#store.transaction(state => {
+    this.#write(state => {
       this.#prune(state, this.#now(state));
       const action = own(state.actions, id(actionId));
       if (!action || action.status !== 'PREPARED') throw new GuardError('INVALID_PREPARED');
@@ -959,23 +1226,33 @@ export class DurableExecutor {
       )
         throw new GuardError('APPROVAL_INVALID');
       if (Object.keys(state.approvals).length >= this.#maxRecords) throw new ExecutorError('CAPACITY_EXCEEDED');
-      if (Object.values(state.approvals).filter(approval => approval.actionId === actionId).length >= 4)
-        throw new ExecutorError('ACTION_APPROVAL_LIMIT');
+      if (
+        Object.values(state.approvals).filter(approval => approval.actionId === actionId).length >=
+        this.#maxApprovalsPerAction
+      )
+        throw new GuardError('ACTION_APPROVAL_LIMIT');
       state.approvals[approvalId] = {
         actionId,
         digest: action.digest,
         expiresAt: options.expiresAt,
-        approverId: id(options.approverId),
+        approverId,
         used: false,
         untrusted: state.families[this.#task(state, action.taskId).family]!.untrusted === true,
       };
       this.#audit(state, now, 'ACTION_APPROVED', action.taskId, actionId);
-    });
+    }, GROWTH);
     return approvalId;
   }
+  /**
+   * Runs a prepared action once. Before the handler starts, a refusal is the executor's own code and
+   * nothing happened. After it starts, a host handler's error is always TOOL_FAILED (its safe code is
+   * `detail`) or EXECUTION_ABORTED: the outcome is unknown until reconcile(). The built-in tools keep
+   * their documented codes.
+   */
   async execute(taskId: string, actionId: string, options: { approvalId?: string } = {}): Promise<Json> {
     let trace: TraceContext | undefined;
     try {
+      if (!plain(options)) throw new GuardError('INVALID_INPUT');
       const initial = this.#store.read();
       trace = this.#traceStart(taskId, actionId, initial);
       return await this.#execute(taskId, actionId, options, trace, initial);
@@ -1008,10 +1285,13 @@ export class DurableExecutor {
     let expected: string | undefined;
     const controller = new AbortController();
     const admit = () =>
-      this.#store.transaction(state => {
+      this.#write(state => {
         // Only this task's own policy inputs can make the decision stale; other tenants' writes cannot.
         if (expected !== undefined && this.#policyInputs(state, taskId) !== expected) throw new StalePolicyDecision();
-        const action = own(state.actions, actionId)!;
+        // The action can be pruned while a policy evaluation is pending (tool re-registered,
+        // task expired or revoked): that is a denial, never an internal error.
+        const action = own(state.actions, actionId);
+        if (!action || action.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
         if (action.status !== 'PREPARED') throw new GuardError('ACTION_USED');
         this.#gates(state, action);
         const now = this.#now(state);
@@ -1030,7 +1310,7 @@ export class DurableExecutor {
           if (now >= approval.expiresAt) throw new GuardError('APPROVAL_EXPIRED');
           const family = state.families[this.#task(state, taskId).family]!;
           const registration = this.#tools.get(action.action.tool);
-          // Approved while the family was clean (or before 0.2 recorded it); it has since read outside content.
+          // Approved while the family was clean (or by an alpha that did not record it); it has since read outside content.
           if (
             approval.untrusted !== true &&
             family.untrusted === true &&
@@ -1052,7 +1332,9 @@ export class DurableExecutor {
         // Persisted at admission, before the handler runs, and never cleared; it survives restart.
         if (this.#tools.get(action.action.tool)?.definition.readsUntrusted || action.action.untrusted)
           state.families[task.family]!.untrusted = true;
-        action.status = 'ADMITTED';
+        // Admission and dispatch are one commit: recovery treats ADMITTED and RUNNING alike, and a
+        // separate RUNNING commit would only add a full ledger write to every call.
+        action.status = 'RUNNING';
         this.#audit(state, now, 'ACTION_ADMITTED', taskId, actionId);
         return {
           action: clone(action),
@@ -1061,7 +1343,7 @@ export class DurableExecutor {
           deadline: task.options.budget.deadline,
           approvalDeadline,
         };
-      });
+      }, GROWTH);
     let admitted!: ReturnType<typeof admit>;
     let endTurn: (() => void) | undefined;
     try {
@@ -1086,7 +1368,7 @@ export class DurableExecutor {
     }
     if (trace) trace.admitted = true;
     this.#record(trace, 'admit', 'ADMITTED');
-    this.#active.set(actionId, { taskIds: admitted.taskIds, controller });
+    this.#active.set(actionId, { taskId, taskIds: admitted.taskIds, controller });
     let timer: ReturnType<typeof setTimeout> | undefined;
     const arm = (now: number): void => {
       const remaining = admitted.deadline - now;
@@ -1105,11 +1387,25 @@ export class DurableExecutor {
         Math.min(remaining, 2_147_483_647),
       );
     };
+    /** The store error behind a failed settlement or UNKNOWN write, kept on the error the caller gets. */
+    const withLedgerError = <E extends object>(error: E, ledgerError: unknown): E => {
+      try {
+        if (!Object.hasOwn(error, 'ledgerError'))
+          Object.defineProperty(error, 'ledgerError', { value: ledgerError, enumerable: false });
+      } catch {
+        /* A frozen error keeps its own shape. */
+      }
+      return error;
+    };
+    /** Revocation after a malformed result must not replace the error that explains it. */
+    const revoke = (): void => {
+      try {
+        this.revokeTask(taskId);
+      } catch {
+        /* revokeTask already denied the task in this process and stopped its handlers. */
+      }
+    };
     try {
-      this.#store.transaction(state => {
-        state.actions[actionId]!.status = 'RUNNING';
-        this.#now(state);
-      });
       // SQLite commits can take long enough to outlive the task or its one-use approval.
       // No handler has run, so a deadline denial can safely settle with zero cost.
       const dispatchTime = this.#now();
@@ -1124,55 +1420,103 @@ export class DurableExecutor {
       }
       arm(dispatchTime);
       const tool = this.#tools.get(admitted.action.action.tool)!;
-      const raw = await tool.definition.execute(
-        admitted.action.action.args,
-        Object.freeze({
-          signal: controller.signal,
-          action: admitted.action.action,
-          task: admitted.identity,
-        }),
-      );
+      let raw: Awaited<ReturnType<ToolDefinition['execute']>>;
+      try {
+        raw = await tool.definition.execute(
+          admitted.action.action.args,
+          Object.freeze({
+            signal: controller.signal,
+            action: admitted.action.action,
+            task: admitted.identity,
+          }),
+        );
+      } catch (error) {
+        const refusal = toolRefusalOf(error);
+        // A cancelled, revoked or expired call is EXECUTION_ABORTED whichever tool was running:
+        // a built-in tool's own abort code (for example SANDBOX_ABORTED) does not replace it.
+        if (refusal && (refusal.noEffect || !controller.signal.aborted)) {
+          // A built-in tool's own refusal keeps its code. One that provably changed nothing (it was
+          // raised inside a rolled-back ledger transaction) settles FAILED at zero cost, so it does
+          // not hold a concurrency slot or a reservation as an unknown outcome would.
+          if (refusal.noEffect) {
+            this.#settle(actionId, 'FAILED', 0);
+            this.#record(trace, 'settle', 'FAILED', decisionTraceCode(error));
+          }
+          throw error;
+        }
+        // A host handler cannot speak for the executor: whatever it threw is a tool failure.
+        const detail = controller.signal.aborted ? undefined : safeDetail(error);
+        const code = controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED';
+        throw new GuardError(code, code, detail === undefined ? {} : { detail });
+      }
       let result: { value: Json; actualCost?: number };
       try {
         result = clone(raw);
         if (!result || typeof result !== 'object' || !Object.hasOwn(result, 'value')) throw new Error();
       } catch {
-        this.revokeTask(taskId);
+        revoke();
         throw new GuardError('RESULT_INVALID');
       }
       const cost = result.actualCost ?? admitted.action.maxCost;
       if (!Number.isSafeInteger(cost) || cost < 0 || cost > admitted.action.maxCost) {
-        this.revokeTask(taskId);
+        revoke();
         throw new GuardError('COST_REPORT_INVALID');
       }
-      this.#settle(actionId, 'SUCCEEDED', cost);
+      try {
+        this.#settle(actionId, 'SUCCEEDED', cost);
+      } catch (error) {
+        // The handler finished but the ledger could not record it: say the effect happened.
+        throw withLedgerError(
+          new GuardError('EXECUTION_ABORTED', 'EXECUTION_ABORTED', { detail: 'EFFECT_COMMITTED' }),
+          error,
+        );
+      }
       this.#record(trace, 'settle', 'SUCCEEDED');
       // The effect is committed and settled as SUCCEEDED, but the task was cancelled, revoked or
-      // ran past its deadline: withhold the result and say the effect happened.
-      if (controller.signal.aborted || this.#now() >= admitted.deadline)
-        throw new GuardError('EXECUTION_ABORTED', 'EXECUTION_ABORTED', { detail: 'EFFECT_COMMITTED' });
+      // ran past its deadline: withhold the result and say the effect happened. A clock that
+      // fails here is the same case, never a CLOCK_INVALID denial.
+      let late = controller.signal.aborted;
+      if (!late) {
+        try {
+          late = this.#now() >= admitted.deadline;
+        } catch {
+          late = true;
+        }
+      }
+      if (late) throw new GuardError('EXECUTION_ABORTED', 'EXECUTION_ABORTED', { detail: 'EFFECT_COMMITTED' });
       return result.value;
     } catch (error) {
-      const unknown = this.#store.transaction(state => {
-        const action = state.actions[actionId]!;
-        if (action.status === 'ADMITTED' || action.status === 'RUNNING') {
-          // A faulty clock must not roll back conservative recovery and strand a reservation
-          // in RUNNING. Use the last trusted time for this audit entry only.
-          let observed = state.lastClock;
-          try {
-            observed = this.#now(state);
-          } catch (clockError) {
-            if (!(clockError instanceof GuardError && clockError.code === 'CLOCK_INVALID')) throw clockError;
+      let unknown = false;
+      let ledgerError: unknown;
+      try {
+        unknown = this.#write(state => {
+          const action = own(state.actions, actionId);
+          if (action && (action.status === 'ADMITTED' || action.status === 'RUNNING')) {
+            // A faulty clock must not roll back conservative recovery and strand a reservation
+            // in RUNNING. Use the last trusted time for this audit entry only.
+            let observed = state.lastClock;
+            try {
+              observed = this.#now(state);
+            } catch (clockError) {
+              if (!(clockError instanceof GuardError && clockError.code === 'CLOCK_INVALID')) throw clockError;
+            }
+            action.status = 'UNKNOWN';
+            this.#audit(state, observed, 'OUTCOME_UNKNOWN', taskId, actionId);
+            return true;
           }
-          action.status = 'UNKNOWN';
-          this.#audit(state, observed, 'OUTCOME_UNKNOWN', taskId, actionId);
-          return true;
-        }
-        return false;
-      });
+          return false;
+        }, CRITICAL);
+      } catch (failure) {
+        // The action stays RUNNING in the ledger; reconcile() accepts it once this call has returned.
+        ledgerError = failure;
+      }
       if (unknown) this.#record(trace, 'unknown', 'UNKNOWN', 'OUTCOME_UNKNOWN');
-      if (error instanceof GuardError || error instanceof ExecutorError) throw error;
-      throw new GuardError(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED');
+      const reported =
+        error instanceof GuardError || error instanceof ExecutorError
+          ? error
+          : new GuardError(controller.signal.aborted ? 'EXECUTION_ABORTED' : 'TOOL_FAILED');
+      // The caller always gets the error that explains the call, never the recovery failure in its place.
+      throw ledgerError === undefined ? reported : withLedgerError(reported, ledgerError);
     } finally {
       if (timer) clearTimeout(timer);
       this.#active.delete(actionId);
@@ -1184,7 +1528,7 @@ export class DurableExecutor {
     actualCost: number,
     reconciliationReferenceHash?: string,
   ): void {
-    this.#store.transaction(state => {
+    this.#write(state => {
       const action = own(state.actions, actionId);
       if (!action || !['ADMITTED', 'RUNNING', 'UNKNOWN'].includes(action.status))
         throw new ExecutorError('RECONCILIATION_INVALID');
@@ -1201,23 +1545,27 @@ export class DurableExecutor {
       if (reconciliationReferenceHash !== undefined)
         action.reconciliation = { referenceHash: reconciliationReferenceHash, time: now };
       this.#audit(state, now, 'ACTION_SETTLED', action.taskId, actionId);
-    });
+    }, CRITICAL);
   }
-  /** Operator-only reconciliation requires evidence that backend work has ended; never call on lease expiry alone. */
+  /**
+   * Operator-only reconciliation requires evidence that backend work has ended; never call on lease
+   * expiry alone. Accepts an UNKNOWN action, and one left RUNNING because the ledger could not record
+   * UNKNOWN, once no handler for it is running in this process.
+   */
   reconcile(
     actionId: string,
     evidence: { outcome: 'SUCCEEDED' | 'FAILED'; actualCost: number; reference: string },
   ): void {
     const trace = this.#traceStart(undefined, actionId);
     try {
-      let input: typeof evidence;
+      let supplied: typeof evidence;
       try {
-        input = clone(evidence);
+        supplied = clone(evidence);
       } catch {
         throw new ExecutorError('RECONCILIATION_INVALID');
       }
-      this.#reconcile(actionId, input);
-      this.#record(trace, 'reconcile', input.outcome, 'RECONCILED');
+      this.#reconcile(actionId, supplied);
+      this.#record(trace, 'reconcile', supplied.outcome, 'RECONCILED');
     } catch (error) {
       this.#record(trace, 'deny', 'DENIED', decisionTraceCode(error));
       throw error;
@@ -1227,21 +1575,33 @@ export class DurableExecutor {
     actionId: string,
     evidence: { outcome: 'SUCCEEDED' | 'FAILED'; actualCost: number; reference: string },
   ): void {
-    if (!evidence || (evidence.outcome !== 'SUCCEEDED' && evidence.outcome !== 'FAILED'))
+    if (!plain(evidence) || (evidence.outcome !== 'SUCCEEDED' && evidence.outcome !== 'FAILED'))
       throw new ExecutorError('RECONCILIATION_INVALID');
-    id(evidence.reference);
-    const action = own(this.#store.read().actions, actionId);
-    if (!action || action.status !== 'UNKNOWN' || this.#active.has(actionId))
+    if (typeof evidence.reference !== 'string' || !evidence.reference.trim() || evidence.reference.length > 4096)
+      throw new ExecutorError('RECONCILIATION_INVALID');
+    const action = own(this.#store.read().actions, id(actionId));
+    if (!action || !['UNKNOWN', 'ADMITTED', 'RUNNING'].includes(action.status) || this.#active.has(actionId))
       throw new ExecutorError('RECONCILIATION_INVALID');
     this.#settle(actionId, evidence.outcome, evidence.actualCost, hash(evidence.reference));
   }
   execution(taskId: string, actionId: string): ExecutionReceipt {
     const state = this.#store.read();
-    const action = own(state.actions, actionId);
+    const action = own(state.actions, id(actionId));
     if (!action) {
-      const task = own(state.tasks, taskId);
+      const task = own(state.tasks, id(taskId));
       const stub = task && prunedReceipt(state, task.family, actionId);
-      if (!stub || stub.taskId !== taskId) throw new GuardError('INVALID_PREPARED');
+      if (!stub || stub.taskId !== taskId) {
+        // The stub is gone too, but a retained settlement event still shows that this task's
+        // action settled: report PRUNED without an outcome rather than "never prepared".
+        if (
+          task &&
+          state.audit.some(
+            event => event.event === 'ACTION_SETTLED' && event.actionId === actionId && event.taskId === taskId,
+          )
+        )
+          return clone({ id: actionId, status: 'PRUNED' as const });
+        throw new GuardError('INVALID_PREPARED');
+      }
       return clone({
         id: actionId,
         status: 'PRUNED',
@@ -1266,10 +1626,41 @@ export class DurableExecutor {
    * Recent metadata events, oldest first. Bounded per tenant: this is not a complete history.
    * Export durably by polling and comparing `sequence`; a gap means events were evicted.
    */
-  audit(scope: { tenantId?: string } = {}): readonly Readonly<Ledger['audit'][number]>[] {
+  audit(scope: { tenantId?: string } = {}): readonly Readonly<AuditEvent>[] {
+    if (!plain(scope)) throw new GuardError('INVALID_INPUT');
     const tenantId = scope.tenantId === undefined ? undefined : id(scope.tenantId);
     const events = this.#store.read().audit;
-    return clone(tenantId === undefined ? events : events.filter(event => event.tenantId === tenantId));
+    // Identifiers may be long: the ring can exceed the default 1 MiB value bound.
+    return immutableJson(
+      tenantId === undefined ? events : events.filter(event => event.tenantId === tenantId),
+      8,
+      200_000,
+      64 * 1024 * 1024,
+    ) as unknown as readonly Readonly<AuditEvent>[];
+  }
+  /**
+   * Host-only read-back of a stored action, for the review screen: what an action ID denotes,
+   * from the ledger, not from the party that asked for approval. Show `action` (tool, arguments,
+   * resource, recipient) to the authenticated reviewer before calling approve().
+   */
+  preparedAction(actionId: string): Readonly<{
+    id: string;
+    taskId: string;
+    digest: string;
+    action: PreparedAction['action'];
+    requiresApproval: boolean;
+    status: StoredAction['status'];
+  }> {
+    const stored = own(this.#store.read().actions, id(actionId));
+    if (!stored) throw new GuardError('INVALID_PREPARED');
+    return clone({
+      id: stored.id,
+      taskId: stored.taskId,
+      digest: stored.digest,
+      action: stored.action,
+      requiresApproval: stored.requiresApproval,
+      status: stored.status,
+    });
   }
 
   #memory(state: Ledger, tenantId: string, entryId: string): MemoryRecord {
@@ -1277,7 +1668,7 @@ export class DurableExecutor {
     if (!entry || entry.quarantined) throw new ExecutorError('MEMORY_UNAVAILABLE');
     return entry;
   }
-  #writeMemory(state: Ledger, entry: Omit<MemoryRecord, 'version' | 'quarantined'>): MemoryRecord {
+  #writeMemory(state: Ledger, entry: Omit<MemoryRecord, 'version' | 'quarantined'>, taskId?: string): MemoryRecord {
     if (archivedMemoryIdUsed(state, entry.tenantId, entry.id)) throw new ExecutorError('MEMORY_UNAVAILABLE');
     if (Buffer.byteLength(canonicalJson(clone(entry.value) as Json)) > 65_536) throw new ExecutorError('MEMORY_LIMIT');
     const key = JSON.stringify([id(entry.tenantId), id(entry.id)]);
@@ -1296,7 +1687,11 @@ export class DurableExecutor {
       throw new ExecutorError('MEMORY_LIMIT');
     const next: MemoryRecord = { ...entry, version: (history.at(-1)?.version ?? 0) + 1, quarantined: false };
     state.memory[key] = [...history, next];
-    this.#audit(state, this.#now(state), 'MEMORY_WRITTEN');
+    // Recorded under the entry's tenant, so memory traffic never displaces system events.
+    this.#recordEvent(state, this.#now(state), 'MEMORY_WRITTEN', {
+      tenantId: entry.tenantId,
+      ...(taskId === undefined ? {} : { taskId }),
+    });
     return next;
   }
   /** Operator import. Unknown sensitivity is restricted; trust is metadata, never execution authority. */
@@ -1307,36 +1702,62 @@ export class DurableExecutor {
     value: Json;
     sensitive?: boolean;
     trusted?: boolean;
+    /** The content came from outside the trust boundary: reading it marks the reader's family. */
+    untrusted?: boolean;
   }): void {
-    const input = clone(entry);
-    this.#store.transaction(state => {
-      const previous = own(state.memory, JSON.stringify([input.tenantId, input.id]))?.at(-1);
+    const supplied = input(entry);
+    if (!plain(supplied) || !Object.hasOwn(supplied, 'value')) throw new GuardError('INVALID_INPUT');
+    id(supplied.tenantId);
+    id(supplied.id);
+    this.#write(state => {
+      const previous = own(state.memory, JSON.stringify([supplied.tenantId, supplied.id]))?.at(-1);
       this.#writeMemory(state, {
-        id: input.id,
-        tenantId: input.tenantId,
-        origin: id(input.origin),
-        value: input.value,
-        sensitive: input.sensitive !== false || previous?.sensitive === true,
-        trusted: input.trusted === true,
+        id: supplied.id,
+        tenantId: supplied.tenantId,
+        origin: id(supplied.origin),
+        value: supplied.value,
+        sensitive: supplied.sensitive !== false || previous?.sensitive === true,
+        trusted: supplied.trusted === true,
+        ...(supplied.untrusted === true ? { untrusted: true } : {}),
         parentIds: previous?.parentIds ?? [],
       });
-    });
+    }, GROWTH);
   }
   /** Registers two ordinary scoped tools. The caller must approve their fingerprints separately. */
   registerMemoryTools(prefix = 'memory'): Readonly<{ read: string; write: string }> {
     id(prefix);
     const parse = (value: Json, write: boolean): Json => {
       if (!value || typeof value !== 'object' || Array.isArray(value)) throw new GuardError('ARGUMENT_INVALID');
-      const input = value as Record<string, Json>;
-      if (Object.keys(input).some(key => !(write ? ['id', 'value', 'ifVersion'] : ['id']).includes(key)))
+      const fields = value as Record<string, Json>;
+      if (Object.keys(fields).some(key => !(write ? ['id', 'value', 'ifVersion'] : ['id']).includes(key)))
         throw new GuardError('ARGUMENT_INVALID');
-      id(input.id);
+      id(fields.id);
       if (
         write &&
-        (!Object.hasOwn(input, 'value') || !Number.isSafeInteger(input.ifVersion) || Number(input.ifVersion) < 0)
+        (!Object.hasOwn(fields, 'value') || !Number.isSafeInteger(fields.ifVersion) || Number(fields.ifVersion) < 0)
       )
         throw new GuardError('ARGUMENT_INVALID');
       return value;
+    };
+    // A memory tool's whole effect is one ledger transaction. A coded refusal from inside it rolled
+    // that transaction back, so nothing happened: execute() keeps the code and settles the action
+    // FAILED at zero cost. The ledger revision is compared to make "nothing happened" a checked fact.
+    const transact = <T>(operation: (state: Ledger) => T): T => {
+      let revision: number | undefined;
+      try {
+        return this.#write(state => {
+          revision = state.revision;
+          return operation(state);
+        }, GROWTH);
+      } catch (error) {
+        let unchanged = false;
+        try {
+          unchanged = revision !== undefined && this.#store.read().revision === revision;
+        } catch {
+          /* An unreadable ledger proves nothing: the outcome stays unknown. */
+        }
+        throw toolRefusal(error, unchanged);
+      }
     };
     const read = this.registerTool({
       name: `${prefix}.read`,
@@ -1349,10 +1770,12 @@ export class DurableExecutor {
           tenantId: entry.tenantId,
           resourceVersion: String(entry.version),
           sensitive: entry.sensitive,
+          // Content written after its author read outside content carries that mark to the reader.
+          ...(entry.untrusted === true ? { untrusted: true as const } : {}),
         };
       },
       execute: (args, context) =>
-        this.#store.transaction(state => {
+        transact(state => {
           const entry = this.#memory(state, context.task.tenantId, (args as { id: string }).id);
           if (String(entry.version) !== context.action.resourceVersion)
             throw new ExecutorError('MEMORY_VERSION_CHANGED');
@@ -1368,44 +1791,56 @@ export class DurableExecutor {
       description: 'Write untrusted memory with an exact expected version and inherited labels.',
       parse: value => parse(value, true),
       resolve: (args, task) => {
-        const input = args as { id: string; ifVersion: number };
+        const wanted = args as { id: string; ifVersion: number };
         const state = this.#store.read();
-        if (archivedMemoryIdUsed(state, task.tenantId, input.id)) throw new ExecutorError('MEMORY_UNAVAILABLE');
-        const previous = own(state.memory, JSON.stringify([task.tenantId, input.id]))?.at(-1);
-        if (previous?.quarantined || (previous?.version ?? 0) !== input.ifVersion)
+        if (archivedMemoryIdUsed(state, task.tenantId, wanted.id)) throw new ExecutorError('MEMORY_UNAVAILABLE');
+        const previous = own(state.memory, JSON.stringify([task.tenantId, wanted.id]))?.at(-1);
+        if (previous?.quarantined || (previous?.version ?? 0) !== wanted.ifVersion)
           throw new ExecutorError('MEMORY_VERSION_CHANGED');
-        return { resourceId: input.id, tenantId: task.tenantId, resourceVersion: String(input.ifVersion) };
+        return { resourceId: wanted.id, tenantId: task.tenantId, resourceVersion: String(wanted.ifVersion) };
       },
       execute: (args, context) =>
-        this.#store.transaction(state => {
-          const input = args as { id: string; value: Json; ifVersion: number };
-          const previous = own(state.memory, JSON.stringify([context.task.tenantId, input.id]))?.at(-1);
+        transact(state => {
+          const wanted = args as { id: string; value: Json; ifVersion: number };
+          const previous = own(state.memory, JSON.stringify([context.task.tenantId, wanted.id]))?.at(-1);
           if (previous?.quarantined || String(previous?.version ?? 0) !== context.action.resourceVersion)
             throw new ExecutorError('MEMORY_VERSION_CHANGED');
           const familyId = this.#task(state, context.task.id).family;
           const family = state.families[familyId]!;
           for (const parent of family.memorySources ?? []) this.#memory(state, context.task.tenantId, parent);
-          const entry = this.#writeMemory(state, {
-            id: input.id,
-            tenantId: context.task.tenantId,
-            origin: `task:${context.task.id}`,
-            value: input.value,
-            sensitive: family.sensitive || previous?.sensitive === true,
-            trusted: false,
-            familyId,
-            parentIds: [...new Set([...(previous?.parentIds ?? []), ...(family.memorySources ?? [])])],
-          });
+          const entry = this.#writeMemory(
+            state,
+            {
+              id: wanted.id,
+              tenantId: context.task.tenantId,
+              origin: `task:${context.task.id}`,
+              value: wanted.value,
+              sensitive: family.sensitive || previous?.sensitive === true,
+              trusted: false,
+              ...(family.untrusted === true ? { untrusted: true } : {}),
+              familyId,
+              parentIds: [...new Set([...(previous?.parentIds ?? []), ...(family.memorySources ?? [])])],
+            },
+            context.task.id,
+          );
           return { value: { id: entry.id, version: entry.version, sensitive: entry.sensitive, trusted: false } };
         }),
     });
     return Object.freeze({ read, write });
   }
-  /** Operator quarantine propagates to known descendants in the same tenant. */
+  /**
+   * Operator quarantine propagates to known descendants in the same tenant. MEMORY_UNAVAILABLE when
+   * the tenant has no such entry; quarantining an entry again is allowed.
+   */
   quarantineMemory(tenantId: string, entryId: string): void {
-    this.#store.transaction(state => {
-      this.#quarantine(state, id(tenantId), new Set([id(entryId)]));
-      this.#audit(state, this.#now(state), 'MEMORY_QUARANTINED');
-    });
+    id(tenantId);
+    id(entryId);
+    this.#write(state => {
+      if (!own(state.memory, JSON.stringify([tenantId, entryId]))?.length)
+        throw new ExecutorError('MEMORY_UNAVAILABLE');
+      this.#quarantine(state, tenantId, new Set([entryId]));
+      this.#recordEvent(state, this.#now(state), 'MEMORY_QUARANTINED', { tenantId });
+    }, CRITICAL);
   }
   #quarantine(state: Ledger, tenantId: string, denied: Set<string>): void {
     let changed = true;
@@ -1428,7 +1863,9 @@ export class DurableExecutor {
   }
   /** Operator-only rollback creates a new version; it never removes history or lowers sensitivity. */
   rollbackMemory(tenantId: string, entryId: string, version: number): void {
-    this.#store.transaction(state => {
+    id(tenantId);
+    id(entryId);
+    this.#write(state => {
       const history = own(state.memory, JSON.stringify([tenantId, entryId]));
       const previous = history?.find(entry => entry.version === version);
       if (!previous || previous.quarantined) throw new ExecutorError('MEMORY_UNAVAILABLE');
@@ -1437,11 +1874,13 @@ export class DurableExecutor {
         sensitive: history!.some(entry => entry.sensitive),
         parentIds: [...new Set(history!.flatMap(entry => entry.parentIds))],
       });
-      this.#audit(state, this.#now(state), 'MEMORY_ROLLED_BACK');
-    });
+      this.#recordEvent(state, this.#now(state), 'MEMORY_ROLLED_BACK', { tenantId });
+    }, GROWTH);
   }
   close(): void {
     if (this.#active.size) throw new ExecutorError('EXECUTIONS_ACTIVE');
+    // The last chance to record a revocation whose write failed; if this fails too, it is lost.
+    this.#saveRevocations();
     closeExecutorObservation(this);
     this.#store.close();
     this.#policyAdmission.invalidate('TASK_REVOKED');

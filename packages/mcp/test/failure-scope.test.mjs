@@ -65,7 +65,7 @@ test("one task's deadline abort leaves the connection usable for another task", 
     },
   });
   const short = f.task({ deadline: Date.now() + 150 });
-  await assert.rejects(f.call(short, 'slow'));
+  await assert.rejects(f.call(short, 'slow'), { code: 'EXECUTION_ABORTED' });
   assert.equal(f.connection.status, 'ready');
   assert.equal(text(await f.call(f.task(), 'next')), 'next');
 });
@@ -145,6 +145,6 @@ test('sustained traffic past the old lifetime message cap keeps working', { time
 
 test('message window limits are validated', async t => {
   for (const limits of [{ messageWindowMs: 0 }, { messageWindowMs: 600_001 }, { messageWindowMs: 1.5 }]) {
-    await assert.rejects(fixture(t, { limits }));
+    await assert.rejects(fixture(t, { limits }), { code: 'INVALID_CONFIGURATION' }, JSON.stringify(limits));
   }
 });

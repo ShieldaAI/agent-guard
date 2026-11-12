@@ -1,8 +1,8 @@
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DatabaseSync } from 'node:sqlite';
-import { closeSync, constants, existsSync, mkdirSync, openSync, renameSync, rmSync } from 'node:fs';
+import { closeSync, existsSync, mkdirSync, renameSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
-import { LedgerStore, type Ledger } from './store.js';
+import { ExecutorError, LedgerStore, type Ledger } from './store.js';
 import {
   type LedgerKey,
   type ParsedKeyring,
@@ -16,8 +16,10 @@ import {
   copyPrivate,
   custodyFail as fail,
   independentDirectories,
+  openPrivate,
   privateBytes,
   privateDirectory,
+  storeOpenFailure,
   syncDirectory,
   writeNewPrivate,
 } from './custody-files.js';
@@ -126,12 +128,43 @@ const keyPattern = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const backupPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/;
 const hashPattern = /^[a-f0-9]{64}$/;
 const maxBytes = 64 * 1024 * 1024;
+const plainObject = (value: unknown): value is Record<string, unknown> =>
+  !!value && typeof value === 'object' && !Array.isArray(value);
+const boundedPath = (value: unknown): value is string =>
+  typeof value === 'string' && isAbsolute(value) && Buffer.byteLength(value) <= 512;
+/** Exactly `{ id, database, witnessPath }`: enrollment persists these, so nothing else may ride along. */
+const storeShape = (value: unknown): value is CustodyStore =>
+  plainObject(value) &&
+  Object.keys(value).sort().join(',') === 'database,id,witnessPath' &&
+  typeof value.id === 'string' &&
+  keyPattern.test(value.id) &&
+  boundedPath(value.database) &&
+  boundedPath(value.witnessPath);
+/** The three persisted store fields, in one fixed shape. */
+const storeIdentity = ({ id, database, witnessPath }: CustodyStore): CustodyStore => ({ id, database, witnessPath });
+const requestFields: Record<string, readonly string[]> = {
+  enroll: [],
+  backup: [],
+  status: [],
+  recover: [],
+  verify: ['backupId'],
+  restore: ['backupId'],
+  retire: ['keyId'],
+  rotate: ['nextKeyId'],
+};
 function checkedOptions(options: LedgerCustodyOptions): void {
   if (
     !['linux', 'darwin'].includes(process.platform) ||
+    !plainObject(options) ||
     !Array.isArray(options.stores) ||
     options.stores.length < 1 ||
-    options.stores.length > 16
+    options.stores.length > 16 ||
+    !options.stores.every(storeShape) ||
+    (options.history !== undefined &&
+      (!options.history ||
+        typeof options.history !== 'object' ||
+        !boundedPath(options.history.directory) ||
+        typeof options.history.verify !== 'function'))
   )
     fail('CUSTODY_CONFIG_INVALID');
   const paths = [
@@ -142,9 +175,9 @@ function checkedOptions(options: LedgerCustodyOptions): void {
     ...options.stores.flatMap(s => [s.database, s.witnessPath]),
   ];
   if (
-    paths.some(p => typeof p !== 'string' || !isAbsolute(p) || Buffer.byteLength(p) > 512) ||
+    !paths.every(boundedPath) ||
+    !boundedPath(options.backupDirectory) ||
     new Set(paths).size !== paths.length ||
-    options.stores.some(s => !keyPattern.test(s.id)) ||
     new Set(options.stores.map(s => s.id)).size !== options.stores.length
   )
     fail('CUSTODY_CONFIG_INVALID');
@@ -200,11 +233,11 @@ function unseal<T>(text: string, keys: readonly LedgerKey[], domain: string, max
     if (
       !header ||
       Object.keys(header).sort().join(',') !== 'ciphertext,keyId,nonce,tag,version' ||
-      header.version !== 1
+      header.version !== 1 ||
+      typeof header.keyId !== 'string' ||
+      !keyPattern.test(header.keyId)
     )
       fail('CUSTODY_AUTHENTICATION_FAILED');
-    const key = keys.find(k => k.keyId === header.keyId);
-    if (!key) fail('CUSTODY_KEY_UNAVAILABLE');
     const buffers = [header.nonce, header.tag, header.ciphertext].map(v => {
       if (typeof v !== 'string') fail('CUSTODY_AUTHENTICATION_FAILED');
       const bytes = Buffer.from(v, 'base64');
@@ -213,12 +246,17 @@ function unseal<T>(text: string, keys: readonly LedgerKey[], domain: string, max
     });
     if (buffers[0]!.length !== 12 || buffers[1]!.length !== 16 || buffers[2]!.length > maximum)
       fail('CUSTODY_AUTHENTICATION_FAILED');
-    const decipher = createDecipheriv('aes-256-gcm', key.key, buffers[0]!);
+    const key = keys.find(k => k.keyId === header.keyId);
+    if (!key) fail('CUSTODY_KEY_UNAVAILABLE');
+    const decipher = createDecipheriv('aes-256-gcm', key.key, buffers[0]!, { authTagLength: 16 });
     decipher.setAAD(Buffer.from(`${domain}\0${key.keyId}`));
     decipher.setAuthTag(buffers[1]!);
     plain = Buffer.concat([decipher.update(buffers[2]!), decipher.final()]);
     return JSON.parse(plain.toString('utf8')) as T;
-  } catch {
+  } catch (error) {
+    // A well-formed envelope sealed under a key this ring no longer holds is a missing
+    // key, not a forgery. No cause is attached: a parse error could quote plaintext.
+    if (error instanceof ExecutorError && error.code === 'CUSTODY_KEY_UNAVAILABLE') throw error;
     return fail('CUSTODY_AUTHENTICATION_FAILED');
   } finally {
     plain?.fill(0);
@@ -229,17 +267,19 @@ function openStore(
   witnessPath: string,
   keys: readonly LedgerKey[],
 ): { store: LedgerStore; key: LedgerKey } {
+  let last: unknown;
   for (const key of keys) {
     try {
       return {
         store: new LedgerStore(path, key.key, maxBytes, { path: witnessPath, mode: 'resume' }, { existingOnly: true }),
         key,
       };
-    } catch {
+    } catch (error) {
       /* Fail closed after every matching-key attempt. */
+      last = error;
     }
   }
-  return fail('CUSTODY_STORE_UNAVAILABLE');
+  return fail('CUSTODY_STORE_UNAVAILABLE', storeOpenFailure(path, last));
 }
 function binding(metadata: Metadata, options: LedgerCustodyOptions): void {
   if (
@@ -252,11 +292,16 @@ function binding(metadata: Metadata, options: LedgerCustodyOptions): void {
     metadata.sequence < 1 ||
     metadata.sequence > 100000 ||
     !hashPattern.test(metadata.catalogDigest) ||
-    stable(metadata.stores.map(({ id, database, witnessPath }) => ({ id, database, witnessPath }))) !==
-      stable(options.stores)
+    stable(metadata.stores.map(storeIdentity)) !== stable(options.stores.map(storeIdentity))
   )
     fail('CUSTODY_SCOPE_MISMATCH');
 }
+const storeBinding = ({ id, database, witnessPath, inventoryInstanceId }: StoreBinding): StoreBinding => ({
+  id,
+  database,
+  witnessPath,
+  inventoryInstanceId,
+});
 function group(metadata: Metadata): ManagedLedgerGroup {
   return {
     id: metadata.id,
@@ -371,11 +416,12 @@ function verifyBackup(
   catalog: Catalog,
   custodyKeys: readonly LedgerKey[],
   backupId: string,
+  /** Where the backup's files are; a new backup is verified in staging before it is published. */
+  directory = join(options.backupDirectory, backupId),
 ): BackupManifest {
   const expected = catalog.backups.get(backupId);
   if (!expected || !backupPattern.test(backupId)) fail('CUSTODY_BACKUP_UNKNOWN');
-  const directory = join(options.backupDirectory, backupId),
-    bytes = privateBytes(join(directory, 'manifest.enc'), 32 * 1024 * 1024 + 1024);
+  const bytes = privateBytes(join(directory, 'manifest.enc'), 32 * 1024 * 1024 + 1024);
   let manifest: BackupManifest;
   try {
     if (sha(bytes) !== expected) fail('CUSTODY_BACKUP_CHANGED');
@@ -404,12 +450,9 @@ function verifyBackup(
       const source = metadata.stores[index]!,
         snapshot = manifest.stores[index]!;
       if (
-        stable({
-          id: snapshot.id,
-          database: snapshot.database,
-          witnessPath: snapshot.witnessPath,
-          inventoryInstanceId: snapshot.inventoryInstanceId,
-        }) !== stable(source) ||
+        // Compare only the bound fields, so an enrollment that once stored extra
+        // store properties still verifies and backs up.
+        stable(storeBinding(snapshot)) !== stable(storeBinding(source)) ||
         snapshot.file !== `store-${index}.sqlite` ||
         !hashPattern.test(snapshot.commitment) ||
         !hashPattern.test(snapshot.sha256) ||
@@ -462,6 +505,8 @@ function newBackup(
   metadata: Metadata,
   stores: Map<string, { store: LedgerStore; key: LedgerKey }>,
   custodyKey: LedgerKey,
+  /** Runs on the complete staged backup. A backup that fails it is never published. */
+  verify: (backup: { backupId: string; manifestSha256: string }, directory: string) => void,
 ): { backupId: string; manifestSha256: string } {
   const backupId = randomUUID(),
     staging = join(options.backupDirectory, `.pending-${backupId}`),
@@ -487,7 +532,7 @@ function newBackup(
         reader.close();
       }
       manifest.stores.push({
-        ...source,
+        ...storeBinding(source),
         file,
         ...copied,
         ...snapshot,
@@ -508,15 +553,32 @@ function newBackup(
     const sealed = envelope(manifest, custodyKey, `custody-backup-v1\0${metadata.id}\0${backupId}`);
     writeNewPrivate(join(staging, 'manifest.enc'), Buffer.from(sealed));
     syncDirectory(staging);
+    const backup = { backupId, manifestSha256: sha(sealed) };
+    verify(backup, staging);
     renameSync(staging, destination);
     syncDirectory(options.backupDirectory);
-    return { backupId, manifestSha256: sha(sealed) };
+    return backup;
   } finally {
-    rmSync(staging, { recursive: true, force: true });
+    // Until the rename, every byte lives in staging; a failed step leaves no copy behind.
+    try {
+      rmSync(staging, { recursive: true, force: true });
+      syncDirectory(options.backupDirectory);
+    } catch {
+      /* Keep the outcome of the backup itself. */
+    }
+  }
+}
+/** Remove a published backup directory that the catalog does not register. */
+function discardBackup(options: LedgerCustodyOptions, backupId: string): void {
+  try {
+    rmSync(join(options.backupDirectory, backupId), { recursive: true, force: true });
+    syncDirectory(options.backupDirectory);
+  } catch {
+    /* The failure that led here is the one to report. */
   }
 }
 function lockWitness(path: string): { db: DatabaseSync; commitment: string } {
-  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  const fd = openPrivate(path);
   try {
     checkPrivate(fd, path);
   } finally {
@@ -531,6 +593,14 @@ function lockWitness(path: string): { db: DatabaseSync; commitment: string } {
   } catch {
     db.close();
     return fail('CUSTODY_WITNESS_UNAVAILABLE');
+  }
+}
+/** Digest of a staged copy, or undefined when it is not a readable private file. */
+function stagedDigest(path: string): string | undefined {
+  try {
+    return copyPrivate(path).sha256;
+  } catch {
+    return undefined;
   }
 }
 function restoreFiles(
@@ -549,8 +619,10 @@ function restoreFiles(
     const source = manifest.stores[index]!,
       target = source.database,
       staged = join(dirname(target), `.custody-restore-${recoveryId}-${index}`);
-    if (existsSync(staged) && copyPrivate(staged).sha256 !== source.sha256) {
-      renameSync(staged, `${staged}.partial-${randomUUID()}`);
+    // A stage left by an interrupted attempt is this operation's own partial copy of
+    // the backup, not evidence: drop it and copy again.
+    if (existsSync(staged) && stagedDigest(staged) !== source.sha256) {
+      rmSync(staged, { force: true });
       syncDirectory(dirname(staged));
     }
     if (!existsSync(staged))
@@ -585,8 +657,8 @@ function restoreFiles(
       source = join(options.backupDirectory, manifest.backupId, 'history', file.file);
     if (existsSync(target) && copyPrivate(target).sha256 === file.sha256) continue;
     const staged = join(options.history!.directory, `.custody-history-${recoveryId}-${sha(file.name)}`);
-    if (existsSync(staged) && copyPrivate(staged).sha256 !== file.sha256) {
-      renameSync(staged, `${staged}.partial-${randomUUID()}`);
+    if (existsSync(staged) && stagedDigest(staged) !== file.sha256) {
+      rmSync(staged, { force: true });
       syncDirectory(dirname(staged));
     }
     if (!existsSync(staged)) copyPrivate(source, staged, file.sha256);
@@ -609,11 +681,15 @@ export function manageLedgerCustody(
 ): CustodyResult {
   checkedOptions(options);
   if (
-    !['enroll', 'backup', 'status', 'recover', 'verify', 'restore', 'retire', 'rotate'].includes(request.operation) ||
-    ('backupId' in request && !backupPattern.test(request.backupId)) ||
-    ('keyId' in request && !keyPattern.test(request.keyId)) ||
-    ('nextKeyId' in request && !keyPattern.test(request.nextKeyId)) ||
-    (apply && !hashPattern.test(apply.expectedDigest))
+    !plainObject(request) ||
+    (apply !== undefined && !plainObject(apply)) ||
+    !Object.hasOwn(requestFields, request.operation) ||
+    // Each operation takes exactly its own identifier and nothing else.
+    Object.keys(request).sort().join(',') !== ['operation', ...requestFields[request.operation]!].sort().join(',') ||
+    ('backupId' in request && (typeof request.backupId !== 'string' || !backupPattern.test(request.backupId))) ||
+    ('keyId' in request && (typeof request.keyId !== 'string' || !keyPattern.test(request.keyId))) ||
+    ('nextKeyId' in request && (typeof request.nextKeyId !== 'string' || !keyPattern.test(request.nextKeyId))) ||
+    (apply && (typeof apply.expectedDigest !== 'string' || !hashPattern.test(apply.expectedDigest)))
   )
     fail('CUSTODY_REQUEST_INVALID');
   return withLedgerKeyringState(options.keyringFile, (ring, publishRing) =>
@@ -729,7 +805,7 @@ export function manageLedgerCustody(
               custodyWitness: options.custodyWitness,
               custodyKeyringFile: options.custodyKeyringFile,
               backupDirectory: options.backupDirectory,
-              stores: options.stores,
+              stores: options.stores.map(storeIdentity),
               historyDirectory: options.history?.directory,
             },
             ring: { keys: ring.keys.map(k => [k.keyId, sha(k.key)]), maxKeys: ring.maxKeys, managed: ring.managed },
@@ -774,7 +850,7 @@ export function manageLedgerCustody(
               keyringFile: options.keyringFile,
               backupDirectory: options.backupDirectory,
               stores: options.stores.map(s => ({
-                ...s,
+                ...storeIdentity(s),
                 inventoryInstanceId: stores.get(s.id)!.store.read().inventoryInstanceId,
               })),
               ...(options.history ? { historyDirectory: options.history.directory } : {}),
@@ -810,14 +886,28 @@ export function manageLedgerCustody(
           return result({ pending: false });
         }
         if (request.operation === 'backup') {
-          const backup = newBackup(options, metadata!, stores, custodyKey!);
-          // Validate durable files before acknowledging/registering any backup.
-          const provisional = {
-            ...catalog,
-            backups: new Map([...catalog.backups, [backup.backupId, backup.manifestSha256]]),
-          };
-          verifyBackup(options, metadata!, provisional, custodyRing.keys, backup.backupId);
-          append(custody!, custodyKey!, { kind: 'backup', ...backup });
+          // Validate the durable staged files before publishing or registering the backup.
+          const backup = newBackup(options, metadata!, stores, custodyKey!, (staged, directory) => {
+            const provisional = {
+              ...catalog,
+              backups: new Map([...catalog.backups, [staged.backupId, staged.manifestSha256]]),
+            };
+            verifyBackup(options, metadata!, provisional, custodyRing.keys, staged.backupId, directory);
+          });
+          const registered = metadata!.sequence;
+          try {
+            append(custody!, custodyKey!, { kind: 'backup', ...backup });
+          } catch (error) {
+            // Remove the published copy only when the catalog provably did not register it.
+            let sequence: number | undefined;
+            try {
+              sequence = (custody!.read() as CustodyLedger).custody?.sequence;
+            } catch {
+              /* Unknown catalog state: keep the files. */
+            }
+            if (sequence === registered) discardBackup(options, backup.backupId);
+            throw error;
+          }
           return result({ backupId: backup.backupId, backupCount: catalog.backups.size + 1 });
         }
         if (request.operation === 'rotate') {

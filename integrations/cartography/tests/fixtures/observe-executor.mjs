@@ -4,7 +4,8 @@ import { createHash } from 'node:crypto';
 import { mkdtempSync, realpathSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { DurableExecutor, createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/index.js';
+import { DurableExecutor } from '../../../../packages/executor/dist/index.js';
+import { createInventoryObserverToken, startInventoryServer } from '../../../../packages/executor/dist/entry-inventory.js';
 
 const directory = realpathSync(mkdtempSync(join(tmpdir(), 'guard-observer-contract-')));
 const servers = [];

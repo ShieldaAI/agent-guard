@@ -38,8 +38,8 @@ import {
   createModelTool,
   type InventoryOptions,
   type InventorySnapshot,
-  type InventoryTask,
 } from '@shieldaai/agent-guard-executor';
+import type { InventoryTask } from '@shieldaai/agent-guard-executor/inventory';
 import {
   createInventoryObserverToken,
   startInventoryServer,

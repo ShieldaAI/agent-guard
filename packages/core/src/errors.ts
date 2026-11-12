@@ -8,7 +8,7 @@ export interface GuardErrorInfo {
    * an effect. A false value means: change the request, the grants or the state first.
    */
   readonly retryable: boolean;
-  /** The usual reason a caller sees it. */
+  /** The usual reason a caller sees it, and what to do next. */
   readonly cause: string;
 }
 
@@ -20,178 +20,206 @@ export const GuardErrorCatalog: Readonly<Record<GuardErrorCodeValue, GuardErrorI
   INVALID_INPUT: entry(
     'A host-supplied option or argument is malformed.',
     false,
-    'Wrong type, empty identifier or out-of-range number in a host call.',
+    'A wrong type, an empty identifier or an out-of-range number in a host call. Fix the calling code.',
   ),
   INVALID_JSON: entry(
-    'A value is not bounded plain JSON.',
+    'A value is not plain JSON within the size limits.',
     false,
-    'Cycles, accessors, non-finite numbers or values above the JSON limits.',
+    'The value has a cycle, an accessor, a class instance or a non-finite number, or it exceeds limits.maxJsonBytes, limits.maxJsonNodes or 64 levels of nesting. Send plain data, make it smaller, or raise the limit.',
   ),
   INVALID_TASK: entry(
     'The task handle is unknown to this guard.',
     false,
-    'A handle from another guard instance, or a task that was never created.',
+    'The handle came from another guard, is a copy of the object createTask() returned, or the task was retired with retireTask(). Create a new task and use its handle.',
   ),
   ARGUMENT_INVALID: entry(
     'The tool rejected the call arguments.',
     false,
-    "The tool's parse() or input schema refused the arguments.",
+    "The tool's parse() threw or returned something that is not plain JSON. Correct the arguments and prepare again; the error detail carries the parser's code when it supplies one.",
   ),
-  DUPLICATE_TASK: entry('A task with this ID already exists.', false, 'Task IDs must be unique within one guard.'),
+  DUPLICATE_TASK: entry(
+    'A task with this ID already exists.',
+    false,
+    'Task IDs are unique among the tasks a guard has not retired. Use a new ID, or call retireTask() on the finished task first.',
+  ),
   INVALID_PREPARED: entry(
-    'The prepared action is unknown, foreign or no longer valid.',
+    'The prepared action is unknown here or no longer waiting to run.',
     false,
-    'The action was never prepared here, belongs to another task, or was pruned.',
+    'The action is not one this guard prepared (it came from another guard or is a copy), or, in the executor, it belongs to another task or has already run or been pruned. Call prepare() again and use what it returns.',
   ),
-  TOOL_UNKNOWN: entry('No tool with this name is registered.', false, 'A typo, or a tool that was never registered.'),
-  TOOL_UNAPPROVED: entry(
-    "The tool's current fingerprint is not approved.",
+  TOOL_UNKNOWN: entry(
+    'No tool with this name is registered.',
     false,
-    'The host has not called approveTool() for this registration yet.',
+    'The name is misspelled, the tool was never registered, or it was removed with unregisterTool(). Register the tool or correct the name.',
+  ),
+  TOOL_UNAPPROVED: entry(
+    "The tool's current registration is not approved.",
+    false,
+    'approveTool() has not been called for this registration, the tool was registered again since, or unapproveTool() withdrew the approval. Review the definition, call approveTool() with its current fingerprint, then prepare again.',
   ),
   TOOL_CHANGED: entry(
-    'The tool registration changed after preparation.',
+    'The tool registration is not the one this call refers to.',
     false,
-    'The tool was re-registered; prepare and review again.',
+    'The tool was registered again or removed with unregisterTool() after the action was prepared, or approveTool() was given a fingerprint that is not the current one. Approve the current fingerprint, then prepare and review the action again.',
   ),
   TASK_REVOKED: entry(
     'The task or one of its ancestors was revoked.',
     false,
-    'revokeTask() was called on this task or a parent.',
+    'revokeTask() or retireTask() was called on this task or a parent, or a tool returned an invalid result. Create a new task if the work should continue.',
   ),
-  TASK_EXPIRED: entry('The task deadline has passed.', false, 'The budget deadline is in the past; create a new task.'),
+  TASK_EXPIRED: entry(
+    'The task deadline has passed.',
+    false,
+    'The budget deadline of the task or a parent is in the past. Create a new task with a later deadline.',
+  ),
   GRANT_DENIED: entry(
     'No grant in the task ancestry allows this tool and resource.',
     false,
-    "The resolved resource is outside the task's grants.",
+    'The tool or the resolved resource is outside the grants of the task or one of its parents. Grant the resource when creating the task if the call is legitimate; otherwise treat it as a blocked attempt.',
   ),
   DELEGATION_DENIED: entry(
     "A child task would exceed its parent's authority.",
     false,
-    'Delegated grants, recipients or budget exceed the parent.',
+    'Delegated grants, recipients or budget exceed the parent. The error detail names which: GRANT_, RECIPIENT_, CONTROL_PLANE_, BUDGET_ or DEADLINE_EXCEEDS_PARENT. Ask for the same or less than the parent holds.',
   ),
   TENANT_DENIED: entry(
     'The resolved tenant differs from the task tenant.',
     false,
-    'The tool resolved a resource belonging to another tenant.',
+    "The tool's resolve() returned a resource that belongs to another tenant. Nothing to fix when the request was hostile; otherwise correct the resource lookup.",
   ),
   CONTROL_PLANE_DENIED: entry(
     'The tool is control-plane and the task does not allow it.',
     false,
-    'Set allowControlPlane on the task only for administrative work.',
+    'The tool is registered with controlPlane: true and the task (or a parent) was created without allowControlPlane. Set allowControlPlane only on tasks that do administrative work.',
   ),
   RECIPIENT_DENIED: entry(
     "The external recipient is not in the task's allowed recipients.",
     false,
-    'An outbound call targets a recipient the task did not list.',
+    'An external call targets a recipient that the task or a parent did not list, or names none. Add the exact recipient to allowedRecipients when creating the task if it is legitimate.',
   ),
   SENSITIVE_EGRESS_DENIED: entry(
     'Sensitive data may not leave through this external call.',
     false,
-    'The task family read sensitive data earlier and the call is external.',
+    'The call is external and either reads sensitive data itself or runs in a task family that already did. Do the send from a separate task that has not read sensitive data.',
   ),
   SECRET_EGRESS_DENIED: entry(
     'The arguments contain a protected host secret.',
     false,
-    'A configured secret value appears in the outbound arguments.',
+    'A value listed in secretValues appears in the arguments of an external call. Remove the secret from the arguments.',
   ),
   RESOLUTION_FAILED: entry(
     'The tool could not resolve its resource.',
     false,
-    "The tool's resolve() threw; see the error detail code when the adapter supplies one.",
+    "The tool's resolve() threw or returned a malformed result. Check the arguments and the lookup; the error detail carries the adapter's code when it supplies one.",
   ),
-  POLICY_DENIED: entry('The policy denied the action.', false, 'The configured policy returned deny.'),
+  POLICY_DENIED: entry(
+    'The policy denied the action.',
+    false,
+    'The configured policy returned deny. Change the request or the policy; repeating the call gives the same answer.',
+  ),
   POLICY_ERROR: entry(
     'The policy threw or returned an invalid decision.',
     false,
-    'A bug or invalid return value in the host policy.',
+    'The host policy has a bug or returned something other than allow, deny or require_approval. Fix the policy; the call was not run.',
   ),
   POLICY_CHANGED: entry(
     'The policy changed after preparation.',
     false,
-    'setPolicy() was called; prepare and review again.',
+    'setPolicy() was called after the action was prepared, or the durable executor restarted (a restart ends every prepared action). Prepare the action again and have it reviewed.',
   ),
   POLICY_STATE_CHANGED: entry(
     'The task changed while the policy was evaluating, beyond the retry bound.',
     true,
-    'Heavy parallel use of one task; retry, or raise maxPolicyAttempts.',
+    'Other calls on the same task kept starting or finishing while the policy ran. Retry, run fewer calls in parallel on one task, or raise maxPolicyAttempts.',
   ),
   POLICY_BUSY: entry(
     'Too many policy evaluations are in flight for this task family.',
     true,
-    'Parallel calls exceeded the policy admission slots; retry shortly.',
+    'Parallel calls used every policy slot (limits.maxPolicyEvaluations and limits.maxPolicyEvaluationsPerFamily). Retry shortly, or raise the limits.',
   ),
   POLICY_TIMEOUT: entry(
     'The policy did not decide within the policy time limit (limits.policyTimeoutMs, 30 seconds by default).',
     true,
-    'A slow asynchronous policy; retry with more time or a faster policy.',
+    'An asynchronous policy was too slow. Retry, make the policy faster, or raise limits.policyTimeoutMs.',
   ),
   ACTION_APPROVAL_LIMIT: entry(
     'The action already has the maximum number of approvals.',
     false,
-    'Use an existing approval instead of issuing more.',
+    'approve() was called more often than limits.maxApprovalsPerAction allows for one action. Use an approval ID already issued, or wait for one to expire.',
   ),
   ACTION_USED: entry(
     'The prepared action was already dispatched.',
     false,
-    'Each prepared action runs at most once; prepare a new one.',
+    'Each prepared action runs at most once, even when the first run failed. Call prepare() again for another call.',
   ),
   APPROVAL_REQUIRED: entry(
     'The action needs a human approval before dispatch.',
     false,
-    'Show the prepared action to a reviewer and pass the approval ID.',
+    'The tool, the policy or the outside-content rule requires approval and execute() was called without an approval ID. Show the prepared action to a reviewer, call approve(), and pass the approval ID to execute().',
   ),
   APPROVAL_INVALID: entry(
     'The approval does not match this action.',
     false,
-    'A wrong, foreign or tampered approval ID.',
+    'The approval ID is unknown for this action (it was issued for another action or never issued), or approve() was given an expiry in the past or after the task deadline. Call approve() for this exact action with a valid expiry.',
   ),
-  APPROVAL_EXPIRED: entry('The approval expired.', false, 'Ask the reviewer to approve again.'),
-  APPROVAL_USED: entry('The approval was already consumed.', false, 'Each approval authorizes one dispatch.'),
-  CALL_BUDGET_EXCEEDED: entry('The task has no calls left.', false, 'maxCalls is exhausted; create a new task.'),
+  APPROVAL_EXPIRED: entry(
+    'The approval expired.',
+    false,
+    'execute() ran after the expiresAt given to approve(). Ask the reviewer to approve the action again.',
+  ),
+  APPROVAL_USED: entry(
+    'The approval was already consumed.',
+    false,
+    'Each approval authorizes one dispatch. The in-memory guard never returns this code (it reports ACTION_USED); only the executor does. Prepare and approve a new action.',
+  ),
+  CALL_BUDGET_EXCEEDED: entry(
+    'The task has no calls left.',
+    false,
+    'The task or a parent has dispatched maxCalls calls. Create a new task with a budget for the remaining work.',
+  ),
   CONCURRENCY_EXCEEDED: entry(
     'The task is at its concurrent-call limit.',
     true,
-    'Other calls are in flight; retry when one finishes.',
+    'maxConcurrent calls are already in flight on the task or a parent. Retry when one finishes.',
   ),
   COST_BUDGET_EXCEEDED: entry(
     "The call would exceed the task's cost budget.",
     false,
-    'Spent plus reserved cost would pass maxCost.',
+    "Spent cost plus cost reserved by calls in flight plus this tool's maxCost would pass the budget's maxCost for the task or a parent. Create a new task with a larger budget if the spend is intended.",
   ),
   COST_REPORT_INVALID: entry(
     'The tool reported an invalid actual cost.',
     false,
-    'actualCost was negative, fractional or above the declared maximum; the maximum was charged.',
+    "The handler returned an actualCost that is negative, fractional or above the tool's maxCost. The maximum was charged and the task was revoked; the effect may have happened, so check the backend, then fix the handler.",
   ),
   RESULT_INVALID: entry(
     'The tool returned a malformed result.',
     false,
-    'The result was not bounded JSON; the effect may already have happened.',
+    'The handler returned something other than { value } in plain JSON, or a result larger than limits.maxJsonBytes or limits.maxJsonNodes. The task was revoked and the effect may have happened: check the backend, then fix the handler or raise the limit.',
   ),
   TOOL_FAILED: entry(
     'The tool handler failed; the outcome is unknown.',
     false,
-    'The handler threw. Do not retry blindly: the effect may have happened.',
+    'The handler threw. The effect may have happened, so check the backend before preparing the call again.',
   ),
   EXECUTION_ABORTED: entry(
     'The call was aborted; the outcome is unknown.',
     false,
-    'Deadline, revocation or cancellation during dispatch. Check the backend before retrying.',
+    'The task deadline passed or the task was revoked while the handler was running. Detail EFFECT_COMMITTED means the handler finished; otherwise check the backend before preparing the call again.',
   ),
   UNTRUSTED_CONTEXT_DENIED: entry(
     "This tool can't run after the task family read outside content.",
     false,
-    'The tool sets untrustedContext deny (or inherits it) and an earlier call read outside content.',
+    'The tool sets untrustedContext deny (or inherits it) and an earlier call in the task family read outside content. Run the tool from a separate task that has not read outside content.',
   ),
   APPROVAL_CONTEXT_CHANGED: entry(
     'The task family read outside content after this approval was given.',
     false,
-    'A call that reads outside content ran after approval; ask the reviewer to approve the current state.',
+    'A call that reads outside content ran between approve() and execute(). Ask the reviewer to approve the action again, knowing what was read.',
   ),
   CLOCK_INVALID: entry(
     'The guard clock returned an invalid or backward time.',
     false,
-    'A broken clock option, or a large backward wall-clock step.',
+    'The clock option threw or returned a bad value, or the system clock stepped backward. Calls work again once the clock passes the last time the guard saw; pass clock: monotonicClock to avoid this.',
   ),
 });

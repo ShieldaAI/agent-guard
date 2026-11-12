@@ -18,10 +18,12 @@ import ssl
 import subprocess
 import sys
 import time
+from collections.abc import Callable, Iterable, Iterator
 from datetime import UTC, datetime
-from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from typing import Any, NoReturn
+from urllib.parse import SplitResult, parse_qs, urlsplit
 
+from agent_guard_cartography._ids import AWS_REGION, MAX_TIMESTAMP_SECONDS
 from agent_guard_cartography.aws_config import (
     AwsCollectionError,
     AwsEnrollment,
@@ -29,9 +31,6 @@ from agent_guard_cartography.aws_config import (
     validate_aws_enrollment,
 )
 
-_REGION = re.compile(
-    r"(?:af|ap|ca|eu|il|me|mx|sa|us)-(?:central|east|west|north|south|northeast|northwest|southeast|southwest)-[1-9][0-9]?"
-)
 _NAME = re.compile(r"[A-Za-z0-9_+=,.@-]{1,64}")
 _CODES = {
     "AWS_CONFIG_INVALID",
@@ -51,7 +50,7 @@ _CODES = {
 }
 
 
-def _fail(code: str = "AWS_CAPTURE_INVALID") -> None:
+def _fail(code: str = "AWS_CAPTURE_INVALID") -> NoReturn:
     raise AwsCollectionError(code)
 
 
@@ -89,7 +88,9 @@ def _date(value: Any) -> str:
 
 
 class _Budget:
-    def __init__(self, enrollment: AwsEnrollment, monotonic=time.monotonic):
+    def __init__(
+        self, enrollment: AwsEnrollment, monotonic: Callable[[], float] = time.monotonic
+    ) -> None:
         self.enrollment = enrollment
         self.monotonic = monotonic
         self.deadline = monotonic() + enrollment.timeout_seconds
@@ -114,8 +115,12 @@ class _Budget:
 
 
 def capture_from_clients(
-    enrollment: AwsEnrollment, clients: dict, *, clock=time.time, monotonic=time.monotonic
-) -> dict:
+    enrollment: AwsEnrollment,
+    clients: dict[str, Any],
+    *,
+    clock: Callable[[], float] = time.time,
+    monotonic: Callable[[], float] = time.monotonic,
+) -> dict[str, Any]:
     """Capture from already selected trusted clients; useful for offline SDK stubs.
 
     This function enforces logical/response limits. Production additionally uses
@@ -128,7 +133,9 @@ def capture_from_clients(
     capture_size = 128
     output: dict[str, Any] = {"capturedAt": 0, "roles": [], "users": [], "buckets": []}
 
-    def call(service, operation, *, selected_client=None, **kwargs):
+    def call(
+        service: str, operation: str, *, selected_client: Any = None, **kwargs: Any
+    ) -> dict[str, Any]:
         budget.call()
         try:
             result = getattr(
@@ -145,7 +152,7 @@ def capture_from_clients(
             _fail("AWS_RESPONSE_TOO_LARGE")
         return result
 
-    def append(kind, value):
+    def append(kind: str, value: dict[str, Any]) -> None:
         nonlocal item_count, capture_size
         item_count += 1
         if item_count > enrollment.max_items:
@@ -247,7 +254,7 @@ def capture_from_clients(
             if item_count >= enrollment.max_items:
                 _fail("AWS_LIMIT_EXCEEDED")
             listed_region = bucket.get("BucketRegion")
-            if type(listed_region) is not str or not _REGION.fullmatch(listed_region):
+            if type(listed_region) is not str or not AWS_REGION.fullmatch(listed_region):
                 _fail()
             # MaxBuckets requests include BucketRegion. Select the exact canonical
             # regional endpoint, without following any server-directed redirect.
@@ -266,7 +273,11 @@ def capture_from_clients(
                 region = "us-east-1"
             elif region == "EU":
                 region = "eu-west-1"
-            if type(region) is not str or not _REGION.fullmatch(region) or listed_region != region:
+            if (
+                type(region) is not str
+                or not AWS_REGION.fullmatch(region)
+                or listed_region != region
+            ):
                 _fail()
             arn = f"arn:aws:s3:::{name}"
             if bucket.get("BucketArn", arn) != arn:
@@ -295,7 +306,7 @@ def capture_from_clients(
 
     budget.check()
     captured_at = clock()
-    if type(captured_at) not in (int, float) or not 0 < captured_at < 253402300799:
+    if type(captured_at) not in (int, float) or not 0 < captured_at < MAX_TIMESTAMP_SECONDS:
         _fail()
     output["capturedAt"] = int(captured_at)
     for key in ("roles", "users"):
@@ -307,15 +318,15 @@ def capture_from_clients(
 
 
 class _BufferedRaw(io.BytesIO):
-    def stream(self, amt=1024, decode_content=False):
+    def stream(self, amt: int = 1024, decode_content: bool = False) -> Iterator[bytes]:
         while data := self.read(amt):
             yield data
 
 
-def _wire_request(enrollment, request, url):
+def _wire_request(enrollment: AwsEnrollment, request: Any, url: SplitResult) -> None:
     """Restrict SDK retries/hooks as well as the caller to enrolled read APIs."""
 
-    def parameters(value):
+    def parameters(value: str) -> dict[str, str]:
         try:
             parsed = parse_qs(value, keep_blank_values=True, max_num_fields=9)
         except (ValueError, UnicodeError):
@@ -388,17 +399,19 @@ def _wire_request(enrollment, request, url):
 class _BoundedHTTPS:
     """No ambient proxies, endpoint overrides, redirects, insecure TLS or streaming parses."""
 
-    def __init__(self, enrollment, allowed_hosts, budget):
+    def __init__(
+        self, enrollment: AwsEnrollment, allowed_hosts: Iterable[str], budget: _Budget
+    ) -> None:
         self.enrollment = enrollment
         self.allowed_hosts = frozenset(allowed_hosts)
         self.budget = budget
         self.context = ssl.create_default_context()
         self.context.minimum_version = ssl.TLSVersion.TLSv1_2
 
-    def close(self):
+    def close(self) -> None:
         pass
 
-    def send(self, request):
+    def send(self, request: Any) -> Any:
         from botocore.awsrequest import AWSResponse
 
         self.budget.call()
@@ -436,7 +449,7 @@ class _BoundedHTTPS:
             )
             response = connection.getresponse()
             header_pairs = response.getheaders()
-            counts = {}
+            counts: dict[str, int] = {}
             for name, _value in header_pairs:
                 lower = name.lower()
                 counts[lower] = counts.get(lower, 0) + 1
@@ -476,7 +489,7 @@ class _BoundedHTTPS:
             connection.close()
 
 
-def _credentials(enrollment):
+def _credentials(enrollment: AwsEnrollment) -> list[str]:
     values = [
         os.environ.get(name)
         for name in (
@@ -494,10 +507,10 @@ def _credentials(enrollment):
         for value in values
     ):
         _fail("AWS_CREDENTIAL_REQUIRED")
-    return values
+    return [value for value in values if value is not None]
 
 
-def _capture_worker(enrollment, credentials):
+def _capture_worker(enrollment: AwsEnrollment, credentials: list[str]) -> dict[str, Any]:
     import botocore.session
     from botocore.config import Config
 
@@ -507,10 +520,10 @@ def _capture_worker(enrollment, credentials):
     session.set_config_variable("credentials_file", os.devnull)
     session.set_credentials(*credentials)
     budget = _Budget(enrollment)
-    clients = {}
+    clients: dict[tuple[str, str], Any] = {}
 
-    def client_for(service, region):
-        if not _REGION.fullmatch(region):
+    def client_for(service: str, region: str) -> Any:
+        if not AWS_REGION.fullmatch(region):
             _fail("AWS_ENDPOINT_DENIED")
         identity = (service, region)
         if identity not in clients:
@@ -557,7 +570,41 @@ def _capture_worker(enrollment, credentials):
             client.close()
 
 
-def _run_worker(enrollment, credentials, *, command=None):
+def _exited(process: subprocess.Popen[bytes]) -> bool:
+    """Whether the worker has exited, without reaping it.
+
+    An unreaped child keeps its PID, and so its process-group ID, reserved. Only then
+    is signalling the group certain to reach this worker's descendants and nothing else.
+    """
+    if process.returncode is not None:
+        return True
+    try:
+        return os.waitid(os.P_PID, process.pid, os.WEXITED | os.WNOHANG | os.WNOWAIT) is not None
+    except ChildProcessError:
+        # Reaped elsewhere: let Popen record that, so the group is never signalled.
+        process.poll()
+        return True
+
+
+def _stop(process: subprocess.Popen[bytes]) -> None:
+    """Kill the owned group while its leader is unreaped, then reap the leader."""
+    if process.returncode is not None:
+        return
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError):
+        # Nothing left to signal; macOS reports a group holding only the exited,
+        # unreaped leader as EPERM.
+        pass
+    process.wait(timeout=5)
+
+
+def _worker_command() -> list[str]:
+    """The owned child process: this module, isolated from the environment and user site."""
+    return [sys.executable, "-I", "-m", __name__, "--worker"]
+
+
+def _run_worker(enrollment: AwsEnrollment, credentials: list[str]) -> dict[str, Any]:
     if os.name != "posix":
         _fail("AWS_PLATFORM_UNSUPPORTED")
     deadline = time.monotonic() + enrollment.timeout_seconds
@@ -565,14 +612,14 @@ def _run_worker(enrollment, credentials, *, command=None):
     if len(payload) > 256 * 1024:
         _fail("AWS_CONFIG_INVALID")
     process = subprocess.Popen(
-        command or [sys.executable, "-I", "-m", __name__, "--worker"],
+        _worker_command(),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.DEVNULL,
+        # Nothing is inherited. The worker runs with -I, which ignores PYTHON* variables
+        # and the user site, and exchanges bytes on its pipes, so none are set here.
         env={
             "PATH": os.defpath,
-            "PYTHONIOENCODING": "utf-8",
-            "PYTHONNOUSERSITE": "1",
             "AWS_CONFIG_FILE": os.devnull,
             "AWS_SHARED_CREDENTIALS_FILE": os.devnull,
             "BOTO_CONFIG": os.devnull,
@@ -589,7 +636,7 @@ def _run_worker(enrollment, credentials, *, command=None):
             os.set_blocking(process.stdout.fileno(), False)
             selector.register(process.stdin, selectors.EVENT_WRITE)
             selector.register(process.stdout, selectors.EVENT_READ)
-            while selector.get_map() or process.poll() is None:
+            while selector.get_map() or not _exited(process):
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
                     _fail("AWS_TIMEOUT")
@@ -610,6 +657,9 @@ def _run_worker(enrollment, credentials, *, command=None):
                             output.extend(chunk)
                             if len(output) > enrollment.max_capture_bytes + 1024:
                                 _fail("AWS_CAPTURE_TOO_LARGE")
+        # Kill the owned group even after normal completion, so descendants cannot
+        # outlive a run. A leader that already exited keeps its own exit status.
+        _stop(process)
         try:
             result = json.loads(output)
         except (ValueError, UnicodeError, RecursionError):
@@ -625,17 +675,14 @@ def _run_worker(enrollment, credentials, *, command=None):
             _fail("AWS_CAPTURE_INVALID")
         return result["capture"]
     finally:
-        # Kill the owned group even after normal completion, so descendants cannot outlive a run.
-        try:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        process.wait(timeout=5)
+        # Timeout, oversized output or interruption: the leader is still unreaped here.
+        # Once it has been reaped its group ID may belong to another process: no signal.
+        _stop(process)
         process.stdin.close()
         process.stdout.close()
 
 
-def capture_aws(enrollment: AwsEnrollment) -> dict:
+def capture_aws(enrollment: AwsEnrollment) -> dict[str, Any]:
     """Explicit opt-in live capture. Only named frozen environment credentials are read."""
     enrollment = validate_aws_enrollment(enrollment)
     if os.name != "posix":
@@ -652,7 +699,7 @@ def capture_aws(enrollment: AwsEnrollment) -> dict:
         _fail("AWS_COLLECTION_FAILED")
 
 
-def _main():
+def _main() -> int:
     # Worker is internal and receives values over a private pipe, never argv or logs.
     try:
         if sys.argv[1:] != ["--worker"]:

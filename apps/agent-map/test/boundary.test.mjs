@@ -20,6 +20,7 @@ import {
 } from '../src/boundary-model.mjs';
 import { graphElements, kindName, nodeName } from '../src/view-model.mjs';
 import { queryDemo } from '../src/demo.mjs';
+import { DEMO_SOURCE_ID } from '../src/demo-store.mjs';
 
 const edgesOf = elements => elements.filter(element => typeof element.data.target === 'string');
 const nodesOf = elements => elements.filter(element => typeof element.data.target !== 'string');
@@ -28,18 +29,18 @@ test('dangerous-three badges pair colour with text and hide only absent or unreq
   assert.deepEqual(
     ['exposed', 'mitigated', 'unknown'].map(status => [flagBadge(status).label, flagBadge(status).tone]),
     [
-      ['Exposed', 'exposed'],
-      ['Mitigated', 'mitigated'],
-      ['Unknown', 'unknown'],
+      ['Dangerous three: Exposed', 'exposed'],
+      ['Dangerous three: Mitigated', 'mitigated'],
+      ['Dangerous three: Unknown', 'unknown'],
     ],
   );
   assert.equal(flagBadge('absent'), null);
   assert.equal(flagBadge(undefined), null);
   assert.equal(flagBadge({}), null);
-  assert.equal(flagBadge({ dangerousThree: 'exposed' }).label, 'Exposed');
+  assert.equal(flagBadge({ dangerousThree: 'exposed' }).label, 'Dangerous three: Exposed');
   assert.equal(flagBadge({ dangerousThree: 'absent' }), null);
   // An unrecognized status never disappears or reads as a lower risk: it is unknown.
-  assert.equal(flagBadge('safe').label, 'Unknown');
+  assert.equal(flagBadge('safe').label, 'Dangerous three: Unknown');
   for (const value of ['exposed', 'mitigated', 'unknown'])
     assert.doesNotMatch(flagBadge(value).label, /safe|confirmed/i);
 });
@@ -91,7 +92,7 @@ test('flag rows list each leg once with its own evidence, notes and limitations'
   });
   assert.equal(rows.mitigation.length, 1);
   assert.match(rows.mitigation[0].reasonLabel, /requires approval/);
-  assert.equal(rows.badge.label, 'Mitigated');
+  assert.equal(rows.badge.label, 'Dangerous three: Mitigated');
   assert.equal(rows.liveTasks, 2);
   assert.deepEqual(rows.notes, ['A delegating ancestor task is outside your visible scope.']);
   const empty = boundaryFlagRows([{ kind: 'dangerous_three', status: 'unknown', notes: ['no_live_tasks'] }]);
@@ -223,7 +224,7 @@ test('direct paths are red outside-guard edges, identity reach is amber and guar
   const reach = edgesOf(elements).filter(edge => edge.classes === 'identity-reach');
   assert.equal(reach.length, 1);
   assert.equal(reach[0].data.source, 'exec');
-  assert.equal(reach[0].data.label, 'tool identity reaches this · CAN_READ');
+  assert.equal(reach[0].data.label, 'tool identity reaches this · can read');
   const bucket = nodesOf(elements).find(node => node.data.id === reach[0].data.target);
   assert.equal(bucket.data.fullLabel, 'payroll');
   assert.equal(bucket.data.source.label, 'OutsideGuardBucket');
@@ -235,7 +236,7 @@ test('direct paths are red outside-guard edges, identity reach is amber and guar
   assert.equal(nodesOf(elements).filter(node => node.data.id.startsWith('outside-access:')).length, 0);
   const agent = nodesOf(elements).find(node => node.data.id === 'agent');
   assert.match(agent.classes, /flag-exposed/);
-  assert.equal(agent.data.label, 'Agent\nExposed');
+  assert.equal(agent.data.label, 'Agent\nDangerous three: Exposed');
   assert.doesNotMatch(
     nodesOf(graphElements(boundaryGraph, [], { flagStatus: 'absent' })).find(node => node.data.id === 'agent').classes,
     /flag-/,
@@ -319,74 +320,6 @@ test('tenant and team boxes: shared and provider nodes sit outside the team, cro
   );
 });
 
-test('synthetic demo shows one exposed, one mitigated and one unknown agent with outside-guard evidence', async t => {
-  t.mock.method(globalThis, 'fetch', () => assert.fail('Demo must stay local'));
-  const plain = (await queryDemo('list_agents')).data.agents;
-  assert.equal(
-    plain.some(agent => 'boundaryFlags' in agent),
-    false,
-  );
-  const listed = (await queryDemo('list_agents', flagFilterArgs(''))).data.agents;
-  assert.deepEqual(listed.map(agent => agent.boundaryFlags.dangerousThree).sort(), ['exposed', 'mitigated', 'unknown']);
-  assert.equal((await queryDemo('list_agents', flagFilterArgs('mitigated'))).data.agents.length, 1);
-  assert.equal((await queryDemo('list_agents', flagFilterArgs('flagged'))).data.agents.length, 3);
-  assert.equal((await queryDemo('list_agents', flagFilterArgs('absent'))).data.total, 0);
-
-  const statuses = {};
-  let found = 0,
-    extra = 0;
-  for (const agent of listed) {
-    const access = await queryDemo('get_agent_access', { agentId: agent.id, sourceId: agent.sourceId });
-    const [flag] = access.data.boundaryFlags;
-    statuses[agent.name] = flag.status;
-    assert.equal(flag.evidenceKind, 'declared');
-    const rows = boundaryFlagRows(access.data.boundaryFlags);
-    assert.equal(rows.legs.length, 3);
-    const outside = outsideGuardRows(access.data.outsideGuard);
-    found += outside.directAccess.filter(row => row.status === 'found' && row.entries.length).length;
-    extra += outside.identityScope.reduce((sum, row) => sum + row.extraResources.length, 0);
-    const elements = graphElements(access.graph, access.data.policyEvidence, {
-      outsideGuard: access.data.outsideGuard,
-      flagStatus: flag.status,
-      tenantId: access.data.receipt.tenantId,
-      boxes: true,
-    });
-    const cy = cytoscape({ headless: true, elements });
-    try {
-      assert.ok(cy.nodes(':parent').length >= 2);
-      assert.equal(cy.getElementById(agent.id).hasClass(`flag-${flag.status}`), true);
-    } finally {
-      cy.destroy();
-    }
-  }
-  assert.deepEqual(statuses, {
-    'Research assistant': 'exposed',
-    'Release assistant': 'mitigated',
-    'Finance reviewer': 'unknown',
-  });
-  assert.ok(found >= 1);
-  assert.ok(extra >= 1);
-  const research = await queryDemo('get_agent_access', { agentId: 'agent-research' });
-  const elements = graphElements(research.graph, [], { outsideGuard: research.data.outsideGuard, boxes: true });
-  assert.ok(edgesOf(elements).some(edge => edge.classes.startsWith('outside-guard')));
-  assert.ok(edgesOf(elements).some(edge => edge.classes.startsWith('identity-reach')));
-  assert.ok(
-    research.data.outsideGuard.identityScope[0].extraResources.some(item => item.hasCondition),
-    'demo includes a conditional candidate',
-  );
-
-  const resource = (await queryDemo('list_resources')).data.resources[0];
-  assert.equal(resource.outsideGuard, 'yes');
-  const reach = (await queryDemo('get_resource_access', { sourceId: resource.sourceId, resourceId: resource.id })).data
-    .outsideGuard;
-  assert.equal(reach.status, 'yes');
-  assert.equal(reach.directAccess[0].evidenceKind, 'declared');
-  const changes = (await queryDemo('get_changes', { changeKind: 'outside_guard' })).data.details;
-  assert.equal(changes.length, 1);
-  assert.equal(changes[0].evidenceKind, 'declared');
-  assert.equal(changeIsDeclared(changes[0]), true);
-});
-
 // React stays external and resolves to the test's own copy, so hooks and the server renderer agree.
 const compiled = await build({
   entryPoints: [fileURLToPath(new URL('../src/boundaries.jsx', import.meta.url))],
@@ -405,7 +338,7 @@ const ui = await import(
 const render = (Component, props) => renderToStaticMarkup(React.createElement(Component, props));
 
 test('boundary sections render accessible tables with text labels and inert identifiers', async () => {
-  const access = await queryDemo('get_agent_access', { agentId: 'agent-research' });
+  const access = await queryDemo('get_agent_access', { sourceId: DEMO_SOURCE_ID, agentId: 'research-assistant' });
   const flags = render(ui.BoundaryFlags, {
     flags: access.data.boundaryFlags,
     graph: access.graph,
@@ -539,7 +472,7 @@ test('the graph draws a few extra buckets per binding and summarises the rest', 
 test('label lookups ignore inherited object members', async () => {
   const { reasonLabel, noteLabel, unknownReasonLabel } = await import('../src/boundary-model.mjs');
   for (const label of [reasonLabel, noteLabel, unknownReasonLabel]) {
-    assert.equal(label('constructor'), 'constructor');
+    assert.equal(label('constructor'), 'Constructor');
     assert.equal(typeof label('toString'), 'string');
   }
 });
@@ -585,7 +518,7 @@ test('the "+N more" node counts buckets, not relationship entries, and notes a s
   assert.match(drawn(2, true).nodes.find(node => node.data.id === 'outside-more:exec').data.fullLabel, /not listed/);
   // Own keys only for every label table.
   assert.equal(flagBadge('constructor').label, flagBadge('unknown').label);
-  assert.equal(relationshipName('constructor'), 'constructor');
+  assert.equal(relationshipName('constructor'), 'Constructor');
   assert.equal(outsideGuardLabel('toString'), outsideGuardLabel('unknown'));
   assert.equal(kindName('constructor'), 'Evidence');
 });

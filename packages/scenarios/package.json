@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-scenarios",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Executable malicious and benign conformance fixtures for AI agent tool authorization, approvals and budgets.",
   "license": "Apache-2.0",
   "type": "module",
@@ -35,7 +35,10 @@
     "url": "https://github.com/ShieldaAI/agent-guard/issues"
   },
   "keywords": [
+    "agent-guard",
     "ai-agents",
+    "security",
+    "authorization",
     "security-testing",
     "conformance-testing",
     "tool-authorization",
@@ -49,6 +52,6 @@
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "0.1.0"
+    "@shieldaai/agent-guard": "1.0.0"
   }
 }

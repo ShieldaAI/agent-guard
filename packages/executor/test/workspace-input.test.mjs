@@ -6,7 +6,8 @@ import { randomBytes } from 'node:crypto';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ArtifactBroker, DurableExecutor, runGovernedSandbox } from '../dist/index.js';
+import { DurableExecutor } from '../dist/index.js';
+import { ArtifactBroker, runGovernedSandbox } from '../dist/entry-sandbox.js';
 import { readWorkspaceInput } from '../dist/workspace-input.js';
 
 function fixture(t) {

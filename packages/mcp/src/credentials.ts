@@ -4,7 +4,12 @@ import { createRemoteJWKSet, customFetch, decodeProtectedHeader, jwtVerify } fro
 import type { FetchLike } from '@modelcontextprotocol/client';
 import { boundedJson, McpBoundaryError, type McpBoundaryErrorCode } from './boundary.js';
 import { assertVerifiedMcpClaims, type VerifiedMcpClaims } from './authorization.js';
-import { ManagedMcpConnection, type ManagedMcpOptions, type McpConnectionIdentity } from './managed.js';
+import {
+  checkManagedMcpOptions,
+  ManagedMcpConnection,
+  type ManagedMcpOptions,
+  type McpConnectionIdentity,
+} from './managed.js';
 import { createRestrictedMcpHttpTransport } from './http.js';
 
 export interface McpJwtAuthorization {
@@ -19,7 +24,7 @@ export interface McpJwtAuthorization {
 }
 export interface VerifiedMcpHttpOptions extends Pick<
   ManagedMcpOptions,
-  'guard' | 'tools' | 'resources' | 'prompts' | 'limits'
+  'guard' | 'tools' | 'resources' | 'prompts' | 'limits' | 'readsUntrusted'
 > {
   readonly identity: Omit<McpConnectionIdentity, 'transportIdentity'>;
   readonly endpoint: string;
@@ -121,10 +126,21 @@ export class VerifiedMcpHttpSession {
       algorithms: Object.freeze([...algorithms]),
       requiredScopes: Object.freeze([...scopes]),
     });
+    // The connection is only built once a token has been verified. Apply its option checks
+    // now, so a malformed identifier, binding or limit fails INVALID_CONFIGURATION before any
+    // network call instead of surfacing later as AUTHORIZATION_DENIED.
+    const checked = checkManagedMcpOptions({
+      identity: { ...options.identity, transportIdentity: 'jwt-session:unassigned' },
+      ...(options.tools === undefined ? {} : { tools: options.tools }),
+      ...(options.resources === undefined ? {} : { resources: options.resources }),
+      ...(options.prompts === undefined ? {} : { prompts: options.prompts }),
+      ...(options.limits === undefined ? {} : { limits: options.limits }),
+      ...(options.readsUntrusted === undefined ? {} : { readsUntrusted: options.readsUntrusted }),
+    });
     const identity = Object.freeze({
-      serverId: text(options.identity.serverId, 1024),
-      principalId: text(options.identity.principalId, 1024),
-      tenantId: text(options.identity.tenantId, 1024),
+      serverId: checked.identity.serverId,
+      principalId: checked.identity.principalId,
+      tenantId: checked.identity.tenantId,
     });
     this.#options = Object.freeze({
       ...options,
@@ -169,6 +185,14 @@ export class VerifiedMcpHttpSession {
   }
   get registrations() {
     return this.#connection?.registrations ?? Object.freeze([]);
+  }
+  /** Bindings the server advertised that the last refresh could not accept, with the reason. */
+  get skipped() {
+    return this.#connection?.skipped ?? Object.freeze([]);
+  }
+  /** Why the current connection last left `ready`; see ManagedMcpConnection.failureReason. */
+  get failureReason() {
+    return this.#connection?.failureReason;
   }
   inventory() {
     return this.#connection?.inventory();

@@ -94,67 +94,87 @@ test('the task server rate-limits per credential and across the server', async t
   ]);
   assert.deepEqual(await snapshot(first.token), [429, 'REQUEST_RATE_LIMITED'], 'per-credential window');
   assert.deepEqual(await snapshot(second.token), [200, undefined], 'another credential has its own window');
+  // The refused request above was not handled, so it did not spend the server-wide window.
+  assert.deepEqual(await snapshot(second.token), [200, undefined], 'only handled requests are counted');
   assert.deepEqual(await snapshot(second.token), [429, 'REQUEST_RATE_LIMITED'], 'the server-wide window is shared');
 });
 
-test('in-flight requests beyond the active limit are refused, and limits are validated', async t => {
-  const executor = open(t, join(directory(t), 'ledger.sqlite'));
-  let release;
-  const gate = new Promise(resolve => {
-    release = resolve;
-  });
-  executor.approveTool(
-    'slow',
-    executor.registerTool({
-      name: 'slow',
-      description: 'fixture',
-      resolve: () => ({ resourceId: 'doc', tenantId: 'acme' }),
-      execute: async () => {
-        await gate;
-        return { value: 'ok' };
-      },
-    }),
-  );
-  const { token } = executor.createTask({
-    id: 'busy',
-    principalId: 'p',
-    tenantId: 'acme',
-    grants: [{ tool: 'slow', resources: ['doc'] }],
-    budget: { maxCalls: 10, maxConcurrent: 4, maxCost: 0, deadline: 100_000 },
-  });
-  const service = await startExecutorServer({
-    executor,
-    adminToken: 'A'.repeat(43),
-    operatorId: 'reviewer',
-    maxActiveRequests: 1,
-  });
-  t.after(async () => {
-    await service.close();
-    executor.close();
-  });
-  const post = (path, body) =>
-    fetch(`${service.url}/v1/task/${path}`, {
-      method: 'POST',
-      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+test(
+  'in-flight requests beyond the active limit are refused, and limits are validated',
+  { timeout: 20_000 },
+  async t => {
+    const executor = open(t, join(directory(t), 'ledger.sqlite'));
+    let release, entered;
+    const gate = new Promise(resolve => {
+      release = resolve;
     });
-  const prepared = await (await post('prepare', { tool: 'slow', args: {} })).json();
-  const running = post('execute', { actionId: prepared.id });
-  await new Promise(resolve => setTimeout(resolve, 50));
-  const refused = await post('snapshot', {});
-  assert.equal(refused.status, 429);
-  assert.deepEqual(await refused.json(), { error: 'REQUEST_RATE_LIMITED', retryable: true });
-  release();
-  assert.equal((await running).status, 200);
-  for (const options of [
-    { maxConnections: 0 },
-    { maxActiveRequests: 1025 },
-    { requestsPerMinute: 1.5 },
-    { requestsPerMinutePerCredential: 0 },
-  ]) {
-    await assert.rejects(
-      startExecutorServer({ executor, adminToken: 'A'.repeat(43), operatorId: 'reviewer', ...options }),
-      { code: 'SERVER_CONFIG_INVALID' },
+    const dispatched = new Promise(resolve => {
+      entered = resolve;
+    });
+    executor.approveTool(
+      'slow',
+      executor.registerTool({
+        name: 'slow',
+        description: 'fixture',
+        resolve: () => ({ resourceId: 'doc', tenantId: 'acme' }),
+        execute: async () => {
+          entered();
+          await gate;
+          return { value: 'ok' };
+        },
+      }),
     );
-  }
-});
+    const { token } = executor.createTask({
+      id: 'busy',
+      principalId: 'p',
+      tenantId: 'acme',
+      grants: [{ tool: 'slow', resources: ['doc'] }],
+      budget: { maxCalls: 10, maxConcurrent: 4, maxCost: 0, deadline: 100_000 },
+    });
+    const service = await startExecutorServer({
+      executor,
+      adminToken: 'A'.repeat(43),
+      operatorId: 'reviewer',
+      maxActiveRequests: 1,
+    });
+    t.after(async () => {
+      await service.close();
+      executor.close();
+    });
+    const post = (path, body) =>
+      fetch(`${service.url}/v1/task/${path}`, {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+    const prepared = await (await post('prepare', { tool: 'slow', args: {} })).json();
+    const running = post('execute', { actionId: prepared.id });
+    try {
+      // The handler has started, so the first request provably holds the only active slot.
+      await Promise.race([
+        dispatched,
+        running.then(response => assert.fail(`execute finished early with ${response.status}`)),
+      ]);
+      const refused = await post('snapshot', {});
+      assert.equal(refused.status, 429);
+      assert.deepEqual(await refused.json(), { error: 'REQUEST_RATE_LIMITED', retryable: true });
+    } finally {
+      // Always let the held request finish, so a failed assertion cannot hang server close.
+      release();
+    }
+    assert.equal((await running).status, 200);
+    // The slot is free again once the held request has completed.
+    assert.equal((await post('snapshot', {})).status, 200);
+    for (const options of [
+      { maxConnections: 0 },
+      { maxActiveRequests: 1025 },
+      { requestsPerMinute: 1.5 },
+      { requestsPerMinutePerCredential: 0 },
+    ]) {
+      await assert.rejects(
+        startExecutorServer({ executor, adminToken: 'A'.repeat(43), operatorId: 'reviewer', ...options }),
+        { code: 'SERVER_CONFIG_INVALID' },
+      );
+    }
+  },
+);

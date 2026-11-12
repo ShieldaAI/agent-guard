@@ -6,7 +6,12 @@ from types import SimpleNamespace
 import pytest
 
 from agent_guard_cartography import cli
-from agent_guard_cartography.archive import REPLAY_PENDING, ArchiveError, SnapshotArchive
+from agent_guard_cartography.archive import (
+    REPLAY_PENDING,
+    ArchiveError,
+    PruneReport,
+    SnapshotArchive,
+)
 from agent_guard_cartography.collector import validate_enrollment
 from agent_guard_cartography.graph import source_key
 from agent_guard_cartography.lifecycle import transition_id
@@ -45,6 +50,9 @@ def test_collector_maintains_unenrolled_predecessors_after_publishing_successor(
         archive_dir=archive_path,
         archive_max_snapshots=4096,
         archive_max_bytes=256 * 1024**2,
+        archive_max_pending=16,
+        archive_retention_seconds=604800,
+        verbose=False,
         neo4j_database="neo4j",
         replay_receipt=None,
         retention_seconds=3600,
@@ -74,7 +82,7 @@ def test_collector_maintains_unenrolled_predecessors_after_publishing_successor(
         return 2
 
     monkeypatch.setattr(cli, "collect_and_publish", collect)
-    monkeypatch.setattr(cli, "prune_archive", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(cli, "prune_archive", lambda *_args, **_kwargs: PruneReport(0, 0, ()))
     monkeypatch.setattr(cli, "retire_obsolete", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(cli, "retire_superseded", retire)
     assert cli._collect_sources(Driver(), args, [enrollment], {}) == (2 if maintenance_fails else 0)
@@ -109,6 +117,9 @@ def test_incomplete_recovery_rejects_collector_before_observation_or_maintenance
         archive_dir=archive_path,
         archive_max_snapshots=4096,
         archive_max_bytes=256 * 1024**2,
+        archive_max_pending=16,
+        archive_retention_seconds=604800,
+        verbose=False,
         neo4j_database="neo4j",
         replay_receipt="a" * 64 if replay else None,
         retention_seconds=3600,

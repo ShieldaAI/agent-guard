@@ -1,7 +1,10 @@
 import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
 import { isAbsolute, join } from 'node:path';
-import { fail, trustedHostFile } from './boundary.js';
+import { fail } from './common.js';
+import { readHostFile } from './boundary.js';
+
+/** Viewer assets run in authenticated browsers: this user's or root's regular files, never a link. */
+const ASSET_FILE = { noFollow: true, owner: 'service-or-root', singleLink: false, private: false } as const;
 
 /** Load the fixed public assets once; never follow a replaced leaf or read beyond the cap. */
 export async function loadMapAssets(directory: unknown): Promise<Map<string, { body: Buffer; mime: string }>> {
@@ -21,23 +24,7 @@ export async function loadMapAssets(directory: unknown): Promise<Map<string, { b
     ['app.css', 'text/css; charset=utf-8'],
   ] as const) {
     try {
-      const file = await open(join(directory, name), constants.O_RDONLY | constants.O_NONBLOCK | constants.O_NOFOLLOW);
-      try {
-        const info = await file.stat();
-        if (!trustedHostFile(info) || info.size > maximum) fail('MAP_CONFIG_INVALID');
-        const data = Buffer.alloc(maximum + 1);
-        let bytes = 0;
-        while (bytes < data.length) {
-          const read = await file.read(data, bytes, data.length - bytes, null);
-          if (!read.bytesRead) break;
-          bytes += read.bytesRead;
-        }
-        if (bytes > maximum) fail('MAP_CONFIG_INVALID');
-        // Do not retain the full maximum-sized allocation for a small asset.
-        assets.set(`/${name}`, { body: Buffer.from(data.subarray(0, bytes)), mime });
-      } finally {
-        await file.close();
-      }
+      assets.set(`/${name}`, { body: await readHostFile(join(directory, name), maximum, ASSET_FILE), mime });
     } catch {
       fail('MAP_CONFIG_INVALID');
     }

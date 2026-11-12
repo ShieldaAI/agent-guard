@@ -6,9 +6,23 @@ import { createHash, createPrivateKey, X509Certificate, randomBytes, timingSafeE
 import { immutableJson } from '@shieldaai/agent-guard/internal';
 import { MapService } from './service.js';
 import { mapIdentifier, validateReadScope, type ReadScope } from './types.js';
-import { fail, fields, integer, parseRequest } from './boundary.js';
+import { fail, integer } from './common.js';
+import { fields } from './boundary.js';
 import { loadMapAssets } from './assets.js';
-import { count, consume, headers, errorResponse, readBody, safeError, type Bucket } from './transport.js';
+import {
+  count,
+  consume,
+  emptyObject,
+  headers,
+  errorResponse,
+  queryEnvelope,
+  rateLimit,
+  readJsonBody,
+  refuseOtherTraffic,
+  respondError,
+  sendAsset,
+  type Bucket,
+} from './transport.js';
 import { createMapOidcClient, type MapOidcOptions } from './oidc.js';
 
 export interface MapIdentityBinding {
@@ -68,20 +82,24 @@ type Transaction = {
   epoch: number;
 };
 
+/**
+ * Reads this server's two cookies and nothing else. A browser sends every cookie it holds for
+ * the host (another application on the same name, analytics, a valueless flag), so any other
+ * cookie is skipped however it is written; the server's header limit bounds the total. One of
+ * ours that is repeated, valueless or not plain cookie text is refused.
+ */
 function cookies(request: IncomingMessage): Map<string, string> {
-  if (count(request, 'cookie') > 1) fail('MAP_REQUEST_INVALID');
-  const header = request.headers.cookie;
-  if (header === undefined) return new Map();
-  if (Buffer.byteLength(header) > 4096) fail('MAP_REQUEST_INVALID');
   const result = new Map<string, string>();
+  // Node joins repeated Cookie header lines with "; ", so a repeat across lines is seen too.
+  const header = request.headers.cookie;
+  if (header === undefined) return result;
   for (const field of header.split(';')) {
     const part = field.trim(),
       at = part.indexOf('=');
-    if (at < 1) fail('MAP_REQUEST_INVALID');
-    const name = part.slice(0, at),
-      value = part.slice(at + 1);
-    if (!/^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/.test(name) || /[^\x21-\x7e]|[",;\\]/.test(value) || result.has(name))
-      fail('MAP_REQUEST_INVALID');
+    const name = at < 0 ? part : part.slice(0, at);
+    if (name !== SESSION_COOKIE && name !== LOGIN_COOKIE) continue;
+    const value = at < 0 ? '' : part.slice(at + 1);
+    if (at < 0 || /[^\x21-\x7e]|[",;\\]/.test(value) || result.has(name)) fail('MAP_REQUEST_INVALID');
     result.set(name, value);
   }
   return result;
@@ -211,6 +229,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       'ca',
       'requestTimeoutMs',
       'maxResponseBytes',
+      'clockToleranceSeconds',
     ],
     ['issuer', 'clientId', 'clientSecret'],
   );
@@ -222,12 +241,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
     requestLimit = integer(config.maxRequestBytes, 32_768, 128, 65_536);
   const responseLimit = integer(config.maxResponseBytes, 2 * 1024 * 1024, 128, 2 * 1024 * 1024);
   const concurrency = integer(config.maxConcurrentRequests, 4, 1, 32);
-  const rate =
-    config.rateLimit === undefined
-      ? {}
-      : fields(config.rateLimit, ['maxRequests', 'windowMs'], ['maxRequests', 'windowMs']);
-  const rateMax = integer(rate.maxRequests, 600, 1, 10_000),
-    rateWindow = integer(rate.windowMs, 60_000, 10, 60_000);
+  const { maxRequests: rateMax, windowMs: rateWindow } = rateLimit(config.rateLimit, 600);
   let bindings = validateBindings(config.bindings, companyId),
     epoch = 0,
     active = 0,
@@ -440,9 +454,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       }
       const asset = assets.get(url.pathname === '/' ? '/index.html' : url.pathname);
       if (request.method === 'GET' && asset) {
-        headers(response, asset.body.length, asset.mime);
-        response.writeHead(200);
-        response.end(asset.body);
+        sendAsset(response, asset);
         return;
       }
       if (request.method === 'GET' && url.pathname === '/auth/session') {
@@ -478,27 +490,12 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       )
         fail('MAP_REQUEST_DENIED');
       consume(current.session.bucket, rateMax, rateWindow);
-      if (
-        count(request, 'content-type') !== 1 ||
-        !/^application\/json(?:\s*;\s*charset=utf-8)?$/i.test(request.headers['content-type'] ?? '') ||
-        count(request, 'content-length') > 1 ||
-        count(request, 'transfer-encoding') > 1 ||
-        request.headers['content-encoding'] !== undefined
-      )
-        fail('MAP_REQUEST_INVALID');
-      const length = request.headers['content-length'];
-      if (length !== undefined && (!/^\d+$/.test(length) || !Number.isSafeInteger(Number(length))))
-        fail('MAP_REQUEST_INVALID');
-      if (length !== undefined && Number(length) > requestLimit) fail('MAP_REQUEST_TOO_LARGE');
-      const parsed = parseRequest(await readBody(request, requestLimit, abort.signal), requestLimit);
+      // Session, CSRF and rate checks have passed; a refusal above already answered with its status.
+      const parsed = await readJsonBody(request, response, requestLimit, abort.signal);
       check();
       live(current.id, current.session);
       if (url.pathname === '/auth/logout') {
-        try {
-          fields(parsed, [], []);
-        } catch {
-          fail('MAP_REQUEST_INVALID');
-        }
+        emptyObject(parsed);
         sessions.delete(current.id);
         for (const [key, value] of transactions) if (value.sessionId === current.id) transactions.delete(key);
         setCookies(response, [cookie(SESSION_COOKIE, '', 0), cookie(LOGIN_COOKIE, '', 0)]);
@@ -506,11 +503,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
         return;
       }
       if (url.pathname === '/auth/login') {
-        try {
-          fields(parsed, [], []);
-        } catch {
-          fail('MAP_REQUEST_INVALID');
-        }
+        emptyObject(parsed);
         const prior = supplied.get(LOGIN_COOKIE);
         if (prior && LOGIN.test(prior)) transactions.delete(hash(prior));
         if (transactions.size >= flowLimit) fail('MAP_BUSY');
@@ -533,18 +526,13 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
         return;
       }
       if (!current.session.scope) fail('MAP_SESSION_REQUIRED');
-      let envelope: Record<string, unknown>;
-      try {
-        envelope = fields(parsed, ['operation', 'args'], ['operation', 'args']);
-      } catch {
-        fail('MAP_REQUEST_INVALID');
-      }
+      const envelope = queryEnvelope(parsed);
       const result = await service.query(current.session.scope, envelope.operation, envelope.args);
       check();
       live(current.id, current.session);
       json(response, result, responseLimit);
     } catch (error) {
-      errorResponse(response, safeError(error));
+      respondError(response, error);
     } finally {
       if (timer) clearTimeout(timer);
       request.off('aborted', disconnected);
@@ -567,13 +555,7 @@ export async function startMapIdentityServer(options: MapIdentityServerOptions):
       clearTimeout(socketTimers.get(socket));
     });
   });
-  server.on('checkContinue', (request, response) => {
-    void handle(request, response);
-  });
-  server.on('checkExpectation', (_request, response) => errorResponse(response, 'MAP_REQUEST_DENIED'));
-  server.on('connect', (_request, socket) => socket.destroy());
-  server.on('upgrade', (_request, socket) => socket.destroy());
-  server.on('clientError', (_error, socket) => socket.destroy());
+  refuseOtherTraffic(server, handle);
   server.on('tlsClientError', (_error, socket) => socket.destroy());
   const close = async (): Promise<void> => {
     if (closing) return;

@@ -1,5 +1,10 @@
+// The three denials you meet first, each before any handler runs: a resource outside the
+// grant, a call without approval, and a replayed approval. The approved call in between is
+// allowed. docs/guides/tool-permissions.md explains each step.
+//
+// Run: npm run build, then node examples/tool-permissions.mjs
 import assert from 'node:assert/strict';
-import { AgentGuard, GuardError } from '@shieldaai/agent-guard';
+import { AgentGuard, isGuardError } from '@shieldaai/agent-guard';
 
 // Synthetic records only. The trusted host supplies identity and ownership.
 const guard = new AgentGuard();
@@ -36,7 +41,7 @@ const task = guard.createTask({
 });
 
 async function expectDenied(label, code, operation, expectedCalls) {
-  await assert.rejects(operation, error => error instanceof GuardError && error.code === code);
+  await assert.rejects(operation, error => isGuardError(error) && error.code === code);
   assert.equal(handlerCalls, expectedCalls);
   console.log(`DENIED ${label}: ${code}; handler calls: ${handlerCalls}`);
 }

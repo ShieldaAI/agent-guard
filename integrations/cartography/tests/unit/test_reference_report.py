@@ -540,3 +540,101 @@ def test_report_labels_match_the_projection_labels():
     from agent_guard_cartography.models import PROJECTION_LABELS
 
     assert report.LABELS == frozenset(PROJECTION_LABELS)
+
+
+def test_operations_are_exactly_the_ones_the_map_service_defines():
+    import re
+    from pathlib import Path
+
+    source = Path(__file__).resolve().parents[4] / "packages" / "agent-map" / "src"
+    if not source.is_dir():
+        pytest.skip("packages/agent-map is only present in the repository")
+    # service.ts exports the list; find its one declaration wherever the service keeps it.
+    declarations = [
+        match[1]
+        for path in sorted(source.rglob("*.ts"))
+        for match in re.finditer(
+            r"export const MAP_OPERATIONS = \[(.*?)\] as const;", path.read_text(), re.S
+        )
+    ]
+    assert len(declarations) == 1
+    assert "MAP_OPERATIONS" in (source / "service.ts").read_text()
+    defined = re.findall(r"'([a-z_]+)'", declarations[0])
+    assert len(defined) == 12 and len(set(defined)) == 12
+    assert report.MAP_OPERATIONS == tuple(defined)
+    assert report.OPERATIONS == frozenset(defined)
+
+
+@pytest.mark.parametrize("operation", ["list_owners", "get_agent_inventory"])
+def test_every_defined_operation_passes_the_allowlist(operation, monkeypatch):
+    sent = []
+
+    def fetch(parsed, token, name, body, *_rest):
+        sent.append(json.loads(body))
+        return {"operation": name, "data": {}}
+
+    monkeypatch.setattr(report, "_fetch_reference", fetch)
+    assert query_reference("http://127.0.0.1:1/v1/query", TOKEN, operation, {}) == {
+        "operation": operation,
+        "data": {},
+    }
+    assert sent == [{"operation": operation, "args": {}}]
+
+
+def test_report_labels_are_the_projection_labels_the_importer_writes():
+    from agent_guard_cartography.models import PROJECTION_LABELS
+
+    assert report.LABELS == frozenset(PROJECTION_LABELS)
+
+
+def test_command_failures_use_the_shared_json_shape_code_and_exit_status(
+    tmp_path, monkeypatch, capsys
+):
+    monkeypatch.setenv("TEST_REPORT_TOKEN", TOKEN)
+    arguments = [
+        "--endpoint",
+        "https://map.example/v1/query",
+        "--token-env",
+        "TEST_REPORT_TOKEN",
+        "--source-id",
+        SOURCE,
+        "--directory",
+        str(tmp_path / "reports"),
+    ]
+
+    def failing(error):
+        def write(*_args, **_kwargs):
+            raise error
+
+        monkeypatch.setattr(report, "write_report", write)
+
+    # A known code keeps its name and exits 2, as in the other three commands.
+    failing(ReportError("REFERENCE_QUERY_BUSY"))
+    assert report.main(arguments) == 2
+    output = capsys.readouterr()
+    assert json.loads(output.err) == {"status": "failed", "code": "REFERENCE_QUERY_BUSY"}
+    assert not output.out
+    # Anything unexpected is the generic code and exits 1; its message is never printed.
+    failing(RuntimeError(f"private-canary {TOKEN}"))
+    assert report.main(arguments) == 1
+    output = capsys.readouterr()
+    assert json.loads(output.err) == {"status": "failed", "code": "REFERENCE_REPORT_FAILED"}
+    # --verbose adds one debug line, with the token redacted.
+    assert report.main([*arguments, "--verbose"]) == 1
+    failure, debug = (json.loads(line) for line in capsys.readouterr().err.splitlines())
+    assert failure == {"status": "failed", "code": "REFERENCE_REPORT_FAILED"}
+    assert debug == {
+        "status": "debug",
+        "exception": "RuntimeError",
+        "message": "private-canary [REDACTED]",
+    }
+    # The real path: an invalid source ID is refused before any request or directory.
+    monkeypatch.undo()
+    monkeypatch.setenv("TEST_REPORT_TOKEN", TOKEN)
+    arguments[arguments.index("--source-id") + 1] = "not-a-source"
+    assert report.main(arguments) == 2
+    assert json.loads(capsys.readouterr().err) == {
+        "status": "failed",
+        "code": "REFERENCE_REPORT_CONFIG_INVALID",
+    }
+    assert not (tmp_path / "reports").exists()

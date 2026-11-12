@@ -4,7 +4,8 @@ import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto'
 import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { ArtifactBroker, createSandboxTool, DurableExecutor } from '../dist/index.js';
+import { DurableExecutor } from '../dist/index.js';
+import { ArtifactBroker, createSandboxTool } from '../dist/entry-sandbox.js';
 
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex');
 const input = (envelope, bytes) => ({ envelope, contentBase64: bytes.toString('base64') });

@@ -123,7 +123,7 @@ function capacity(maintenance, keyring) {
     ['requests', usage.requests, limits.maxRequests],
     ['receipts', usage.receipts, limits.maxRequests],
     ['backend_bytes', usage.backendBytes, limits.maxBackendBytes],
-    ['ledger_bytes', usage.ledgerBytes ?? statistics.ledgerBytes, limits.maxLedgerBytes ?? statistics.ledgerByteLimit],
+    ['ledger_bytes', statistics.ledgerBytes, limits.maxLedgerBytes],
     ['retained_keys', keyring?.keyCount, keyring?.maxKeys ?? limits.maxRetainedKeys],
     ['history_segments', history.total, history.limit],
   ].map(([id, used, limit]) => {
@@ -187,11 +187,20 @@ export function monitoringSummary({
 }
 
 /** Aggregates are scoped explicitly: workflow/activity to the tenant, HTTP/capacity to the deployment. */
-export function operationalStatus({ workflow, operator, telemetry, keyring, tlsExpiresAt, now = Date.now() }) {
+export function operationalStatus({
+  workflow,
+  operator,
+  telemetry,
+  keyring,
+  tlsExpiresAt,
+  now = Date.now(),
+  // The verified read of both stores; the server passes its briefly shared readiness check.
+  verify = () => workflow.health(),
+}) {
   const tenantId = operatorScope(operator);
   if (!count(now)) fail('STATUS_UNAVAILABLE', 503);
   if (count(tlsExpiresAt) && now >= tlsExpiresAt) fail('TLS_CERTIFICATE_EXPIRED', 503);
-  workflow.health();
+  verify();
   const data = workflow.data(),
     maintenance = workflow.maintenance(operator);
   const requests = Object.values(data.requests).filter(request => request.tenantId === tenantId);
@@ -216,7 +225,8 @@ export function operationalStatus({ workflow, operator, telemetry, keyring, tlsE
     alerts.push({
       id: 'tls_expiry',
       severity: tlsExpiresAt - now < 7 * 86_400_000 ? 'critical' : 'warning',
-      message: 'Renew the served TLS certificate and restart before it expires.',
+      message:
+        'Renew the served TLS key and certificate before expiry, then send SIGHUP to reload them in place. No restart is needed; existing sessions are invalidated.',
     });
   if (unconfirmed.length)
     alerts.push({
@@ -340,7 +350,8 @@ export function exportActivity({ workflow, operator, now = Date.now() }) {
       typeof event.requestId !== 'string' ||
       !/^[A-Za-z0-9_.:@/-]{1,160}$/.test(event.requestId) ||
       (event.operatorId !== undefined &&
-        (typeof event.operatorId !== 'string' || !/^[A-Za-z0-9_.:@/-]{1,160}$/.test(event.operatorId)))
+        (typeof event.operatorId !== 'string' || !/^[A-Za-z0-9_.:@/-]{1,160}$/.test(event.operatorId))) ||
+      (event.code !== undefined && (typeof event.code !== 'string' || !/^[A-Z][A-Z0-9_]{0,63}$/.test(event.code)))
     )
       fail('AUDIT_EXPORT_UNAVAILABLE', 503);
     return {
@@ -348,6 +359,7 @@ export function exportActivity({ workflow, operator, now = Date.now() }) {
       event: event.event,
       requestId: event.requestId,
       ...(event.operatorId ? { operatorId: event.operatorId } : {}),
+      ...(event.code ? { code: event.code } : {}),
     };
   });
   const payload = {

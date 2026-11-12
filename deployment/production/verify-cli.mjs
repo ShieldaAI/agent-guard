@@ -88,8 +88,13 @@ try {
     const begin = await request('/auth/login', { method: 'POST', headers: { Cookie: anonymous, Origin: origin,
       'X-CSRF-Token': initial.json().csrfToken, 'Content-Type': 'application/json' }, body: '{}' });
     assert.equal(begin.status, 200, begin.text);
+    // Starting sign-in renews the pre-login cookie; the callback is bound to the renewed one.
+    const renewed = begin.headers['set-cookie'][0].split(';')[0];
+    assert.notEqual(renewed, anonymous);
     const callback = await provider.authorize(begin.json().authorizationUrl, { subject: 'owner' });
-    const done = await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: anonymous } });
+    const stale = await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: anonymous } });
+    assert.equal(stale.status, 401, 'the callback refuses the cookie that started sign-in');
+    const done = await request(`${callback.pathname}${callback.search}`, { headers: { Cookie: renewed } });
     assert.equal(done.status, 303, done.text);
     const cookie = done.headers['set-cookie'][0].split(';')[0];
     const session = (await request('/api/session', { headers: { Cookie: cookie } })).json();

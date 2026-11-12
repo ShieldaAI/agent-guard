@@ -1,8 +1,14 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { ownershipLabel, pageInfo, relationshipLabel, shownValue, sourceOptionLabel } from '../src/inventory-model.mjs';
+import {
+  defaultSource,
+  ownershipLabel,
+  pageInfo,
+  relationshipLabel,
+  shownValue,
+  sourceOptionLabel,
+} from '../src/inventory-model.mjs';
 import { graphElements, OPERATIONS } from '../src/view-model.mjs';
-import { queryDemo } from '../src/demo.mjs';
 
 test('legacy missing ownership remains unknown rather than unassigned or an invented owner', () => {
   assert.equal(ownershipLabel({ ownerId: 'legacy-id' }), 'Ownership unknown');
@@ -33,7 +39,9 @@ test('authorized pagination reaches later rows without turning a bounded unknown
 test('empty collected arrays, unknown scalar values and false values are distinct', () => {
   assert.equal(shownValue([]), 'None recorded');
   assert.equal(shownValue(null), 'Unknown');
-  assert.equal(shownValue(false), 'false');
+  // A boolean is never shown as `true` / `false`.
+  assert.equal(shownValue(false), 'No');
+  assert.equal(shownValue(true), 'Yes');
   assert.equal(shownValue(0), '0');
   assert.equal(relationshipLabel('G_USES_CREDENTIAL'), 'uses credential reference');
   assert.equal(relationshipLabel('G_RESOURCE_OWNED_BY'), 'resource is owned by');
@@ -68,73 +76,13 @@ test('new read-only query operations and graph reference labels remain explicit'
   assert.equal(elements.length, 5);
   assert.equal(elements[2].data.fullLabel, 'Service reference');
 });
-test('synthetic directory and structured sections preserve page counts, source, collection gaps and detached data', async () => {
-  const first = (await queryDemo('list_agents', { limit: 1 })).data;
-  const second = (await queryDemo('list_agents', { limit: 1, offset: 1 })).data;
-  assert.equal(first.total, 3);
-  assert.equal(first.agents.length, 1);
-  assert.equal(first.truncated, true);
-  assert.notEqual(first.agents[0].id, second.agents[0].id);
-  const agent = first.agents[0];
-  for (const section of [
-    'overview',
-    'deployments',
-    'tasks',
-    'permissions',
-    'resources',
-    'connections',
-    'credentials',
-    'relationships',
-    'tools',
-    'bindings',
-    'identities',
-    'policies',
-  ]) {
-    const result = (
-      await queryDemo('get_agent_inventory', { sourceId: agent.sourceId, agentId: agent.id, section, limit: 1 })
-    ).data;
-    assert.equal(result.section, section);
-    assert.ok(result.items.length <= 1);
-    assert.equal(result.assessment, 'unknown');
-    assert.deepEqual(Object.values(result.collection), [
-      'not_collected',
-      'not_collected',
-      'not_collected',
-      'not_collected',
-    ]);
-    assert.equal(result.policyEvidence.length, section === 'policies' ? 1 : 0);
-  }
-  const owners = (await queryDemo('list_owners', { limit: 1 })).data;
-  assert.equal(owners.total, 2);
-  assert.equal(owners.owners[0].sourceId, agent.sourceId);
-  const resource = (await queryDemo('list_resources')).data.resources[0];
-  const linked = (
-    await queryDemo('get_resource_access', {
-      sourceId: resource.sourceId,
-      resourceId: resource.id,
-      offset: 1,
-      limit: 1,
-    })
-  ).data;
-  assert.equal(linked.total, 3);
-  assert.equal(linked.agents.length, 1);
-  linked.resource.displayName = 'mutated';
-  assert.equal((await queryDemo('list_resources')).data.resources[0].displayName, 'Quarterly report');
-  assert.equal((await queryDemo('list_resources')).data.resourceCoverage, 'host_bound_resources');
-  assert.equal((await queryDemo('list_resources', { sourceId: 'other-source' })).data.total, 0);
-  assert.equal((await queryDemo('list_owners', { sourceId: 'other-source' })).data.total, 0);
-  const relationship = (
-    await queryDemo('get_agent_inventory', { sourceId: agent.sourceId, agentId: agent.id, section: 'relationships' })
-  ).data.items[0];
-  assert.equal(relationship.targetName, agent.name);
-  assert.equal(relationship.targetLabel, 'GuardAgent');
-});
-test('change evidence shows exact ownership before/after without claiming effective permission gain', async () => {
-  const data = (await queryDemo('get_changes', { changeKind: 'ownership' })).data;
-  assert.equal(data.details.length, 1);
-  assert.equal(data.details[0].before.properties.owner_id, 'sam.rivera');
-  assert.equal(data.details[0].after.properties.owner_id, 'alex.chen');
-  assert.equal(data.details[0].affectedAgents[0].name, 'Research assistant');
-  assert.equal(data.policyHistory, 'not_collected');
-  assert.equal((await queryDemo('get_changes', { agentId: 'invisible-agent' })).data.details.length, 0);
+
+test('a view starts on the first listed source, and stays on it while the service still lists it', () => {
+  const sources = [{ id: 'one' }, { id: 'two' }];
+  assert.equal(defaultSource('', []), '');
+  assert.equal(defaultSource('', sources), 'one');
+  assert.equal(defaultSource('two', sources), 'two');
+  assert.equal(defaultSource('gone', sources), 'one');
+  assert.equal(defaultSource('one', []), '');
+  for (const list of [undefined, null, 'one', [null], [{}]]) assert.equal(defaultSource('one', list), '');
 });

@@ -17,7 +17,7 @@ function checkNumber(token: string): void {
 export function parseEvidenceJson(bytes: Uint8Array, maxBytes: number, maxNodes = 8192): Json {
   // Host-selected bounded expansion supports bulk enrollment without relaxing
   // the default provider/evidence parser budget or duplicate/numeric checks.
-  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > 100_000) throw new Error('Invalid JSON node limit');
+  if (!Number.isSafeInteger(maxNodes) || maxNodes < 1 || maxNodes > 200_000) throw new Error('Invalid JSON node limit');
   if (bytes.byteLength > maxBytes) throw new Error('Evidence exceeds the byte limit');
   const source = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
   const statement = immutableJson(JSON.parse(source), 24, maxNodes, maxBytes);

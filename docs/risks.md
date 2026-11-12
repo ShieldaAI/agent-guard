@@ -4,7 +4,9 @@ This page maps Agent Guard to the
 [OWASP Top 10 for Agentic Applications 2026](https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/).
 For each risk it says what Agent Guard does, which package does it, and what stays with
 you. It is a summary: [Support and limits](support-and-limits.md) and the
-[threat model](threat-model.md) are the full statements.
+[threat model](threat-model.md) are the full statements. [Standards and further
+reading](standards.md) relates the same controls to other frameworks, and the
+[glossary](glossary.md) defines the terms.
 
 Agent Guard controls the **effect** of a tool call, not what the model believes. It does
 not detect prompt injection. Every protection below applies only to calls routed through
@@ -39,6 +41,7 @@ Hostile text in an email, ticket, web page or tool result redirects the agent.
 - **What stays with you.** The labels are your claim about each tool, and the default
   mode is `allow`. An unlabelled tool that returns attacker text does not mark the task.
   An injected instruction can still steer calls that remain allowed.
+- **Does not cover.** Detecting the injection itself.
 
 ### ASI02 Tool Misuse and Exploitation
 
@@ -55,6 +58,8 @@ The agent uses a permitted tool in a way nobody intended.
 - **What stays with you.** Register tools correctly and derive the real resource,
   recipient and tenant from validated arguments. Restrict the handler's own credentials
   at the backend: once a call is allowed, the handler can use everything its process can.
+- **Does not cover.** Data you did not mark sensitive, secrets that are encoded or split
+  (only exact configured values are matched), or what a tool does internally once allowed.
 
 ### ASI03 Identity and Privilege Abuse
 
@@ -69,22 +74,28 @@ An agent acts with someone else's identity or more privilege than it was given.
   credentials, redirects refused); scenarios S02, S09; map shows tool identities whose
   S3 reach in the enrolled AWS account is wider than the grants bind.
 - **What stays with you.** Authenticate users and reviewers. Never accept a task handle,
-  tenant or parent from model output. There is no federated agent identity and no
-  company-wide secret custody.
+  tenant or parent from model output.
+- **Does not cover.** Agent identity across machines, or custody of your secrets.
 
 ### ASI04 Agentic Supply Chain Vulnerabilities
 
-A tool, MCP server, model artifact or dependency changes under you.
+A tool or MCP server changes under you.
 
 - **What Agent Guard does.** A tool's registered metadata gets a fingerprint that the
   host must approve; a changed tool is refused until reviewed, and approving metadata
-  never authorizes an action. MCP schemas are compiled under strict bounds, including
-  refusal of regular expressions with unbounded backtracking. The executor pins image
+  never authorizes an action. Each MCP registration carries a `descriptorDigest` that
+  stays the same while the server advertises the same definition, so you can record it
+  when you review a tool and approve only a matching one after a restart. MCP schemas are
+  compiled under strict bounds, including refusal of regular expressions with unbounded
+  backtracking. The executor pins image
   digests, artifact bytes and enrolled builders for admitted build artifacts.
 - **Package.** core (fingerprint approval); mcp (drift quarantine, bounded schemas);
   executor (artifact admission); scenarios S06.
-- **What stays with you.** Vet the servers and dependencies you install. A compromised
-  dependency running inside the guard's own process is outside this protection.
+- **What stays with you.** Review each definition before you approve it, and store its
+  digest. Vet the servers and dependencies you install.
+- **Does not cover.** A server that changes what it does without changing its definition,
+  the npm packages you install, model files, or a compromised dependency running inside
+  the guard's own process.
 
 ### ASI05 Unexpected Code Execution (RCE)
 
@@ -98,18 +109,21 @@ The agent gets code to run where it should not.
 - **What stays with you.** Use that profile, or an equivalent boundary, for any tool that
   runs generated or downloaded code. Ordinary in-process handlers are not isolated.
 
-### ASI06 Memory and Context Poisoning
+### ASI06 Memory & Context Poisoning
 
 Bad content written into memory or shared context steers later work.
 
 - **What Agent Guard does.** The executor's governed memory records where each entry
   came from, versions writes, carries sensitivity, and supports quarantine and rollback.
   Sensitivity and the outside-content mark are shared by the whole task family and never
-  reset. Retrieved or stored data never issues a grant or approves an action.
+  reset. An entry written after its author read outside content carries that mark to
+  whoever reads it. Retrieved or stored data never issues a grant or approves an action.
 - **Package.** executor (governed memory); core (family-wide sensitivity and
   outside-content marks).
 - **What stays with you.** Mark sensitive reads in your resolvers before the data can
   affect another action. Core alone has no memory store.
+- **Does not cover.** Spotting poisoned content, or memory kept anywhere else (your
+  vector store, search index or files).
 
 ### ASI07 Insecure Inter-Agent Communication
 
@@ -124,6 +138,7 @@ Agents trust each other's messages.
   S02.
 - **What stays with you.** Delegation is local to one executor. Authenticating agents
   across machines, and the transport between them, is yours.
+- **Does not cover.** Signing, encrypting or authenticating messages between agents.
 
 ### ASI08 Cascading Failures
 
@@ -147,12 +162,16 @@ A person approves something other than what then happens.
 - **What Agent Guard does.** An approval binds one prepared action: its tenant,
   arguments, resource version and expiry. It is single use, cannot be moved to another
   action, and never overrides a denial or a revoked task. Changing the arguments after
-  approval changes nothing, because the stored action is what runs.
+  approval changes nothing, because the stored action is what runs. With the executor,
+  the review screen can read what an action ID denotes from the ledger
+  (`preparedAction()`), not from the party asking for approval.
 - **Package.** core; executor (durable replay protection); scenarios S05, S12. The
   Agent Ops reference app adds signed-in reviewers and an optional rule that a requester
   cannot approve their own request.
 - **What stays with you.** Authenticate the reviewer and show them the prepared action
   itself. An `approverId` string is not proof that a person decided.
+- **Does not cover.** A person approving a harmful action that is shown accurately, or
+  reviewers who approve without reading.
 
 ### ASI10 Rogue Agents
 

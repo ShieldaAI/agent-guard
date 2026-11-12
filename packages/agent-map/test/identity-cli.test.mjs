@@ -129,7 +129,7 @@ test('identity launcher rejects FIFO inputs without waiting for a writer', async
     const result = spawnSync(process.execPath, [script, '--config', config], { encoding: 'utf8', timeout: 3000 });
     assert.equal(result.status, 1);
     assert.equal(result.stdout, '');
-    assert.equal(result.stderr, 'MAP_START_FAILED\n');
+    assert.match(result.stderr, /^MAP_START_FAILED MAP_CONFIG_INVALID: [^\n]+\n$/);
   }
 });
 test('identity CLI help and failures never print provider, key or database material', async t => {
@@ -142,7 +142,8 @@ test('identity CLI help and failures never print provider, key or database mater
   const result = spawnSync(process.execPath, [script, '--config', s.file], { encoding: 'utf8', timeout: 5000 });
   assert.equal(result.status, 1);
   assert.equal(result.stdout, '');
-  assert.equal(result.stderr, 'MAP_START_FAILED\n');
+  assert.match(result.stderr, /^MAP_START_FAILED MAP_CONFIG_INVALID: [^\n]+\n$/);
+  assert.equal(result.stderr.includes(s.directory), false);
   assert.equal(result.stdout.includes('canary'), false);
   assert.equal(result.stderr.includes('canary'), false);
 });

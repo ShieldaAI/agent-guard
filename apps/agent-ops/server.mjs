@@ -1,9 +1,10 @@
 import { createServer } from 'node:https';
 import { randomBytes, createHash, createHmac, timingSafeEqual } from 'node:crypto';
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 import { createMapOidcClient } from '@shieldaai/agent-map/oidc';
 import { parseEvidenceJson } from '@shieldaai/agent-guard-executor/internal';
-import { OpsError, fail, fields, identifier } from './workflow.mjs';
+import { OpsError, SYSTEM_ACTOR_PREFIX, fail, fields, identifier, safeCode } from './workflow.mjs';
+import { errorBody, recoveryBody, sessionBody, setupBody, setupChecks } from './responses.mjs';
 import {
   createOpsTelemetry,
   operationalStatus,
@@ -19,7 +20,36 @@ const digest = value => createHash('sha256').update(value).digest();
 const equal = (a, b) => typeof a === 'string' && typeof b === 'string' && timingSafeEqual(digest(a), digest(b));
 const roles = ['requester', 'reviewer', 'operator'];
 const ANONYMOUS_TTL_MS = 5 * 60_000;
-const FLOWS_PER_CLIENT = 4;
+const MAX_PENDING_FLOWS = 128;
+const MAX_CONNECTIONS = 128;
+// One client address never holds more than half of the connections.
+const MAX_CONNECTIONS_PER_CLIENT = MAX_CONNECTIONS / 2;
+const MAX_IN_FLIGHT = 32;
+// Requests without a signed-in session or an enrolled agent token share half of the slots;
+// the rest stay free for signed-in people and agents. Health probes use no slot.
+const MAX_ANONYMOUS_IN_FLIGHT = MAX_IN_FLIGHT / 2;
+// One client address holds at most a quarter of the anonymous slots, so a single address that
+// sends slow sign-in requests cannot keep everyone else from the sign-in page.
+const MAX_ANONYMOUS_IN_FLIGHT_PER_CLIENT = MAX_ANONYMOUS_IN_FLIGHT / 4;
+const TLS_HANDSHAKE_TIMEOUT_MS = 5000;
+const SOCKET_IDLE_TIMEOUT_MS = 30_000;
+const READINESS_CACHE_MS = 2000;
+const ANONYMOUS_EVENT_WINDOW_MS = 60_000;
+/**
+ * Session, rate and sign-in settings shared by the runtime configuration and the server.
+ * Every value is bounded: a session never outlives 15 minutes and limits cannot be switched off.
+ */
+export function validateServerLimits({
+  sessionTtlMs = 15 * 60_000,
+  rateLimitPerMinute = 180,
+  signInFlowsPerClient = 4,
+}) {
+  const integer = (value, min, max) => Number.isSafeInteger(value) && value >= min && value <= max;
+  if (!integer(sessionTtlMs, 1000, 15 * 60_000)) fail('SESSION_CONFIG_INVALID');
+  if (!integer(rateLimitPerMinute, 60, 100_000)) fail('RATE_LIMIT_CONFIG_INVALID');
+  if (!integer(signInFlowsPerClient, 1, MAX_PENDING_FLOWS)) fail('SIGN_IN_CONFIG_INVALID');
+  return { sessionTtlMs, rateLimitPerMinute, signInFlowsPerClient };
+}
 /**
  * Rate-limit key: an IPv4 address, or the /64 prefix of an IPv6 address (one host
  * usually owns a whole /64). Behind an L4 passthrough every client shares the proxy's
@@ -41,33 +71,55 @@ export function clientKey(address) {
     .map(group => (parseInt(group, 16) || 0).toString(16))
     .join(':')}::/64`;
 }
-const messages = {
-  UNAUTHENTICATED: 'Your session expired or was revoked. Sign in again.',
-  FORBIDDEN: 'Your enrolled role does not permit this action.',
-  CSRF_INVALID: 'The page is out of date. Refresh before trying again.',
-  AUTH_FAILED: 'Sign-in could not be verified. Start a new sign-in.',
-  REVIEW_STALE: 'This review changed or was already used. Refresh the request.',
-  REVIEW_EXPIRED: 'This review expired. Create a new request.',
-  TICKET_CHANGED: 'The ticket changed after review. Create a new request for its current version.',
-  NO_CHANGE: 'This ticket already has that status.',
-  RECEIPT_NOT_FOUND: 'No matching receipt is available. The outcome remains unconfirmed. Do not retry the change.',
-  ARCHIVE_PREVIEW_STALE: 'The archive preview expired or state changed. Preview again.',
-  RECORD_CAPACITY_REACHED:
-    'The durable record limit was reached. Ask the deployment owner to follow the capacity runbook.',
-  LIMITS_BELOW_USAGE:
-    'The configured storage capacity cannot accept this change. Ask the deployment owner to review capacity offline; retained records will not be deleted.',
-  HISTORY_SEGMENT_CAPACITY:
-    'History recovery capacity is exhausted. Stop new compaction and ask the deployment owner for a reviewed migration plan. Preserve all records, history, witnesses and keys.',
-  HISTORY_MIGRATION_REQUIRED:
-    'History exceeds this recovery profile. Stop maintenance changes and ask the deployment owner for a reviewed compatible recovery or migration plan. Preserve all records, history, witnesses and keys.',
-  RATE_LIMITED: 'Too many requests. Wait a minute and try again.',
-  INVALID_INPUT: 'Check the requested values.',
-  INVALID_STATUS: 'That status is not available for this ticket.',
-  SELF_APPROVAL_FORBIDDEN: 'You created this request, so another reviewer must decide it.',
-  PENDING_LIMIT_REACHED: 'Too many requests are waiting for review. Decide or let some expire, then try again.',
-  RECONCILIATION_UNAVAILABLE: 'This request cannot be reconciled in its current state. Refresh it.',
-  PREVIEW_CAPACITY_REACHED: 'Too many archive previews are open. Wait for some to expire, then preview again.',
-};
+/**
+ * In-flight admission. Every request takes one of `total` slots; requests without a signed-in
+ * session or an enrolled agent token share `anonymous` of them, and one client address (see
+ * clientKey) at most `anonymousPerClient` of those. `enter` returns the function that frees the
+ * slot, or refuses with BUSY.
+ */
+export function createAdmission({
+  total = MAX_IN_FLIGHT,
+  anonymous = MAX_ANONYMOUS_IN_FLIGHT,
+  anonymousPerClient = MAX_ANONYMOUS_IN_FLIGHT_PER_CLIENT,
+} = {}) {
+  let active = 0,
+    anonymousActive = 0;
+  const perClient = new Map();
+  return {
+    enter(isAnonymous, client) {
+      const held = isAnonymous ? (perClient.get(client) ?? 0) : 0;
+      if (active >= total || (isAnonymous && (anonymousActive >= anonymous || held >= anonymousPerClient)))
+        fail('BUSY', 503);
+      active++;
+      if (isAnonymous) {
+        anonymousActive++;
+        perClient.set(client, held + 1);
+      }
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        active--;
+        if (!isAnonymous) return;
+        anonymousActive--;
+        const left = perClient.get(client) - 1;
+        if (left > 0) perClient.set(client, left);
+        else perClient.delete(client);
+      };
+    },
+  };
+}
+/**
+ * Makes room for one more pending sign-in. Many people can share one address (a proxy or NAT):
+ * at the per-address cap that address's oldest pending sign-in gives way, and at the overall cap
+ * the oldest pending sign-in of all does. A full table therefore never refuses a new sign-in;
+ * it ends the one that has waited longest.
+ */
+export function makeRoomForSignIn(flows, client, perClient, maximum = MAX_PENDING_FLOWS) {
+  const mine = [...flows].filter(([, flow]) => flow.client === client);
+  while (mine.length >= perClient) flows.delete(mine.shift()[0]);
+  while (flows.size >= maximum) flows.delete(flows.keys().next().value);
+}
 function enroll(values) {
   if (!Array.isArray(values) || !values.length || values.length > 100) fail('IDENTITY_CONFIG_INVALID');
   const map = new Map(),
@@ -82,6 +134,7 @@ function enroll(values) {
       binding.subject.length > 256 ||
       map.has(binding.subject) ||
       ids.has(binding.id) ||
+      binding.id.startsWith(SYSTEM_ACTOR_PREFIX) ||
       !Array.isArray(binding.roles) ||
       !binding.roles.length ||
       binding.roles.some(role => !roles.includes(role)) ||
@@ -104,6 +157,7 @@ function agentEnroll(values = []) {
     identifier(value.tenantId);
     if (
       ids.has(value.id) ||
+      value.id.startsWith(SYSTEM_ACTOR_PREFIX) ||
       typeof value.token !== 'string' ||
       !/^[A-Za-z0-9_-]{43,128}$/.test(value.token) ||
       tokens.has(value.token) ||
@@ -116,7 +170,7 @@ function agentEnroll(values = []) {
     ids.add(value.id);
     tokens.add(value.token);
     const { token, ...operator } = value;
-    return { operator: structuredClone(operator), tokenHash: digest(token) };
+    return { operator: { ...structuredClone(operator), kind: 'agent' }, tokenHash: digest(token) };
   });
 }
 export function validateIdentityEnrollment(bindings, agents = []) {
@@ -150,17 +204,18 @@ export async function startOpsServer(options) {
   let bindings = enroll(options.bindings),
     agents = agentEnroll(options.agents),
     generation = 0,
-    draining = false,
-    active = 0;
+    draining = false;
+  const admission = createAdmission();
   const disjoint = (humans, machines) => {
     const ids = new Set([...humans.values()].map(value => value.id));
     if (machines.some(value => ids.has(value.operator.id))) fail('IDENTITY_CONFIG_INVALID');
   };
   disjoint(bindings, agents);
-  const ttl = options.sessionTtlMs ?? 15 * 60_000;
-  if (!Number.isSafeInteger(ttl) || ttl < 1000 || ttl > 15 * 60_000) fail('SESSION_CONFIG_INVALID');
-  const rateLimit = options.rateLimitPerMinute ?? 180;
-  if (!Number.isSafeInteger(rateLimit) || rateLimit < 60 || rateLimit > 100_000) fail('RATE_LIMIT_CONFIG_INVALID');
+  const {
+    sessionTtlMs: ttl,
+    rateLimitPerMinute: rateLimit,
+    signInFlowsPerClient: flowsPerClient,
+  } = validateServerLimits(options);
   // Signs pre-login cookies; anonymous visitors create no server-side state.
   const anonymousKey = randomBytes(32);
   const sign = (purpose, value) =>
@@ -174,13 +229,21 @@ export async function startOpsServer(options) {
   const authorizationOrigins = [
     ...new Set([new URL(options.oidc.issuer).origin, ...(options.oidc.endpointOrigins ?? [])]),
   ];
-  const assets = new Map(
-    [
-      ['/', ['text/html; charset=utf-8', 'index.html']],
-      ['/app.js', ['text/javascript; charset=utf-8', 'app.js']],
-      ['/app.css', ['text/css; charset=utf-8', 'app.css']],
-    ].map(([path, [type, file]]) => [path, { type, body: readFileSync(new URL(`./public/${file}`, import.meta.url)) }]),
-  );
+  // Every client file is read once at startup: the page, its stylesheet and the ES modules
+  // in public/ and public/views/. Nothing else under the application directory is served.
+  const publicDirectory = new URL('./public/', import.meta.url);
+  const assets = new Map([
+    ['/', { type: 'text/html; charset=utf-8', body: readFileSync(new URL('index.html', publicDirectory)) }],
+  ]);
+  for (const directory of ['', 'views/'])
+    for (const name of readdirSync(new URL(directory, publicDirectory)).sort()) {
+      const kind = /^[a-z][a-z0-9-]*\.(js|css)$/.exec(name)?.[1];
+      if (kind)
+        assets.set(`/${directory}${name}`, {
+          type: kind === 'js' ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8',
+          body: readFileSync(new URL(`${directory}${name}`, publicDirectory)),
+        });
+    }
   const securityHeaders = {
     'Cache-Control': 'no-store',
     'X-Content-Type-Options': 'nosniff',
@@ -190,13 +253,39 @@ export async function startOpsServer(options) {
     'Strict-Transport-Security': 'max-age=31536000',
     'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   };
-  function securityEvent(event, session, code) {
+  // Refusals without a signed-in person: the first of each kind in a window is logged at once,
+  // the rest are counted and reported in one line, so a flood cannot fill the security log.
+  const anonymousEvents = new Map();
+  function flushAnonymousEvents(now = Date.now()) {
+    for (const [key, entry] of anonymousEvents) {
+      if (now - entry.started < ANONYMOUS_EVENT_WINDOW_MS) continue;
+      anonymousEvents.delete(key);
+      if (entry.suppressed) emit({ event: entry.event, code: entry.code, count: entry.suppressed });
+    }
+  }
+  const anonymousEventTimer = setInterval(flushAnonymousEvents, ANONYMOUS_EVENT_WINDOW_MS);
+  anonymousEventTimer.unref();
+  function securityEvent(event, session, code, cause) {
     const actor = session && valid(session) ? session.operator : undefined;
-    const value = Object.freeze({
+    if (!actor && ['ACCESS_DENIED', 'SIGN_IN_FAILED'].includes(event)) {
+      flushAnonymousEvents();
+      const key = `${event}\0${code}\0${cause ?? ''}`,
+        entry = anonymousEvents.get(key);
+      if (entry) {
+        entry.suppressed++;
+        return;
+      }
+      anonymousEvents.set(key, { event, code, started: Date.now(), suppressed: 0 });
+    }
+    emit({
       event,
       ...(actor ? { operatorId: actor.id, tenantId: actor.tenantId } : {}),
       ...(code ? { code } : {}),
+      ...(cause ? { cause } : {}),
     });
+  }
+  function emit(line) {
+    const value = Object.freeze(line);
     // Logging is observational; a broken collector cannot grant access or replace an auth failure.
     try {
       const result = options.onSecurityEvent?.(value);
@@ -320,6 +409,34 @@ export async function startOpsServer(options) {
       clearTimeout(timer);
     }
   }
+  function bearerAgent(request) {
+    const match = /^Bearer ([A-Za-z0-9_-]{43,128})$/.exec(request.headers.authorization ?? '');
+    const presented = match && digest(match[1]);
+    return (presented && agents.find(value => timingSafeEqual(value.tokenHash, presented))) || undefined;
+  }
+  /** A signed-in session or an enrolled agent token, decided before a slot is taken. */
+  function known(request) {
+    try {
+      return !!cookieSession(request)?.operator || !!bearerAgent(request);
+    } catch {
+      return false;
+    }
+  }
+  // Readiness reads and verifies both stores. Probes share one result for a short time.
+  let readiness = { at: Number.NEGATIVE_INFINITY, error: undefined };
+  function ready() {
+    const now = performance.now();
+    if (now - readiness.at >= READINESS_CACHE_MS) {
+      readiness = { at: now, error: undefined };
+      try {
+        if (Date.now() >= tlsExpiresAt) fail('TLS_CERTIFICATE_EXPIRED', 503);
+        workflow.health();
+      } catch (error) {
+        readiness.error = error;
+      }
+    }
+    if (readiness.error) throw readiness.error;
+  }
   function limit(request) {
     cleanup();
     const key = clientKey(request.socket.remoteAddress);
@@ -334,6 +451,8 @@ export async function startOpsServer(options) {
     {
       ...options.tls,
       minVersion: 'TLSv1.2',
+      // A connection that does not finish its TLS handshake is dropped, not held for two minutes.
+      handshakeTimeout: TLS_HANDSHAKE_TIMEOUT_MS,
       maxHeaderSize: 16 * 1024,
       requestTimeout: 10_000,
       headersTimeout: 10_000,
@@ -349,7 +468,7 @@ export async function startOpsServer(options) {
       response.once('close', () => {
         if (!observed) telemetry.record({ statusCode: 499, durationMs: performance.now() - started });
       });
-      let counted = false,
+      let release,
         isCallback = false,
         isAuthFlow = false,
         requestSession;
@@ -361,35 +480,39 @@ export async function startOpsServer(options) {
           )
         )
           fail('REQUEST_ORIGIN_INVALID', 400);
-        const url = new URL(request.url, origin);
+        let url;
+        try {
+          url = new URL(request.url, origin);
+        } catch {
+          fail('REQUEST_ORIGIN_INVALID', 400); // An unparseable request target (for example "//") is the client's error.
+        }
         isCallback = url.pathname === '/auth/callback' && request.method === 'GET';
         isAuthFlow = isCallback || (url.pathname === '/auth/login' && request.method === 'POST');
         if (url.origin !== origin.origin || !request.url?.startsWith('/')) fail('REQUEST_ORIGIN_INVALID', 400);
         if (request.method === 'GET' && url.pathname === '/health/live') return send(response, 200, { status: 'ok' });
         if (draining) fail('NOT_READY', 503);
-        if (active >= 32) fail('BUSY', 503);
-        active++;
-        counted = true;
-        limit(request);
         if (request.method === 'GET' && url.pathname === '/health/ready') {
-          if (Date.now() >= tlsExpiresAt) fail('TLS_CERTIFICATE_EXPIRED', 503);
-          workflow.health();
+          limit(request);
+          ready();
           return send(response, 200, { status: 'ok' });
         }
+        release = admission.enter(!known(request), clientKey(request.socket.remoteAddress));
+        // The page and its modules are answered from memory and are not counted against the
+        // per-address request limit: one page load is fifteen files. The connection and
+        // in-flight caps above still bound them.
         if (request.method === 'GET' && assets.has(url.pathname) && !url.search) {
           const asset = assets.get(url.pathname);
           response.writeHead(200, { ...securityHeaders, 'Content-Type': asset.type });
           return response.end(asset.body);
         }
+        limit(request);
         const agentRequest = /^\/agent\/requests\/([a-zA-Z0-9-]{1,80})$/.exec(url.pathname);
         if (
           (url.pathname === '/agent/requests' && request.method === 'POST') ||
           (agentRequest && request.method === 'GET')
         ) {
           if (request.headers.cookie || request.headers.origin) fail('FORBIDDEN', 403);
-          const match = /^Bearer ([A-Za-z0-9_-]{43,128})$/.exec(request.headers.authorization ?? '');
-          const presented = match && digest(match[1]);
-          const agent = presented && agents.find(value => timingSafeEqual(value.tokenHash, presented));
+          const agent = bearerAgent(request);
           if (!agent) fail('UNAUTHENTICATED', 401);
           const epoch = generation,
             check = () => {
@@ -400,7 +523,7 @@ export async function startOpsServer(options) {
             const item = workflow.request(agentRequest[1], agent.operator.tenantId);
             if (item.requesterId !== agent.operator.id || !agent.operator.allowedTicketIds.includes(item.ticketId))
               fail('NOT_FOUND', 404);
-            return send(response, 200, { request: workflow.public(item) });
+            return send(response, 200, { request: workflow.public(item, { forAgent: true }) });
           }
           const input = await body(request);
           check();
@@ -411,13 +534,16 @@ export async function startOpsServer(options) {
         requestSession = session;
         if (url.pathname === '/api/session' && request.method === 'GET') {
           session ??= newAnonymousSession(response);
-          return send(response, 200, {
-            authenticated: !!session.operator,
-            csrfToken: session.csrfToken,
-            authorizationOrigins,
-            publicAuthIssuer: options.oidc.issuer,
-            ...(session.operator ? { operator: session.operator, expiresAt: session.expiresAt } : {}),
-          });
+          return send(
+            response,
+            200,
+            sessionBody({
+              session,
+              authorizationOrigins,
+              issuer: options.oidc.issuer,
+              policy: workflow.requestPolicy,
+            }),
+          );
         }
         if (url.pathname === '/auth/callback' && request.method === 'GET') {
           const stateValues = url.searchParams.getAll('state'),
@@ -450,19 +576,22 @@ export async function startOpsServer(options) {
         }
         if (request.method === 'POST' && url.pathname === '/auth/login') {
           csrf(request, session);
+          // Sign-in starts from the pre-login session only. A signed-in session keeps its cookie
+          // and its server-side session: sign out first.
+          if (session.operator) fail('ALREADY_SIGNED_IN', 409);
           fields(await body(request), []);
           csrf(request, session);
           cleanup();
           const client = clientKey(request.socket.remoteAddress);
           for (const [id, flow] of flows) if (flow.sessionId === session.id) flows.delete(id);
-          if ([...flows.values()].filter(flow => flow.client === client).length >= FLOWS_PER_CLIENT)
-            fail('RATE_LIMITED', 429);
-          if (flows.size >= 128) fail('LOGIN_CAPACITY_REACHED', 503);
           const transaction = await oidc.begin();
           csrf(request, session);
+          makeRoomForSignIn(flows, client, flowsPerClient);
+          // A fresh pre-login cookie outlives the three-minute flow however old the page was.
+          const renewed = newAnonymousSession(response);
           flows.set(transaction.state, {
             transaction,
-            sessionId: session.id,
+            sessionId: renewed.id,
             client,
             generation,
             expiresAt: Date.now() + 3 * 60_000,
@@ -485,6 +614,7 @@ export async function startOpsServer(options) {
           if (url.search) fail('INVALID_INPUT');
           const status = operationalStatus({
             workflow,
+            verify: ready,
             operator: session.operator,
             telemetry,
             keyring: options.keyringPolicy?.(),
@@ -496,8 +626,25 @@ export async function startOpsServer(options) {
         }
         if (request.method === 'GET' && url.pathname === '/api/tickets')
           return send(response, 200, workflow.tickets(session.operator.tenantId, pageScope(url)));
-        if (request.method === 'GET' && url.pathname === '/api/requests')
-          return send(response, 200, workflow.requests(session.operator.tenantId, pageScope(url)));
+        if (request.method === 'GET' && url.pathname === '/api/requests') {
+          const scope = pageScope(url),
+            tenant = session.operator.tenantId;
+          // The tag names this tenant's list at this page. An unchanged poll costs no list at all.
+          const etag = `"${createHash('sha256')
+            .update(JSON.stringify([workflow.requestsRevision(tenant), tenant, scope.offset ?? 0, scope.limit ?? 500]))
+            .digest('base64url')
+            .slice(0, 32)}"`;
+          if (request.headers['if-none-match'] === etag) {
+            response.writeHead(304, { ...securityHeaders, ETag: etag });
+            return response.end();
+          }
+          return send(response, 200, workflow.requests(tenant, scope), { ETag: etag });
+        }
+        const detail = /^\/api\/requests\/([a-zA-Z0-9-]{1,80})$/.exec(url.pathname);
+        if (request.method === 'GET' && detail) {
+          if (url.search) fail('INVALID_INPUT');
+          return send(response, 200, workflow.detail(detail[1], session.operator.tenantId));
+        }
         if (request.method === 'GET' && url.pathname === '/api/maintenance') {
           authorized(session, 'operator');
           return send(response, 200, {
@@ -507,85 +654,36 @@ export async function startOpsServer(options) {
         }
         if (request.method === 'GET' && url.pathname === '/api/setup') {
           authorized(session, 'operator');
-          workflow.health();
-          const maintenance = workflow.maintenance(session.operator),
-            tenant = session.operator.tenantId;
-          const data = workflow.data();
-          const observed = options.recovery;
-          const verified =
-            observed &&
-            ['current-state-mirror', 'not-enrolled'].includes(observed.mode) &&
-            Number.isSafeInteger(observed.verifiedAt) &&
-            observed.verifiedAt > 0 &&
-            ['executorMirror', 'backendMirror', 'historyMirror'].every(key => typeof observed[key] === 'boolean');
-          const recovery = verified
-            ? {
-                mode:
-                  observed.executorMirror && observed.backendMirror && observed.historyMirror
-                    ? 'current-state-mirror'
-                    : 'not-enrolled',
-                executorMirror: observed.executorMirror,
-                backendMirror: observed.backendMirror,
-                historyMirror: observed.historyMirror,
-                verifiedAt: observed.verifiedAt,
-              }
-            : { mode: 'unverified', verifiedAt: null };
-          return send(response, 200, {
-            deployment: 'self-hosted',
-            ...(options.company
-              ? { company: { id: options.company.id, ...(options.company.name ? { name: options.company.name } : {}) } }
-              : {}),
-            identity: { issuer: options.oidc.issuer, callbackUrl: `${origin.origin}/auth/callback` },
-            data: {
-              kind: 'local-tickets',
-              tickets: Object.values(data.tickets).filter(t => t.tenantId === tenant).length,
-              requests: Object.values(data.requests).filter(r => r.tenantId === tenant).length,
-              receipts: Object.values(data.receipts).filter(r => r.tenantId === tenant).length,
-            },
-            limits: maintenance.limits,
-            usage: maintenance.usage,
-            historyCapacity: maintenance.historyCapacity,
-            recovery,
-            ...(options.keyringPolicy ? { keyring: options.keyringPolicy() } : {}),
-            checks: [
-              {
-                id: 'identity',
-                label: 'Company sign-in',
-                status: 'passed',
-                message: 'OIDC discovery and this signed-in identity were verified.',
-              },
-              {
-                id: 'storage',
-                label: 'Private durable storage',
-                status: 'passed',
-                message: 'Both encrypted stores and their independent witnesses are readable.',
-              },
-              {
-                id: 'ownership',
-                label: 'Company data ownership',
-                status: 'passed',
-                message:
-                  'Ticket records and encrypted execution evidence stay in this installation. Sign-in uses your configured identity provider.',
-              },
-            ],
-            commands: [
-              {
-                label: 'Check configuration and OIDC discovery',
-                command:
-                  'docker compose -f deployment/production/compose.yaml run --rm onboarding preflight --config "${AGENT_OPS_CONFIG_FILE:-/run/agent-ops/config.json}"',
-              },
-              {
-                label: 'Preview a company ticket import (stop the service first)',
-                command:
-                  'docker compose -f deployment/production/compose.yaml run --rm onboarding import-tickets --config "${AGENT_OPS_CONFIG_FILE:-/run/agent-ops/config.json}" --tickets /run/company/additional-tickets.json',
-              },
-              {
-                label: 'Preview changed capacity limits (stop the service first)',
-                command:
-                  'docker compose -f deployment/production/compose.yaml run --rm --entrypoint node maintenance apps/agent-ops/cli.mjs configure-limits --config "${AGENT_OPS_CONFIG_FILE:-/run/agent-ops/config.json}"',
-              },
-            ],
-          });
+          if (url.search) fail('INVALID_INPUT');
+          // One verified read of both stores answers the whole page (and is shared with the
+          // other requests of the same refresh).
+          ready();
+          const tenant = session.operator.tenantId,
+            data = workflow.data(),
+            maintenance = workflow.maintenance(session.operator),
+            recovery = recoveryBody(options.recovery),
+            keyring = options.keyringPolicy?.();
+          const mine = rows => Object.values(rows).filter(row => row.tenantId === tenant).length;
+          return send(
+            response,
+            200,
+            setupBody({
+              company: options.company,
+              issuer: options.oidc.issuer,
+              callbackUrl: `${origin.origin}/auth/callback`,
+              counts: { tickets: mine(data.tickets), requests: mine(data.requests), receipts: mine(data.receipts) },
+              maintenance,
+              recovery,
+              keyring,
+              checks: setupChecks({
+                securityLog: telemetry.snapshot().securityLog,
+                tlsExpiresAt,
+                recovery,
+                capacityWarning: maintenance.capacityWarning,
+                now: Date.now(),
+              }),
+            }),
+          );
         }
         if (request.method !== 'POST') fail('NOT_FOUND', 404);
         csrf(request, session);
@@ -606,13 +704,35 @@ export async function startOpsServer(options) {
             await workflow.propose(session.operator, input, () => authorized(session, 'requester')),
           );
         }
-        const decision = /^\/api\/requests\/([a-zA-Z0-9-]{1,80})\/(approve|deny|reconcile)$/.exec(url.pathname);
+        const decision = /^\/api\/requests\/([a-zA-Z0-9-]{1,80})\/(approve|deny|withdraw|reconcile|close-out)$/.exec(
+          url.pathname,
+        );
         if (decision) {
           const [, id, action] = decision;
           if (action === 'reconcile') {
             authorized(session, 'operator');
             fields(input, []);
             return send(response, 200, workflow.reconcile(session.operator, id));
+          }
+          if (action === 'close-out') {
+            authorized(session, 'operator');
+            // An empty body only shows the evidence; closing needs the digest of what was shown.
+            fields(input, ['digest']);
+            return send(
+              response,
+              200,
+              input.digest === undefined
+                ? workflow.previewCloseOut(session.operator, id)
+                : workflow.closeOut(session.operator, id, input),
+            );
+          }
+          if (action === 'withdraw') {
+            authorized(session, 'requester');
+            return send(
+              response,
+              200,
+              workflow.withdraw(session.operator, id, input, () => authorized(session, 'requester')),
+            );
           }
           authorized(session, 'reviewer');
           return send(
@@ -637,18 +757,28 @@ export async function startOpsServer(options) {
           error?.code,
         );
         const code = error instanceof OpsError || capacityError ? error.code : 'SERVICE_UNAVAILABLE';
+        const status = error instanceof OpsError ? error.status : capacityError ? 409 : 503;
+        // Only a fixed identifier leaves the process: never a message, a path or request data.
+        const cause = error instanceof OpsError || capacityError ? undefined : safeCode(error, 'UNCODED');
+        const signInCode = ['AUTH_FAILED', 'FORBIDDEN', 'CSRF_INVALID', 'UNAUTHENTICATED', 'RATE_LIMITED'].includes(
+          code,
+        )
+          ? code
+          : 'SIGN_IN_UNAVAILABLE';
         if (isAuthFlow)
           securityEvent(
             'SIGN_IN_FAILED',
             requestSession,
-            ['AUTH_FAILED', 'FORBIDDEN', 'CSRF_INVALID', 'UNAUTHENTICATED', 'RATE_LIMITED'].includes(code)
-              ? code
-              : 'SIGN_IN_UNAVAILABLE',
+            signInCode,
+            signInCode === 'SIGN_IN_UNAVAILABLE' ? (cause ?? code) : undefined,
           );
         else if (['FORBIDDEN', 'UNAUTHENTICATED', 'CSRF_INVALID'].includes(code))
           securityEvent('ACCESS_DENIED', requestSession, code);
+        // One trace for every failure the service answers with 5xx, except load shedding and shutdown.
+        else if (status >= 500 && !['BUSY', 'NOT_READY'].includes(code))
+          securityEvent('REQUEST_FAILED', requestSession, code, cause);
         if (isCallback && !response.destroyed && !response.writableEnded) {
-          response.writeHead(error instanceof OpsError ? error.status : 503, {
+          response.writeHead(status, {
             ...securityHeaders,
             'Content-Type': 'text/html; charset=utf-8',
           });
@@ -657,20 +787,32 @@ export async function startOpsServer(options) {
           );
           return;
         }
-        send(response, error instanceof OpsError ? error.status : capacityError ? 409 : 503, {
-          error: {
-            code,
-            message:
-              messages[code] ?? 'The operation could not complete. Refresh its status before taking another action.',
-          },
-        });
+        send(response, status, errorBody(code));
       } finally {
-        if (counted) active--;
+        release?.();
       }
     },
   );
-  server.maxConnections = 128;
+  server.maxConnections = MAX_CONNECTIONS;
   server.keepAliveTimeout = 5000;
+  // A socket with no traffic in either direction is closed, whatever state its request is in.
+  server.setTimeout(SOCKET_IDLE_TIMEOUT_MS, socket => socket.destroy());
+  // Counted from the TCP connection, so slow or unfinished TLS handshakes count too.
+  const connections = new Map();
+  server.on('connection', socket => {
+    const key = clientKey(socket.remoteAddress),
+      held = (connections.get(key) ?? 0) + 1;
+    if (held > MAX_CONNECTIONS_PER_CLIENT) {
+      socket.destroy();
+      return;
+    }
+    connections.set(key, held);
+    socket.once('close', () => {
+      const left = connections.get(key) - 1;
+      if (left > 0) connections.set(key, left);
+      else connections.delete(key);
+    });
+  });
   server.on('clientError', (_error, socket) => socket.destroy());
   await new Promise((resolve, reject) => {
     server.once('error', reject);
@@ -693,6 +835,7 @@ export async function startOpsServer(options) {
       const { expiresAt } = validateTls(tls, options.publicOrigin);
       server.setSecureContext({ ...tls, minVersion: 'TLSv1.2' });
       tlsExpiresAt = expiresAt;
+      readiness.at = Number.NEGATIVE_INFINITY;
       securityEvent('TLS_RELOADED');
     },
     replaceBindings(values, agentValues = []) {
@@ -708,6 +851,8 @@ export async function startOpsServer(options) {
     },
     async close() {
       draining = true;
+      clearInterval(anonymousEventTimer);
+      flushAnonymousEvents(Number.POSITIVE_INFINITY);
       generation++;
       sessions.clear();
       flows.clear();

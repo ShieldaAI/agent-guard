@@ -1,46 +1,94 @@
 # @shieldaai/agent-guard-scenarios
 
-**Version 0.1.0** is the first non-prerelease version. It makes no 1.x API
-compatibility or long-term-support promise. The
-[release notes](https://github.com/ShieldaAI/agent-guard/blob/main/docs/releases/0.1.0.md)
-record the verified scope, known limits and post-release follow-ups.
+This package is a conformance suite for Agent Guard: thirteen scenarios, each with a hostile case that must be refused and a matching harmless case that must succeed, judged by handler calls and recorded effects rather than by returned decisions. It catches an integration that lets through unauthorized tools or resources, wider delegation, cross-tenant access, unapproved or reused approvals, changed tool definitions, leaked secrets, exceeded budgets, or sends after sensitive or outside content was read.
 
-Test AI agent tool authorization with paired malicious and benign conformance fixtures for the Agent Guard public API. Node.js 22+, ESM.
+```sh
+npm install @shieldaai/agent-guard @shieldaai/agent-guard-scenarios
+```
 
-**Risks tested** ([OWASP agentic top 10 mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md)): the thirteen scenarios
-exercise goal hijack limits (ASI01: S13), tool misuse (ASI02: S01, S03, S04, S07, S10,
-S11), identity and delegation (ASI03, ASI07: S02, S09), tool metadata changes (ASI04:
-S06), bounded work (ASI08: S10), exact approval (ASI09: S05, S12) and revocation (ASI10:
-S08). They test your integration's behaviour; they do not certify a deployment.
+Node.js 22 or later, ESM. The fixtures are synthetic: no credentials, model calls, network or destructive operations.
 
-Install with `npm install @shieldaai/agent-guard-scenarios`. The synthetic
-fixtures need no provider key or external service. See the
-[package selection guide](https://github.com/ShieldaAI/agent-guard/blob/main/docs/package-guide.md)
-for related execution and MCP packages.
+## Quick example
 
 ```ts
 import { runConformance, scenarioCatalog } from '@shieldaai/agent-guard-scenarios';
 
 const report = await runConformance();
-console.log(report.passed, report.passedCases, report.caseCount);
-console.table(report.results);
-console.log(scenarioCatalog);
+console.log(`${report.passedCases} of ${report.caseCount} cases passed (catalog ${report.catalogVersion})`);
+for (const result of report.results) {
+  if (!result.passed) console.log(result.scenarioId, result.variant, result.failure);
+}
+console.log(scenarioCatalog.map(scenario => `${scenario.id} ${scenario.title}`).join('\n'));
 ```
 
-Run selected scenarios with `runConformance({ scenarioIds: ['S05', 'S08'] })`. The default suite executes malicious and benign variants of all thirteen scenarios. It checks handler invocations and synthetic effects, not merely decision objects. The built-in fixtures use no credentials, model calls, network services or destructive operations. A custom adapter is responsible for its own I/O.
+Without options the suite runs against the guard, `@shieldaai/agent-guard`.
 
-The scenarios cover unauthorized tools/resources, delegation, protected administration, sensitive export, action-bound approval, metadata drift, outbound secrets/canaries, revocation/control failures, tenants, budgets, normalized typed arguments, resource-version checks and sends after reading outside content. The [scenario specification](https://github.com/ShieldaAI/agent-guard/blob/main/docs/scenarios.md) explains each boundary.
+## The scenarios
 
-Rejections are recognized with `isGuardError()`, so a guard built from a different installed copy of `@shieldaai/agent-guard` still passes. `catalogVersion` is a plain semver string. The catalog version identifies the executed acceptance checks independently of the package version; compare reports using their `catalogVersion`. Version `1.3.0` retains S01–S12 and adds S13 (sends after reading outside content), for thirteen scenario identifiers and twenty-six paired cases. A pass from an older catalog does not establish coverage of newly added assertions.
+| ID | What it checks |
+| --- | --- |
+| S01 | Unknown tools and resources outside the grants are refused |
+| S02 | A child task cannot hold more than its parent |
+| S03 | Administration stays with the host, not with model-callable tools |
+| S04 | No external send after sensitive data was read |
+| S05 | An approval covers one exact action, expires and works once |
+| S06 | A changed tool definition needs a new review |
+| S07 | Configured secrets cannot appear in outbound arguments |
+| S08 | Revocation, policy and approval are checked again before dispatch |
+| S09 | The tenant comes from the trusted task, not from arguments |
+| S10 | Call, concurrency and cost budgets hold, for every ancestor |
+| S11 | Arguments are parsed and normalized before the resource is resolved |
+| S12 | An approval is bound to a resource version, compared again at write time |
+| S13 | Sends are limited after the task read outside content |
 
-S11 checks that the trusted `ToolDefinition.parse` rejects wrong types, unknown or missing fields, invalid ranges and invalid or asynchronous parser results before resource resolution. The benign case verifies that normalized arguments reach resolution, both policy evaluations, approval and execution; later mutations of caller or parser-owned objects cannot change the approved effect. The core does not interpret `inputSchema` automatically: the host must supply a suitable synchronous parser.
+`scenarioCatalog` holds the same list with each scenario's boundary, hostile cases, harmless case and limitations. The [scenario specification](https://github.com/ShieldaAI/agent-guard/blob/main/docs/scenarios.md) explains every one, and the [risk mapping](https://github.com/ShieldaAI/agent-guard/blob/main/docs/risks.md) relates them to the OWASP list of risks for agentic applications.
 
-S12 binds the resolver's `resourceVersion` to the immutable prepared action and approval. A synthetic trusted handler compares the approved version with current state immediately before its write. Version forgery and approval transfer must fail before dispatch; a genuine stale version enters the handler, consumes its attempt and produces no write. The benign pair approves and writes two successive versions separately. Real services must implement the comparison atomically with their side effect. This scenario does not claim the core locks or refreshes external resources.
+## Run selected scenarios
 
-To exercise a compatible implementation, supply `createGuard(options)` in the options object. The factory must honor the provided clock and secret configuration and return the structural `GuardLike` API. Denials use the exported `GuardError` and its documented reason codes. Each fixture receives an isolated instance; no shared factory state is required.
+```js
+const report = await runConformance({ scenarioIds: ['S05', 'S08'] });
+```
 
-Each malicious or benign variant has a five-second asynchronous timeout. Override it with `caseTimeoutMs`, a positive integer up to `2147483647`. A timed-out variant receives a failed result and the runner continues with the next variant. The timer cannot interrupt blocking JavaScript or cancel unfinished adapter work; an adapter may retain resources or continue running after its result is reported. Use process isolation if the implementation under test needs a hard execution limit.
+Each selected scenario runs both of its cases. An empty list, a repeated ID or an unknown ID throws a `TypeError`, so a selection cannot pass by running nothing.
 
-A passing report applies to these fixtures in one process. It is not a security certification, injection-detector benchmark, MCP transport test or proof that a production agent cannot bypass its integration. Errors after actual handler invocation are tested separately from denials that must prevent invocation.
+## Test your own implementation
+
+Pass `createGuard` to run the suite against an adapter or a wrapper around the guard.
+
+```js
+import { AgentGuard } from '@shieldaai/agent-guard';
+
+const report = await runConformance({
+  createGuard: options => new AgentGuard({ ...options, onDecision: event => console.log(event.code) }),
+});
+```
+
+The factory is called once for each fixture and must return a new object with the methods of the exported `GuardLike` type: `registerTool`, `approveTool`, `createTask`, `delegateTask`, `revokeTask`, `setPolicy`, `prepare`, `approve`, `execute` and `snapshot`. It must use the `clock` and `secretValues` it is given. Refusals must be `GuardError`s with the documented codes; they are recognized with `isGuardError()`, so an implementation built on a second installed copy of the guard also passes.
+
+## The report
+
+`runConformance()` resolves to a frozen report:
+
+- `passed`, `scenarioCount`, `caseCount`, `passedCases` and `failedCases`;
+- `catalogVersion`, the version of the checks that ran;
+- `results`, one entry for each case with `scenarioId`, `variant` (`malicious` or `benign`), `passed`, the number of `assertions`, the number of `handlerInvocations`, the `denialCodes` observed and, on failure, a `failure` label.
+
+A failure label is a fixed description of the check that failed. It never contains argument values or raw error text.
+
+## Catalog version
+
+The catalog has its own version, `SCENARIO_CATALOG_VERSION`, separate from the package version. Version `1.3.0` has thirteen scenarios and twenty-six cases. Compare reports by `catalogVersion`: a pass on an older catalog says nothing about checks added later.
+
+## Timeouts
+
+Each case has five seconds; change this with `caseTimeoutMs` (a whole number of milliseconds, at most 2,147,483,647). A case that times out is reported as failed and the run continues. The timer cannot interrupt blocking JavaScript or cancel work your adapter has started, so run the suite in a separate process if you need a hard limit.
+
+## What a pass does not mean
+
+- It is not a security certification. A pass covers these fixtures, in one process.
+- It does not show that a production agent cannot reach a backend without going through your integration.
+- It does not test prompt-injection detection, Model Context Protocol (MCP) transports or a deployment.
+- It does not lock or refresh real resources: in S12 the fixture handler compares versions itself, and a real service must do that atomically with its write.
+- It does not interpret `inputSchema`: S11 checks the tool's own `parse` function.
 
 Apache-2.0. Copyright 2026 ShieldaAI contributors.

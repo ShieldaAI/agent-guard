@@ -24,24 +24,13 @@ const INTERNAL = [
   'immutableJson',
 ];
 
-test('the root entry exports the stable API plus deprecated internal aliases', () => {
-  assert.deepEqual(Object.keys(root).sort(), [...STABLE, ...INTERNAL].sort());
-  for (const name of INTERNAL) assert.equal(root[name], internal[name], `${name} alias is the same binding`);
+test('the root entry exports exactly the stable API; the internal SPI is not on it', () => {
+  assert.deepEqual(Object.keys(root).sort(), [...STABLE].sort());
+  for (const name of INTERNAL) assert.equal(name in root, false, `${name} is only on /internal`);
 });
 
 test('the internal entry exports exactly the internal SPI', () => {
   assert.deepEqual(Object.keys(internal).sort(), [...INTERNAL].sort());
-});
-
-test('root aliases are marked @deprecated in the published declarations', () => {
-  const declarations = readFileSync(new URL('../dist/deprecated.d.ts', import.meta.url), 'utf8');
-  for (const name of [...INTERNAL, 'AuthorityPhase', 'AuthorityState']) {
-    assert.match(
-      declarations,
-      new RegExp(`@deprecated[^\\n]*\\n\\s*export (?:declare )?(?:const|type|class) ${name}\\b`),
-      name,
-    );
-  }
 });
 
 test('InvalidJsonError is exported and thrown for over-limit JSON', () => {

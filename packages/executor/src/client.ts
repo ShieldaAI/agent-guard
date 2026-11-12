@@ -122,7 +122,13 @@ export class ExecutorClient {
       !receipt ||
       receipt.id !== actionId ||
       (!pruned && !executionStatuses.includes(receipt.status as ExecutionStatus)) ||
-      (pruned ? receipt.outcome !== 'SUCCEEDED' && receipt.outcome !== 'FAILED' : receipt.outcome !== undefined) ||
+      // A PRUNED receipt carries its outcome while the compact stub is retained; later it has none,
+      // and then no charge or evidence either.
+      (pruned
+        ? receipt.outcome === undefined
+          ? receipt.charged !== undefined || receipt.reconciliation !== undefined
+          : receipt.outcome !== 'SUCCEEDED' && receipt.outcome !== 'FAILED'
+        : receipt.outcome !== undefined) ||
       (receipt.charged !== undefined && (!Number.isSafeInteger(receipt.charged) || receipt.charged < 0))
     )
       throw new ExecutorError('EXECUTOR_RESPONSE_INVALID');
@@ -139,7 +145,7 @@ export class ExecutorClient {
     return {
       id: receipt.id,
       status: receipt.status,
-      ...(pruned ? { outcome: receipt.outcome! } : {}),
+      ...(receipt.outcome === undefined ? {} : { outcome: receipt.outcome }),
       ...(receipt.charged === undefined ? {} : { charged: receipt.charged }),
       ...(evidence === undefined
         ? {}

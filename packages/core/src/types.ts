@@ -1,40 +1,63 @@
 import type { JsonValue } from './json.js';
 
-/** JSON accepted by the guard. Every invocation is copied and deeply frozen at runtime. */
+/** JSON accepted by the guard. Every value is copied and deeply frozen at runtime. */
 export type Json = JsonValue;
+/** Permission to call one tool on the listed resource IDs. `'*'` grants every resource of that tool. */
 export interface Capability {
   tool: string;
   resources: readonly string[];
 }
-/** Costs use nonnegative safe integers in units chosen by the host, such as microcurrency units. */
+/**
+ * What a task may use. Costs are nonnegative safe integers in units chosen by the host,
+ * such as microcurrency units.
+ */
 export interface Budget {
+  /** Most calls the task may dispatch, counting failed ones. */
   maxCalls: number;
+  /** Most calls in flight at once. */
   maxConcurrent: number;
+  /** Most cost the task may spend, summed over its calls. */
   maxCost: number;
+  /** When the task ends, in clock milliseconds (`Date.now()` by default). */
   deadline: number;
 }
+/** Options for `createTask()`. `delegateTask()` takes the same options without the principal and tenant. */
 export interface TaskOptions {
+  /** Unique among the tasks this guard has not retired. */
   id: string;
+  /** Who the agent acts for, as authenticated by the host. */
   principalId: string;
+  /** The tenant whose resources the task may touch, as authenticated by the host. */
   tenantId: string;
+  /** Tools and resources the task may use. */
   grants: readonly Capability[];
   budget: Budget;
+  /** Exact recipients an external call may target. Default none. */
   allowedRecipients?: readonly string[];
+  /** Lets the task call tools registered with `controlPlane: true`. Default false. */
   allowControlPlane?: boolean;
 }
+/** The identity a tool's `resolve` and `execute` receive. */
 export interface TaskIdentity {
   id: string;
   principalId: string;
   tenantId: string;
 }
+/** Opaque reference to a task. Only the object returned by this guard works; a copy does not. */
 export interface TaskHandle {
   readonly id: string;
 }
+/** What a tool's `resolve` returns: the resource the call would touch, looked up by trusted host code. */
 export interface ResolvedAction {
+  /** The resource the call acts on. Checked against the task's grants. */
   resourceId: string;
+  /** The tenant that owns the resource. Must equal the task's tenant. */
   tenantId: string;
+  /** The call sends data outside the trust boundary. Requires an allowed `recipient`. */
   external?: boolean;
+  /** Where an external call sends data. Checked against `allowedRecipients`. */
   recipient?: string;
+  /** The call reads sensitive data. Blocks later external calls in the task family. */
   sensitive?: boolean;
   /** Version bound into approval; the handler must enforce it at the actual resource. */
   resourceVersion?: string;
@@ -43,12 +66,18 @@ export interface ResolvedAction {
 }
 /** What a tool does once its task family has read outside content. */
 export type UntrustedContextMode = 'allow' | 'require_approval' | 'deny';
+/** A tool as the host registers it. Every field except the three callbacks is part of the fingerprint. */
 export interface ToolDefinition {
+  /** The name the agent uses and grants refer to. */
   name: string;
   description: string;
+  /** Recorded in the fingerprint. The guard does not validate arguments against it; use `parse`. */
   inputSchema?: Json;
+  /** Any further data to include in the fingerprint. */
   metadata?: Json;
+  /** Every call needs `approve()` before `execute()`. Default false. */
   requiresApproval?: boolean;
+  /** An administrative tool. Only tasks created with `allowControlPlane` may call it. Default false. */
   controlPlane?: boolean;
   /** Maximum cost reserved before dispatch, as a nonnegative safe integer. Defaults to zero. */
   maxCost?: number;
@@ -64,7 +93,20 @@ export interface ToolDefinition {
   sendsExternal?: boolean;
   /** Trusted synchronous schema parser. Its normalized result is frozen before resolution. */
   parse?(input: Json): Json;
+  /**
+   * Trusted synchronous lookup of the resource the call would touch. Runs during `prepare()`
+   * once the task is known to hold a grant for the tool, but before the resource and tenant
+   * checks, so keep it read-only and scoped to the task's tenant.
+   */
   resolve(args: Json, task: Readonly<TaskIdentity>): ResolvedAction;
+  /**
+   * Performs the call. Runs only after every check passes. Honour `signal`: it aborts on
+   * revocation and at the task deadline. When aborted before the effect has happened, throw
+   * (for example `signal.throwIfAborted()`): the call fails with EXECUTION_ABORTED and no
+   * detail. Returning normally says the effect happened: if the task was aborted meanwhile,
+   * the result is withheld and the call fails with EXECUTION_ABORTED, detail
+   * `EFFECT_COMMITTED`, which tells the caller not to retry.
+   */
   execute(
     args: Json,
     context: {
@@ -74,24 +116,36 @@ export interface ToolDefinition {
     },
   ): Promise<ToolResult> | ToolResult;
 }
-/** actualCost must be a safe integer between zero and the tool's maxCost, inclusive. */
+/**
+ * What a tool's `execute` returns. actualCost must be a safe integer between zero and the
+ * tool's maxCost, inclusive; without it the full maxCost is charged.
+ */
 export interface ToolResult {
   value: Json;
   actualCost?: number;
 }
+/** One exact call: the resolved resource plus the tool, its arguments and what they were checked against. */
 export interface Action extends ResolvedAction {
   tool: string;
   args: Json;
+  /** Fingerprint of the tool registration the action was prepared against. */
   toolFingerprint: string;
+  /** Version of the policy the action was prepared under; `setPolicy()` advances it. */
   policyVersion: number;
 }
+/** The task state a policy sees. */
 export interface TaskSnapshot extends TaskIdentity {
+  /** The task family has read sensitive data. */
   sensitive: boolean;
   /** The task family has dispatched a call that reads outside content. */
   untrusted: boolean;
+  /** Calls dispatched so far. */
   calls: number;
+  /** Calls in flight. */
   concurrent: number;
+  /** Cost charged by finished calls. */
   spent: number;
+  /** Cost held for calls in flight. */
   reserved: number;
 }
 /** `snapshot()` view for hosts: the policy snapshot plus the budget and revocation state. */
@@ -101,31 +155,42 @@ export interface TaskStatus extends TaskSnapshot {
   /** True when this task or any ancestor is revoked. */
   revoked: boolean;
 }
+/** A policy's answer. `require_approval` allows the call only with an approval from `approve()`. */
 export type PolicyDecision = 'allow' | 'deny' | 'require_approval';
+/**
+ * Host rule evaluated for every prepare and execute, after the built-in checks. It can deny
+ * or require approval; it cannot allow what the built-in checks refuse. Pass `context.signal`
+ * to cancellable I/O. A policy that throws fails the call with POLICY_ERROR.
+ */
 export type Policy = (
   action: Readonly<Action>,
   task: Readonly<TaskSnapshot>,
   context?: Readonly<{ signal: AbortSignal }>,
 ) => PolicyDecision | Promise<PolicyDecision>;
+/** Options for `new AgentGuard()`. All are optional. */
 export interface GuardOptions {
+  /** Host rule evaluated for every prepare and execute. Default: allow what the built-in checks allow. */
   policy?: Policy;
+  /** Exact secret strings that must not appear in the arguments of an external call. */
   secretValues?: readonly string[];
+  /** Millisecond clock for deadlines and approval expiry. Default `Date.now`; see `monotonicClock`. */
   clock?: () => number;
   /**
    * How many times a custom policy may be evaluated for one prepare or execute when the task's
    * counters or shared sensitivity change while it runs (for example, a parallel call on the same
    * task starts or settles). Each attempt uses a fresh snapshot and a policy slot; the final checks
    * and dispatch still happen without an intervening await. Integer 1-16, default 5. With 1, any
-   * change fails with POLICY_STATE_CHANGED as before.
+   * change fails with POLICY_STATE_CHANGED.
    */
   maxPolicyAttempts?: number;
   /** Observes each decision after it is made. It cannot change the outcome; a throwing hook is ignored. */
   onDecision?: (event: Readonly<GuardDecision>) => void;
-  /** Bounds that were fixed before 0.2. Every value defaults to the previous constant. */
+  /** Bounds on approvals, policy evaluation and JSON size. Every value has a default. */
   limits?: GuardLimits;
-  /** untrustedContext for tools that do not set it. Default 'allow' in 0.x. */
+  /** untrustedContext for tools that do not set it. Default 'allow'. */
   untrustedContextDefault?: UntrustedContextMode;
 }
+/** Bounds the guard enforces. A value outside its range fails the constructor with INVALID_INPUT. */
 export interface GuardLimits {
   /** Outstanding approvals per prepared action. Integer 1-64, default 4. */
   maxApprovalsPerAction?: number;
@@ -135,6 +200,23 @@ export interface GuardLimits {
   maxPolicyEvaluationsPerFamily?: number;
   /** Longest a policy may run before POLICY_TIMEOUT, in milliseconds. 100-300,000, default 30,000. */
   policyTimeoutMs?: number;
+  /**
+   * Largest JSON value the guard accepts, in bytes of compact UTF-8 JSON. It applies to each
+   * value the guard copies: a tool definition, task options, a `prepare` request (the arguments
+   * plus the tool name), parsed arguments and a tool result (`{ value, actualCost }`).
+   * Integer 65,536-67,108,864 (64 KiB to 64 MiB), default 1,048,576 (1 MiB).
+   *
+   * Arguments over the limit fail `prepare()` with INVALID_JSON before any callback runs. A
+   * result over the limit fails `execute()` with RESULT_INVALID and revokes the task, because
+   * the handler has already run and its result cannot be delivered.
+   */
+  maxJsonBytes?: number;
+  /**
+   * Most values (objects, arrays, strings, numbers, booleans and nulls) in one JSON value,
+   * applied wherever maxJsonBytes applies. Integer 1,000-10,000,000, default 100,000.
+   * Nesting is limited to 64 levels and is not configurable.
+   */
+  maxJsonNodes?: number;
 }
 /**
  * One authorization decision, for audit. Carries identifiers only: never arguments,
@@ -142,6 +224,7 @@ export interface GuardLimits {
  */
 export interface GuardDecision {
   operation: 'prepare' | 'approve' | 'execute';
+  /** `failed` means the handler started, so its effect is unknown; `denied` means it never ran. */
   outcome: 'allowed' | 'denied' | 'succeeded' | 'failed';
   taskId: string;
   tenantId: string;
@@ -161,13 +244,19 @@ export interface ExecutionResult {
   readonly charged: number;
   readonly actionId: string;
 }
+/** One checked call, ready to approve or execute. Only the object returned by `prepare()` works. */
 export interface PreparedAction {
+  /** Unique ID of this prepared call. */
   readonly id: string;
+  /** `sha256:` digest of the ID, task identity, action and tool registration: one value that names this exact call. */
   readonly digest: string;
+  /** Exactly what will run: tool, arguments and resolved resource. Frozen. */
   readonly action: Readonly<Action>;
+  /** True when `execute()` needs an approval ID from `approve()`. */
   readonly requiresApproval: boolean;
 }
 
+/** Every code a GuardError can carry. `GuardErrorCatalog` explains each one. */
 export const GuardErrorCode = Object.freeze({
   INVALID_INPUT: 'INVALID_INPUT',
   INVALID_JSON: 'INVALID_JSON',
@@ -212,6 +301,7 @@ export const GuardErrorCode = Object.freeze({
   APPROVAL_CONTEXT_CHANGED: 'APPROVAL_CONTEXT_CHANGED',
 } as const);
 
+/** Union of the GuardErrorCode values. */
 export type GuardErrorCodeValue = (typeof GuardErrorCode)[keyof typeof GuardErrorCode];
 
 const GUARD_ERROR_BRAND = Symbol.for('@shieldaai/agent-guard.GuardError');

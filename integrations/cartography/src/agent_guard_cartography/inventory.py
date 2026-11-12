@@ -8,16 +8,27 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+from collections import OrderedDict
 from datetime import datetime
 from functools import lru_cache
+from hashlib import sha256
 from importlib import resources
 from pathlib import Path
-from typing import Any
+from typing import Any, NoReturn
 
 from jsonschema import Draft202012Validator, FormatChecker
 from referencing import Registry, Resource
 
+from agent_guard_cartography._json import (
+    DuplicateKeyError,
+    canonical_bytes,
+    reject_constant,
+    unique_object,
+)
+from agent_guard_cartography.errors import AgentGuardCartographyError
 from agent_guard_cartography.input_files import read_regular_file
+from agent_guard_cartography.shapes import Snapshot
 
 MAX_SNAPSHOT_BYTES = 8 * 1024 * 1024
 MAX_MANIFEST_BYTES = 2 * 1024 * 1024
@@ -40,15 +51,17 @@ MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
 UTC_TIMESTAMP = re.compile(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?Z")
 
 
-class InventoryValidationError(ValueError):
+# Content digests of snapshots this process has fully validated; see validate_snapshot.
+_VALIDATED_LIMIT = 256
+_validated: OrderedDict[str, None] = OrderedDict()
+_validated_lock = threading.Lock()
+
+
+class InventoryValidationError(AgentGuardCartographyError, ValueError):
     """A stable error code that never contains imported values or file paths."""
 
-    def __init__(self, code: str):
-        self.code = code
-        super().__init__(code)
 
-
-def _fail(code: str) -> None:
+def _fail(code: str) -> NoReturn:
     raise InventoryValidationError(code)
 
 
@@ -241,7 +254,7 @@ def _detached_json(value: Any, maximum_bytes: int, maximum_values: int) -> Any:
     return json.loads(serialized)
 
 
-def _aws_reference(value: dict, *, identity: bool = False) -> tuple[str, str]:
+def _aws_reference(value: dict[str, Any], *, identity: bool = False) -> tuple[str, str]:
     arn = value["arn"]
     if re.search(r"[\s\x1c-\x1f\x85\ufeff*?]", arn):
         _fail("INVENTORY_MANIFEST_ARN_INVALID")
@@ -272,7 +285,7 @@ def _aws_reference(value: dict, *, identity: bool = False) -> tuple[str, str]:
     return service, resource
 
 
-def _check_manifest(manifest: dict) -> None:
+def _check_manifest(manifest: dict[str, Any]) -> None:
     agents = _unique_records(manifest["agents"], "id")
     deployments = _unique_records(manifest["deployments"], "id")
     _unique_records(manifest["taskBindings"], "taskId")
@@ -295,7 +308,8 @@ def _check_manifest(manifest: dict) -> None:
             target = binding["target"]
             previous = host_targets.setdefault(target["id"], target)
             if previous != target:
-                _fail("INVENTORY_MANIFEST_BINDING_INVALID")
+                # Same codes as packages/executor/src/inventory-manifest.ts.
+                _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
             continue
         service, resource = _aws_reference(binding["target"])
         kind = binding["target"]["kind"]
@@ -318,7 +332,9 @@ def _check_manifest(manifest: dict) -> None:
     executions = set()
     for binding in manifest["executionBindings"]:
         pair = (binding["deploymentId"], binding["tool"])
-        if pair in executions or binding["deploymentId"] not in deployments:
+        if binding["deploymentId"] not in deployments:
+            _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
+        if pair in executions:
             _fail("INVENTORY_MANIFEST_BINDING_INVALID")
         executions.add(pair)
         if binding["identitySelection"] == "static":
@@ -382,7 +398,7 @@ def validate_manifest(value: Any) -> dict[str, Any]:
     return manifest
 
 
-def _check_manifest_snapshot(snapshot: dict) -> None:
+def _check_manifest_snapshot(snapshot: dict[str, Any]) -> None:
     manifest = validate_manifest(snapshot["manifest"])
     if manifest["source"] != snapshot["source"]:
         _fail("INVENTORY_MANIFEST_SOURCE_MISMATCH")
@@ -413,7 +429,7 @@ def validate_mcp_inventory(value: Any) -> dict[str, Any]:
     return inventory
 
 
-def _check_mcp_snapshot(snapshot: dict) -> None:
+def _check_mcp_snapshot(snapshot: dict[str, Any]) -> None:
     mcp = snapshot["mcp"]
     records = _unique_records(mcp["connections"], "connectionId")
     expected: dict[str, set[str]] = {}
@@ -450,42 +466,58 @@ def _check_mcp_snapshot(snapshot: dict) -> None:
         _fail("INVENTORY_MCP_COVERAGE_INVALID")
 
 
-def validate_snapshot(value: Any) -> dict[str, Any]:
+def _already_validated(digest: str) -> bool:
+    with _validated_lock:
+        if digest not in _validated:
+            return False
+        _validated.move_to_end(digest)
+        return True
+
+
+def _remember_validated(digest: str) -> None:
+    with _validated_lock:
+        _validated[digest] = None
+        while len(_validated) > _VALIDATED_LIMIT:
+            _validated.popitem(last=False)
+
+
+def validate_snapshot(value: Any) -> Snapshot:
     """Validate an inventory and return a detached JSON copy.
 
     The schema permits grants to unregistered tools: a grant does not establish
     that a corresponding implementation exists. Consumers must keep that state
     unknown instead of manufacturing tool metadata or a denial.
+
+    Collection, archiving, import and health recording each validate the snapshot
+    they are handed. Validity depends only on the JSON content, so the schema and
+    cross-record checks run once per distinct content in a process: a later call
+    with identical content (compared by the SHA-256 of its canonical encoding, never
+    by object identity) still bounds and detaches its input, then skips those checks.
     """
     snapshot = _detached_json(value, MAX_SNAPSHOT_BYTES, MAX_JSON_VALUES)
+    digest = sha256(canonical_bytes(snapshot)).hexdigest()
+    if _already_validated(digest):
+        return snapshot
     # Do not include jsonschema's exception text: it quotes imported properties,
     # which may contain secrets even though the schema refuses to accept them.
     version = snapshot.get("schemaVersion") if type(snapshot) is dict else None
     filename = SCHEMA_V2_FILENAME if version == 2 else SCHEMA_FILENAME
     if next(_validator(filename).iter_errors(snapshot), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")
+    # JSON Schema's "integer" also admits 1.0 and -0.0. The executor never writes those,
+    # and the graph orders and stores these counters: only true integers reach it.
+    if any(type(snapshot[field]) is not int for field in ("ledgerRevision", "policyEpoch")):
+        _fail("INVENTORY_SCHEMA_INVALID")
     _check_graph(snapshot)
     if snapshot["profile"] in ("host", "host-mcp"):
         _check_manifest_snapshot(snapshot)
     if snapshot["profile"] == "host-mcp":
         _check_mcp_snapshot(snapshot)
+    _remember_validated(digest)
     return snapshot
 
 
-def _object_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
-    result: dict[str, Any] = {}
-    for key, value in pairs:
-        if key in result:
-            _fail("INVENTORY_DUPLICATE_KEY")
-        result[key] = value
-    return result
-
-
-def _invalid_constant(_value: str) -> None:
-    _fail("INVENTORY_JSON_INVALID")
-
-
-def load_snapshot(path: str | Path) -> dict[str, Any]:
+def load_snapshot(path: str | Path) -> Snapshot:
     """Read at most 8 MiB and validate before any importer can write graph data."""
     try:
         contents = read_regular_file(path, MAX_SNAPSHOT_BYTES + 1)
@@ -496,11 +528,11 @@ def load_snapshot(path: str | Path) -> dict[str, Any]:
     try:
         value = json.loads(
             contents.decode("utf-8"),
-            object_pairs_hook=_object_pairs,
-            parse_constant=_invalid_constant,
+            object_pairs_hook=unique_object,
+            parse_constant=reject_constant,
         )
-    except (UnicodeError, json.JSONDecodeError, RecursionError, ValueError) as error:
-        if isinstance(error, InventoryValidationError):
-            raise
+    except DuplicateKeyError:
+        raise InventoryValidationError("INVENTORY_DUPLICATE_KEY") from None
+    except (UnicodeError, RecursionError, ValueError):
         raise InventoryValidationError("INVENTORY_JSON_INVALID") from None
     return validate_snapshot(value)

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { request as httpRequest } from 'node:http';
+import { connect } from 'node:net';
 import { constants } from 'node:fs';
 import { mkdtemp, writeFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -326,4 +327,101 @@ test('strict JSON keeps hostile member names as plain data on null-prototype obj
   assert.deepEqual({ ...copied }, { a: 1, b: 2 });
   for (const value of [{ c: 1 }, { b: 1 }, Object.defineProperty({}, 'a', { get: () => 1, enumerable: true })])
     assert.throws(() => fields(value, ['a', 'b'], ['a']), { code: 'MAP_CONFIG_INVALID' });
+});
+
+test('Expect: 100-continue is answered once the credential and limits pass, or refused with a final status', async t => {
+  const s = await setup(t);
+  const target = new URL(s.url);
+  const body = JSON.stringify({ operation: 'list_agents', args: {} });
+  // A client that waits for the interim response, as curl and several HTTP libraries do for larger bodies.
+  const exchange = (headers = {}) =>
+    new Promise((resolve, reject) => {
+      let continued = false;
+      const request = httpRequest(
+        {
+          host: target.hostname,
+          port: target.port,
+          path: '/v1/query',
+          method: 'POST',
+          agent: false,
+          headers: {
+            Authorization: `Bearer ${s.token}`,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            Expect: '100-continue',
+            ...headers,
+          },
+        },
+        response => {
+          const chunks = [];
+          response.on('data', chunk => chunks.push(chunk));
+          response.once('end', () =>
+            resolve({ continued, status: response.statusCode, text: Buffer.concat(chunks).toString() }),
+          );
+        },
+      );
+      request.once('continue', () => {
+        continued = true;
+        request.end(body);
+      });
+      request.once('error', reject);
+      // Well inside the server's request deadline: a stalled exchange fails here, not as a late 408.
+      request.setTimeout(3000, () => request.destroy(new Error('NO_INTERIM_RESPONSE')));
+      request.flushHeaders();
+    });
+  const accepted = await exchange();
+  assert.deepEqual([accepted.continued, accepted.status], [true, 200]);
+  assert.equal(JSON.parse(accepted.text).operation, 'list_agents');
+  // A refused request gets its final status at once and is never invited to send the body.
+  const unauthenticated = await exchange({ Authorization: `Bearer ${createMapToken()}` });
+  assert.deepEqual([unauthenticated.continued, unauthenticated.status], [false, 401]);
+  const oversized = await exchange({ 'Content-Length': 1024 * 1024 });
+  assert.deepEqual([oversized.continued, oversized.status], [false, 413]);
+  const unsupported = await exchange({ 'Content-Type': 'text/plain' });
+  assert.deepEqual([unsupported.continued, unsupported.status], [false, 400]);
+  // Any other expectation cannot be met: 417, never an invitation to send the body.
+  for (const expectation of ['200-ok', 'gzip', '100-continue, 200-ok']) {
+    const refused = await exchange({ Expect: expectation });
+    assert.deepEqual([refused.continued, refused.status], [false, 417], expectation);
+    assert.deepEqual(JSON.parse(refused.text), { error: 'MAP_REQUEST_INVALID' });
+  }
+  assert.equal(s.calls.length, 1);
+});
+
+test('an HTTP/1.0 request is never sent 100 Continue: its body is read and it gets one final response', async t => {
+  const s = await setup(t);
+  const target = new URL(s.url);
+  const body = JSON.stringify({ operation: 'list_agents', args: {} });
+  // Interim responses do not exist in HTTP/1.0, so the expectation is ignored (RFC 9110, 10.1.1).
+  const exchange = (version, expectation) =>
+    new Promise((resolve, reject) => {
+      const socket = connect(Number(target.port), target.hostname);
+      let received = '';
+      socket.setEncoding('latin1');
+      socket.on('data', chunk => {
+        received += chunk;
+      });
+      socket.once('error', reject);
+      socket.once('close', () => resolve(received.split('\r\n').filter(line => /^HTTP\/1\.[01] \d{3}/.test(line))));
+      socket.setTimeout(3000, () => socket.destroy(new Error('NO_FINAL_RESPONSE')));
+      socket.write(
+        [
+          `POST /v1/query HTTP/${version}`,
+          `Host: ${target.host}`,
+          `Authorization: Bearer ${s.token}`,
+          'Content-Type: application/json',
+          `Content-Length: ${Buffer.byteLength(body)}`,
+          `Expect: ${expectation}`,
+          'Connection: close',
+          '',
+          body,
+        ].join('\r\n'),
+      );
+    });
+  assert.deepEqual(await exchange('1.0', '100-continue'), ['HTTP/1.1 200 OK']);
+  // The same request in HTTP/1.1 is invited first.
+  assert.deepEqual(await exchange('1.1', '100-continue'), ['HTTP/1.1 100 Continue', 'HTTP/1.1 200 OK']);
+  // An expectation that cannot be met is refused in either version.
+  assert.deepEqual(await exchange('1.0', 'gzip'), ['HTTP/1.1 417 Expectation Failed']);
+  assert.equal(s.calls.length, 2);
 });

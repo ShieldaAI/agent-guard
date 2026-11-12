@@ -81,7 +81,7 @@ test('the executor and the /ops key tools refuse the same below-minimum ledger s
   const root = directory(t);
   assert.throws(
     () => new DurableExecutor({ database: join(root, 'a.sqlite'), encryptionKey: KEY, maxLedgerBytes: 512 * 1024 }),
-    { code: 'INVALID_INPUT' },
+    { name: 'ExecutorError', code: 'STORE_CONFIG_INVALID' },
   );
   // The key tools are POSIX-only (private file modes), like the rollback witness.
   if (process.platform === 'win32') return;

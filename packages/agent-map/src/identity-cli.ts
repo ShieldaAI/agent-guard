@@ -1,13 +1,12 @@
 #!/usr/bin/env node
-import { constants } from 'node:fs';
-import { open } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { isCliEntry } from './cli-entry.js';
+import { PACKAGE_VERSION, STORE_LIMITS, isCliEntry, reportStartupFailure } from './cli-entry.js';
 import { createNeo4jMapStore } from './store.js';
 import { MapService } from './service.js';
 import { startMapIdentityServer, type MapIdentityServerOptions } from './identity-http.js';
-import { fields, fail, parseRequest } from './boundary.js';
+import { fail } from './common.js';
+import { fields, parseRequest, readHostFile } from './boundary.js';
 
 function environment(value: unknown): string {
   if (typeof value !== 'string' || !/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value)) fail('MAP_CONFIG_INVALID');
@@ -15,33 +14,18 @@ function environment(value: unknown): string {
   if (!secret || Buffer.byteLength(secret) > 65_536) fail('MAP_CREDENTIAL_REQUIRED');
   return secret;
 }
-/** POSIX launcher: owned regular files only; private inputs exclude group/other access. */
+/**
+ * The company launcher holds a TLS key and names secrets, so its files are this user's own
+ * regular files, never a link, and private inputs exclude group and other access.
+ */
 async function boundedFile(path: string, maximum: number, privateFile: boolean): Promise<string> {
-  if (typeof process.getuid !== 'function' || !constants.O_NOFOLLOW) fail('MAP_CONFIG_INVALID');
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  try {
-    const info = await file.stat();
-    if (
-      !info.isFile() ||
-      info.nlink !== 1 ||
-      info.uid !== process.getuid() ||
-      info.size > maximum ||
-      (privateFile && (info.mode & 0o077) !== 0) ||
-      (info.mode & 0o022) !== 0
-    )
-      fail('MAP_CONFIG_INVALID');
-    const data = Buffer.alloc(maximum + 1);
-    let bytes = 0;
-    while (bytes < data.length) {
-      const read = await file.read(data, bytes, data.length - bytes, null);
-      if (!read.bytesRead) break;
-      bytes += read.bytesRead;
-    }
-    if (bytes > maximum) fail('MAP_CONFIG_INVALID');
-    return new TextDecoder('utf-8', { fatal: true }).decode(data.subarray(0, bytes));
-  } finally {
-    await file.close();
-  }
+  const bytes = await readHostFile(path, maximum, {
+    noFollow: true,
+    owner: 'service',
+    singleLink: true,
+    private: privateFile,
+  });
+  return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
 }
 export async function loadMapIdentityConfig(
   filename: string,
@@ -72,7 +56,11 @@ export async function loadMapIdentityConfig(
     ],
     ['neo4j', 'publicOrigin', 'tls', 'oidc', 'companyId', 'bindings'],
   );
-  const db = fields(config.neo4j, ['uri', 'username', 'passwordEnv', 'database'], ['uri', 'username', 'passwordEnv']);
+  const db = fields(
+    config.neo4j,
+    ['uri', 'username', 'passwordEnv', 'database', ...STORE_LIMITS],
+    ['uri', 'username', 'passwordEnv'],
+  );
   if (
     typeof db.uri !== 'string' ||
     typeof db.username !== 'string' ||
@@ -84,6 +72,8 @@ export async function loadMapIdentityConfig(
     username: db.username,
     password: environment(db.passwordEnv),
     ...(db.database === undefined ? {} : { database: db.database }),
+    // Optional read limits; the store checks their type and hard maximum.
+    ...Object.fromEntries(STORE_LIMITS.filter(key => db[key] !== undefined).map(key => [key, db[key]])),
   };
   const tls = fields(config.tls, ['keyFile', 'certFile'], ['keyFile', 'certFile']);
   const oidc = fields(
@@ -97,6 +87,7 @@ export async function loadMapIdentityConfig(
       'caFile',
       'requestTimeoutMs',
       'maxResponseBytes',
+      'clockToleranceSeconds',
     ],
     ['issuer', 'clientId', 'clientSecretEnv'],
   );
@@ -124,18 +115,23 @@ export async function loadMapIdentityConfig(
     } as Omit<MapIdentityServerOptions, 'service'>,
   };
 }
+const USAGE = 'agent-guard-map-identity --config PRIVATE_HOST_CONFIG.json | --help | --version';
 /** Restart reloads policy/secrets and invalidates sessions; credentials are never printed. */
 export async function runMapIdentityCli(argv: string[] = process.argv.slice(2)): Promise<void> {
   const { values } = parseArgs({
     args: argv,
-    options: { config: { type: 'string' }, help: { type: 'boolean' } },
+    options: { config: { type: 'string' }, help: { type: 'boolean' }, version: { type: 'boolean' } },
     strict: true,
   });
   if (values.help) {
-    process.stdout.write('agent-guard-map-identity --config PRIVATE_HOST_CONFIG.json\n');
+    process.stdout.write(`${USAGE}\n`);
     return;
   }
-  if (!values.config) fail('MAP_CONFIG_INVALID');
+  if (values.version) {
+    process.stdout.write(`${PACKAGE_VERSION}\n`);
+    return;
+  }
+  if (!values.config) fail('MAP_ARGUMENT_INVALID');
   const config = await loadMapIdentityConfig(values.config);
   const store = createNeo4jMapStore(config.database);
   try {
@@ -159,8 +155,5 @@ export async function runMapIdentityCli(argv: string[] = process.argv.slice(2)):
   }
 }
 if (isCliEntry(import.meta)) {
-  void runMapIdentityCli().catch(() => {
-    process.stderr.write('MAP_START_FAILED\n');
-    process.exitCode = 1;
-  });
+  void runMapIdentityCli().catch(error => reportStartupFailure(error, USAGE));
 }

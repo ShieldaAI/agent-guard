@@ -7,6 +7,7 @@ import sys
 from copy import deepcopy
 from pathlib import Path
 
+import neo4j
 import pytest
 
 from agent_guard_cartography import pilot_recovery as module
@@ -117,6 +118,35 @@ def test_never_overwrites_existing_destination(evidence, tmp_path, operation):
         else:
             restore_backup(path, destination, lock_file=tmp_path / "lock")
     assert (destination / "keep").read_bytes() == b"untouched"
+
+
+def test_backup_restore_and_replay_hold_the_lock_beside_their_archive(evidence, tmp_path):
+    directory, enrollment, _ = evidence
+    path = tmp_path / "backup"
+    # No lock_file: each command locks the archive it reads or creates.
+    with ingestion_lock(tmp_path / "archive.lock"):
+        for action in [
+            lambda: create_backup(directory, path, [enrollment]),
+            lambda: replay_published(
+                None, directory, [enrollment], replay_archive_directory=tmp_path / "working"
+            ),
+        ]:
+            with pytest.raises(GraphImportError, match="^INGESTION_ALREADY_RUNNING$"):
+                action()
+    create_backup(directory, path, [enrollment])
+    restored = tmp_path / "restored"
+    with ingestion_lock(tmp_path / "restored.lock"):
+        with pytest.raises(GraphImportError, match="^INGESTION_ALREADY_RUNNING$"):
+            restore_backup(path, restored)
+    assert not restored.exists()
+    restore_backup(path, restored)
+    assert restored.is_dir()
+    # A destination inside the backup is refused before a lock file could land in it.
+    before = sorted(item.name for item in path.iterdir())
+    with pytest.raises(RecoveryError, match="^RECOVERY_PATH_UNSAFE$"):
+        restore_backup(path, path / "inside")
+    assert sorted(item.name for item in path.iterdir()) == before
+    assert inspect_backup(path)["summary"]["snapshots"] == 4
 
 
 def test_live_collector_lock_blocks_backup_and_restore(evidence, tmp_path):
@@ -315,9 +345,9 @@ def test_cli_diagnostics_never_echo_paths_or_configuration_secrets(tmp_path):
         text=True,
         timeout=10,
     )
-    assert result.returncode == 1
+    assert result.returncode == 2
     assert result.stdout == ""
-    assert json.loads(result.stderr) == {"error": "RECOVERY_FAILED"}
+    assert json.loads(result.stderr) == {"status": "failed", "code": "PATH_NOT_FOUND"}
 
 
 def test_atomic_publication_does_not_replace_concurrently_created_empty_directory(
@@ -499,9 +529,9 @@ def test_ambiguous_lifecycle_blocks_backup_before_copy(lifecycle_evidence, tmp_p
     elif damage == "missing_publication":
         with SnapshotArchive(directory) as archive:
             old = next(
-                archive._receipt(p.name[:-13])
+                archive.read_receipt(p.name[:-13])
                 for p in directory.glob("*.receipt.json")
-                if archive._receipt(p.name[:-13])["source"] == transitions[0]["predecessor"]
+                if archive.read_receipt(p.name[:-13])["source"] == transitions[0]["predecessor"]
             )
         for suffix in (".receipt.json", ".snapshot.json"):
             (directory / (old["receiptId"] + suffix)).unlink()
@@ -551,8 +581,6 @@ def test_replay_reapplies_journals_in_order_and_preserves_retirement_timestamp(
 ):
     from test_lifecycle_archive import receipt
 
-    from agent_guard_cartography import lifecycle
-
     directory, active, transitions = lifecycle_evidence
     original = {p.name: p.read_bytes() for p in directory.iterdir()}
     events = []
@@ -580,7 +608,7 @@ def test_replay_reapplies_journals_in_order_and_preserves_retirement_timestamp(
         return receipt(value, timestamp_ms)
 
     monkeypatch.setattr(module, "import_snapshot", publish)
-    monkeypatch.setattr(lifecycle, "supersede_source", supersede)
+    monkeypatch.setattr(module, "supersede_source", supersede)
     working = tmp_path / "working"
     result = replay_published(
         Session(),
@@ -671,7 +699,6 @@ def test_lifecycle_expansion_preserves_the_128_source_backup_bound(lifecycle_evi
 def test_interrupted_transition_replay_retains_pending_intent_and_original_evidence(
     lifecycle_evidence, tmp_path, monkeypatch
 ):
-    from agent_guard_cartography import lifecycle
 
     directory, active, transitions = lifecycle_evidence
     original = {p.name: p.read_bytes() for p in directory.iterdir()}
@@ -693,7 +720,7 @@ def test_interrupted_transition_replay_retains_pending_intent_and_original_evide
         raise GraphImportError("TRANSITION_INTERRUPTED")
 
     monkeypatch.setattr(module, "import_snapshot", publish)
-    monkeypatch.setattr(lifecycle, "supersede_source", interrupted)
+    monkeypatch.setattr(module, "supersede_source", interrupted)
     working = tmp_path / "working"
     with pytest.raises(GraphImportError, match="TRANSITION_INTERRUPTED"):
         replay_published(
@@ -711,3 +738,294 @@ def test_interrupted_transition_replay_retains_pending_intent_and_original_evide
     with pytest.raises(RecoveryError, match="RECOVERY_TRANSITION_PENDING|RECOVERY_REPLAY_PENDING"):
         create_backup(working, tmp_path / "backup", [active], lock_file=tmp_path / "lock")
     assert {p.name: p.read_bytes() for p in directory.iterdir()} == original
+
+
+class FreshGraph:
+    """An empty Guard graph: the occupied check finds nothing."""
+
+    def run(self, _query, **_parameters):
+        return self
+
+    def single(self):
+        return None
+
+
+def replayed(snapshot, source, projection="e" * 64):
+    return ImportResult(module.source_key(source), projection, snapshot["snapshotId"], True, False)
+
+
+def test_replay_honours_configured_archive_limits(evidence, tmp_path, monkeypatch):
+    directory, enrollment, _ = evidence
+    opened = []
+    archive_type = module.SnapshotArchive
+
+    def recording(path, **options):
+        opened.append(options)
+        return archive_type(path, **options)
+
+    monkeypatch.setattr(module, "SnapshotArchive", recording)
+    monkeypatch.setattr(
+        module, "import_snapshot", lambda _s, snapshot, source, **_o: replayed(snapshot, source)
+    )
+    with pytest.raises(ArchiveError, match="^ARCHIVE_LIMIT_EXCEEDED$"):
+        replay_published(
+            FreshGraph(),
+            directory,
+            [enrollment],
+            replay_archive_directory=tmp_path / "too-small",
+            lock_file=tmp_path / "lock",
+            max_snapshots=3,
+        )
+    assert not (tmp_path / "too-small").exists()
+    opened.clear()
+    limits = {"max_bytes": 512 * 1024**2, "max_snapshots": 50_000}
+    result = replay_published(
+        FreshGraph(),
+        directory,
+        [enrollment],
+        replay_archive_directory=tmp_path / "working",
+        lock_file=tmp_path / "lock",
+        **limits,
+    )
+    assert result["published"] == 2
+    # The validation pass and the restored evidence must exist; only the new working
+    # archive is created, with the same limits and the default pending allowance.
+    assert opened == [
+        {**limits, "create": False},
+        {**limits, "create": False},
+        {**limits, "max_pending": 16},
+    ]
+    with pytest.raises(RecoveryError, match="^RECOVERY_CONFIG_INVALID$"):
+        replay_published(
+            FreshGraph(),
+            directory,
+            [enrollment],
+            replay_archive_directory=tmp_path / "invalid",
+            lock_file=tmp_path / "lock",
+            max_snapshots=100_001,
+        )
+
+
+def test_replay_keeps_the_newer_capture_when_an_older_one_was_published_later(
+    evidence, tmp_path, monkeypatch
+):
+    directory, enrollment, _ = evidence
+
+    def publish(_session, snapshot, source, **_options):
+        if snapshot["snapshotId"] == "recovery-1":
+            raise GraphImportError("GENERATED_AT_ROLLBACK")
+        return replayed(snapshot, source)
+
+    monkeypatch.setattr(module, "import_snapshot", publish)
+    result = replay_published(
+        FreshGraph(),
+        directory,
+        [enrollment],
+        replay_archive_directory=tmp_path / "working",
+        lock_file=tmp_path / "lock",
+    )
+    assert result["published"] == 1 and result["supersededExcluded"] == 1
+    with SnapshotArchive(tmp_path / "working") as archive:
+        # The refused capture can never be published here, so it does not use the
+        # working archive's pending allowance; the original evidence still holds it.
+        assert archive.list_pending() == ()
+        assert len(list((tmp_path / "working").glob("*.snapshot.json"))) == 1
+        assert archive.read_health(enrollment.source, "core")["lastSnapshotId"] == "recovery-0"
+    assert any('"recovery-1"' in path.read_text() for path in directory.glob("*.receipt.json"))
+
+
+def run_cli(arguments, capsys):
+    status = module.main([str(item) for item in arguments])
+    output = capsys.readouterr()
+    return status, output.out, output.err
+
+
+def test_cli_passes_archive_limits_to_backup_inspect_and_restore(evidence, tmp_path, capsys):
+    directory, enrollment, _ = evidence
+    observer = tmp_path / "observer.json"
+    observer.write_text(
+        json.dumps(
+            {
+                "source": dict(enrollment.source),
+                "profile": "core",
+                "endpoint": enrollment.endpoint,
+                "tokenEnv": "PRIVATE_TOKEN_ENV_CANARY",
+            }
+        )
+    )
+    common = ["--lock-file", tmp_path / "lock"]
+    backup_arguments = [
+        "backup",
+        "--archive-dir",
+        directory,
+        "--enrollment",
+        observer,
+        "--destination",
+        tmp_path / "backup",
+        *common,
+    ]
+    small = ["--archive-max-snapshots", "3"]
+    status, out, err = run_cli([*backup_arguments, *small], capsys)
+    assert status == 2 and not out
+    assert json.loads(err) == {"status": "failed", "code": "ARCHIVE_LIMIT_EXCEEDED"}
+    assert not (tmp_path / "backup").exists()
+    large = ["--archive-max-snapshots", "50000", "--archive-max-bytes", str(512 * 1024**2)]
+    status, out, err = run_cli([*backup_arguments, *large], capsys)
+    assert status == 0 and json.loads(out)["snapshots"] == 4 and not err
+    inspect = ["inspect", "--backup-dir", tmp_path / "backup"]
+    assert run_cli([*inspect, *small], capsys)[0] == 2
+    assert run_cli([*inspect, *large], capsys)[0] == 0
+    restore = ["restore", "--backup-dir", tmp_path / "backup", *common]
+    assert run_cli([*restore, "--destination", tmp_path / "refused", *small], capsys)[0] == 2
+    assert run_cli([*restore, "--destination", tmp_path / "restored", *large], capsys)[0] == 0
+    assert not (tmp_path / "refused").exists() and (tmp_path / "restored").is_dir()
+    with pytest.raises(SystemExit):
+        module.main([*map(str, inspect), "--archive-retention-seconds", "1"])
+
+
+def test_cli_replay_opens_the_graph_and_passes_scope_lock_and_limits(
+    evidence, tmp_path, monkeypatch, capsys
+):
+    directory, _enrollment, _ = evidence
+    backup_path, _summary = backup(evidence, tmp_path)
+    calls = []
+
+    class Driver:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            pass
+
+        def verify_connectivity(self):
+            calls.append("verify")
+
+        def session(self, **options):
+            assert options == {"database": "guard"}
+            return self
+
+    def driver(uri, **options):
+        assert uri == "bolt://127.0.0.1:7687"
+        assert options["auth"] == ("neo4j", "replay-password-canary")
+        return Driver()
+
+    def replay(session, archive_directory, sources, **options):
+        calls.append((archive_directory, sources, options))
+        return {"status": "complete", "published": 2}
+
+    monkeypatch.setattr(neo4j.GraphDatabase, "driver", driver)
+    monkeypatch.setattr(module, "replay_published", replay)
+    arguments = [
+        "replay",
+        "--archive-dir",
+        directory,
+        "--replay-archive-dir",
+        tmp_path / "working",
+        "--backup-dir",
+        backup_path,
+        "--lock-file",
+        tmp_path / "lock",
+        "--neo4j-uri",
+        "bolt://127.0.0.1:7687",
+        "--neo4j-database",
+        "guard",
+        "--neo4j-password-env-var",
+        "TEST_REPLAY_PASSWORD",
+        "--archive-max-snapshots",
+        "50000",
+    ]
+    status, out, err = run_cli(arguments, capsys)
+    assert status == 2 and json.loads(err) == {
+        "status": "failed",
+        "code": "NEO4J_PASSWORD_REQUIRED",
+    }
+    assert calls == [] and not out
+    monkeypatch.setenv("TEST_REPLAY_PASSWORD", "replay-password-canary")
+    status, out, err = run_cli(arguments, capsys)
+    assert status == 0 and json.loads(out) == {"status": "complete", "published": 2} and not err
+    verified, (archive_directory, sources, options) = calls
+    assert verified == "verify" and archive_directory == directory
+    assert sources == inspect_backup(backup_path)["manifest"]["sources"]
+    assert options == {
+        "replay_archive_directory": tmp_path / "working",
+        "lock_file": tmp_path / "lock",
+        "max_pending": 16,
+        "max_bytes": 256 * 1024**2,
+        "max_snapshots": 50_000,
+    }
+    assert "canary" not in out + err
+    status, _out, err = run_cli(replaced_uri(arguments), capsys)
+    assert status == 2 and json.loads(err)["code"] == "NEO4J_URI_INVALID"
+
+
+def replaced_uri(arguments):
+    arguments = list(arguments)
+    arguments[arguments.index("--neo4j-uri") + 1] = "bolt://graph.example.com:7687"
+    return arguments
+
+
+def test_cli_lists_pending_receipts_and_discards_one_only_after_review(evidence, tmp_path, capsys):
+    directory, _enrollment, receipts = evidence
+    common = ["--archive-dir", directory, "--lock-file", tmp_path / "lock"]
+    status, out, err = run_cli(["pending", *common], capsys)
+    assert status == 0 and not err
+    assert json.loads(out) == {
+        "pending": [
+            {
+                "receipt_id": receipts[2].receipt_id,
+                "source_id": receipts[2].source_id,
+                "snapshot_id": "recovery-2",
+                "profile": "core",
+                "created_at": receipts[2].created_at,
+                "last_error": "COLLECTOR_UNAVAILABLE",
+            }
+        ],
+        "damaged": [],
+        "ignored": [],
+    }
+    before = sorted(path.name for path in directory.iterdir())
+    discard = ["discard", *common, "--receipt-id", receipts[2].receipt_id]
+    status, out, err = run_cli(discard, capsys)
+    assert status == 2 and json.loads(err) == {
+        "status": "failed",
+        "code": "RECOVERY_REVIEW_REQUIRED",
+    }
+    published = ["discard", *common, "--reviewed", "--receipt-id", receipts[0].receipt_id]
+    status, out, err = run_cli(published, capsys)
+    assert status == 2 and json.loads(err) == {
+        "status": "failed",
+        "code": "ARCHIVE_DISCARD_REFUSED",
+        "file": f"{receipts[0].receipt_id}.receipt.json",
+    }
+    assert sorted(path.name for path in directory.iterdir()) == before
+    status, out, err = run_cli([*discard, "--reviewed"], capsys)
+    assert status == 0 and not err
+    assert json.loads(out) == {
+        "status": "discarded",
+        "receipt_id": receipts[2].receipt_id,
+        "state": "pending",
+        "source_id": receipts[2].source_id,
+        "snapshot_id": "recovery-2",
+    }
+    assert json.loads(run_cli(["pending", *common], capsys)[1])["pending"] == []
+    assert len(list(directory.iterdir())) == len(before) - 2
+    # A mistyped archive path is reported, never created.
+    missing = [
+        "pending",
+        "--archive-dir",
+        tmp_path / "missing-canary",
+        "--lock-file",
+        tmp_path / "lock",
+    ]
+    status, out, err = run_cli(missing, capsys)
+    assert status == 2 and json.loads(err) == {"status": "failed", "code": "PATH_NOT_FOUND"}
+    # ...and no lock file is left beside the mistyped path.
+    assert not list(tmp_path.glob("missing-canary*"))
+
+
+def test_backup_names_the_foreign_file_it_refuses(evidence, tmp_path):
+    directory, enrollment, _ = evidence
+    (directory / ".DS_Store").write_bytes(b"finder")
+    with pytest.raises(RecoveryError, match="^RECOVERY_FILE_UNEXPECTED$") as refused:
+        create_backup(directory, tmp_path / "backup", [enrollment], lock_file=tmp_path / "lock")
+    assert refused.value.file == ".DS_Store" and not (tmp_path / "backup").exists()

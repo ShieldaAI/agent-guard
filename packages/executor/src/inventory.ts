@@ -1,3 +1,4 @@
+import { isInventoryIdentifier } from './identifiers.js';
 import { createHmac, randomUUID } from 'node:crypto';
 import type { ToolDefinition } from '@shieldaai/agent-guard';
 import { ExecutorError, decodeCoreInventoryObservation, type InventoryLedgerState } from './store.js';
@@ -79,6 +80,13 @@ export interface InventorySnapshot {
     InventoryScope & { readonly inventoryInstanceId: string };
   readonly snapshotId: string;
   readonly generatedAt: string;
+  /**
+   * The ledger's global commit counter at the time of the read, shared by all tenants: it
+   * also advances when another tenant's tasks change. A one-tenant observer can therefore
+   * see that some write happened elsewhere (never what, or for whom). Collectors rely on it
+   * as a monotonic ordering key; do not hand a tenant-scoped observer token to a party that
+   * must not learn the executor's overall write rate.
+   */
   readonly ledgerRevision: number;
   readonly policyEpoch: number;
   readonly coverage: {
@@ -137,17 +145,7 @@ function parsedField(value: unknown, name: string): unknown {
 const descriptorStateReader = Object.freeze({ record, field });
 const parsedStateReader = Object.freeze({ record: parsedRecord, field: parsedField });
 function identifier(value: unknown, code = STATE): string {
-  if (
-    typeof value !== 'string' ||
-    /^[\s\u001c-\u001f\u0085]*$/u.test(value) ||
-    value.includes('\0') ||
-    // Reject unpaired surrogates: the Python consumer requires UTF-8 scalar values.
-    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
-  )
-    return fail(code);
-  // UTF-16 length bounds code-point count from above; short identifiers need no array.
-  if (value.length > 4096 && [...value].length > 4096) return fail(code);
-  return value;
+  return isInventoryIdentifier(value) ? value : fail(code);
 }
 function integer(value: unknown): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) return fail();

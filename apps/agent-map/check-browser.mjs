@@ -145,6 +145,38 @@ try {
   await heading('Agent inventory').waitFor();
   await button(/Research assistant/).waitFor();
   await scan('inventory');
+  // The orientation panel is closed until asked for, and says what the map is.
+  await page.getByText('What am I looking at?', { exact: true }).click();
+  await page.getByText(/The map never grants or blocks anything/).waitFor();
+  await scan('inventory help');
+  await page.getByText('What am I looking at?', { exact: true }).click();
+  // On a small laptop window the first agent can be read without scrolling: its card starts in
+  // the upper part of the window and its name is fully in view. Measured against the window the
+  // browser reports, and not to the pixel: fonts differ between engines and systems, and what
+  // matters is that the list is not pushed below the fold.
+  await page.setViewportSize({ width: 800, height: 600 });
+  const firstAgent = await button(/Research assistant/).evaluate(card => {
+    const box = card.getBoundingClientRect(),
+      name = card.querySelector('strong').getBoundingClientRect();
+    return {
+      viewport: innerHeight,
+      cardTop: Math.round(box.top),
+      cardBottom: Math.round(box.bottom),
+      nameTop: Math.round(name.top),
+      nameBottom: Math.round(name.bottom),
+      scrollY,
+    };
+  });
+  assert.equal(firstAgent.scrollY, 0);
+  assert.ok(
+    firstAgent.cardTop >= 0 &&
+      firstAgent.nameTop >= 0 &&
+      firstAgent.nameBottom <= firstAgent.viewport &&
+      firstAgent.cardTop <= firstAgent.viewport * 0.9,
+    `first agent is not readable without scrolling at 800x600: ${JSON.stringify(firstAgent)}`,
+  );
+  await scan('inventory 800x600');
+  await page.setViewportSize({ width: 1280, height: 900 });
   await button(/Research assistant/).click();
   await button('Show graph').click();
   await page.getByLabel('Select a node').selectOption('resource');
@@ -237,6 +269,9 @@ try {
   await button('Previous agents page').click();
   await button(new RegExp(agentName)).click();
   await heading('Agent overview').waitFor();
+  // Choosing an agent moves focus to its name, so keyboard and screen-reader users land on the detail.
+  assert.equal(await page.evaluate(() => document.activeElement?.textContent), agentName);
+  assert.equal(await page.evaluate(() => document.activeElement?.tagName), 'H2');
   await page.getByText('Company registry', { exact: true }).waitFor();
   assert.equal(
     await page
@@ -336,7 +371,7 @@ try {
       exact: true,
     })
     .waitFor();
-  await page.getByText('legacy-reported-owner', { exact: true }).waitFor();
+  await page.locator('.inventory-properties').getByText('legacy-reported-owner', { exact: true }).waitFor();
   assert.equal(
     await page
       .locator('.inventory-properties')
@@ -347,10 +382,23 @@ try {
   );
   await scan('legacy unknown ownership');
   await page.getByLabel('Search visible agents').fill('');
+  // The filters sit behind a disclosure; the count on it says how many are set.
+  assert.equal(await page.getByLabel('Ownership status').isVisible(), false);
+  await page.locator('.filter-panel > summary').click();
   await page.getByLabel('Ownership status').selectOption('unassigned');
+  await page.getByText('Filters (1)').waitFor();
   await button(/Directory agent 02/).waitFor();
   assert.equal(await button(/Directory agent 03/).count(), 0);
   await page.getByLabel('Ownership status').selectOption('');
+  // Owner and environment are typed: a value that no loaded agent names is still sent as a filter.
+  await page.getByLabel('Filter by environment').fill('staging-not-seen');
+  await page.getByText('No agents match these visible filters.', { exact: true }).waitFor();
+  await page.getByText('Filters (1)').waitFor();
+  await page.getByLabel('Filter by environment').fill('production');
+  await button(new RegExp(agentName)).waitFor();
+  await scan('typed environment filter');
+  await page.getByLabel('Filter by environment').fill('');
+  await button(/Directory agent 02/).waitFor();
   await page.setViewportSize({ width: 375, height: 812 });
   await button('Owners').click();
   await page.getByRole('table', { name: 'Visible owners', exact: true }).waitFor();
@@ -428,6 +476,58 @@ try {
   await page.getByText('Company session', { exact: true }).waitFor();
   await page.evaluate(axe);
   await scan('company signed in');
+  // Hiding the tab keeps the place. The evidence is covered the moment the page goes away; on
+  // return the session is checked once, and the search, the selected agent, the open view, the
+  // scroll position and the keyboard focus are still there.
+  await page.getByLabel('Search visible agents').fill('Catalog');
+  await button(new RegExp(agentName)).click();
+  await heading('Agent overview').waitFor();
+  await button('Permissions').click();
+  await page.getByRole('table', { name: 'Declared permissions', exact: true }).waitFor();
+  await page.getByRole('heading', { name: 'Explain declared access', exact: true }).waitFor();
+  await page.getByLabel('Search visible agents').focus();
+  const scrolled = await page.evaluate(() => {
+    scrollTo(0, 200);
+    return scrollY;
+  });
+  assert.ok(scrolled > 0, 'the open agent is taller than the window, so the page can scroll');
+  const visibility = value =>
+    page.evaluate(state => {
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => state });
+      document.dispatchEvent(new Event('visibilitychange'));
+      const main = document.querySelector('main.workspace');
+      return {
+        covered: main.classList.contains('covered'),
+        inert: main.hasAttribute('inert'),
+        drawn: getComputedStyle(main).visibility,
+        scrollY,
+      };
+    }, value);
+  // Read in the same task as the event: the cover does not wait for a later render.
+  assert.deepEqual(await visibility('hidden'), { covered: true, inert: true, drawn: 'hidden', scrollY: scrolled });
+  assert.equal(await page.getByRole('table', { name: 'Declared permissions', exact: true }).isVisible(), false);
+  const [sessionCheck, returned] = await Promise.all([
+    page.waitForResponse(response => response.url().endsWith('/auth/session')),
+    visibility('visible'),
+  ]);
+  assert.equal(returned.covered, true, 'still covered when the reader returns, until the session is checked');
+  assert.equal(sessionCheck.status(), 200);
+  await page.locator('main.workspace:not(.covered)').waitFor();
+  assert.equal(await page.getByText('Checking your session…', { exact: true }).count(), 0);
+  await page.getByRole('table', { name: 'Declared permissions', exact: true }).waitFor();
+  assert.equal(await page.evaluate(() => scrollY), scrolled, 'the scroll position survives hiding and returning');
+  assert.equal(
+    await page.evaluate(() => document.activeElement?.getAttribute('aria-label')),
+    'Search visible agents',
+    'keyboard focus returns to where it was',
+  );
+  assert.equal(await page.getByLabel('Search visible agents').inputValue(), 'Catalog');
+  assert.equal(await heading(agentName).isVisible(), true);
+  assert.equal(await page.getByText('Company session', { exact: true }).isVisible(), true);
+  await scan('company session kept after returning');
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.getByLabel('Search visible agents').fill('');
+  await button(/Directory agent 02/).waitFor();
   const companyQueryUrl = new URL('/v1/query', gateway.url).href;
   let refreshRequest;
   // Revoke after the user's click starts its health request. Revoking first can
@@ -532,6 +632,11 @@ try {
     backgroundRevocationReturned401: true,
     backgroundRevocationClearedWithoutRefresh: true,
     companySignoutClearedEvidence: true,
+    companyReturnKeptPlaceAfterSessionCheck: true,
+    companyEvidenceCoveredWhileAway: true,
+    companyReturnKeptScrollAndFocus: true,
+    typedEnvironmentFilter: true,
+    firstAgentAt800x600: firstAgent,
   };
   if (screenshotDirectory)
     await writeFile(join(screenshotDirectory, 'map-browser-results.json'), JSON.stringify(report, null, 2) + '\n');

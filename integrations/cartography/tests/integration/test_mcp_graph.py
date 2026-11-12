@@ -8,13 +8,9 @@ from pathlib import Path
 from uuid import uuid4
 
 import pytest
+from faults import import_snapshot
 
-from agent_guard_cartography.graph import (
-    GraphImportError,
-    cleanup_staging,
-    import_snapshot,
-    retire_projection,
-)
+from agent_guard_cartography.graph import GraphImportError, cleanup_staging, retire_projection
 
 pytestmark = pytest.mark.integration
 ROOT = Path(__file__).resolve().parents[4]

@@ -3,7 +3,10 @@ import { canonicalJson } from '@shieldaai/agent-guard/internal';
 import { Ajv } from '@modelcontextprotocol/client/validators/ajv';
 import { isProxy } from 'node:util/types';
 
-/** Every code the MCP boundary can throw. Codes never carry request or server data. */
+/**
+ * Every code the MCP boundary can throw. Codes never carry request or server data.
+ * `McpBoundaryErrorCatalog` explains each one.
+ */
 export type McpBoundaryErrorCode =
   | 'ACTIVE_CONTENT_DENIED'
   | 'ARGUMENTS_INVALID'
@@ -16,7 +19,6 @@ export type McpBoundaryErrorCode =
   | 'CREDENTIAL_REPLACEMENT_PENDING'
   | 'ENDPOINT_DENIED'
   | 'IDENTITY_DENIED'
-  | 'INVALID_ARGUMENTS'
   | 'INVALID_CONFIGURATION'
   | 'INVALID_JSON'
   | 'JSON_LIMIT'
@@ -27,6 +29,7 @@ export type McpBoundaryErrorCode =
   | 'MESSAGE_BUDGET'
   | 'MESSAGE_REJECTED'
   | 'REDIRECT_DENIED'
+  | 'REGISTRY_CHANGED'
   | 'REGISTRY_LIMIT'
   | 'REGISTRY_REJECTED'
   | 'RESOURCE_MISMATCH'
@@ -35,6 +38,7 @@ export type McpBoundaryErrorCode =
   | 'SCHEMA_LIMIT'
   | 'SCHEMA_REFERENCE_DENIED'
   | 'SCHEMA_UNSUPPORTED';
+/** An error from the MCP boundary. Its message is the code; it never carries request or server data. */
 export class McpBoundaryError extends Error {
   constructor(readonly code: McpBoundaryErrorCode) {
     super(code);
@@ -42,16 +46,31 @@ export class McpBoundaryError extends Error {
   }
 }
 
+/**
+ * The one rule for host-supplied and server-advertised identifiers: a string with visible
+ * content, no NUL and no lone surrogate. Callers add their own length limit.
+ */
+export function wellFormedIdentifier(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    !/^[\s\u001c-\u001f\u0085]*$/u.test(value) &&
+    !value.includes('\0') &&
+    !/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/u.test(value)
+  );
+}
+
 export interface JsonLimits {
   maxBytes: number;
   maxNodes: number;
   maxDepth: number;
 }
-const MESSAGE_LIMITS: Readonly<JsonLimits> = Object.freeze({
-  maxBytes: 1_048_576,
-  maxNodes: 10_000,
-  maxDepth: 32,
-});
+/** Default size of one protocol message; also the fixed limit for call arguments and the registry. */
+export const DEFAULT_MESSAGE_BYTES = 1_048_576;
+/** Limits for one protocol message of at most `maxBytes`. The value and nesting limits are fixed. */
+export function messageLimits(maxBytes: number = DEFAULT_MESSAGE_BYTES): Readonly<JsonLimits> {
+  return Object.freeze({ maxBytes, maxNodes: 10_000, maxDepth: 32 });
+}
+const MESSAGE_LIMITS = messageLimits();
 const SCHEMA_LIMITS = Object.freeze({ maxBytes: 65_536, maxNodes: 2_048, maxDepth: 16 });
 
 /** Copies only JSON data properties, without invoking getters or toJSON hooks. */
@@ -102,8 +121,8 @@ export function boundedJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS)
 }
 
 /** This profile has no renderer or server-selected application/widget channel. */
-export function passiveJson(input: unknown): Json {
-  const value = boundedJson(input);
+export function passiveJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS): Json {
+  const value = boundedJson(input, limits);
   function visit(item: Json): void {
     if (item === null || typeof item !== 'object') return;
     if (!Array.isArray(item)) {
@@ -167,7 +186,8 @@ const PATTERN_SOURCE_LIMIT = 512;
  * admitted pattern). Bounds the total regex time for one argument object.
  */
 const PATTERN_WORK_LIMIT = 2 ** 26;
-let patternWork = Number.POSITIVE_INFINITY;
+/** The pattern work left in one validation call. Each compiled schema owns one; none is shared. */
+type PatternBudget = { work: number };
 
 /**
  * Accepts only regexes whose backtracking stays bounded on PATTERN_INPUT_LIMIT input:
@@ -262,18 +282,22 @@ function safePattern(source: unknown): string {
   if (variable > (anchored ? 2 : 1)) throw new McpBoundaryError('SCHEMA_UNSUPPORTED');
   return source;
 }
-function lengthCappedRegExp(pattern: string, flags: string): { test(value: string): boolean } {
-  const expression = new RegExp(pattern, flags);
-  return {
-    test: value => {
-      if (value.length > PATTERN_INPUT_LIMIT) return false;
-      patternWork -= Math.max(1, value.length) ** 2;
-      return patternWork >= 0 && expression.test(value);
-    },
-    toString: () => `/${pattern}/${flags}`,
-  } as { test(value: string): boolean };
+/** The regex factory AJV uses for one compiled schema; its regexes charge that schema's budget. */
+function lengthCappedRegExp(budget: PatternBudget) {
+  const create = (pattern: string, flags: string): { test(value: string): boolean } => {
+    const expression = new RegExp(pattern, flags);
+    return {
+      test: value => {
+        if (value.length > PATTERN_INPUT_LIMIT) return false;
+        budget.work -= Math.max(1, value.length) ** 2;
+        return budget.work >= 0 && expression.test(value);
+      },
+      toString: () => `/${pattern}/${flags}`,
+    } as { test(value: string): boolean };
+  };
+  create.code = 'lengthCappedRegExp';
+  return create;
 }
-lengthCappedRegExp.code = 'lengthCappedRegExp';
 const UNIQUE_ITEMS = 'shieldaUniqueItems';
 const simple = new Set([
   'type',
@@ -300,9 +324,19 @@ const schemaArrays = new Set(['allOf', 'anyOf', 'oneOf']);
  * A deliberately bounded structural JSON Schema profile, evaluated by maintained AJV.
  * Local JSON-pointer references are expanded with cycle/expansion bounds. Network,
  * file, dynamic and recursive processing are never enabled. `format` is an annotation;
- * `pattern` is accepted only for regexes that safePattern() admits.
+ * `pattern` is accepted only for regexes that safePattern() admits. A validated value may
+ * be at most 1 MiB.
  */
 export function compileBoundedSchema(input: unknown): (value: unknown) => boolean {
+  return compileSchemaWithLimits(input, MESSAGE_LIMITS);
+}
+
+/**
+ * compileBoundedSchema() with the size limits of the values it validates. A connection uses
+ * its own message limits for results, so a raised `limits.maxMessageBytes` also applies to a
+ * result checked against an output schema. The schema itself is always held to SCHEMA_LIMITS.
+ */
+export function compileSchemaWithLimits(input: unknown, valueLimits: JsonLimits): (value: unknown) => boolean {
   const root = boundedJson(input, SCHEMA_LIMITS);
   let expanded = 0;
   function expand(value: Json, active: Set<Json>, depth: number): Json {
@@ -352,6 +386,8 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
   // Count the expanded tree as well. A compact group of local references may repeat
   // a large enum or const many times in the source handed to the code generator.
   const schema = boundedJson(expand(root, new Set(), 0), SCHEMA_LIMITS);
+  // Outside a validation call there is no budget, so a pattern can never run unmetered.
+  const budget: PatternBudget = { work: 0 };
   try {
     const ajv = new Ajv({
       strict: true,
@@ -361,7 +397,7 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
       coerceTypes: false,
       useDefaults: false,
       removeAdditional: false,
-      code: { regExp: lengthCappedRegExp as never },
+      code: { regExp: lengthCappedRegExp(budget) as never },
     });
     ajv.addKeyword({
       keyword: UNIQUE_ITEMS,
@@ -373,13 +409,13 @@ export function compileBoundedSchema(input: unknown): (value: unknown) => boolea
     });
     const validate = ajv.compile(schema as boolean | Record<string, unknown>);
     return value => {
-      patternWork = PATTERN_WORK_LIMIT;
+      budget.work = PATTERN_WORK_LIMIT;
       try {
-        return validate(boundedJson(value)) === true;
+        return validate(boundedJson(value, valueLimits)) === true;
       } catch {
         return false;
       } finally {
-        patternWork = Number.POSITIVE_INFINITY;
+        budget.work = 0;
       }
     };
   } catch {

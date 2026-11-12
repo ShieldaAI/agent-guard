@@ -1,8 +1,13 @@
-import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
+import { constants } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { parseEvidenceJson } from './evidence-json.js';
-import { validateInventoryManifest, type InventoryManifest } from './inventory-manifest.js';
+import {
+  MAX_INVENTORY_MANIFEST_VALUES,
+  validateInventoryManifest,
+  type InventoryManifest,
+} from './inventory-manifest.js';
 import { ExecutorError } from './store.js';
+import { PRIVATE_FILE, posixPermissions, readPrivateFile } from './private-files.js';
 
 /** The same byte limit `validateInventoryManifest` applies to a manifest value. */
 const MAX_BYTES = 2 * 1024 * 1024;
@@ -17,50 +22,31 @@ const FILE_INVALID = 'INVENTORY_MANIFEST_FILE_INVALID';
  * effect only when the host restarts and loads it again.
  *
  * The file must be a regular file with one link, owned by the user the host runs as, with
- * no group or other permissions (`chmod 600`), at most 2 MiB of UTF-8 JSON without
- * duplicate object members. A symbolic link is refused. Anything else about the file throws
- * `INVENTORY_MANIFEST_FILE_INVALID`; a platform without POSIX ownership and permissions
+ * no group or other permissions (`chmod 600`), at most 2 MiB of UTF-8 JSON with at most
+ * 200,000 values (the limits `validateInventoryManifest` applies) and no duplicate object
+ * members. A symbolic link is refused. More than 200,000 values throws
+ * `INVENTORY_MANIFEST_LIMIT_EXCEEDED`, as the validator does; anything else about the file
+ * throws `INVENTORY_MANIFEST_FILE_INVALID`; a platform without POSIX ownership and permissions
  * (Windows) throws `INVENTORY_MANIFEST_FILE_UNSUPPORTED`. The parsed value then goes through
  * `validateInventoryManifest`, which throws its own codes. No error carries file content.
  */
 export function loadInventoryManifestFile(path: string): InventoryManifest {
-  if (typeof process.getuid !== 'function' || !constants.O_NOFOLLOW)
+  if (typeof process.getuid !== 'function' || !posixPermissions() || !constants.O_NOFOLLOW)
     throw new ExecutorError('INVENTORY_MANIFEST_FILE_UNSUPPORTED');
   if (typeof path !== 'string' || path.includes('\0') || !isAbsolute(path)) throw new ExecutorError(FILE_INVALID);
-  let descriptor: number | undefined;
-  let bytes: Buffer;
-  try {
-    // Checks run on the opened descriptor, so the path cannot be swapped between check and
-    // read. O_NONBLOCK keeps a FIFO from blocking startup before it is refused.
-    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    const info = fstatSync(descriptor);
-    if (
-      !info.isFile() ||
-      info.nlink !== 1 ||
-      info.uid !== process.getuid() ||
-      (info.mode & 0o077) !== 0 ||
-      info.size > MAX_BYTES
-    )
-      throw new Error();
-    const data = Buffer.alloc(info.size + 1);
-    let length = 0;
-    while (length < data.length) {
-      const read = readSync(descriptor, data, length, data.length - length, null);
-      if (!read) break;
-      length += read;
-    }
-    // A file that grew while it was read is not the file that was checked.
-    if (length !== info.size) throw new Error();
-    bytes = data.subarray(0, length);
-  } catch {
-    throw new ExecutorError(FILE_INVALID);
-  } finally {
-    if (descriptor !== undefined) closeSync(descriptor);
-  }
+  // The shared private-file read (private-files.ts): checks run on the opened descriptor,
+  // before and after the read, so the path cannot be swapped between check and read. The
+  // detail says which check failed (FILE_MISSING, FILE_UNSAFE, FILE_TOO_LARGE, FILE_CHANGED).
+  const bytes = readPrivateFile(path, { ...PRIVATE_FILE, maximum: MAX_BYTES }, (problem, cause) => {
+    throw new ExecutorError(FILE_INVALID, { detail: problem, cause });
+  });
   let value: unknown;
   try {
-    value = parseEvidenceJson(bytes, MAX_BYTES, 100_000);
-  } catch {
+    value = parseEvidenceJson(bytes, MAX_BYTES, MAX_INVENTORY_MANIFEST_VALUES);
+  } catch (error) {
+    // More values than a manifest may hold is the validator's limit, reported with its code.
+    if (error instanceof Error && error.message === 'JSON value exceeds the node limit')
+      throw new ExecutorError('INVENTORY_MANIFEST_LIMIT_EXCEEDED');
     throw new ExecutorError(FILE_INVALID);
   }
   return validateInventoryManifest(value);

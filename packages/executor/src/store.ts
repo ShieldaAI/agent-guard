@@ -1,17 +1,24 @@
 import { DatabaseSync } from 'node:sqlite';
 import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from 'node:crypto';
-import { closeSync, constants, fstatSync, fsyncSync, lstatSync, openSync, realpathSync } from 'node:fs';
+import { closeSync, constants, fsyncSync, openSync, rmSync } from 'node:fs';
 import { dirname, isAbsolute, resolve } from 'node:path';
 import type { Action, TaskOptions } from '@shieldaai/agent-guard';
 import { bindLedgerObservation, closeLedgerObservation } from './inventory-observer.js';
 import type { LifecycleState } from './lifecycle.js';
 import type { RetentionState } from './retention.js';
 import { ledgerFeatures, type LedgerFeature } from './ledger-format.js';
+import { checkOpenFile, openChecked, privateDirectory, trustedDirectoryChain, type Refuse } from './private-files.js';
 
 export class ExecutorError extends Error {
-  constructor(readonly code: string) {
-    super(code);
+  /** Safe uppercase reason behind the code (for example KEY_MISMATCH); never a path, key or request data. */
+  readonly detail?: string;
+  constructor(
+    readonly code: string,
+    options: { detail?: string; cause?: unknown } = {},
+  ) {
+    super(code, options.cause === undefined ? undefined : { cause: options.cause });
     this.name = 'ExecutorError';
+    if (options.detail !== undefined) this.detail = options.detail;
   }
 }
 /** Smallest ledger bound any public API accepts: the executor and the /ops key tools agree. */
@@ -33,6 +40,42 @@ export interface LedgerWitness {
   readonly mode: 'create' | 'resume';
   readonly recovery?: 'mirror';
 }
+/**
+ * How one commit is treated at the size bound.
+ * - `growth`: an operation that only adds state (a new task, preparation, approval, memory
+ *   version, tool). Refused once the ledger would pass the soft limit, `maxBytes - reserveBytes`.
+ * - `relief`: for writes that must not fail (revoke, cancel, settle, mark UNKNOWN, reconcile,
+ *   recovery at open). Called while the ledger is over the hard bound; it drops expendable state
+ *   and returns false when nothing is left to drop.
+ * Without options a commit is bounded by `maxBytes` only, as maintenance and archive writes are.
+ */
+export interface LedgerWriteOptions {
+  growth?: boolean;
+  relief?: (state: Ledger) => boolean;
+}
+/** Internal: why the stored ledger could not be read. The detail is a fixed, safe word. */
+class LedgerFault extends Error {
+  constructor(readonly detail: 'KEY_MISMATCH' | 'WITNESS_MISMATCH' | 'MIRROR_MISMATCH') {
+    super(detail);
+  }
+}
+/** A safe reason for a failed open or read: LOCKED, KEY_MISMATCH, CORRUPT and similar; never a path or key. */
+function storeFailureDetail(error: unknown): string | undefined {
+  if (error instanceof LedgerFault) return error.detail;
+  if (error instanceof ExecutorError)
+    return (
+      error.detail ??
+      (error.code === 'STORE_CORRUPT' || error.code === 'STORE_RECOVERY_CORRUPT' ? 'CORRUPT' : undefined)
+    );
+  const errcode = (error as { errcode?: unknown } | null)?.errcode;
+  if (typeof errcode !== 'number') return undefined;
+  // SQLite primary result codes: BUSY 5, LOCKED 6, CORRUPT 11, CANTOPEN 14, NOTADB 26.
+  const primary = errcode & 0xff;
+  if (primary === 5 || primary === 6) return 'LOCKED';
+  if (primary === 11 || primary === 26) return 'CORRUPT';
+  if (primary === 14) return 'FILE_UNAVAILABLE';
+  return undefined;
+}
 export interface LedgerArchiveAccess {
   putArchive(id: string, ciphertext: string): void;
   readArchive(id: string): string;
@@ -49,12 +92,15 @@ export const executionStatuses = Object.freeze([
   'UNKNOWN',
 ] as const);
 export type ExecutionStatus = (typeof executionStatuses)[number];
-/** PRUNED: the settled record was removed by retention; `outcome` keeps its result. */
+/**
+ * PRUNED: the settled record was removed by retention. `outcome` keeps its result while the
+ * compact stub is retained; once that is evicted too, only the fact that it settled remains.
+ */
 export type ReceiptStatus = ExecutionStatus | 'PRUNED';
 export interface ExecutionReceipt {
   readonly id: string;
   readonly status: ReceiptStatus;
-  /** Present only when status is PRUNED. */
+  /** Only on a PRUNED receipt, and only while its compact stub is retained. */
   readonly outcome?: 'SUCCEEDED' | 'FAILED';
   readonly charged?: number;
   readonly reconciliation?: { readonly referenceHash: string; readonly time: number };
@@ -94,6 +140,17 @@ export interface MemoryRecord {
   quarantined: boolean;
   value: unknown;
   familyId?: string;
+  /** Written by a family that had read outside content, or imported as outside content. */
+  untrusted?: boolean;
+}
+/** One recent metadata event, as `audit()` returns it. `sequence` is strictly increasing; a gap means events were evicted. */
+export interface AuditEvent {
+  time: number;
+  event: string;
+  sequence?: number;
+  tenantId?: string;
+  taskId?: string;
+  actionId?: string;
 }
 export interface Ledger {
   schema: 1 | 2 | 3;
@@ -114,8 +171,8 @@ export interface Ledger {
   >;
   memory: Record<string, MemoryRecord[]>;
   /** Recent metadata events: bounded per tenant, not a complete history. */
-  audit: { time: number; event: string; sequence?: number; tenantId?: string; taskId?: string; actionId?: string }[];
-  /** Data layout version (ledger-format.ts); absent before 0.2. Migrated at executor open. */
+  audit: AuditEvent[];
+  /** Data layout version (ledger-format.ts); absent in alpha ledgers. Migrated at executor open. */
   formatVersion?: number;
   /** Optional state present in this ledger, recomputed at each commit once formatVersion is set. */
   features?: LedgerFeature[];
@@ -234,15 +291,24 @@ export function decodeCoreInventoryObservation(
 function decryptLedgerPayload(payload: string, key: Uint8Array, maxBytes: number, witnessed: boolean): Buffer {
   const [iv, tag, value] = JSON.parse(payload) as [string, string, string];
   if (value.length > maxBytes * 2) throw new Error();
-  const cipher = createDecipheriv('aes-256-gcm', key, Buffer.from(iv, 'base64'));
+  const nonce = Buffer.from(iv, 'base64');
+  const authTag = Buffer.from(tag, 'base64');
+  // Node before 26 accepts a truncated tag unless the length is pinned.
+  if (nonce.length !== 12 || authTag.length !== 16) throw new Error();
+  const cipher = createDecipheriv('aes-256-gcm', key, nonce, { authTagLength: 16 });
   cipher.setAAD(Buffer.from(witnessed ? 'agent-guard-witnessed-ledger-v1' : 'agent-guard-ledger-v1'));
-  cipher.setAuthTag(Buffer.from(tag, 'base64'));
+  cipher.setAuthTag(authTag);
   let plaintext: Buffer | undefined, final: Buffer | undefined;
   try {
     plaintext = cipher.update(Buffer.from(value, 'base64'));
     // GCM authentication must finish before exposing any plaintext. Its normal
     // empty final buffer does not require copying the entire update result.
-    final = cipher.final();
+    try {
+      final = cipher.final();
+    } catch {
+      // A well-formed envelope that does not authenticate: the wrong key, or altered ciphertext.
+      throw new LedgerFault('KEY_MISMATCH');
+    }
     if (final.byteLength) {
       const combined = Buffer.concat([plaintext, final]);
       plaintext.fill(0);
@@ -258,53 +324,36 @@ function decryptLedgerPayload(payload: string, key: Uint8Array, maxBytes: number
   }
 }
 
-function privateDatabasePath(path: string, flags: number): string {
-  const absolute = resolve(path),
-    directory = dirname(absolute);
-  const parent = lstatSync(directory);
-  if (
-    !parent.isDirectory() ||
-    parent.isSymbolicLink() ||
-    realpathSync(directory) !== directory ||
-    (process.platform !== 'win32' && ((parent.mode & 0o077) !== 0 || parent.uid !== process.getuid?.()))
-  ) {
-    throw new ExecutorError('STORE_DIRECTORY_UNSAFE');
-  }
-  const fd = openSync(
-    absolute,
-    flags | constants.O_RDWR | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0),
-    0o600,
-  );
+function privateDatabasePath(path: string, flags: number, opened?: (absolute: string) => void): string {
+  const absolute = resolve(path);
+  // Shared with the keyring, custody and manifest loaders (private-files.ts). The
+  // directory must be private and canonical; the file must be this user's own.
+  privateDirectory(dirname(absolute), (problem, cause) => {
+    throw new ExecutorError('STORE_DIRECTORY_UNSAFE', { detail: problem, cause });
+  });
+  const refuse: Refuse = (problem, cause) => {
+    throw new ExecutorError(problem === 'FILE_MISSING' ? 'STORE_UNAVAILABLE' : 'STORE_FILE_UNSAFE', {
+      detail: problem,
+      cause,
+    });
+  };
+  const fd = openChecked(absolute, flags | constants.O_RDWR, refuse);
+  opened?.(absolute);
   try {
-    const stat = fstatSync(fd);
-    if (
-      !stat.isFile() ||
-      stat.nlink !== 1 ||
-      (process.platform !== 'win32' && ((stat.mode & 0o077) !== 0 || stat.uid !== process.getuid?.()))
-    )
-      throw new ExecutorError('STORE_FILE_UNSAFE');
+    // A live owner may be committing, so size and change time are not compared.
+    checkOpenFile(fd, absolute, { owner: 'self', deny: 0o077, quiet: false }, refuse);
   } finally {
     closeSync(fd);
   }
-  if (lstatSync(absolute).isSymbolicLink()) throw new ExecutorError('STORE_FILE_UNSAFE');
   return absolute;
 }
 const commitment = (payload: string) => createHash('sha256').update(payload).digest('hex');
 
 /** A spelling comparison alone misses case-insensitive filesystem aliases. */
 function custodyChain(path: string): string[] {
-  const chain = [];
-  for (let directory = dirname(resolve(path)); ; directory = dirname(directory)) {
-    const stat = lstatSync(directory, { bigint: true });
-    if (
-      !stat.isDirectory() ||
-      (stat.uid !== 0n && stat.uid !== BigInt(process.geteuid!())) ||
-      ((stat.mode & 0o022n) !== 0n && (stat.mode & 0o1000n) === 0n)
-    )
-      throw new ExecutorError('STORE_DIRECTORY_UNSAFE');
-    chain.push(`${stat.dev}:${stat.ino}`);
-    if (dirname(directory) === directory) return chain;
-  }
+  return trustedDirectoryChain(dirname(resolve(path)), (problem, cause) => {
+    throw new ExecutorError('STORE_DIRECTORY_UNSAFE', { detail: problem, cause });
+  });
 }
 
 /** A single owner, encrypted SQLite ledger. SQLite's exclusive lock is released by the OS on crash. */
@@ -336,6 +385,18 @@ export class LedgerStore {
     if (witness?.recovery !== undefined && witness.recovery !== 'mirror')
       throw new ExecutorError('STORE_CONFIG_INVALID');
     let anchor: string | undefined;
+    // Files this call created with O_EXCL. A failed create removes them again: an empty
+    // ledger left behind would make every retry fail on the exclusive create.
+    const created: string[] = [];
+    const discardCreated = (): void => {
+      for (const file of created.splice(0))
+        for (const leftover of [file, `${file}-journal`])
+          try {
+            rmSync(leftover, { force: true });
+          } catch {
+            /* Best effort: the original failure is what the caller needs. */
+          }
+    };
     if (this.#witnessed) {
       if (
         !witness ||
@@ -350,20 +411,39 @@ export class LedgerStore {
       try {
         primaryChain = custodyChain(path);
         witnessChain = custodyChain(witness.path);
-      } catch {
-        throw new ExecutorError('STORE_DIRECTORY_UNSAFE');
+      } catch (error) {
+        const detail = storeFailureDetail(error);
+        throw new ExecutorError('STORE_DIRECTORY_UNSAFE', {
+          ...(detail === undefined ? {} : { detail }),
+          cause: error,
+        });
       }
       if (primaryChain.includes(witnessChain[0]!) || witnessChain.includes(primaryChain[0]!))
         throw new ExecutorError('STORE_CONFIG_INVALID');
       const flags = witness.mode === 'create' ? constants.O_CREAT | constants.O_EXCL : 0;
+      const remember = flags ? (file: string) => void created.push(file) : undefined;
       try {
-        path = privateDatabasePath(path, flags);
-        anchor = privateDatabasePath(witness.path, flags);
-      } catch {
-        throw new ExecutorError('STORE_WITNESS_UNAVAILABLE');
+        path = privateDatabasePath(path, flags, remember);
+        anchor = privateDatabasePath(witness.path, flags, remember);
+      } catch (error) {
+        discardCreated();
+        const detail = storeFailureDetail(error);
+        throw new ExecutorError('STORE_WITNESS_UNAVAILABLE', {
+          ...(detail === undefined ? {} : { detail }),
+          cause: error,
+        });
       }
     } else if (path !== ':memory:') path = privateDatabasePath(path, options.existingOnly ? 0 : constants.O_CREAT);
-    this.#db = new DatabaseSync(anchor ?? path);
+    try {
+      this.#db = new DatabaseSync(anchor ?? path);
+    } catch (error) {
+      discardCreated();
+      const detail = storeFailureDetail(error);
+      throw new ExecutorError(this.#witnessed ? 'STORE_WITNESS_UNAVAILABLE' : 'STORE_UNAVAILABLE', {
+        ...(detail === undefined ? {} : { detail }),
+        cause: error,
+      });
+    }
     this.#key = Buffer.from(key);
     try {
       this.#exec(
@@ -389,7 +469,8 @@ export class LedgerStore {
         );
       const exists = this.#prepare('SELECT id FROM main.ledger WHERE id=1').get();
       if (!exists) {
-        if (options.existingOnly || witness?.mode === 'resume') throw new ExecutorError('STORE_UNAVAILABLE');
+        if (options.existingOnly || witness?.mode === 'resume')
+          throw new ExecutorError('STORE_UNAVAILABLE', { detail: 'LEDGER_MISSING' });
         this.#mirror = witness?.recovery === 'mirror';
         if (this.#mirror) this.#createMirrorTables();
         const payload = this.#seal(
@@ -431,8 +512,14 @@ export class LedgerStore {
     } catch (error) {
       this.#db.close();
       this.#key.fill(0);
+      discardCreated();
       if (error instanceof ExecutorError && error.code === 'STORE_RECOVERY_ENROLLMENT_REQUIRED') throw error;
-      throw new ExecutorError(this.#witnessed ? 'STORE_WITNESS_UNAVAILABLE' : 'STORE_UNAVAILABLE');
+      // Wrong key, a second owner and a damaged file share one code; the detail tells them apart.
+      const detail = storeFailureDetail(error);
+      throw new ExecutorError(this.#witnessed ? 'STORE_WITNESS_UNAVAILABLE' : 'STORE_UNAVAILABLE', {
+        ...(detail === undefined ? {} : { detail }),
+        cause: error,
+      });
     }
     bindLedgerObservation(this, this.maxBytes, () => {
       if (this.#closed) throw new ExecutorError('STORE_CLOSED');
@@ -536,8 +623,12 @@ export class LedgerStore {
     this.read();
     return this.#mirror;
   }
-  #seal(value: string | Buffer, key = this.#key): string {
-    if (Buffer.byteLength(value) > this.maxBytes) throw new ExecutorError('STORE_CAPACITY_EXCEEDED');
+  /** Bytes kept free below `maxBytes` so safety-critical writes always fit: an eighth, at most 1 MiB. */
+  get reserveBytes(): number {
+    return Math.min(Math.floor(this.maxBytes / 8), 1024 * 1024);
+  }
+  #seal(value: string | Buffer, key = this.#key, bytes = Buffer.byteLength(value)): string {
+    if (bytes > this.maxBytes) throw new ExecutorError('STORE_CAPACITY_EXCEEDED', { detail: 'HARD_LIMIT' });
     const iv = randomBytes(12);
     const cipher = createCipheriv('aes-256-gcm', key, iv);
     cipher.setAAD(this.#aad());
@@ -562,7 +653,7 @@ export class LedgerStore {
       this.#witnessed &&
       this.#prepare('SELECT digest FROM witness.commitment WHERE id=1').get()?.digest !== commitment(row.payload)
     )
-      throw new Error();
+      throw new LedgerFault('WITNESS_MISMATCH');
     return row.payload;
   }
   #decrypt(payload: string): Buffer {
@@ -584,15 +675,15 @@ export class LedgerStore {
             "SELECT payload FROM witness.ledger WHERE id=1 AND typeof(payload)='text' AND length(CAST(payload AS BLOB))<=?",
           ).get(this.maxBytes * 2 + 512)?.payload !== payload
         )
-          throw new Error();
+          throw new LedgerFault('MIRROR_MISMATCH');
         this.#mirror = true;
       }
       if (!cached) this.#cache = { payload, state: detachedCopy(state, true) };
       // Every read stays a fresh, detached, mutable graph, exactly as a full decode returns.
       return detachedCopy(this.#cache!.state, false);
-    } catch {
+    } catch (error) {
       this.#cache = undefined;
-      throw new ExecutorError('STORE_CORRUPT');
+      throw new ExecutorError('STORE_CORRUPT', { detail: storeFailureDetail(error) ?? 'CORRUPT', cause: error });
     }
   }
   /** Ciphertext is authenticated by the caller's catalog in the encrypted main ledger. */
@@ -686,7 +777,7 @@ export class LedgerStore {
     if (this.#mirror)
       this.#prepare('INSERT INTO witness.authority_archives(id,payload) VALUES(?,?)').run(id, ciphertext);
   }
-  transaction<T>(operation: (state: Ledger, archives: LedgerArchiveAccess) => T): T {
+  transaction<T>(operation: (state: Ledger, archives: LedgerArchiveAccess) => T, options: LedgerWriteOptions = {}): T {
     if (this.#closed) throw new ExecutorError('STORE_CLOSED');
     this.#exec('BEGIN IMMEDIATE');
     let acceptingWrites = true;
@@ -744,7 +835,16 @@ export class LedgerStore {
       state.revision++;
       // Executor ledgers declare their optional state; other stores (no formatVersion) do not.
       if (state.formatVersion !== undefined) state.features = ledgerFeatures(state);
-      const payload = this.#seal(JSON.stringify(state));
+      let text = JSON.stringify(state);
+      let bytes = Buffer.byteLength(text);
+      // Growth stops below the hard bound: what is left is headroom for the writes that must not fail.
+      if (options.growth && bytes > this.maxBytes - this.reserveBytes)
+        throw new ExecutorError('STORE_CAPACITY_EXCEEDED', { detail: 'SOFT_LIMIT' });
+      while (bytes > this.maxBytes && options.relief?.(state)) {
+        text = JSON.stringify(state);
+        bytes = Buffer.byteLength(text);
+      }
+      const payload = this.#seal(text, this.#key, bytes);
       this.#prepare('UPDATE main.ledger SET payload=? WHERE id=1').run(payload);
       if (
         this.#witnessed &&

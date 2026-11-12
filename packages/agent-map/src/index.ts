@@ -18,6 +18,7 @@ export {
   type MapNode,
   type MapEdge,
   type MapReadRequest,
+  type MapPolicySelection,
   type MapCoverage,
   type MapPolicyEvidence,
   type MapPolicyCandidate,

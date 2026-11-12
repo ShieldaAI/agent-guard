@@ -43,7 +43,7 @@ try {
       if (!pack.files.some(file => file.path === path)) throw new Error(`Missing package file: ${path}`);
     }
     if (workspace === 'packages/core') {
-      for (const path of ['dist/internal.js', 'dist/internal.d.ts', 'dist/deprecated.js']) {
+      for (const path of ['dist/internal.js', 'dist/internal.d.ts']) {
         if (!pack.files.some(file => file.path === path)) throw new Error(`Missing internal entry file: ${path}`);
       }
     }

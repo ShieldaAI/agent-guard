@@ -897,3 +897,102 @@ test('HTTPS identity listener rejects plaintext and does not offer an HTTP downg
     ].includes(untrusted),
   );
 });
+
+test('cookies of other applications on the host never block this server; its own must be well formed', async t => {
+  const s = await authenticated(t);
+  const csrf = s.session.data.csrfToken;
+  const own = `${SESSION}=${s.client.cookies.get(SESSION)}`;
+  // What a browser really sends for a shared host name: only our two cookies are ours to judge.
+  for (const cookie of [
+    `consent; ${own}`,
+    `theme=dark mode; ${own}`,
+    `prefs="a,b"; ${own}`,
+    `tracker=1; tracker=2; ${own}`,
+    `=odd; bad name=1; ${own}; trailing=`,
+    `${own}; analytics=${'x'.repeat(5000)}`,
+    `__Host-agm_other=ignored; ${own}`,
+  ]) {
+    const session = await s.client.send('/auth/session', { cookie, applyCookies: false });
+    assert.equal(session.status, 200, cookie.slice(0, 40));
+    assert.equal(session.data.authenticated, true, cookie.slice(0, 40));
+    const result = await s.query(csrf, queryBody, { cookie, applyCookies: false });
+    assert.equal(result.status, 200, cookie.slice(0, 40));
+  }
+  const queries = s.calls.length;
+  // A repeated, valueless or quoted cookie of our own is still refused, on every route.
+  for (const cookie of [
+    `${own}; ${own}`,
+    `${SESSION}; ${own}`,
+    `${own}; ${SESSION}=`,
+    `${SESSION}="${s.client.cookies.get(SESSION)}"`,
+    `${own}; ${LOGIN}=a b`,
+    `${own}; ${LOGIN}=one; ${LOGIN}=two`,
+  ]) {
+    for (const response of [
+      await s.client.send('/auth/session', { cookie, applyCookies: false }),
+      await s.query(csrf, queryBody, { cookie, applyCookies: false }),
+    ]) {
+      assert.equal(response.status, 400, cookie.slice(0, 40));
+      assert.equal(response.text, '{"error":"MAP_REQUEST_INVALID"}');
+    }
+  }
+  // A foreign cookie never stands in for ours.
+  const foreign = await s.query(csrf, queryBody, {
+    cookie: `session=${s.client.cookies.get(SESSION)}`,
+    applyCookies: false,
+  });
+  assert.equal(foreign.status, 401);
+  assert.equal(s.calls.length, queries);
+});
+
+test('the company endpoint answers Expect: 100-continue after session and CSRF checks pass', async t => {
+  const s = await authenticated(t);
+  const body = JSON.stringify(queryBody);
+  const cookie = `${SESSION}=${s.client.cookies.get(SESSION)}`;
+  const exchange = (headers = {}) =>
+    new Promise((resolve, reject) => {
+      let continued = false;
+      const request = httpsRequest(
+        new URL('/v1/query', s.url),
+        {
+          ca: s.provider.ca,
+          rejectUnauthorized: true,
+          agent: false,
+          servername: 'localhost',
+          family: 4,
+          method: 'POST',
+          headers: {
+            Cookie: cookie,
+            Origin: s.url,
+            'X-CSRF-Token': s.session.data.csrfToken,
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(body),
+            Expect: '100-continue',
+            ...headers,
+          },
+        },
+        response => {
+          response.resume();
+          response.once('end', () => resolve({ continued, status: response.statusCode }));
+        },
+      );
+      request.once('continue', () => {
+        continued = true;
+        request.end(body);
+      });
+      request.once('error', reject);
+      request.setTimeout(3000, () => request.destroy(new Error('NO_INTERIM_RESPONSE')));
+      request.flushHeaders();
+    });
+  assert.deepEqual(await exchange(), { continued: true, status: 200 });
+  // Without a valid CSRF token the request is refused before the body is invited.
+  assert.deepEqual(await exchange({ 'X-CSRF-Token': 'agm_csrf_v1.' + 'a'.repeat(43) }), {
+    continued: false,
+    status: 403,
+  });
+  assert.deepEqual(await exchange({ Cookie: '' }), { continued: false, status: 401 });
+  // Any other expectation cannot be met: 417, and the body is never invited.
+  for (const expectation of ['gzip', '100-continue, gzip'])
+    assert.deepEqual(await exchange({ Expect: expectation }), { continued: false, status: 417 }, expectation);
+  assert.equal(s.calls.length, 1);
+});

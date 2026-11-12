@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { AgentGuard, GuardError, immutableJson } from '@shieldaai/agent-guard';
+import { AgentGuard, GuardError, isGuardError } from '@shieldaai/agent-guard';
+import { immutableJson } from '@shieldaai/agent-guard/internal';
 
 export const PRIVATE_CANARY = 'PRIVATE_TICKET_NOTES_DO_NOT_DISCLOSE_4f86';
 export const TASK_TEXT = 'Read ticket 123 and resolve it after the host reviewer approves the change.';
@@ -225,7 +226,7 @@ export function createTicketHost({
           ? await guard.execute(taskReference, prepared.id, { approvalId })
           : await guard.execute(prepared, { approvalId });
       } catch (error) {
-        if (error instanceof GuardError && handlerStarts === before) preDispatchErrors.add(error);
+        if (isGuardError(error) && handlerStarts === before) preDispatchErrors.add(error);
         throw error;
       } finally {
         // A handler may commit and then lose its response. Look in the backend's receipt store.

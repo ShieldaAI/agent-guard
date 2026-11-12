@@ -90,7 +90,10 @@ test(
     assert.equal(f.connection.status, 'ready');
     await assert.rejects(f.prepare(), { code: 'TOOL_UNAPPROVED' });
     f.approve();
-    await assert.rejects(f.prepare({ id: 'report', injected: true }));
+    await assert.rejects(f.prepare({ id: 'report', injected: true }), {
+      code: 'RESOLUTION_FAILED',
+      detail: 'ARGUMENTS_INVALID',
+    });
     assert.equal(f.effects.length, 0);
     assert.deepEqual(JSON.parse(JSON.stringify(await f.guard.execute(await f.prepare()))), result);
     assert.equal(f.effects.length, 1);
@@ -107,7 +110,8 @@ test(
     const prepared = await f.prepare();
     await f.serverTransport.send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
     assert.equal(f.connection.status, 'quarantined');
-    await assert.rejects(f.guard.execute(prepared));
+    assert.equal(f.connection.failureReason, 'REGISTRY_CHANGED');
+    await assert.rejects(f.guard.execute(prepared), { code: 'TOOL_CHANGED' });
     assert.equal(f.effects.length, 0);
     const oldFingerprint = f.registered.fingerprint;
     await f.connection.refresh();
@@ -124,9 +128,12 @@ test('closed session and another principal cannot use an approved connection', {
   f.approve();
   const prepared = await f.prepare();
   const other = task(f.guard, f.registered.name, { principalId: 'other' });
-  await assert.rejects(f.guard.prepare(other, { tool: f.registered.name, args: { id: 'report' } }));
+  await assert.rejects(f.guard.prepare(other, { tool: f.registered.name, args: { id: 'report' } }), {
+    code: 'RESOLUTION_FAILED',
+    detail: 'IDENTITY_DENIED',
+  });
   await f.connection.close();
-  await assert.rejects(f.guard.execute(prepared));
+  await assert.rejects(f.guard.execute(prepared), { code: 'TOOL_CHANGED' });
   assert.equal(f.effects.length, 0);
 });
 
@@ -139,15 +146,15 @@ test('bounded schema accepts local references and rejects external, recursive an
   });
   assert.equal(valid({ id: 'report' }), true);
   assert.equal(valid({ id: 1 }), false);
-  for (const unsafe of [
-    { $ref: 'https://127.0.0.1/schema' },
-    { $ref: 'file:///etc/passwd' },
-    { $id: 'https://example.com/', type: 'string' },
-    { $dynamicRef: '#x' },
-    { type: 'string', pattern: '(a+)+$' },
-    { $defs: { loop: { $ref: '#/$defs/loop' } }, $ref: '#/$defs/loop' },
+  for (const [code, unsafe] of [
+    ['SCHEMA_REFERENCE_DENIED', { $ref: 'https://127.0.0.1/schema' }],
+    ['SCHEMA_REFERENCE_DENIED', { $ref: 'file:///etc/passwd' }],
+    ['SCHEMA_UNSUPPORTED', { $id: 'https://example.com/', type: 'string' }],
+    ['SCHEMA_UNSUPPORTED', { $dynamicRef: '#x' }],
+    ['SCHEMA_UNSUPPORTED', { type: 'string', pattern: '(a+)+$' }],
+    ['SCHEMA_LIMIT', { $defs: { loop: { $ref: '#/$defs/loop' } }, $ref: '#/$defs/loop' }],
   ])
-    assert.throws(() => compileBoundedSchema(unsafe));
+    assert.throws(() => compileBoundedSchema(unsafe), { code }, JSON.stringify(unsafe));
 });
 
 test(
@@ -224,7 +231,7 @@ test(
     });
     f.approve();
     const pending = f.guard.execute(await f.prepare());
-    const rejected = assert.rejects(pending);
+    const rejected = assert.rejects(pending, { code: 'TOOL_FAILED', detail: 'MCP_OPERATION_FAILED' });
     await started;
     await f.serverTransport.send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
     release();
@@ -281,6 +288,7 @@ test(
       const args = registration.kind === 'prompt' ? { topic: 'report' } : {};
       await assert.rejects(
         f.guard.prepare(handle, { tool: registration.name, args: { ...args, uri: 'file:///etc/passwd' } }),
+        { code: 'RESOLUTION_FAILED', detail: 'ARGUMENTS_INVALID' },
       );
       await f.guard.execute(await f.guard.prepare(handle, { tool: registration.name, args }));
     }
@@ -336,8 +344,9 @@ test('active widget content is rejected and quarantines the connection', { timeo
     }),
   });
   f.approve();
-  await assert.rejects(f.guard.execute(await f.prepare()));
+  await assert.rejects(f.guard.execute(await f.prepare()), { code: 'TOOL_FAILED', detail: 'MCP_OPERATION_FAILED' });
   assert.equal(f.connection.status, 'quarantined');
+  assert.equal(f.connection.failureReason, 'ACTIVE_CONTENT_DENIED');
 });
 
 test(
@@ -384,14 +393,14 @@ test(
       return { tools: [f.registered.descriptor] };
     });
     const refreshing = f.connection.refresh();
-    const rejected = assert.rejects(refreshing, { code: 'REGISTRY_REJECTED' });
+    const rejected = assert.rejects(refreshing, { code: 'CONNECTION_CHANGED' });
     await started;
     await f.serverTransport.send({ jsonrpc: '2.0', method: 'notifications/tools/list_changed' });
     release();
     await rejected;
     assert.equal(f.connection.status, 'quarantined');
     assert.equal(f.connection.registrations.length, 0);
-    await assert.rejects(f.guard.execute(prepared));
+    await assert.rejects(f.guard.execute(prepared), { code: 'TOOL_CHANGED' });
     assert.equal(f.effects.length, 0);
   },
 );
@@ -404,8 +413,10 @@ test('new connection cannot inherit the prior session fingerprint or prepared ac
   const next = await fixture(t, { guard: previous.guard });
   assert.notEqual(next.connection.sessionId, previous.connection.sessionId);
   assert.notEqual(next.registered.fingerprint, previous.registered.fingerprint);
-  assert.throws(() => next.guard.approveTool(next.registered.name, previous.registered.fingerprint));
-  await assert.rejects(next.guard.execute(prepared));
+  assert.throws(() => next.guard.approveTool(next.registered.name, previous.registered.fingerprint), {
+    code: 'TOOL_CHANGED',
+  });
+  await assert.rejects(next.guard.execute(prepared), { code: 'TOOL_CHANGED' });
   next.approve();
   await next.guard.execute(await next.prepare());
   assert.equal(previous.effects.length, 0);
@@ -418,7 +429,7 @@ test('removed tools stay unavailable after refresh', { timeout: 5_000 }, async t
   f.server.server.setRequestHandler('tools/list', () => ({ tools: [] }));
   await f.connection.refresh();
   assert.equal(f.connection.registrations.length, 0);
-  await assert.rejects(f.prepare());
+  await assert.rejects(f.prepare(), { code: 'TOOL_UNAPPROVED' });
   assert.equal(f.effects.length, 0);
 });
 
@@ -444,8 +455,9 @@ test('authorization revoked after preparation blocks actual SDK dispatch', { tim
   f.approve();
   const prepared = await f.prepare();
   authorized = false;
-  await assert.rejects(f.guard.execute(prepared));
+  await assert.rejects(f.guard.execute(prepared), { code: 'TOOL_FAILED', detail: 'AUTHORIZATION_DENIED' });
   assert.equal(f.connection.status, 'quarantined');
+  assert.equal(f.connection.failureReason, 'AUTHORIZATION_DENIED');
   assert.equal(f.effects.length, 0);
   assert.equal(f.wire.filter(message => message.method === 'tools/call').length, 0);
 });

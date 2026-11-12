@@ -7,7 +7,7 @@ import {
   loadLedgerKey,
   rotateLedgerKeyring,
 } from './ledger-maintenance.js';
-import { runLedgerCustodyCli, runLedgerRecoveryCli } from './custody-cli.js';
+import { maintenanceHint, runLedgerCustodyCli, runLedgerRecoveryCli } from './custody-cli.js';
 import { ExecutorError } from './store.js';
 
 const usage = `agent-guard-ledger keygen --keyring PATH --key-id ID [--max-keys N]
@@ -22,10 +22,13 @@ Retirement removes only inactive runtime keys after independent encrypted escrow
 Key limits: default 4, range 1..64; unmanaged rotation retains all keys.
 Ledger byte limits: default 16777216, range 1048576..67108864.
 Use canonical absolute paths on a private POSIX host. Stop every ledger owner before rotation.
-Retain all keyring keys and use the same next-key-id when retrying an interrupted rotation.`;
+Retain all keyring keys and use the same next-key-id when retrying an interrupted rotation.
+Success prints one JSON line and exits 0. Failure exits 1 and prints an error code on the
+first stderr line, then a one-line hint when one applies. Without --apply, recovery and custody
+commands only preview and print a digest; repeat with --apply --digest HASH to act.`;
 
 function main(args: string[]): void {
-  if (args.length === 1 && args[0] === '--help') {
+  if (args.length === 0 || args.includes('--help') || args.includes('-h') || args[0] === 'help') {
     process.stdout.write(usage + '\n');
     return;
   }
@@ -131,10 +134,12 @@ function main(args: string[]): void {
     const parse =
       typeof (error as { code?: unknown })?.code === 'string' &&
       (error as { code: string }).code.startsWith('ERR_PARSE_ARGS_');
-    process.stderr.write(
-      (error instanceof ExecutorError ? error.code : parse ? 'MAINTENANCE_ARGUMENT_INVALID' : 'MAINTENANCE_FAILED') +
-        '\n',
-    );
+    const code =
+      error instanceof ExecutorError ? error.code : parse ? 'MAINTENANCE_ARGUMENT_INVALID' : 'MAINTENANCE_FAILED';
+    // The code stays alone on the first line. A plain hint follows for argument and common
+    // environment mistakes; it is built from the code and its safe detail, never from a path.
+    const hint = maintenanceHint(code, error instanceof ExecutorError ? error.detail : undefined);
+    process.stderr.write(code + '\n' + (hint === undefined ? '' : hint + '\n'));
     process.exitCode = 1;
   }
 }

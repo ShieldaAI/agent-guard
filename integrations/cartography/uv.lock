@@ -34,12 +34,15 @@ dependencies = [
     { name = "botocore" },
     { name = "cartography" },
     { name = "jsonschema" },
+    { name = "neo4j" },
+    { name = "referencing" },
 ]
 
 [package.dev-dependencies]
 dev = [
     { name = "build" },
     { name = "pytest" },
+    { name = "pyyaml" },
     { name = "ruff" },
 ]
 
@@ -48,12 +51,15 @@ requires-dist = [
     { name = "botocore", specifier = "==1.40.61" },
     { name = "cartography", specifier = "==0.144.0" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
+    { name = "neo4j", specifier = ">=6.4,<7" },
+    { name = "referencing", specifier = ">=0.37,<1" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "build", specifier = ">=1.3,<2" },
     { name = "pytest", specifier = ">=8.4,<10" },
+    { name = "pyyaml", specifier = ">=6.0.3,<7" },
     { name = "ruff", specifier = ">=0.14,<1" },
 ]
 

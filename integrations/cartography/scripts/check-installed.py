@@ -117,24 +117,22 @@ def main() -> None:
     from agent_guard_cartography.graph import import_snapshot
 
     assert callable(cli_main) and callable(import_snapshot)
-    from cartography.intel.aws.permission_relationships import parse_permission_relationships_file
 
     from agent_guard_cartography.archive import SnapshotArchive
+
+    # The reducer's three rules are code, not a data file; nothing is read at runtime.
+    from agent_guard_cartography.aws_policy import MAPPINGS
     from agent_guard_cartography.cloud import CloudJoinError, CloudScope, validate_cloud_scope
     from agent_guard_cartography.collector import validate_enrollment
     from agent_guard_cartography.pilot_recovery import create_backup, inspect_backup, restore_backup
     from agent_guard_cartography.reference_report import minimize_changes
 
-    mapping = importlib.resources.files("agent_guard_cartography").joinpath(
-        "data", "aws-permission-relationships.yaml"
+    assert MAPPINGS == (
+        ("CAN_READ", "s3:GetObject"),
+        ("CAN_WRITE", "s3:PutObject"),
+        ("CAN_LIST", "s3:ListBucket"),
     )
-    with importlib.resources.as_file(mapping) as path:
-        relationships = parse_permission_relationships_file(str(path))
-    assert {entry["relationship_name"] for entry in relationships} == {
-        "CAN_READ",
-        "CAN_WRITE",
-        "CAN_LIST",
-    }
+    assert not importlib.resources.files("agent_guard_cartography").joinpath("data").is_dir()
     validate_cloud_scope(
         {
             "companyId": "company",
@@ -203,7 +201,14 @@ def main() -> None:
     )
     assert callable(lifecycle_main) and len(transition_id(transition)) == 64
     scripts = importlib.metadata.distribution("agent-guard-cartography").entry_points
-    assert any(entry.name == "agent-guard-source-lifecycle" for entry in scripts)
+    installed = {entry.name: entry.value for entry in scripts if entry.group == "console_scripts"}
+    assert installed == {
+        "agent-guard-cartography": "agent_guard_cartography.cli:main",
+        "agent-guard-source-lifecycle": "agent_guard_cartography.lifecycle:main",
+        "agent-guard-recovery": "agent_guard_cartography.pilot_recovery:main",
+        "agent-guard-map-report": "agent_guard_cartography.reference_report:main",
+    }
+    assert all(callable(entry.load()) for entry in scripts if entry.group == "console_scripts")
     with (
         TemporaryDirectory() as directory,
         SnapshotArchive(Path(directory).resolve() / "lifecycle") as archive,
@@ -385,7 +390,7 @@ def main() -> None:
             client.close()
     assert importlib.metadata.version("botocore") == "1.40.61"
     print(
-        "Installed wheel validates schemas, collector/archive/recovery/report/lifecycle APIs, offline AWS metadata/policy capture and pinned mapping."
+        "Installed wheel validates schemas, the four commands, collector/archive/recovery/report/lifecycle APIs and offline AWS metadata/policy capture."
     )
 
 

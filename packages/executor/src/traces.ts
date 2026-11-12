@@ -286,8 +286,14 @@ export class DecisionTraces {
     sink: DecisionTraceSink,
     options: { timeoutMs?: number } = {},
   ): Promise<DecisionTraceExportResult> {
-    const selected = immutableJson(scope, 2, 8, 20_000) as unknown as { tenantId: string };
-    const settings = immutableJson(options, 2, 8, 2048) as { timeoutMs?: number };
+    let selected: { tenantId: string };
+    let settings: { timeoutMs?: number };
+    try {
+      selected = immutableJson(scope, 2, 8, 20_000) as unknown as { tenantId: string };
+      settings = immutableJson(options, 2, 8, 2048) as { timeoutMs?: number };
+    } catch {
+      throw new ExecutorError('TRACE_SCOPE_INVALID');
+    }
     if (
       !selected ||
       Object.keys(selected).some(key => key !== 'tenantId') ||

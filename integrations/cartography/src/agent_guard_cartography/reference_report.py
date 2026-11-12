@@ -1,4 +1,8 @@
-"""Minimized, private, bounded operational differences; never an execution audit log."""
+"""Minimized, private, bounded operational differences; never an execution audit log.
+
+Installed as the ``agent-guard-map-report`` command. It asks the Agent Map service
+what changed between a source's previous and current snapshot and stores only counts.
+"""
 
 from __future__ import annotations
 
@@ -11,17 +15,26 @@ import os
 import re
 import socket
 import ssl
-import stat
-import sys
 import threading
 import time
 import uuid
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
-from queue import Empty, Queue
-from urllib.parse import urlsplit
+from typing import Any
+from urllib.parse import SplitResult, urlsplit
 
-from agent_guard_cartography.collector import _pairs, _response_type
+from agent_guard_cartography import _http
+from agent_guard_cartography._command import (
+    add_verbose_argument,
+    failure_code,
+    log_exception,
+    report_failure,
+)
+from agent_guard_cartography._files import UnsafePathError, is_private_file, open_private_directory
+from agent_guard_cartography._ids import SHA256_HEX
+from agent_guard_cartography._json import loads_strict
+from agent_guard_cartography.errors import AgentGuardCartographyError
 
 LABELS = frozenset(
     [
@@ -43,16 +56,23 @@ LABELS = frozenset(
         "GuardMcpOperation",
     ]
 )
-OPERATIONS = frozenset(
-    [
-        "list_agents",
-        "get_agent_access",
-        "explain_access",
-        "find_agents_with_access",
-        "get_changes",
-        "get_inventory_health",
-    ]
+# Every operation the Agent Map service defines (MAP_OPERATIONS, exported by
+# packages/agent-map/src/service.ts); a unit test keeps the two lists identical.
+MAP_OPERATIONS = (
+    "list_agents",
+    "get_agent_access",
+    "explain_access",
+    "find_agents_with_access",
+    "get_changes",
+    "get_inventory_health",
+    "list_owners",
+    "list_resources",
+    "get_resource_access",
+    "get_agent_inventory",
+    "list_undeclared_activity",
+    "list_unclaimed_identities",
 )
+OPERATIONS = frozenset(MAP_OPERATIONS)
 MAX_RESPONSE = 2 * 1024 * 1024
 NAME = re.compile(r"report-(\d{13})-([a-f0-9]{32})\.json")
 _TIMEOUT = 10.0
@@ -63,18 +83,22 @@ _MAX_BYTES = 16 * 1024 * 1024
 _MAX_FILE = 16_384
 
 
-class ReportError(RuntimeError):
-    pass
+class ReportError(AgentGuardCartographyError, RuntimeError):
+    """A report failure; the code never contains the endpoint, token or response."""
 
 
-def _remaining(deadline, cancelled):
-    remaining = deadline - time.monotonic()
-    if cancelled.is_set() or remaining <= 0:
-        raise TimeoutError()
-    return remaining
+_remaining = _http.remaining
 
 
-def _connect(address, timeout, source_address, *, deadline, cancelled, sockets):
+def _connect(
+    address: tuple[str, int],
+    _timeout: float | None,
+    source_address: tuple[str, int] | None,
+    *,
+    deadline: float,
+    cancelled: threading.Event,
+    sockets: list[socket.socket],
+) -> socket.socket:
     # libc DNS cannot be cancelled. Its worker slot remains occupied until it
     # returns, and the following check prevents a late connection or credential send.
     answers = socket.getaddrinfo(address[0], address[1], type=socket.SOCK_STREAM)
@@ -97,9 +121,17 @@ def _connect(address, timeout, source_address, *, deadline, cancelled, sockets):
     raise OSError()
 
 
-def _fetch_reference(parsed, token, operation, body, deadline, cancelled, sockets):
+def _fetch_reference(
+    parsed: SplitResult,
+    token: str,
+    operation: str,
+    body: bytes,
+    deadline: float,
+    cancelled: threading.Event,
+    sockets: list[socket.socket],
+) -> dict[str, Any]:
     class DeadlineTLSConnection(http.client.HTTPSConnection):
-        def connect(self):
+        def connect(self) -> None:
             # Register the TLS socket before its handshake can block. Closing the
             # pre-wrap socket after wrap_socket() would not interrupt the wrapper.
             raw = self._create_connection((self.host, self.port), self.timeout, self.source_address)
@@ -127,51 +159,22 @@ def _fetch_reference(parsed, token, operation, body, deadline, cancelled, socket
     connection._create_connection = lambda address, timeout, source_address: _connect(
         address, timeout, source_address, deadline=deadline, cancelled=cancelled, sockets=sockets
     )
-    connection.response_class = _response_type(deadline)
+    connection.response_class = _http.deadline_response_class(deadline)
     try:
         connection.connect()
         sockets.append(connection.sock)  # Include the TLS wrapper for cancellation.
         connection.sock.settimeout(_remaining(deadline, cancelled))
-        connection.request(
-            "POST",
+        content = _http.post_json(
+            connection,
             parsed.path,
+            token,
             body,
-            {
-                "Authorization": "Bearer " + token,
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "Accept-Encoding": "identity",
-                "Connection": "close",
-            },
+            deadline=deadline,
+            cancelled=cancelled,
+            maximum=MAX_RESPONSE,
         )
-        response = connection.getresponse()
-        lengths = response.headers.get_all("content-length", [])
-        types = response.headers.get_all("content-type", [])
-        if (
-            response.status != 200
-            or len(lengths) != 1
-            or re.fullmatch(r"[0-9]{1,8}", lengths[0]) is None
-            or not 0 < int(lengths[0]) <= MAX_RESPONSE
-            or len(types) != 1
-            or not re.fullmatch(r"application/json(?:\s*;\s*charset=utf-8)?", types[0], re.I)
-            or response.headers.get_all("content-encoding")
-            or response.headers.get_all("transfer-encoding")
-        ):
-            raise ValueError()
-        chunks, size = [], 0
-        while size < int(lengths[0]):
-            _remaining(deadline, cancelled)
-            chunk = response.read1(min(65536, int(lengths[0]) - size))
-            if not chunk:
-                raise ValueError()
-            chunks.append(chunk)
-            size += len(chunk)
         _remaining(deadline, cancelled)
-        value = json.loads(
-            b"".join(chunks).decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
-        )
+        value = loads_strict(content.decode("utf-8"))
         if (
             type(value) is not dict
             or value.get("operation") != operation
@@ -184,7 +187,9 @@ def _fetch_reference(parsed, token, operation, body, deadline, cancelled, socket
         connection.close()
 
 
-def query_reference(endpoint: str, token: str, operation: str, args: dict) -> dict:
+def query_reference(
+    endpoint: str, token: str, operation: str, args: dict[str, Any]
+) -> dict[str, Any]:
     """Fixed authenticated POST with a whole-request deadline and four worker slots."""
     try:
         if (
@@ -229,72 +234,43 @@ def query_reference(endpoint: str, token: str, operation: str, args: dict) -> di
             raise ValueError()
     except Exception:
         raise ReportError("REFERENCE_QUERY_FAILED") from None
-    if not _WORKERS.acquire(blocking=False):
-        raise ReportError("REFERENCE_QUERY_BUSY")
-    deadline, cancelled, sockets, result = (
-        time.monotonic() + _TIMEOUT,
-        threading.Event(),
-        [],
-        Queue(maxsize=1),
-    )
+    deadline = time.monotonic() + _TIMEOUT
 
-    def worker():
-        try:
-            result.put(
-                (
-                    _fetch_reference(parsed, token, operation, body, deadline, cancelled, sockets),
-                    True,
-                )
-            )
-        except Exception:
-            result.put((None, False))
-        finally:
-            _WORKERS.release()
+    def work(cancelled: threading.Event, sockets: list[socket.socket]) -> dict[str, Any]:
+        return _fetch_reference(parsed, token, operation, body, deadline, cancelled, sockets)
 
-    thread = threading.Thread(target=worker, name="agent-map-reference", daemon=True)
     try:
-        thread.start()
+        return _http.run_bounded(
+            work, deadline=deadline, slots=_WORKERS, thread_name="agent-map-reference"
+        )
+    except _http.WorkerBusy:
+        raise ReportError("REFERENCE_QUERY_BUSY") from None
     except Exception:
-        _WORKERS.release()
         raise ReportError("REFERENCE_QUERY_FAILED") from None
-    try:
-        value, ok = result.get(timeout=max(0, deadline - time.monotonic()))
-        if not ok or time.monotonic() >= deadline:
-            raise ReportError("REFERENCE_QUERY_FAILED")
-        return value
-    except Empty:
-        raise ReportError("REFERENCE_QUERY_FAILED") from None
-    finally:
-        cancelled.set()
-        for current in tuple(sockets):
-            try:
-                current.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
-            current.close()
 
 
-def minimize_changes(response: dict, source_id: str) -> dict:
+def minimize_changes(response: dict[str, Any], source_id: str) -> dict[str, Any]:
+    """Reduce a ``get_changes`` response to counts per label; reject anything partial."""
     try:
         data = response["data"]
         if (
             response["operation"] != "get_changes"
             or data["sourceId"] != source_id
-            or not re.fullmatch(r"[a-f0-9]{64}", source_id)
+            or not SHA256_HEX.fullmatch(source_id)
             or type(data["coverageGap"]) is not bool
             or data.get("changeSummaryScope", "retained") != "retained"
         ):
             raise ValueError()
 
-        def projection(receipt):
+        def projection(receipt: dict[str, Any] | None) -> str | None:
             if receipt is None:
                 return None
             value = receipt["projectionId"]
-            if not re.fullmatch(r"[a-f0-9]{64}", value):
+            if not SHA256_HEX.fullmatch(value):
                 raise ValueError()
             return value
 
-        counts = {}
+        counts: dict[str, dict[str, int]] = {}
         for kind in ["added", "removed", "changed"]:
             values = data["changes"][kind]
             if not isinstance(values, list) or len(values) > 2000:
@@ -326,27 +302,21 @@ def minimize_changes(response: dict, source_id: str) -> dict:
         raise ReportError("REFERENCE_REPORT_INVALID") from None
 
 
-def _encode(value):
+def _encode(value: dict[str, Any]) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
 
 
-def _validate_metadata(value, *, links=(1,)):
-    if (
-        not stat.S_ISREG(value.st_mode)
-        or value.st_nlink not in links
-        or value.st_uid != os.getuid()
-        or value.st_mode & 0o077
-        or value.st_size > _MAX_FILE
-    ):
+def _validate_metadata(value: os.stat_result, *, links: tuple[int, ...] = (1,)) -> os.stat_result:
+    if not is_private_file(value, links=links) or value.st_size > _MAX_FILE:
         raise ReportError("REFERENCE_REPORT_DIRECTORY_UNSAFE")
     return value
 
 
-def _metadata(fd, name, *, links=(1,)):
+def _metadata(fd: int, name: str, *, links: tuple[int, ...] = (1,)) -> os.stat_result:
     return _validate_metadata(os.stat(name, dir_fd=fd, follow_symlinks=False), links=links)
 
 
-def _read(fd, name, *, links=(1,)):
+def _read(fd: int, name: str, *, links: tuple[int, ...] = (1,)) -> Any:
     expected = _metadata(fd, name, links=links)
     # The checked path can change before open. Never block on a replacement FIFO,
     # and validate permissions/links again on the descriptor that supplies bytes.
@@ -359,16 +329,12 @@ def _read(fd, name, *, links=(1,)):
             content = stream.read(_MAX_FILE + 1)
         if len(content) > _MAX_FILE:
             raise ReportError("REFERENCE_REPORT_LIMIT_EXCEEDED")
-        return json.loads(
-            content.decode("utf-8"),
-            object_pairs_hook=_pairs,
-            parse_constant=lambda _: (_ for _ in ()).throw(ValueError()),
-        )
+        return loads_strict(content.decode("utf-8"))
     finally:
         os.close(descriptor)
 
 
-def _validate_record(value, store_id, name):
+def _validate_record(value: Any, store_id: str, name: str) -> dict[str, Any]:
     match = NAME.fullmatch(name)
     if (
         not match
@@ -395,11 +361,11 @@ def _validate_record(value, store_id, name):
     ):
         raise ValueError()
     for field in ("sourceId", "toProjection"):
-        if type(value[field]) is not str or not re.fullmatch(r"[a-f0-9]{64}", value[field]):
+        if type(value[field]) is not str or not SHA256_HEX.fullmatch(value[field]):
             raise ValueError()
     if value["fromProjection"] is not None and (
         type(value["fromProjection"]) is not str
-        or not re.fullmatch(r"[a-f0-9]{64}", value["fromProjection"])
+        or not SHA256_HEX.fullmatch(value["fromProjection"])
     ):
         raise ValueError()
     recorded = datetime.fromisoformat(value["recordedAt"])
@@ -418,7 +384,7 @@ def _validate_record(value, store_id, name):
     return value
 
 
-def _publish(fd, temporary, name):
+def _publish(fd: int, temporary: str, name: str) -> None:
     try:
         os.link(temporary, name, src_dir_fd=fd, dst_dir_fd=fd, follow_symlinks=False)
     except FileExistsError:
@@ -430,7 +396,7 @@ def _publish(fd, temporary, name):
     os.fsync(fd)
 
 
-def _write(fd, name, data):
+def _write(fd: int, name: str, data: bytes) -> None:
     descriptor = os.open(
         name, os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW, 0o600, dir_fd=fd
     )
@@ -450,32 +416,24 @@ def _write(fd, name, data):
         os.close(descriptor)
 
 
-def _open_directory(directory):
-    directory = Path(directory).absolute()
-    if ".." in directory.parts or not hasattr(os, "getuid"):
+def _open_directory(directory: Path | str) -> tuple[Path, int]:
+    """Open (creating if needed) the private report directory and lock it."""
+    if not hasattr(os, "getuid"):
         raise ReportError("REFERENCE_REPORT_DIRECTORY_UNSAFE")
-    descriptor = os.open(directory.anchor, os.O_RDONLY | os.O_DIRECTORY)
     try:
-        for index, part in enumerate(directory.parts[1:]):
-            if index == len(directory.parts) - 2:
-                try:
-                    os.mkdir(part, mode=0o700, dir_fd=descriptor)
-                except FileExistsError:
-                    pass
-            child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
-            os.close(descriptor)
-            descriptor = child
-        metadata = os.fstat(descriptor)
-        if metadata.st_uid != os.getuid() or metadata.st_mode & 0o077:
-            raise ReportError("REFERENCE_REPORT_DIRECTORY_UNSAFE")
+        descriptor = open_private_directory(directory, create=True)
+    except UnsafePathError:
+        raise ReportError("REFERENCE_REPORT_DIRECTORY_UNSAFE") from None
+    try:
         fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return directory, descriptor
+        return Path(directory).absolute(), descriptor
     except BaseException:
         os.close(descriptor)
         raise
 
 
-def _prepare_store(fd):
+def _prepare_store(fd: int) -> str:
+    """The ID of this directory's report store, creating its marker in an empty directory."""
     names = os.listdir(fd)
     if _STORE not in names:
         if names:
@@ -498,7 +456,10 @@ def _prepare_store(fd):
     return marker["storeId"]
 
 
-def _inspect(fd, store_id):
+def _inspect(
+    fd: int, store_id: str
+) -> tuple[int, list[tuple[str, dict[str, Any], os.stat_result]]]:
+    """Finish interrupted publications; return total bytes and every valid report."""
     names = os.listdir(fd)
     if len(names) > _MAX_FILES:
         raise ReportError("REFERENCE_REPORT_LIMIT_EXCEEDED")
@@ -542,7 +503,7 @@ def write_report(
         type(retention_days) is not int
         or not 1 <= retention_days <= 30
         or type(source_id) is not str
-        or re.fullmatch(r"[a-f0-9]{64}", source_id) is None
+        or SHA256_HEX.fullmatch(source_id) is None
     ):
         raise ReportError("REFERENCE_REPORT_CONFIG_INVALID")
     value = minimize_changes(
@@ -586,21 +547,40 @@ def write_report(
             os.close(descriptor)
 
 
-def main(argv=None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--endpoint", required=True)
-    parser.add_argument("--token-env", required=True)
-    parser.add_argument("--source-id", required=True)
-    parser.add_argument("--directory", type=Path, required=True)
+def main(argv: Sequence[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(prog="agent-guard-map-report", description=__doc__)
+    parser.add_argument(
+        "--endpoint",
+        required=True,
+        help="The Agent Map service's /v1/query URL (HTTPS, or HTTP to a literal loopback address).",
+    )
+    parser.add_argument(
+        "--token-env",
+        required=True,
+        help="Environment variable that holds the agm_v1 reader token.",
+    )
+    parser.add_argument(
+        "--source-id", required=True, help="The 64-hex source ID the collector prints."
+    )
+    parser.add_argument(
+        "--directory",
+        type=Path,
+        required=True,
+        help="Private (mode 0700) directory used only for these reports.",
+    )
+    add_verbose_argument(parser)
     args = parser.parse_args(argv)
+    token = os.environ.get(args.token_env, "")
     try:
-        token = os.environ.get(args.token_env, "")
         path = write_report(args.endpoint, token, args.source_id, args.directory)
         print(json.dumps({"status": "complete", "report": path.name}))
         return 0
-    except Exception:
-        print("REFERENCE_REPORT_FAILED", file=sys.stderr)
-        return 1
+    except Exception as error:
+        # The same shape and exit statuses as the other commands: 2 for a known code.
+        code = failure_code(error, "REFERENCE_REPORT_FAILED")
+        report_failure(code, error=error)
+        log_exception(error, verbose=args.verbose, secrets=[token])
+        return 1 if code == "REFERENCE_REPORT_FAILED" else 2
 
 
 if __name__ == "__main__":

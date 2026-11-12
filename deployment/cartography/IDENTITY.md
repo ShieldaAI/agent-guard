@@ -1,16 +1,20 @@
-# Company identity for the reference map
+# Company sign-in for the Agent Map viewer
 
-The company browser endpoint serves the Agent Map viewer over HTTPS and maps
-verified OpenID Connect identities to host-owned `ReadScope` bindings. It calls
-the same read-only `MapService` used by the loopback reference service. It does
-not change executor admission or make the map an authorization decision engine.
+The company browser endpoint serves the Agent Map viewer over HTTPS and signs
+readers in with OpenID Connect (OIDC). The host (your trusted application code)
+binds each verified identity to an explicit `ReadScope`: which company, tenants
+and teams that reader may see. The endpoint calls the same read-only
+`MapService` as the loopback service. It does not change what the executor
+admits, and the map is not an authorization decision engine.
 
-Use the separate `agent-guard-map-identity` launcher for this endpoint. The
-existing `agent-guard-map` launcher remains loopback-only and uses independent
-`agm_v1` bearer credentials for HTTP, MCP and its local viewer. Company sessions
-cannot authenticate to that listener; the company endpoint rejects bearer
-authorization and has no `/mcp` route. See the [reference package](../../packages/agent-map/README.md)
-and [operations runbook](RUNBOOK.md) for the shared queries and collector setup.
+Start it with the `agent-guard-map-identity` command. The `agent-guard-map`
+command stays loopback-only and uses separate `agm_v1` bearer credentials for
+HTTP, Model Context Protocol (MCP) clients and its local viewer. A company
+session cannot authenticate to that listener, and the company endpoint rejects
+bearer authorization and has no `/mcp` route. See the
+[Agent Map package](../../packages/agent-map/README.md) for the queries and the
+[collector README](../../integrations/cartography/README.md) for how the graph
+is filled.
 
 ## Register the application and choose its origin
 
@@ -208,37 +212,25 @@ The viewer clears evidence and aborts requests on expiry, authorization failure,
 tab hiding or restored browser history, and revalidates when visible again.
 Logout failure clears local evidence and requires an explicit retry.
 
-There is no refresh-token flow, distributed session store, HA coordination,
-back-channel logout or persistent session recovery. Run one instance for this
-milestone. Restart signs everyone out; host invalidation does not coordinate
+There is no refresh-token flow, distributed session store, high-availability
+coordination, back-channel logout or persistent session recovery. Run one
+instance. Restart signs everyone out; host invalidation does not coordinate
 across independently started instances.
 
-## Validation and rollout gate
+## Check a deployment before opening it to readers
 
-Automated tests use a disposable HTTPS identity provider and local test trust
-scoped to its client. They exercise code exchange, signed-token verification,
-scope mapping, CSRF, session/revocation races, request bounds and the packed
-launcher. Viewer transport/lifecycle tests and a UI-only browser fixture cover
-company-session rendering and local sign-out. The attempted disposable HTTPS
-browser check was blocked by its untrusted test certificate; it did not complete
-a real browser OIDC flow and no global trust settings were changed.
+The repository's tests sign in against a disposable local identity provider.
+They do not exercise your provider, certificate or network, so check these in a
+browser that trusts both TLS chains:
 
-The 30 October 2026 local checks passed 582 JavaScript tests with no skips,
-474 Python unit tests and 65 disposable-Neo4j integration tests. The clean
-installed-package check compiled the public declarations/README examples and
-performed a real local HTTPS login and scoped read using the packed package.
-See the [milestone record](../../docs/archive/cartography-integration-plan.md#company-identity-and-https-milestone)
-for the scope of this evidence. Test fixtures require `openssl` on PATH; they
-generate short-lived keys/certificates in a private temporary directory and
-remove them during cleanup. They never install a system or browser CA.
+- A bound subject signs in and sees exactly its tenants and teams.
+- An unbound subject, and a bound subject after its binding is removed and the
+  process restarted, is denied.
+- A session ends at its expiry, and **Sign out** ends the local session.
+- The endpoint is reachable only on the intended name, interface and firewall
+  path, and its private files are owned and protected as described above.
+- The Neo4j account it uses can only read, where your edition supports roles.
 
-Before company rollout, validate the registered live IdP and deployed viewer in
-a browser that trusts both TLS chains: successful and denied sign-in, exact
-team visibility, expiry, local sign-out, subject revocation/restart and denial
-of an unbound subject. Confirm the intended DNS/interface/firewall deployment,
-private-file ownership, secret rotation procedure and read-only database access.
-Record this evidence in the [runbook](RUNBOOK.md). Live company IdP registration
-and a trusted-browser end-to-end check remain rollout gates, not completed
-deployment claims. Startup errors are deliberately reported as
-`MAP_START_FAILED`; diagnose configuration, file permissions, endpoint metadata
-and certificate trust without logging provider responses or secrets.
+Startup errors are reported as `MAP_START_FAILED <code>: <hint>` with a fixed
+code such as `MAP_CONFIG_NOT_FOUND` or `MAP_IDENTITY_UNAVAILABLE`; they never
+include provider responses, paths or secrets.

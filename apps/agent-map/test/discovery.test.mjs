@@ -1,9 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { OPERATIONS } from '../src/view-model.mjs';
-import { queryDemo } from '../src/demo.mjs';
 import {
   accountReasonLabel,
+  accountStale,
   discoveryHidden,
   taskLineageLabel,
   unclaimedSummary,
@@ -89,6 +89,41 @@ test('unclaimed identities are candidates, and unknown is never shown as none', 
   );
 });
 
+test('a stale collection is marked on its account and never gets the all-clear headline', () => {
+  const fresh = { status: 'complete', reason: null, observedAt: '2026-01-01T00:00:00.000Z', stale: false };
+  const stale = { ...fresh, stale: true, ageSeconds: 10_800 };
+  const unknown = { status: 'unknown', reason: 'stale', observedAt: '2025-12-01T00:00:00.000Z', stale: true };
+  assert.equal(accountReasonLabel(fresh), 'Collected');
+  assert.equal(accountReasonLabel(stale), 'Collected, but stale');
+  // An account that is unknown says why; it is not also "collected".
+  assert.equal(accountReasonLabel(unknown), 'The last AWS collection is older than the enrolled age limit.');
+  assert.deepEqual([fresh, stale, unknown, {}, null, undefined].map(accountStale), [
+    false,
+    true,
+    false,
+    false,
+    false,
+    false,
+  ]);
+  // A service that reports no freshness is shown as before.
+  assert.equal(accountReasonLabel({ status: 'complete', reason: null }), 'Collected');
+
+  const clear = unclaimedSummary({ status: 'complete', total: 0, accounts: [fresh, fresh] });
+  assert.deepEqual(clear, { tone: 'green', text: 'Every collected IAM role and user is named by a declared agent' });
+  const aged = unclaimedSummary({ status: 'complete', total: 0, accounts: [fresh, stale] });
+  assert.equal(aged.tone, 'amber');
+  assert.equal(aged.text.includes('Every collected IAM role and user'), false);
+  assert.match(aged.text, /^No unclaimed IAM role or user in the last collection; at least one collection is stale/);
+  const candidates = unclaimedSummary({ status: 'complete', total: 2, accounts: [stale] });
+  assert.equal(candidates.tone, 'amber');
+  assert.match(candidates.text, /^2 candidates to review; at least one collection is stale/);
+  const partial = unclaimedSummary({ status: 'partial', total: 1, accounts: [stale, unknown] });
+  assert.match(partial.text, /the rest are unknown; at least one collection is stale/);
+  // Only a complete account's own flag counts, and a malformed list changes nothing.
+  for (const accounts of [[unknown], [], undefined, 'stale', [null]])
+    assert.equal(unclaimedSummary({ status: 'complete', total: 0, accounts }).tone, 'green', JSON.stringify(accounts));
+});
+
 test('every unknown account says why, and task lineage separates sub-tasks from strangers', () => {
   assert.equal(accountReasonLabel({ status: 'complete', reason: null }), 'Collected');
   for (const reason of [
@@ -108,22 +143,4 @@ test('every unknown account says why, and task lineage separates sub-tasks from 
   assert.match(taskLineageLabel({ parentDeclared: true, delegated: true }), /^Sub-task of a declared agent/);
   assert.equal(taskLineageLabel({ parentDeclared: false, derived: true }), 'Sub-task of an undeclared task');
   assert.equal(taskLineageLabel({ parentDeclared: false, delegated: false, derived: false }), 'No declared parent');
-});
-
-test('the synthetic demo answers both discovery operations with paged, labelled rows', async t => {
-  t.mock.method(globalThis, 'fetch', () => assert.fail('Demo must stay local'));
-  const [source] = (await queryDemo('get_inventory_health')).data.sources;
-  assert.equal(undeclaredActivityLabel(source.undeclaredActivity).text, '2 tasks and 1 caller with no declared agent');
-  const tasks = await queryDemo('list_undeclared_activity', { sourceId: source.id, limit: 1 });
-  assert.deepEqual([tasks.data.items.length, tasks.data.total, tasks.data.truncated], [1, 2, true]);
-  assert.equal(tasks.data.items[0].assessment, 'unknown');
-  const callers = await queryDemo('list_undeclared_activity', { sourceId: source.id, kind: 'principals' });
-  assert.equal(callers.data.items[0].principalId, 'batch-scheduler');
-  await assert.rejects(queryDemo('list_undeclared_activity', { sourceId: 'other' }), /REFERENCE_NOT_FOUND/);
-  const identities = await queryDemo('list_unclaimed_identities', {});
-  assert.equal(
-    identities.data.identities.every(identity => identity.candidate === true),
-    true,
-  );
-  assert.equal(unclaimedSummary(identities.data).text, '2 candidates to review');
 });

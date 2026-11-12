@@ -156,6 +156,7 @@ def test_corrupt_journal_fails_closed_before_new_snapshot(snapshot, tmp_path, mu
             target.write_text('{"schemaVersion":1,"schemaVersion":1}')
         elif mutation != "filename":
             target.write_text(json.dumps(raw))
+        archive.refresh()
         with pytest.raises(ArchiveError, match="ARCHIVE_TRANSITION_INVALID"):
             archive.store({**snapshot, "source": value["successor"]})
         assert not list(directory.glob("*.snapshot.json"))
@@ -176,7 +177,11 @@ def test_unsafe_journal_never_gets_read(snapshot, tmp_path, unsafe):
             target.rename(outside)
             target.symlink_to(outside)
         with pytest.raises(ArchiveError, match="ARCHIVE_FILE_UNSAFE"):
+            archive.refresh()
             archive.list_transitions()
+        # The fence stays closed for every later operation, not only the reconciliation.
+        with pytest.raises(ArchiveError, match="ARCHIVE_FILE_UNSAFE"):
+            archive.store(snapshot)
 
 
 def test_lifecycle_source_bound_is_checked_before_writing(snapshot, tmp_path):

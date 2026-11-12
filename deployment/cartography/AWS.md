@@ -1,18 +1,20 @@
 # Single-account AWS inventory and policy evidence
 
-This optional collector fills the provider inventory used by Agent Guard's
-existing cloud joins. It captures IAM role/user identifiers and general-purpose
-S3 bucket metadata for one explicitly enrolled commercial AWS account. It writes
-the pinned Cartography `AWSRole`, `AWSUser` and `AWSS3Bucket` shapes, with an
-account ownership edge and an independent complete-capture membership record.
-Cloud associations remain observations with `assessment: unknown`.
-An additional enrollment flag enables bounded IAM identity-policy collection
-and S3 candidate permission edges. It is off by default.
+The [collector](../../integrations/cartography/README.md) can also capture IAM
+role and user identifiers and S3 bucket names and regions for one explicitly
+enrolled commercial AWS account. It writes them as Cartography's `AWSRole`,
+`AWSUser` and `AWSS3Bucket` nodes, which the importer's cloud joins then link to
+the AWS identities and resources the host declared in its manifest. A second
+enrollment flag adds IAM identity-policy evidence for S3. Everything recorded is
+an observation with `assessment: unknown`, never a permission decision.
 
-The collector runs inside the existing observer worker's ingestion lock.
-It is disabled unless `--aws-enrollment` is supplied. Installing the package,
-running the synthetic pilot, or starting ordinary observer polling does not
-discover AWS accounts, read AWS credential profiles or install a schedule.
+AWS collection is off unless you pass `--aws-enrollment`. Installing the
+package or collecting executors never discovers AWS accounts, reads credential
+profiles or installs a schedule. It runs inside the collector process, under the
+same lock.
+
+In this guide **the executor** is the Agent Guard executor package and **the
+host** is your trusted application code.
 
 ## Scope and required reads
 
@@ -31,7 +33,7 @@ Review the collection role for `iam:ListRoles`, `iam:ListUsers`,
 resource and organizational controls. STS identity lookup itself does not require
 an allow grant, so a successful identity check does not prove the remaining
 inventory reads are permitted. Permission creation and role assumption are host
-administration steps; this launcher performs neither.
+administration steps; the collector performs neither.
 
 The default capture excludes IAM policy collection. Both modes exclude role trust
 evaluation, AWS Organizations discovery, service-last-accessed reporting jobs,
@@ -59,7 +61,8 @@ quota failures reject the whole AWS capture. AWS pagination is not transactional
 these consistency checks detect some concurrent changes, not every possible race.
 
 Direct and group identity policies are combined before computing candidates.
-The pinned Cartography mapper evaluates only the packaged mappings:
+Cartography's permission mapper is applied with exactly three rules, which are
+fixed in the collector:
 
 | Mapping | Action | Retained scope |
 | --- | --- | --- |
@@ -74,7 +77,13 @@ candidates never establish denial, and object/prefix evidence never establishes
 access to every object. Principals with a permissions boundary are marked
 `boundary_unresolved`; unsupported expressions mark a principal `unsupported`.
 Both statuses suppress that principal's candidates. Session policies, resource
-policies, SCPs, trust policies and request-time context are not evaluated.
+policies, service control policies, trust policies and request-time context are
+not evaluated.
+
+[aws-permission-relationships.yaml](aws-permission-relationships.yaml) states
+the same three rules in upstream Cartography's file format. The collector does
+not read it; use it only if you also run upstream Cartography's AWS sync and
+want its `CAN_*` edges to follow the same rules.
 
 The supported selector subset escapes literal characters and implements `?` as
 one character, with at most one `*` per selector. Resource matching preserves
@@ -109,37 +118,37 @@ that successful capture removes its owned candidates and marks policy collection
 disabled. Merely stopping collection does not delete old evidence. Another
 collection's candidates and shared provider data are preserved.
 
-The resource-case correction does not rewrite existing candidate evidence on
-upgrade. Complete a newer successful AWS capture and then a fresh Guard
-collection to replace affected candidates and refresh their joins. The graph
-does not retain the raw policies needed to recompute old captures offline.
+Candidates written by an older collector version are not rewritten on upgrade.
+The graph does not keep the policies needed to recompute them: complete a new
+AWS capture and then a new executor collection to replace them.
 
-The Agent Map [reference API/viewer](../../packages/agent-map/README.md#current-iam-policy-evidence)
+The Agent Map [reference API/viewer](../../packages/agent-map/README.md#iam-policy-evidence)
 exposes this layer only through visible task, execution and resource bindings.
 It verifies collection ownership, capture hashes/times, provider consistency and
 independent freshness, then rechecks the observations before returning. It exposes
 no account-wide policy digest or candidate counts. Unsupported or stale evidence
 has an explicit reason; empty results never establish denial. A newer AWS capture
-requires a fresh Guard collection before those provider joins support candidates.
+requires a new executor collection before those provider joins support candidates.
 Historical snapshot comparisons do not claim policy history. Never use these
 relationships for executor admission.
 
-## Prepare explicit enrollment
+## Prepare the enrollment
 
-Use Python 3.13 and the locked integration environment on a POSIX host. The
-private worker uses process groups and POSIX file checks; native Windows is not
-supported. The observer, host manifest and cloud scope should already identify
-the intended company and tenant. From the repository root:
+You need a working collector for at least one executor first (see the
+[README](../../integrations/cartography/README.md#collect-your-first-executor)),
+on Linux or macOS; the capture worker uses POSIX process groups. The examples
+use the same two directories as the rest of the documentation. From
+`integrations/cartography`:
 
 ```sh
-install -d -m 700 "$HOME/.config/agent-guard-cartography"
-install -m 600 integrations/cartography/examples/observer-enrollment.json "$HOME/.config/agent-guard-cartography/observer.json"
-install -m 600 integrations/cartography/examples/cloud-scope.json "$HOME/.config/agent-guard-cartography/cloud-scope.json"
-install -m 600 integrations/cartography/examples/aws-enrollment.json "$HOME/.config/agent-guard-cartography/aws.json"
+CONFIG="$HOME/.config/agent-guard-cartography"       # enrollment files
+STATE="$HOME/.local/share/agent-guard-cartography"   # archive, lock, backups
+install -m 600 examples/cloud-scope.json "$CONFIG/cloud-scope.json"
+install -m 600 examples/aws-enrollment.json "$CONFIG/aws.json"
 ```
 
-Edit all three private copies. Replace the observer's enrollment generation,
-ledger instance, endpoint and profile with the trusted executor configuration.
+Edit both copies, and check that `$CONFIG/observer.json` is the enrollment of
+the executor whose manifest names this account.
 The AWS file's `companyId` and `tenantId` must match an enrolled observer and its
 explicit cloud scope. The cloud scope must include the exact `partition` and
 `accountId`. The supplied examples agree on `example-company`, `alpha` and
@@ -155,9 +164,6 @@ China, GovCloud, sovereign partitions, custom service endpoints, proxy
 configuration and private endpoint overrides are outside this implementation.
 Requests use verified HTTPS with TLS 1.2 or newer. The transport refuses
 redirects instead of forwarding credentials to an unselected destination.
-Offline signed-request tests cover regional endpoint selection; a live deployment
-must still validate its selected region and expected buckets. Synthetic tests
-are not a cross-region connectivity certification.
 
 `expectedCallerArn` must exactly equal the ARN returned for the intended
 credentials. The example expects an assumed-role session named
@@ -184,41 +190,38 @@ The AWS enrollment file must be current-user-owned, regular, mode `0600` or
 stricter, and at most 32 KiB. Symbolic links, multiple hard links, FIFOs, devices,
 duplicate keys and unknown settings are rejected. Protect its parent directories
 as well. The example is public metadata and has to be copied to a protected file
-before the launcher accepts it.
+before the collector accepts it.
 
-## Run a reviewed capture and coordinate polling
+## Run a capture and keep it running
 
-After preparing the private files and credentials, use one process for AWS and
-Agent Guard collection. From `integrations/cartography`:
+One process collects both AWS and the executors. From `integrations/cartography`,
+with the Neo4j password, the observer token and the three AWS credentials in
+the environment:
 
 ```sh
-uv sync --locked
 uv run agent-guard-cartography \
-  --enrollment "$HOME/.config/agent-guard-cartography/observer.json" \
-  --cloud-scope "$HOME/.config/agent-guard-cartography/cloud-scope.json" \
-  --aws-enrollment "$HOME/.config/agent-guard-cartography/aws.json" \
-  --archive-dir "$HOME/.config/agent-guard-cartography/archive" \
-  --lock-file "$HOME/.config/agent-guard-cartography/ingestion.lock" \
-  --neo4j-uri bolt://127.0.0.1:7687 \
-  --neo4j-user neo4j \
-  --neo4j-password-env-var NEO4J_PASSWORD
+  --enrollment "$CONFIG/observer.json" \
+  --cloud-scope "$CONFIG/cloud-scope.json" \
+  --aws-enrollment "$CONFIG/aws.json" \
+  --archive-dir "$STATE/archive" \
+  --neo4j-uri bolt://127.0.0.1:7687
 ```
 
-This is an opt-in live command: it calls the configured account after identity
-verification and writes the configured graph. Use an isolated non-production
-account and graph for enrollment validation. Choose a dedicated collector
-database credential where your Neo4j edition supports it; remote Neo4j requires
-verified `bolt+s` or `neo4j+s`. Plaintext is limited to direct literal-loopback
-Bolt. See the [runbook](RUNBOOK.md) for the database trust boundary.
+This command calls the enrolled AWS account, after verifying the caller
+identity, and writes the graph. Try it first against a non-production account
+and database. A remote Neo4j needs verified `bolt+s` or `neo4j+s`; plaintext is
+limited to a literal loopback address.
 
-Append `--watch --interval-seconds 300 --aws-interval-seconds 3600` to keep this
-same process running. An AWS attempt runs before the first Guard poll. Later
+Append `--watch --interval-seconds 300 --aws-interval-seconds 3600` to keep the
+process running. An AWS attempt runs before the first executor poll. Later
 attempts become due one hour after the previous attempt finishes, and start at
 the next polling cycle. The clock is monotonic, failed attempts use the same
 cadence, and missed periods are not replayed in a burst. AWS work can delay that
 cycle's observer reads up to the configured capture/publication limits.
 
-Every process targeting the same graph must use the same persistent lock file.
+Every command that names this archive holds its lock (`$STATE/archive.lock`)
+without being told to; a process that writes the same graph with another
+archive, or with none, must share a `--lock-file` with the collector.
 A separate hourly AWS job cannot run alongside a watcher holding that lock;
 the integrated cadence avoids that conflict. `--aws-enrollment` is available
 only with observer collection, not snapshot imports or archive receipt replay.
@@ -253,7 +256,7 @@ schemas/query builder. It updates provider metadata and the collection's
 `G_AWS_OBSERVED` membership together. A failed publication preserves the previous
 complete capture. A complete empty capture retires this collection's membership
 without deleting shared provider nodes, account ownership, another account's
-inventory or Agent Guard projections. Provider ownership conflicts fail closed.
+inventory or Agent Guard snapshots. Provider ownership conflicts fail closed.
 Retained provider-node storage remains the operator's responsibility; bounded
 current membership is not a database-wide retention policy. A refreshed provider
 node timestamp here certifies metadata only. Independently collected policy/ACL
@@ -263,12 +266,13 @@ Cloud joins consult the managed membership when it exists. A preserved old
 provider node that is absent from the latest complete capture is unresolved;
 it cannot remain matched solely because an unrelated collector refreshed its
 node timestamp. Managed capture freshness is checked independently of provider
-node/account/ownership times and again during Guard publication. Legacy provider
-inventory without a managed membership record retains the existing join rules.
+node/account/ownership times and again during snapshot publication. Provider
+inventory written by another collector, without a membership record, is matched
+by its own node, account and ownership timestamps only.
 
 If capture fails, the previous complete provider observation stays available
 with its original capture time and becomes stale according to the cloud scope's
-age limit. It is not relabeled as a fresh successful attempt. Guard observer
+age limit. It is not relabeled as a fresh successful attempt. Executor
 collection still runs; one-shot exit status is nonzero when the AWS attempt
 fails. In watch mode, safe failure output is emitted and polling continues.
 
@@ -313,37 +317,18 @@ caller ARNs, resource names and raw provider/Neo4j errors. Restrict access to th
 private graph and operational output: resource counts and capture cadence are
 still inventory metadata.
 
-## Validation and remaining rollout work
+## Before you enable it for real
 
-Tests use stubbed AWS SDK responses, a bounded local transport fixture and a
-fresh disposable Neo4j graph. They cover exact identity checks, pagination and
-limits, worker cleanup, serialized cadence, failures, atomic metadata membership
-and existing cloud joins. No AWS credentials or live AWS account APIs are used
-to validate this repository milestone.
+The repository's tests use stubbed AWS responses and call no AWS account, so
+check these against your own account before relying on the result:
 
-Policy-milestone validation on 30 October 2026 passed **713 Python unit tests**
-and **83 disposable-Neo4j integration tests**. These include 66 reducer cases,
-80 SDK/capture/transport/worker cases, 39 enrollment cases and 22 orchestration
-cases. Tests exercise real signed SDK parsing, complete group/managed-policy
-resolution, conservative conditions, boundaries, limits, minimized output,
-atomic replacement/opt-out, rollback and shared-edge preservation.
-Ruff, wheel/source-archive builds, reconstruction of the wheel from the source
-archive, and an isolated installed metadata/policy consumer passed. The
-[milestone record](../../docs/archive/cartography-integration-plan.md#iam-policy-candidate-collection-milestone)
-records scope and remaining deployment limits. No JavaScript source changed in
-this milestone; its existing API contract remains unchanged.
+- The collection role allows exactly the reads listed above and nothing else.
+- `expectedCallerArn` equals the caller ARN of the credentials you will use, and
+  a wrong account or wrong caller is refused with `AWS_IDENTITY_MISMATCH`.
+- The buckets and regions you expect are captured, and an expired credential
+  produces a failure line while executor collection continues.
+- Every command that writes this graph names the same `--archive-dir`, or shares
+  a `--lock-file` with the collector.
 
-The subsequent scoped reference milestone exposes minimized candidates in the
-existing Agent Map API and viewer. Its [validation report](validation/policy-reference-review-2026-10-30.md)
-covers exact binding paths, independent freshness, corrupted/foreign evidence,
-HTTP/MCP compatibility, package consumers and the rendered viewer. Candidates
-remain unknown, including when their mapping is complete; absence is not denial.
-
-Before enabling collection for a company, approve the one-account read role and
-scope, verify the exact temporary caller ARN, test the intended buckets and
-regions, and retain evidence of denied/wrong-account behavior, credential expiry,
-freshness, empty captures, failures and restart. Confirm lock sharing with every
-writer, review database privileges and perform the independent deployment
-security review. A successful metadata capture does not validate IAM policy
-semantics or effective permissions. Real cloud-account validation and company
-rollout remain separate work.
+A successful capture shows that metadata was read. It does not validate IAM
+policy semantics or effective permissions.

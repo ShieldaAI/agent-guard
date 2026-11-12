@@ -8,30 +8,52 @@ from __future__ import annotations
 
 import json
 import re
+from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from hashlib import sha256
+from typing import Any, NamedTuple, NoReturn
 from urllib.parse import unquote
 
 from cartography.intel.aws.permission_relationships import calculate_permission_relationships
 
-from agent_guard_cartography.aws_config import AwsCollectionError
+from agent_guard_cartography._ids import SHA256_HEX
+from agent_guard_cartography._json import unique_object
+from agent_guard_cartography.aws_config import AwsCollectionError, AwsEnrollment
 
 FILTER = ["User", "Role", "Group", "LocalManagedPolicy", "AWSManagedPolicy"]
 MAPPING_VERSION = "s3-identity-policy-v1"
+# The only candidate relationships this reducer produces: one S3 action each, summarized
+# on the bucket. deployment/cartography/aws-permission-relationships.yaml states the same
+# three rules in upstream Cartography's format; a unit test keeps the two identical.
 MAPPINGS = (
     ("CAN_READ", "s3:GetObject"),
     ("CAN_WRITE", "s3:PutObject"),
     ("CAN_LIST", "s3:ListBucket"),
 )
 _NAME = re.compile(r"[A-Za-z0-9_+=,.@-]+")
-_HASH = re.compile(r"[a-f0-9]{64}")
+_IDENTIFIER = re.compile(r"[A-Za-z0-9]+")
+_PATH = re.compile(r"/[\x21-\x7e]*/|/")
+# The capture's metered API call and page counter, supplied by aws_capture.
+_Call = Callable[..., dict[str, Any]]
+_Page = Callable[[], None]
 
 
-def _fail(code="AWS_POLICY_INVALID"):
+class _Policy(NamedTuple):
+    """One policy document reduced for the upstream mapper; the document is not kept."""
+
+    statements: list[dict[str, Any]]
+    # Uses a form this reducer does not model: its principal yields no candidates.
+    unsupported: bool
+    # Selector count, the unit of the evaluation budget.
+    work: int
+    digest: str
+
+
+def _fail(code: str = "AWS_POLICY_INVALID") -> NoReturn:
     raise AwsCollectionError(code)
 
 
-def _text(value, maximum=2048):
+def _text(value: Any, maximum: int = 2048) -> str:
     if (
         type(value) is not str
         or not value
@@ -42,13 +64,13 @@ def _text(value, maximum=2048):
     return value
 
 
-def _date(value):
+def _date(value: Any) -> str:
     if not isinstance(value, datetime) or value.tzinfo is None or value.utcoffset() is None:
         _fail()
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
-def _json(value):
+def _json(value: Any) -> bytes:
     try:
         return json.dumps(
             value,
@@ -62,19 +84,19 @@ def _json(value):
         _fail()
 
 
-def _list(value, key):
+def _list(value: Mapping[str, Any], key: str) -> list[Any]:
     result = value.get(key, [])
     if type(result) is not list:
         _fail()
     return result
 
 
-def _unique(values):
+def _unique(values: list[str]) -> None:
     if len(values) != len(set(values)):
         _fail("AWS_POLICY_INCOMPLETE")
 
 
-def _policy_arn(enrollment, value):
+def _policy_arn(enrollment: AwsEnrollment, value: Any) -> str:
     value = _text(value)
     if not re.fullmatch(
         rf"arn:aws:iam::(?:{enrollment.account_id}|aws):policy/[A-Za-z0-9_+=,.@/-]+", value
@@ -83,28 +105,73 @@ def _policy_arn(enrollment, value):
     return value
 
 
-def _document(value):
+def _selectors(key: str, values: Any) -> tuple[list[re.Pattern[str]], bool]:
+    """Compile one statement's Action or Resource selectors; flag unsupported forms."""
+    if type(values) is str:
+        values = [values]
+    if type(values) is not list or not values:
+        _fail()
+    unsupported = False
+    compiled = []
+    for selector in values:
+        selector = _text(selector, 2048)
+        # One wildcard per selector bounds regex backtracking. Advanced
+        # expressions suppress the entire principal, including its allows.
+        unsupported |= "${" in selector or selector.count("*") > 1
+        if key.endswith("Action"):
+            unsupported |= not bool(re.fullmatch(r"[A-Za-z0-9*?:_-]+", selector))
+        pattern = re.escape(selector).replace(r"\*", ".*").replace(r"\?", ".")
+        if not key.endswith("Action"):
+            # Cartography's S3 object-to-bucket fallback recompiles the
+            # pre-slash regex with IGNORECASE. Keep resource case in a
+            # scoped group that survives that split; action case stays
+            # insensitive, and object-key scope remains bucket_summary.
+            bucket, slash, suffix = pattern.partition("/")
+            pattern = f"(?-i:{bucket}){slash}{suffix}"
+        compiled.append(re.compile(pattern, re.IGNORECASE if key.endswith("Action") else 0))
+    return compiled, unsupported
+
+
+def _condition(conditions: Any) -> list[dict[str, dict[str, str]]]:
+    """Keep which condition keys exist, never their values."""
+    if type(conditions) is not dict or not conditions:
+        _fail()
+    if len(conditions) > 32:
+        _fail("AWS_POLICY_LIMIT_EXCEEDED")
+    safe: dict[str, dict[str, str]] = {}
+    keys = set()
+    for operator, context in conditions.items():
+        _text(operator, 128)
+        if type(context) is not dict or not context:
+            _fail()
+        safe[operator] = {}
+        for key, raw in context.items():
+            keys.add(_text(key, 256))
+            values = raw if type(raw) is list else [raw]
+            if not values or any(type(item) not in (str, int, float, bool) for item in values):
+                _fail()
+            if len(values) > 128 or any(type(item) is str and len(item) > 8192 for item in values):
+                _fail("AWS_POLICY_LIMIT_EXCEEDED")
+            safe[operator][key] = "present"
+    if len(keys) > 128:
+        _fail("AWS_POLICY_LIMIT_EXCEEDED")
+    return [safe]
+
+
+def _document(value: Any) -> _Policy:
+    """Check, bound and compile one identity-policy document."""
     # Botocore normally decodes documents to dictionaries. Also accept its wire
     # string representation for offline consumers, with duplicate-key rejection.
     if len(_json(value)) > 131_072:
         _fail("AWS_POLICY_LIMIT_EXCEEDED")
     if type(value) is str:
-
-        def pairs(items):
-            result = {}
-            for key, item in items:
-                if key in result:
-                    _fail()
-                result[key] = item
-            return result
-
         try:
             wire = (
                 unquote(value, errors="strict")
                 if value.lstrip().lower().startswith("%7b")
                 else value
             )
-            value = json.loads(wire, object_pairs_hook=pairs)
+            value = json.loads(wire, object_pairs_hook=unique_object)
         except (ValueError, UnicodeError, RecursionError):
             _fail()
     if type(value) is not dict or "Statement" not in value:
@@ -140,75 +207,44 @@ def _document(value):
         unsupported |= "NotAction" in statement or "NotResource" in statement
         unsupported |= ("Action" in statement) == ("NotAction" in statement)
         unsupported |= ("Resource" in statement) == ("NotResource" in statement)
-        entry = {"effect": statement["Effect"]}
+        entry: dict[str, Any] = {"effect": statement["Effect"]}
         for key in ("Action", "NotAction", "Resource", "NotResource"):
             if key not in statement:
                 continue
-            values = statement[key]
-            if type(values) is str:
-                values = [values]
-            if type(values) is not list or not values:
-                _fail()
-            compiled = []
-            for selector in values:
-                selector = _text(selector, 2048)
-                # One wildcard per selector bounds regex backtracking. Advanced
-                # expressions suppress the entire principal, including its allows.
-                unsupported |= "${" in selector or selector.count("*") > 1
-                if key.endswith("Action"):
-                    unsupported |= not bool(re.fullmatch(r"[A-Za-z0-9*?:_-]+", selector))
-                pattern = re.escape(selector).replace(r"\*", ".*").replace(r"\?", ".")
-                if not key.endswith("Action"):
-                    # Cartography's S3 object-to-bucket fallback recompiles the
-                    # pre-slash regex with IGNORECASE. Keep resource case in a
-                    # scoped group that survives that split; action case stays
-                    # insensitive, and object-key scope remains bucket_summary.
-                    bucket, slash, suffix = pattern.partition("/")
-                    pattern = f"(?-i:{bucket}){slash}{suffix}"
-                compiled.append(re.compile(pattern, re.IGNORECASE if key.endswith("Action") else 0))
-            work += len(values)
+            compiled, advanced = _selectors(key, statement[key])
+            unsupported |= advanced
+            work += len(compiled)
             entry[key.lower()] = compiled
         if "Condition" in statement:
-            conditions = statement["Condition"]
-            if type(conditions) is not dict or not conditions:
-                _fail()
-            if len(conditions) > 32:
-                _fail("AWS_POLICY_LIMIT_EXCEEDED")
-            safe = {}
-            keys = set()
-            for operator, context in conditions.items():
-                _text(operator, 128)
-                if type(context) is not dict or not context:
-                    _fail()
-                safe[operator] = {}
-                for key, raw in context.items():
-                    keys.add(_text(key, 256))
-                    values = raw if type(raw) is list else [raw]
-                    if not values or any(
-                        type(item) not in (str, int, float, bool) for item in values
-                    ):
-                        _fail()
-                    if len(values) > 128 or any(
-                        type(item) is str and len(item) > 8192 for item in values
-                    ):
-                        _fail("AWS_POLICY_LIMIT_EXCEEDED")
-                    safe[operator][key] = "present"
-            if len(keys) > 128:
-                _fail("AWS_POLICY_LIMIT_EXCEEDED")
-            entry["condition"] = [safe]
+            entry["condition"] = _condition(statement["Condition"])
         normalized.append(entry)
-    return normalized, unsupported, max(work, len(normalized)), sha256(_json(value)).hexdigest()
+    return _Policy(
+        normalized, unsupported, max(work, len(normalized)), sha256(_json(value)).hexdigest()
+    )
 
 
-def capture_policy_evidence(enrollment, metadata_capture, call, page):
-    """Read one complete authorization census using one explicitly allowed API."""
-    if not enrollment.include_iam_policy_evidence:
-        _fail()
-    census = {
+class _StatementBudget:
+    """Parses policy documents while counting statements against the enrolled limit."""
+
+    def __init__(self, maximum: int) -> None:
+        self.maximum = maximum
+        self.count = 0
+
+    def parse(self, document: Any) -> _Policy:
+        policy = _document(document)
+        self.count += len(policy.statements)
+        if self.count > self.maximum:
+            _fail("AWS_POLICY_LIMIT_EXCEEDED")
+        return policy
+
+
+def _read_census(enrollment: AwsEnrollment, call: _Call, page: _Page) -> dict[str, list[Any]]:
+    """Every page of the account authorization details, bounded by bytes and items."""
+    census: dict[str, list[Any]] = {
         key: [] for key in ("UserDetailList", "RoleDetailList", "GroupDetailList", "Policies")
     }
     marker = None
-    markers = set()
+    markers: set[str] = set()
     raw_size = 0
     items = 0
     while True:
@@ -236,14 +272,23 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
         if not response["IsTruncated"]:
             if response.get("Marker") not in (None, ""):
                 _fail("AWS_POLICY_INCOMPLETE")
-            break
+            return census
         marker = _text(response.get("Marker"))
         if marker in markers:
             _fail("AWS_POLICY_INCOMPLETE")
         markers.add(marker)
 
-    entities = {}
-    groups = {}
+
+def _index_entities(
+    enrollment: AwsEnrollment, census: Mapping[str, list[Any]], metadata_capture: Mapping[str, Any]
+) -> tuple[dict[str, tuple[str, dict[str, Any]]], dict[str, str]]:
+    """Users, roles and groups by ARN, and groups by name.
+
+    Users and roles must be exactly the principals of the metadata capture, so the
+    policy census and the published inventory describe the same account state.
+    """
+    entities: dict[str, tuple[str, dict[str, Any]]] = {}
+    groups: dict[str, str] = {}
     for kind, key in (
         ("User", "UserDetailList"),
         ("Role", "RoleDetailList"),
@@ -257,8 +302,8 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
             identifier = _text(entity.get(f"{kind}Id"), 128)
             if (
                 not _NAME.fullmatch(name)
-                or not re.fullmatch(r"/[\x21-\x7e]*/|/", path)
-                or not re.fullmatch(r"[A-Za-z0-9]+", identifier)
+                or not _PATH.fullmatch(path)
+                or not _IDENTIFIER.fullmatch(identifier)
                 or arn != f"arn:aws:iam::{enrollment.account_id}:{kind.lower()}{path}{name}"
             ):
                 _fail("AWS_POLICY_INCOMPLETE")
@@ -285,28 +330,23 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
                     or _date(entity.get("CreateDate")) != other["createdate"]
                 ):
                     _fail("AWS_POLICY_INCOMPLETE")
+    return entities, groups
 
-    managed = {}
-    policy_fingerprints = []
-    statements = 0
-    inline_count = 0
 
-    def parse(document):
-        nonlocal statements
-        result = _document(document)
-        statements += len(result[0])
-        if statements > enrollment.max_policy_statements:
-            _fail("AWS_POLICY_LIMIT_EXCEEDED")
-        return result
-
+def _managed_policies(
+    enrollment: AwsEnrollment, policies: list[Any], budget: _StatementBudget
+) -> tuple[dict[str, tuple[str, _Policy]], list[dict[str, Any]]]:
+    """Each managed policy's default version by ARN, and its fingerprint."""
+    managed: dict[str, tuple[str, _Policy]] = {}
+    fingerprints = []
     policy_ids = []
-    for policy in census["Policies"]:
+    for policy in policies:
         arn = _policy_arn(enrollment, policy.get("Arn"))
         name = _text(policy.get("PolicyName"), 128)
         if not _NAME.fullmatch(name) or arn.rsplit("/", 1)[-1] != name or arn in managed:
             _fail("AWS_POLICY_INCOMPLETE")
         identifier = _text(policy.get("PolicyId"), 128)
-        if not re.fullmatch(r"[A-Za-z0-9]+", identifier):
+        if not _IDENTIFIER.fullmatch(identifier):
             _fail()
         policy_ids.append(identifier)
         version_id = _text(policy.get("DefaultVersionId"), 128)
@@ -325,23 +365,47 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
                 defaults.append(version)
         if len(defaults) != 1 or defaults[0]["VersionId"] != version_id:
             _fail("AWS_POLICY_INCOMPLETE")
-        parsed = parse(defaults[0].get("Document"))
+        parsed = budget.parse(defaults[0].get("Document"))
         managed[arn] = (name, parsed)
-        policy_fingerprints.append(
+        fingerprints.append(
             {
                 "arn": arn,
                 "id": policy["PolicyId"],
                 "name": name,
                 "defaultVersionId": version_id,
-                "documentHash": parsed[3],
+                "documentHash": parsed.digest,
             }
         )
     _unique(policy_ids)
+    return managed, fingerprints
 
-    own = {}
-    boundaries = set()
-    memberships = {}
+
+class _Attachments(NamedTuple):
+    """What each entity's own policies are, and how entities relate."""
+
+    # Inline and attached managed policies per entity ARN (groups included).
+    own: dict[str, list[_Policy]]
+    # Principals with a permissions boundary: their candidates are not computed.
+    boundaries: set[str]
+    # Group ARNs per user ARN.
+    memberships: dict[str, list[str]]
+    fingerprints: list[dict[str, Any]]
+    inline_count: int
+
+
+def _attachments(
+    enrollment: AwsEnrollment,
+    entities: Mapping[str, tuple[str, dict[str, Any]]],
+    groups: Mapping[str, str],
+    managed: Mapping[str, tuple[str, _Policy]],
+    budget: _StatementBudget,
+) -> _Attachments:
+    """Resolve every entity's inline policies, attachments, boundary and groups."""
+    own: dict[str, list[_Policy]] = {}
+    boundaries: set[str] = set()
+    memberships: dict[str, list[str]] = {}
     entity_fingerprints = []
+    inline_count = 0
     for arn, (kind, entity) in entities.items():
         policies = []
         names = []
@@ -356,9 +420,9 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
             inline_count += 1
             if inline_count > enrollment.max_items:
                 _fail("AWS_POLICY_LIMIT_EXCEEDED")
-            parsed = parse(policy.get("PolicyDocument"))
+            parsed = budget.parse(policy.get("PolicyDocument"))
             policies.append(parsed)
-            inline_fingerprints.append({"name": name, "documentHash": parsed[3]})
+            inline_fingerprints.append({"name": name, "documentHash": parsed.digest})
         _unique(names)
         attached = []
         for attachment in _list(entity, "AttachedManagedPolicies"):
@@ -403,42 +467,52 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
                 "boundary": entity.get("PermissionsBoundary", {}).get("PermissionsBoundaryArn"),
             }
         )
+    return _Attachments(own, boundaries, memberships, entity_fingerprints, inline_count)
 
-    principals, edges = [], []
+
+def _candidates(
+    enrollment: AwsEnrollment,
+    buckets: list[str],
+    entities: Mapping[str, tuple[str, dict[str, Any]]],
+    attachments: _Attachments,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """Each user and role's status, and the bucket candidates of those fully mapped."""
+    principals: list[dict[str, Any]] = []
+    edges: list[dict[str, Any]] = []
     evaluations = 0
     output_size = 512
 
-    def append_output(target, item):
+    def append_output(target: list[dict[str, Any]], item: dict[str, Any]) -> None:
         nonlocal output_size
         output_size += len(_json(item)) + 1
         if output_size > enrollment.max_capture_bytes:
             _fail("AWS_POLICY_LIMIT_EXCEEDED")
         target.append(item)
 
-    buckets = sorted(bucket["Arn"] for bucket in metadata_capture["buckets"])
     for arn in sorted(entities):
         if entities[arn][0] == "Group":
             continue
-        policies = list(own[arn])
-        for group in memberships.get(arn, []):
-            policies.extend(own[group])
-        evaluations += max(1, sum(item[2] for item in policies)) * len(buckets) * len(MAPPINGS)
+        policies = list(attachments.own[arn])
+        for group in attachments.memberships.get(arn, []):
+            policies.extend(attachments.own[group])
+        evaluations += max(1, sum(item.work for item in policies)) * len(buckets) * len(MAPPINGS)
         if evaluations > enrollment.max_policy_evaluations:
             _fail("AWS_POLICY_LIMIT_EXCEEDED")
-        unsupported = any(item[1] for item in policies)
+        unsupported = any(item.unsupported for item in policies)
         status = (
             "boundary_unresolved"
-            if arn in boundaries
+            if arn in attachments.boundaries
             else "unsupported"
             if unsupported
             else "mapped"
         )
         append_output(
-            principals, {"arn": arn, "boundaryPresent": arn in boundaries, "status": status}
+            principals,
+            {"arn": arn, "boundaryPresent": arn in attachments.boundaries, "status": status},
         )
         if status != "mapped":
             continue
-        policy_map = {str(index): item[0] for index, item in enumerate(policies)}
+        policy_map = {str(index): item.statements for index, item in enumerate(policies)}
         for relationship, permission in MAPPINGS:
             for bucket in buckets:
                 # One pair at a time prevents an upstream wildcard expansion
@@ -466,8 +540,24 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
                 )
                 if len(edges) > enrollment.max_policy_edges:
                     _fail("AWS_POLICY_LIMIT_EXCEEDED")
+    return principals, edges
+
+
+def capture_policy_evidence(
+    enrollment: AwsEnrollment, metadata_capture: Mapping[str, Any], call: _Call, page: _Page
+) -> dict[str, Any]:
+    """Read one complete authorization census using one explicitly allowed API."""
+    if not enrollment.include_iam_policy_evidence:
+        _fail()
+    census = _read_census(enrollment, call, page)
+    entities, groups = _index_entities(enrollment, census, metadata_capture)
+    budget = _StatementBudget(enrollment.max_policy_statements)
+    managed, policy_fingerprints = _managed_policies(enrollment, census["Policies"], budget)
+    attachments = _attachments(enrollment, entities, groups, managed, budget)
+    buckets = sorted(bucket["Arn"] for bucket in metadata_capture["buckets"])
+    principals, edges = _candidates(enrollment, buckets, entities, attachments)
     fingerprint = {
-        "entities": sorted(entity_fingerprints, key=lambda item: item["arn"]),
+        "entities": sorted(attachments.fingerprints, key=lambda item: item["arn"]),
         "managedPolicies": sorted(policy_fingerprints, key=lambda item: item["arn"]),
     }
     result = {
@@ -482,14 +572,16 @@ def capture_policy_evidence(enrollment, metadata_capture, call, page):
         "counts": {
             "groups": len(groups),
             "managedPolicies": len(managed),
-            "inlinePolicies": inline_count,
-            "statements": statements,
+            "inlinePolicies": attachments.inline_count,
+            "statements": budget.count,
         },
     }
     return validate_policy_evidence(enrollment, metadata_capture, result)
 
 
-def validate_policy_evidence(enrollment, metadata_capture, value):
+def validate_policy_evidence(
+    enrollment: AwsEnrollment, metadata_capture: Mapping[str, Any], value: Any
+) -> dict[str, Any]:
     """Validate the worker/graph boundary without accepting raw provider documents."""
     if (
         not enrollment.include_iam_policy_evidence
@@ -512,7 +604,7 @@ def validate_policy_evidence(enrollment, metadata_capture, value):
         or value["assessment"] != "unknown"
         or value["mappingVersion"] != MAPPING_VERSION
         or type(value["policyHash"]) is not str
-        or not _HASH.fullmatch(value["policyHash"])
+        or not SHA256_HEX.fullmatch(value["policyHash"])
     ):
         _fail()
     counts = value["counts"]
@@ -534,7 +626,8 @@ def validate_policy_evidence(enrollment, metadata_capture, value):
     if counts["groups"] + counts["managedPolicies"] + len(expected) > enrollment.max_items:
         _fail("AWS_POLICY_LIMIT_EXCEEDED")
     buckets = {item["Arn"] for item in metadata_capture["buckets"]}
-    principals, seen = [], {}
+    principals: list[dict[str, Any]] = []
+    seen: dict[str, str] = {}
     if type(value["principals"]) is not list or len(value["principals"]) != len(expected):
         _fail("AWS_POLICY_INCOMPLETE")
     for principal in value["principals"]:
@@ -555,7 +648,8 @@ def validate_policy_evidence(enrollment, metadata_capture, value):
         _fail()
     if len(value["edges"]) > enrollment.max_policy_edges:
         _fail("AWS_POLICY_LIMIT_EXCEEDED")
-    edges, identifiers = [], set()
+    edges: list[dict[str, Any]] = []
+    identifiers: set[tuple[str, str, str]] = set()
     for edge in value["edges"]:
         if type(edge) is not dict or set(edge) != {
             "principalArn",

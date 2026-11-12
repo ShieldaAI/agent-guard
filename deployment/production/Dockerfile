@@ -13,6 +13,14 @@ COPY packages ./packages
 COPY apps/agent-map ./apps/agent-map
 COPY scripts ./scripts
 RUN npm ci --ignore-scripts && npm run build && npm prune --omit=dev --ignore-scripts
+# The service imports three workspace packages (core, executor, agent-map) and, through them,
+# four third-party modules. Only those enter the runtime image; the runtime stage fails its
+# build if an import cannot be resolved.
+RUN mkdir -p /runtime/node_modules/@shieldaai \
+ && for name in ipaddr.js jose oauth4webapi openid-client; do cp -R "node_modules/$name" "/runtime/node_modules/$name"; done \
+ && ln -s ../../packages/core /runtime/node_modules/@shieldaai/agent-guard \
+ && ln -s ../../packages/executor /runtime/node_modules/@shieldaai/agent-guard-executor \
+ && ln -s ../../packages/agent-map /runtime/node_modules/@shieldaai/agent-map
 
 FROM ${NODE_IMAGE} AS runtime
 WORKDIR /app
@@ -22,25 +30,23 @@ ENV NODE_ENV=production
 RUN rm -rf /usr/local/lib/node_modules /opt/yarn* /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /usr/local/bin/yarn /usr/local/bin/yarnpkg /usr/local/bin/pnpm /usr/local/bin/pnpx
 COPY LICENSE ./LICENSE
 COPY --from=build /app/package.json ./package.json
-COPY --from=build /app/node_modules ./node_modules
+COPY --from=build /runtime/node_modules ./node_modules
 COPY --from=build /app/packages/core/package.json ./packages/core/package.json
 COPY --from=build /app/packages/core/dist ./packages/core/dist
 COPY --from=build /app/packages/executor/package.json ./packages/executor/package.json
 COPY --from=build /app/packages/executor/dist ./packages/executor/dist
 COPY --from=build /app/packages/agent-map/package.json ./packages/agent-map/package.json
 COPY --from=build /app/packages/agent-map/dist ./packages/agent-map/dist
-COPY --from=build /app/packages/mcp/package.json ./packages/mcp/package.json
-COPY --from=build /app/packages/mcp/dist ./packages/mcp/dist
-COPY --from=build /app/packages/scenarios/package.json ./packages/scenarios/package.json
-COPY --from=build /app/packages/scenarios/dist ./packages/scenarios/dist
 COPY apps/agent-ops/cli.mjs apps/agent-ops/runtime.mjs apps/agent-ops/server.mjs apps/agent-ops/workflow.mjs apps/agent-ops/limits.mjs apps/agent-ops/onboarding.mjs ./apps/agent-ops/
 COPY apps/agent-ops/tls-policy.mjs apps/agent-ops/custody.mjs ./apps/agent-ops/
-COPY apps/agent-ops/observability.mjs ./apps/agent-ops/
+COPY apps/agent-ops/observability.mjs apps/agent-ops/responses.mjs ./apps/agent-ops/
 COPY apps/agent-ops/history-state.mjs apps/agent-ops/history-files.mjs apps/agent-ops/retention.mjs ./apps/agent-ops/
 COPY apps/agent-ops/public ./apps/agent-ops/public
 COPY deployment/production/healthcheck.mjs deployment/production/verify-maintenance.mjs ./deployment/production/
 USER 10001:10001
-RUN node apps/agent-ops/cli.mjs --help >/dev/null
+# Loads the complete import graph of every entry point the Compose services start.
+RUN node apps/agent-ops/cli.mjs --help >/dev/null \
+ && node packages/executor/dist/ledger-maintenance-cli.js --help >/dev/null
 EXPOSE 8443
 ENTRYPOINT ["node", "apps/agent-ops/cli.mjs"]
 CMD ["--config", "/run/agent-ops/config.json"]
