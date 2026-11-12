@@ -37,6 +37,10 @@ import * as check from '../public/validate.js';
 import { errorBody, sessionBody } from '../responses.mjs';
 import { setup, owner } from './helpers.mjs';
 
+// These two start the real service, whose witnessed deployment requires POSIX (as in the
+// workflow and server tests). The rest of this file runs everywhere.
+const posixOnly = { skip: process.platform === 'win32' ? 'The witnessed deployment requires POSIX.' : false };
+
 const copy = value => JSON.parse(JSON.stringify(value));
 const row = (id, extra = {}) => ({
   id,
@@ -199,7 +203,7 @@ test('error wording has one source: the service sends it and the client only fal
   for (const text of Object.values(ERROR_MESSAGES)) assert.doesNotMatch(text, /\b(backend|host|reconcil)/i);
 });
 
-test('the client accepts what the real service returns and rejects anything else', async t => {
+test('the client accepts what the real service returns and rejects anything else', posixOnly, async t => {
   const fixture = setup(t, { mirror: true }),
     workflow = fixture.workflow,
     now = Date.now();
@@ -311,39 +315,43 @@ test('the client accepts what the real service returns and rejects anything else
   );
 });
 
-test('close-out evidence shows the reviewed ticket beside the current one and must agree with the request', async t => {
-  const fixture = setup(t),
-    workflow = fixture.workflow;
-  const stuck = async () => {
-    const { request } = await workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' });
-    fixture.runtime.backend.transaction(state => {
-      Object.assign(state.ticketService.requests[request.id], { state: 'unconfirmed', reviewerId: 'owner' });
-    });
-    return request;
-  };
-  const request = await stuck(),
-    other = (await workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' })).request;
-  const untouched = check.closeOutValue(copy(workflow.previewCloseOut(owner, request.id)), request);
-  assert.equal(untouched.ticketChanged, false);
-  await workflow.decide(owner, other.id, { digest: other.digest }, true);
-  const served = copy(workflow.previewCloseOut(owner, request.id));
-  const moved = check.closeOutValue(served, request);
-  assert.deepEqual(
-    [moved.reviewedVersion, moved.reviewedStatus, moved.ticketVersion, moved.ticketStatus, moved.ticketChanged],
-    [1, 'open', 2, 'resolved', true],
-  );
-  for (const change of [
-    evidence => (evidence.ticketChanged = false),
-    evidence => (evidence.reviewedVersion = 2),
-    evidence => (evidence.reviewedStatus = 'resolved'),
-    evidence => (evidence.ticketVersion = '2'),
-    evidence => (evidence.ticketStatus = 'closed'),
-    evidence => (evidence.receipt = 'present'),
-    evidence => (evidence.requestId = other.id),
-    evidence => delete evidence.digest,
-  ]) {
-    const altered = copy(served);
-    change(altered.closeOut);
-    assert.throws(() => check.closeOutValue(altered, request), /close-out evidence/);
-  }
-});
+test(
+  'close-out evidence shows the reviewed ticket beside the current one and must agree with the request',
+  posixOnly,
+  async t => {
+    const fixture = setup(t),
+      workflow = fixture.workflow;
+    const stuck = async () => {
+      const { request } = await workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' });
+      fixture.runtime.backend.transaction(state => {
+        Object.assign(state.ticketService.requests[request.id], { state: 'unconfirmed', reviewerId: 'owner' });
+      });
+      return request;
+    };
+    const request = await stuck(),
+      other = (await workflow.propose(owner, { ticketId: 'T-1', status: 'resolved' })).request;
+    const untouched = check.closeOutValue(copy(workflow.previewCloseOut(owner, request.id)), request);
+    assert.equal(untouched.ticketChanged, false);
+    await workflow.decide(owner, other.id, { digest: other.digest }, true);
+    const served = copy(workflow.previewCloseOut(owner, request.id));
+    const moved = check.closeOutValue(served, request);
+    assert.deepEqual(
+      [moved.reviewedVersion, moved.reviewedStatus, moved.ticketVersion, moved.ticketStatus, moved.ticketChanged],
+      [1, 'open', 2, 'resolved', true],
+    );
+    for (const change of [
+      evidence => (evidence.ticketChanged = false),
+      evidence => (evidence.reviewedVersion = 2),
+      evidence => (evidence.reviewedStatus = 'resolved'),
+      evidence => (evidence.ticketVersion = '2'),
+      evidence => (evidence.ticketStatus = 'closed'),
+      evidence => (evidence.receipt = 'present'),
+      evidence => (evidence.requestId = other.id),
+      evidence => delete evidence.digest,
+    ]) {
+      const altered = copy(served);
+      change(altered.closeOut);
+      assert.throws(() => check.closeOutValue(altered, request), /close-out evidence/);
+    }
+  },
+);
