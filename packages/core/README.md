@@ -1,5 +1,12 @@
 # @shieldaai/agent-guard
 
+AI agents read text they did not write: emails, tickets, web pages, tool results. Someone
+can hide an instruction in that text, and a model cannot reliably tell it from a real one.
+If the agent can call any tool with your credentials, one bad ticket is enough to delete
+data or send private records out. Agent Guard assumes the agent can be misled and limits
+what a misled agent is able to do. Its controls are mapped to the
+[OWASP Top 10 for Agentic Applications](https://github.com/ShieldaAI/agent-guard#risks-and-which-package-handles-them).
+
 Agent Guard decides whether an AI agent may make a tool call: your code registers the tools and gives each piece of agent work a task with grants and a budget, and the guard checks every call against them before your handler runs. It stops calls to tools or resources the task was not given, calls into another tenant, risky actions nobody approved, sensitive data sent to outside recipients, and work past a budget or deadline.
 
 ```sh
