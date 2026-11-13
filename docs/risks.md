@@ -83,7 +83,13 @@ A tool or MCP server changes under you.
 
 - **What Agent Guard does.** A tool's registered metadata gets a fingerprint that the
   host must approve; a changed tool is refused until reviewed, and approving metadata
-  never authorizes an action. Each MCP registration carries a `descriptorDigest` that
+  never authorizes an action. The guard keeps the approved definition, so
+  `toolChanges()` (and `operationChanges()` on an MCP connection) shows the reviewer
+  what changed, field by field, before they approve again: the old and new value at
+  each JSON path of the description, schema, metadata and flags, with heuristic marks
+  on new instruction-like text, invisible characters, added or loosened schema fields
+  and weakened flags. The executor keeps the approved definition in its ledger, so the
+  comparison survives a restart. Each MCP registration carries a `descriptorDigest` that
   stays the same while the server advertises the same definition, so you can record it
   when you review a tool and approve only a matching one after a restart. MCP schemas are
   compiled under strict bounds, including refusal of regular expressions with unbounded
@@ -91,9 +97,14 @@ A tool or MCP server changes under you.
   digests, artifact bytes and enrolled builders for admitted build artifacts.
 - **Package.** core (fingerprint approval); mcp (drift quarantine, bounded schemas);
   executor (artifact admission); scenarios S06.
-- **What stays with you.** Review each definition before you approve it, and store its
-  digest. Vet the servers and dependencies you install.
-- **Does not cover.** A server that changes what it does without changing its definition,
+- **What stays with you.** Read the changes before you approve them: the diff is only
+  useful if someone reads it. Show its values as untrusted text, never as markup or as
+  instructions to a model. Vet the servers and dependencies you install.
+- **Does not cover.** The diff covers definitions only. It never shows a change in what
+  a tool's code does, and the marks are heuristics: they miss hostile text and flag
+  harmless text. A definition over the size limit is approved by fingerprint without a
+  diff. With the in-memory guard the approved definition is lost on restart. Also not
+  covered: a server that changes what it does without changing its definition,
   the npm packages you install, model files, or a compromised dependency running inside
   the guard's own process.
 

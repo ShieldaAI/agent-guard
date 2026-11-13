@@ -83,7 +83,7 @@ lacks approval never starts the handler. The exact rules are in the
 
 | Area | Rule |
 | --- | --- |
-| Tools and resources | Tool names and resources match exactly. `*` is an explicit wildcard. A tool's name or description grants nothing. A tool definition must be approved by its fingerprint before any call. |
+| Tools and resources | Tool names and resources match exactly. `*` is an explicit wildcard. A tool's name or description grants nothing. A tool definition must be approved by its fingerprint before any call. After a change, the guard shows the reviewer which fields of the definition changed; the changed text is untrusted data, and the comparison says nothing about the tool's code. |
 | Tenant | The tenant comes from the task. A call whose resource belongs to another tenant is refused. |
 | Delegation | A child task holds the same or less than every ancestor. Revoking a parent revokes its children. |
 | Approval | An approval covers one prepared action: these arguments, this resource, this policy. It works once and expires. A policy change or a tool change invalidates it. It never overrides a revoked task, a denial or the sensitive-data rule. |

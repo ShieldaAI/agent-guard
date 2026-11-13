@@ -2,7 +2,7 @@
 
 Thirteen scenarios describe what Agent Guard must refuse and what it must still
 allow. Each has a hostile case and an ordinary case, so there are twenty-six
-cases in catalog version 1.3.0. The package `@shieldaai/agent-guard-scenarios`
+cases in catalog version 1.4.0. The package `@shieldaai/agent-guard-scenarios`
 runs them.
 
 A hostile case passes when the unauthorized effect does not happen. An ordinary
@@ -38,7 +38,7 @@ if (!report.passed) process.exitCode = 1;
 You should see:
 
 ```text
-1.3.0 true 26/26
+1.4.0 true 26/26
 ```
 
 ### Against your own integration
@@ -178,15 +178,22 @@ approved fingerprint of the tool's current definition.
 **Hostile case:** the host approves definition v1. The server then advertises v2
 with a changed description or schema, or an added tool. Calls with the
 unapproved definition do not reach the server. A harmless-looking name grants
-nothing.
+nothing. `toolChanges()` lists the changed description and schema with the
+approved and new values, and reading it approves nothing. An approval that claims
+a different comparison than the one on record (`reviewedAgainst`) is refused with
+`TOOL_CHANGED`.
 
-**Ordinary case:** unchanged v1 stays usable. After the host reviews and approves
-v2, a permitted call uses v2.
+**Ordinary case:** unchanged v1 stays usable. After the host reads the one changed
+field and approves v2 against that comparison, a permitted call uses v2.
 
 **Your part:** only definitions the adapter saw are covered, and an unchanged
 definition does not prove the server's code is unchanged. Tool approvals are not
-kept across a restart in any package: approve again after you reconnect, and
-compare each tool's `descriptorDigest` with the one recorded at review.
+kept across a restart in any package: approve again after you reconnect. The
+executor keeps the approved definitions in its ledger, so `toolChanges()` still
+shows what changed; with the in-memory guard, compare each tool's
+`descriptorDigest` with the one you recorded at review. The diff checks run only
+for an adapter that provides `toolChanges`. The diff shows definitions, never
+code, and its hints are heuristics.
 
 ## S07: Stop configured secrets in outbound arguments
 

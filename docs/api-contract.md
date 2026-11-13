@@ -150,6 +150,7 @@ interface GuardLimits {
   policyTimeoutMs?: number;               // 100-300,000, default 30,000
   maxJsonBytes?: number;                  // 65,536-67,108,864, default 1,048,576
   maxJsonNodes?: number;                  // 1,000-10,000,000, default 100,000
+  maxToolDefinitionBytes?: number;        // 1,024-1,048,576, default 65,536
 }
 interface GuardDecision {
   operation: 'prepare' | 'approve' | 'execute';
@@ -183,7 +184,8 @@ function monotonicClock(): number;
 class AgentGuard {
   constructor(options?: GuardOptions);
   registerTool(definition: ToolDefinition): string;
-  approveTool(name: string, fingerprint: string): void;
+  approveTool(name: string, fingerprint: string, options?: { reviewedAgainst?: string | null }): void;
+  toolChanges(name: string): ToolChanges;
   unapproveTool(name: string): void;
   unregisterTool(name: string): void;
   createTask(options: TaskOptions): TaskHandle;
@@ -202,9 +204,10 @@ class AgentGuard {
 | Method | What it does |
 | --- | --- |
 | `registerTool` | Registers or replaces a tool and returns its fingerprint. The tool cannot be called until it is approved. |
-| `approveTool` | Accepts one tool definition by its fingerprint. This is not an approval of any action. |
-| `unapproveTool` | Withdraws that approval. Calls fail with `TOOL_UNAPPROVED` until the tool is approved again. |
-| `unregisterTool` | Removes the tool. Prepared actions for it fail with `TOOL_CHANGED`. |
+| `approveTool` | Accepts one tool definition by its fingerprint and keeps that definition for later comparison. This is not an approval of any action. |
+| `toolChanges` | Compares the current registration with the last approved definition and lists what changed. Read-only. |
+| `unapproveTool` | Withdraws that approval. Calls fail with `TOOL_UNAPPROVED` until the tool is approved again. The approved definition is kept. |
+| `unregisterTool` | Removes the tool and its approved definition. Prepared actions for it fail with `TOOL_CHANGED`. |
 | `createTask` | Creates a task with its own identity, grants and budget, and returns its handle. |
 | `delegateTask` | Creates a child task that holds the same or less than its parent. See the [delegation guide](guides/delegation.md). |
 | `revokeTask` | Stops a task and its descendants for good. It works even when the clock is failing. |
@@ -231,6 +234,85 @@ approver IDs) are non-empty strings of at most 4,096 characters.
 - Registering a tool again withdraws its approval and fails every action already
   prepared for it with `TOOL_CHANGED`, even if the definition is unchanged.
   Register again whenever `parse`, `resolve` or `execute` change.
+
+### What changed in a tool definition
+
+When a tool is registered again, `toolChanges(name)` shows a reviewer what differs
+from the definition that was last approved, before they call `approveTool`.
+
+```ts
+function diffToolDefinitions(before: unknown, after: unknown): ToolDefinitionDiff;
+
+interface ToolChanges {
+  readonly name: string;
+  readonly status: 'first_approval' | 'unchanged' | 'changed' | 'unavailable';
+  readonly reason?: 'DEFINITION_TOO_LARGE' | 'APPROVED_DEFINITION_TOO_LARGE' | 'APPROVED_DEFINITION_NOT_KEPT';
+  readonly fingerprint: string;          // the current registration: what approveTool() takes
+  readonly approved: boolean;            // whether the current registration is approved
+  readonly approvedFingerprint?: string; // the last approved definition
+  readonly definition?: Json;            // the fingerprinted fields now
+  readonly approvedDefinition?: Json;    // the fingerprinted fields last approved
+  readonly changes: readonly ToolChange[];
+  readonly truncated: boolean;           // more than 256 changes; see below for what is always listed
+}
+interface ToolChange {
+  readonly path: string;                 // RFC 6901 JSON Pointer, e.g. /inputSchema/properties/path/type
+  readonly kind: 'added' | 'removed' | 'changed';
+  readonly before?: Json;                // absent when added
+  readonly after?: Json;                 // absent when removed
+  readonly hints: readonly ToolChangeHint[];
+}
+type ToolChangeHint =
+  | 'INSTRUCTION_TEXT' | 'HIDDEN_CHARACTERS' | 'SCHEMA_FIELD_ADDED' | 'SCHEMA_LOOSENED' | 'FLAG_LOOSENED';
+```
+
+- **What is compared.** The fields the fingerprint covers: `name`, `description`,
+  `inputSchema`, `metadata`, `requiresApproval`, `controlPlane`, `maxCost`,
+  `parsedArguments` (whether a `parse` function is set) and the outside-content
+  labels. Never what `parse`, `resolve` or `execute` do.
+- **How.** Objects are compared key by key, so a schema change is reported at its
+  own path. Arrays that hold objects (`anyOf`) are compared by index. Arrays of
+  plain values (`required`, `enum`) are reported whole. Changes are in path order.
+  At most 256 are listed. The guard's own top-level fields (`name`, `description`,
+  `requiresApproval`, `controlPlane`, `maxCost`, `parsedArguments` and the
+  outside-content labels) are listed even then, so a long schema diff cannot push
+  a weakened flag out of the list.
+- **Status.** `first_approval`: nothing was approved under this name, or the tool
+  was unregistered since. `unchanged`: the registration has the approved
+  fingerprint; it still needs `approveTool` after a re-registration. `changed`:
+  see `changes`. `unavailable`: the definitions differ but one was too large to
+  keep, so there is no diff; `reason` says which, and you compare them yourself.
+- **Size.** A definition larger than `limits.maxToolDefinitionBytes` (64 KiB by
+  default, measured as compact JSON) still registers and can be approved, as in
+  1.0. The guard keeps only its fingerprint and says so with `unavailable`. It
+  never shortens a definition silently.
+- **Hints are heuristics.** They mark changes that often matter: new text that
+  reads like an instruction to a model or names credentials, invisible
+  characters, a new schema property, a schema that accepts more than before, a
+  guard flag that became weaker (including a raised `maxCost`). They never block anything, they miss things,
+  and they give false alarms. An empty `hints` list does not mean a change is
+  safe.
+- **The values are untrusted.** Descriptions, schemas and metadata are the tool's
+  or server's own text. Show them as data: escape them, never render them as
+  markup, and never pass them to a model as instructions. The guard's own fields
+  (`status`, `kind`, `path` structure, `hints`) are fixed codes; a `path` contains
+  key names from the definition.
+- **Approve what was read.** Pass the `approvedFingerprint` the reviewer's
+  comparison showed as `reviewedAgainst` (`null` for a first approval).
+  `approveTool` then fails with `TOOL_CHANGED` if another definition was approved
+  in between. The `fingerprint` argument already fails if the tool itself was
+  registered again.
+- `toolChanges` throws `TOOL_UNKNOWN` for an unregistered name.
+  `diffToolDefinitions` compares any two JSON values the same way, for hosts that
+  keep their own records; it throws `INVALID_JSON` for a value that is not plain
+  JSON within the default limits.
+
+```ts
+const fingerprint = guard.registerTool(definition); // the definition changed
+const review = guard.toolChanges(definition.name);
+if (review.status !== 'unchanged') await showToReviewer(review); // escape every value
+guard.approveTool(definition.name, fingerprint, { reviewedAgainst: review.approvedFingerprint ?? null });
+```
 
 ### Prepare
 
@@ -393,6 +475,8 @@ methods report the same problem as a `GuardError` with code `INVALID_JSON`.
 | --- | --- | --- | --- |
 | Size of one JSON value | 1 MiB | 64 KiB to 64 MiB | `limits.maxJsonBytes` |
 | Values in one JSON value | 100,000 | 1,000 to 10,000,000 | `limits.maxJsonNodes` |
+| Tool definition kept for comparison | 64 KiB | 1 KiB to 1 MiB | `limits.maxToolDefinitionBytes` |
+| Changes listed by one comparison | 256 | fixed | |
 | JSON nesting | 64 levels | fixed | |
 | Live approvals per action | 4 | 1 to 64 | `limits.maxApprovalsPerAction` |
 | Policy evaluations at once, per guard | 64 | 1 to 1,024 | `limits.maxPolicyEvaluations` |
@@ -433,11 +517,13 @@ class ManagedMcpConnection {
   get failureReason(): McpBoundaryErrorCode | undefined;
   get skipped(): readonly McpSkippedOperation[];
   inventory(): McpConnectionInventory; // experimental
+  operationChanges(name: string): McpOperationChanges;
   refresh(): Promise<void>;
   close(): Promise<void>;
 }
 interface ManagedMcpOptions {
-  guard: Pick<AgentGuard, 'registerTool'>; // an AgentGuard or a DurableExecutor
+  // An AgentGuard or a DurableExecutor. toolChanges is optional; operationChanges() needs it.
+  guard: Pick<AgentGuard, 'registerTool'> & Partial<Pick<AgentGuard, 'toolChanges'>>;
   identity: { serverId: string; transportIdentity: string; principalId: string; tenantId: string };
   transport: Transport;                    // owned by the connection from now on
   authorize?: () => void;                  // synchronous; throws to deny
@@ -467,6 +553,20 @@ interface ManagedMcpRegistration {
   readonly descriptor: Json;
   readonly descriptorDigest: string;
 }
+interface McpOperationChanges {
+  readonly name: string;
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  readonly status: 'first_approval' | 'unchanged' | 'changed' | 'unavailable';
+  readonly reason?: ToolChanges['reason'];
+  readonly fingerprint: string;               // pass to approveTool()
+  readonly approvedFingerprint?: string;      // pass as reviewedAgainst
+  readonly descriptorDigest: string;          // the definition advertised now
+  readonly approvedDescriptorDigest?: string; // the definition last approved
+  readonly changes: readonly ToolChange[];        // paths into the server's descriptor
+  readonly bindingChanges: readonly ToolChange[]; // host flags and identity, e.g. /requiresApproval
+  readonly truncated: boolean;
+}
 interface McpSkippedOperation {
   readonly kind: 'tool' | 'resource' | 'prompt';
   readonly remoteName: string;
@@ -485,6 +585,21 @@ interface McpSkippedOperation {
   approve an identically described tool on another server.
 - **`fingerprint`** changes on every connection and every `refresh()`, so each
   refresh needs `approveTool` again and invalidates prepared actions.
+- **`operationChanges(name)`** compares the definition the server advertises now
+  with the one last approved under the same operation name, after a `refresh()`
+  or on a new connection to the same server ID. The guard keeps the approved
+  definition, so the host does not have to. `changes` lists what the server
+  changed, by JSON Pointer into `descriptor`; `bindingChanges` lists what the
+  host changed: binding flags and the connection identity (for example
+  `/metadata/identity/tenantId`), by path into the guard's definition.
+  `unchanged` means the same `descriptorDigest`, flags and identity: the
+  session and epoch inside the fingerprint are not reported, and `approveTool` is
+  still needed. Hints, limits and the rule that values are untrusted server text
+  are those of `toolChanges` above. It throws `INVALID_CONFIGURATION` when the
+  `guard` option has no `toolChanges`, and `CONNECTION_UNAVAILABLE` when the name
+  is not in the current registry, for example during quarantine. With the
+  in-memory guard the approved definition is lost on a process restart; with the
+  executor it is in the ledger. `VerifiedMcpHttpSession` has the same method.
 - **`skipped`** lists bound operations the server advertised but the adapter
   could not accept, with a reason code. They are never callable.
 - **`status`** is `ready` only while operations can be prepared and run. A
@@ -595,7 +710,8 @@ interface RegisteredMcpTool { readonly name: string; readonly fingerprint: strin
 
 `registerMcpTool` wraps one tool of an MCP client the host already owns. It
 registers the tool without approving it. Every field of the definition is part of
-the fingerprint, so call it again when the server's tool list changes. It does not
+the fingerprint, so call it again when the server's tool list changes; the guard's
+`toolChanges(name)` then shows what changed. It does not
 watch the connection, validate schemas or restrict the transport; use a managed
 connection for that.
 
@@ -627,7 +743,9 @@ expose it to an agent.
 class DurableExecutor {
   constructor(options: ExecutorOptions);
   registerTool(definition: ToolDefinition): string;
-  approveTool(name: string, fingerprint: string): void;
+  approveTool(name: string, fingerprint: string,
+    options?: { reviewedAgainst?: string | null; approverId?: string }): void;
+  toolChanges(name: string): ExecutorToolChanges; // ToolChanges plus `approval`
   unapproveTool(name: string): void;
   unregisterTool(name: string): void;
   setPolicy(policy: Policy): void;
@@ -695,6 +813,29 @@ Differences from the guard:
   the sensitive mark, and a link to the task the data came from, into a new task.
 - After a restart, budgets, revocations, marks and used approvals are kept. Tool
   approvals and prepared actions are not: register and approve tools again.
+- **Approved tool definitions are kept in the ledger.** `approveTool` stores the
+  approved definition, the time, the optional `approverId` and the approved
+  fingerprint it replaced. After a restart, register the tools and call
+  `toolChanges(name)`: a tool whose definition changed while the process was
+  down shows `changed` with the diff, and an untouched one shows `unchanged`.
+  `toolChanges(name).approval` is `{ approvedAt, approverId?, replacedFingerprint? }`:
+  who approved which fingerprint, and which one it replaced, so the pair names
+  the comparison the reviewer had. The recent-event list still records only
+  `TOOL_APPROVED`, without identifiers.
+- The kept definition is bounded by `maxToolDefinitionBytes` (64 KiB by default,
+  1 KiB to 1 MiB), and all kept definitions together by an eighth of
+  `maxLedgerBytes` (2 MiB with the default 16 MiB), so they cannot crowd out
+  tasks and actions. A definition over either bound, or one approved while the
+  ledger is at its soft limit, is approved by fingerprint only; `toolChanges` then reports
+  `unavailable` with `APPROVED_DEFINITION_NOT_KEPT`. An approval is never refused
+  for that reason. `unregisterTool` removes the record, as does reclaiming the
+  records of tools a process no longer registers when the tool table is full.
+- A ledger written by 1.0.0 holds no approved definitions. Its tools report
+  `first_approval` until each is approved once by 1.1.0 or later. The field is
+  additive: there is no format step, and a 1.0.0 executor still opens the ledger.
+  1.0.0 does not maintain the record, so after running 1.0.0 on the ledger again
+  a comparison can be against an approval older than the latest one;
+  `approval.approvedAt` shows which.
 
 ### Action states and receipts
 
@@ -970,7 +1111,7 @@ observer's HTTP behavior are in the
 ```ts
 function runConformance(options?: ConformanceOptions): Promise<ConformanceReport>;
 const scenarioCatalog: readonly ScenarioDefinition[];
-const SCENARIO_CATALOG_VERSION: '1.3.0';
+const SCENARIO_CATALOG_VERSION: '1.4.0';
 
 interface ConformanceOptions {
   scenarioIds?: readonly ScenarioId[]; // 'S01' to 'S13'; default all
@@ -999,7 +1140,8 @@ interface ConformanceCaseResult {
 
 `GuardLike` is the subset of `AgentGuard` the scenarios call: `registerTool`,
 `approveTool`, `createTask`, `delegateTask`, `revokeTask`, `setPolicy`, `prepare`,
-`approve`, `execute` and `snapshot`. The catalog has its own version, so compare
+`approve`, `execute` and `snapshot`, plus an optional `toolChanges`. An adapter
+that has `toolChanges` also runs the definition-diff checks of S06. The catalog has its own version, so compare
 two reports by `catalogVersion`. [Scenarios](scenarios.md) describes each case and
 how to run them against your own integration.
 

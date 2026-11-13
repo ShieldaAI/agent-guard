@@ -37,8 +37,8 @@ call that is denied or lacks approval never starts the handler.
 | Secrets | Outbound arguments are searched for the literal secret values you configured. |
 | Outside content (opt-in) | After a task family runs a tool labeled `readsUntrusted`, tools set to `require_approval` need a new approval and tools set to `deny` are refused. |
 | Unknown outcomes (executor) | A call whose result was lost is held for a person to settle. It is never retried and its budget is never released on a timer. |
-| Restarts (executor) | Budgets, revocations, marks and used approvals survive a restart. With the rollback witness, restoring an old copy of the ledger is refused. |
-| Model Context Protocol (MCP) tools | A tool is callable only with an approved fingerprint of its current definition. A changed tool list stops all calls from that connection until you review again. |
+| Restarts (executor) | Budgets, revocations, marks, used approvals and each tool's last approved definition survive a restart. With the rollback witness, restoring an old copy of the ledger is refused. |
+| Model Context Protocol (MCP) tools | A tool is callable only with an approved fingerprint of its current definition. A changed tool list stops all calls from that connection until you review again; `operationChanges()` shows what the server changed in each definition. It does not show changes in the server's code. |
 | Isolated code (Docker profile) | Code runs with no network, no host credentials and no writable host mount, as a non-root user with resource limits. |
 
 ## What you must do
