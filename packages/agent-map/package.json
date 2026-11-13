@@ -41,7 +41,7 @@
     "@modelcontextprotocol/server": "2.4.0",
     "@shieldaai/agent-guard": "1.1.0",
     "neo4j-driver": "6.3.0",
-    "openid-client": "6.8.8"
+    "openid-client": "6.8.9"
   },
   "publishConfig": {
     "access": "public",
