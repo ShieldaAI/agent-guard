@@ -3,6 +3,8 @@ export {
   ManagedMcpConnection,
   type ManagedMcpOptions,
   type ManagedMcpRegistration,
+  type McpGuard,
+  type McpOperationChanges,
   type McpConnectionIdentity,
   type McpBinding,
   type McpResourceBinding,

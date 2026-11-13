@@ -60,7 +60,7 @@ export const McpBoundaryErrorCatalog: Readonly<Record<McpBoundaryErrorCode, McpB
     'Create one connection for each principal and tenant, and grant its operations only to tasks with that identity.',
   ),
   INVALID_CONFIGURATION: entry(
-    'An option is malformed: an identifier, a binding, a limit or a protected value.',
+    'An option is malformed: an identifier, a binding, a limit or a protected value. From operationChanges(): the guard option has no toolChanges().',
     'Fix the options. Identifiers need visible text, no NUL and no unpaired surrogate, and at most 1,024 characters; an operation name (mcp:, the URL-encoded server ID and the URL-encoded binding name) needs at most 4,096; each limit has a documented range.',
   ),
   INVALID_JSON: entry(

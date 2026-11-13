@@ -1,6 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { createRequire } from 'node:module';
-import { AgentGuard, type Json, type ResolvedAction, type TaskIdentity } from '@shieldaai/agent-guard';
+import {
+  AgentGuard,
+  diffToolDefinitions,
+  type Json,
+  type ResolvedAction,
+  type TaskIdentity,
+  type ToolChange,
+  type ToolChanges,
+} from '@shieldaai/agent-guard';
 import { containsLiteralSecret, digestJson } from '@shieldaai/agent-guard/internal';
 import {
   Client,
@@ -57,8 +65,10 @@ export interface McpBinding {
 export interface McpResourceBinding extends McpBinding {
   uri: string;
 }
+/** The guard a connection registers with. `toolChanges` is optional and enables `operationChanges()`. */
+export type McpGuard = Pick<AgentGuard, 'registerTool'> & Partial<Pick<AgentGuard, 'toolChanges'>>;
 export interface ManagedMcpOptions {
-  guard: Pick<AgentGuard, 'registerTool'>;
+  guard: McpGuard;
   identity: McpConnectionIdentity;
   /** Exclusive ownership is transferred. This package does not launch servers or perform OAuth. */
   transport: Transport;
@@ -118,6 +128,59 @@ export interface ManagedMcpRegistration extends RegisteredMcpTool {
    * the same definition: store it when you review a tool, and compare it before approving.
    */
   readonly descriptorDigest: string;
+}
+/**
+ * What `operationChanges()` reports: the definition the server advertises now, compared with
+ * the one last approved under the same operation name. Frozen. Descriptor text comes from
+ * the server: show it as data, never as markup or instructions.
+ */
+export interface McpOperationChanges {
+  readonly name: string;
+  readonly kind: 'tool' | 'resource' | 'prompt';
+  readonly remoteName: string;
+  /**
+   * - `first_approval`: nothing was approved under this name on this guard.
+   * - `unchanged`: same descriptor digest, binding flags and identity as the approved definition. The
+   *   fingerprint is still new after a refresh, so `approveTool()` is still needed.
+   * - `changed`: `changes` and `bindingChanges` list what differs.
+   * - `unavailable`: a definition was too large for the guard to keep; `reason` says which.
+   */
+  readonly status: ToolChanges['status'];
+  readonly reason?: ToolChanges['reason'];
+  /** The current registration's fingerprint: what `approveTool()` takes. */
+  readonly fingerprint: string;
+  /** The guard's last approved fingerprint for this name. Pass it as `reviewedAgainst`. */
+  readonly approvedFingerprint?: string;
+  /** Digest of the descriptor advertised now. */
+  readonly descriptorDigest: string;
+  /** Digest of the descriptor that was last approved. */
+  readonly approvedDescriptorDigest?: string;
+  /** Changes to the server's descriptor. Paths are JSON Pointers into `descriptor`. */
+  readonly changes: readonly ToolChange[];
+  /**
+   * Changes to what the host set: binding flags (for example `/requiresApproval`) and the
+   * connection identity (`/metadata/identity/tenantId`). Paths are into the guard's definition.
+   */
+  readonly bindingChanges: readonly ToolChange[];
+  readonly truncated: boolean;
+}
+/**
+ * Paths of the guard's definition that operationChanges() reports elsewhere or not at all: the
+ * server's descriptor (diffed on its own), and the session and epoch, which change on every refresh.
+ */
+const NOT_BINDING = /^\/(name|description|inputSchema|metadata\/(descriptor|session|epoch))(\/|$)|^\/metadata$/;
+/** A credential session names its transport with a new random ID each time: not a change of endpoint. */
+function sessionTransportOnly(change: ToolChange): boolean {
+  const generated = (value: Json | undefined) => typeof value === 'string' && value.startsWith('jwt-session:');
+  return change.path === '/metadata/identity/transportIdentity' && generated(change.before) && generated(change.after);
+}
+/** The descriptor inside a definition this adapter registered, or undefined for anything else. */
+function approvedDescriptor(definition: Json | undefined): Json | undefined {
+  if (definition === null || typeof definition !== 'object' || Array.isArray(definition)) return undefined;
+  const metadata = (definition as { readonly [key: string]: Json }).metadata;
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return undefined;
+  if (!Object.hasOwn(metadata, 'descriptor')) return undefined;
+  return (metadata as { readonly [key: string]: Json }).descriptor;
 }
 const EPOCH_META = 'shielda/connection-epoch';
 const SESSION_META = 'shielda/connection-session';
@@ -284,7 +347,7 @@ export function checkManagedMcpOptions(
  * raw request/client escape hatch. Reconnection requires a new instance and review.
  */
 export class ManagedMcpConnection {
-  readonly #guard: Pick<AgentGuard, 'registerTool'>;
+  readonly #guard: McpGuard;
   readonly #identity: Readonly<McpConnectionIdentity>;
   readonly #session = randomUUID();
   readonly #validators = new WeakMap<object, (value: unknown) => boolean>();
@@ -454,6 +517,70 @@ export class ManagedMcpConnection {
       metadataRevision: this.#metadataRevision,
       state: this.#state,
       registrations: this.#registrations,
+    });
+  }
+
+  /**
+   * Compares one operation's current definition with the one last approved under the same
+   * name, so a reviewer can read what the server changed before `approveTool()`. The guard
+   * keeps the approved definition, so the comparison also works across refreshes and new
+   * connections to the same server ID on the same guard. It never shows what the server's
+   * code does. Throws INVALID_CONFIGURATION when the guard option has no `toolChanges`, and
+   * CONNECTION_UNAVAILABLE when the name is not in the current registry (for example while
+   * the connection is quarantined).
+   */
+  operationChanges(name: string): McpOperationChanges {
+    const registration = this.#registrations.find(item => item.name === name);
+    if (typeof this.#guard.toolChanges !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
+    if (this.#state !== 'ready' || !registration) throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
+    let core: ToolChanges;
+    try {
+      core = this.#guard.toolChanges(name);
+    } catch {
+      throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
+    }
+    // A stand-in guard, or a registration replaced behind the connection, is not this operation.
+    if (core.fingerprint !== registration.fingerprint) throw new McpBoundaryError('CONNECTION_UNAVAILABLE');
+    const base = {
+      name,
+      kind: registration.kind,
+      remoteName: registration.remoteName,
+      fingerprint: registration.fingerprint,
+      ...(core.approvedFingerprint === undefined ? {} : { approvedFingerprint: core.approvedFingerprint }),
+      descriptorDigest: registration.descriptorDigest,
+    };
+    const none = { changes: Object.freeze([]), bindingChanges: Object.freeze([]), truncated: false };
+    if (core.status === 'first_approval') return Object.freeze({ ...base, status: core.status, ...none });
+    const approved = approvedDescriptor(core.approvedDefinition);
+    if (core.status === 'unavailable' || approved === undefined)
+      return Object.freeze({
+        ...base,
+        status: 'unavailable' as const,
+        reason: core.reason ?? ('APPROVED_DEFINITION_NOT_KEPT' as const),
+        ...none,
+      });
+    const approvedDescriptorDigest = `sha256:${digestJson({
+      kind: registration.kind,
+      remoteName: registration.remoteName,
+      descriptor: approved,
+    })}`;
+    let descriptor: ReturnType<typeof diffToolDefinitions>;
+    try {
+      descriptor = diffToolDefinitions(approved, registration.descriptor);
+    } catch {
+      throw new McpBoundaryError('JSON_LIMIT');
+    }
+    const bindingChanges = Object.freeze(
+      core.changes.filter(change => !NOT_BINDING.test(change.path) && !sessionTransportOnly(change)),
+    );
+    const changed = descriptor.changes.length > 0 || bindingChanges.length > 0;
+    return Object.freeze({
+      ...base,
+      status: changed ? ('changed' as const) : ('unchanged' as const),
+      approvedDescriptorDigest,
+      changes: descriptor.changes,
+      bindingChanges,
+      truncated: descriptor.truncated || core.truncated,
     });
   }
 

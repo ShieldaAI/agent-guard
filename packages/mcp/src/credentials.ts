@@ -197,6 +197,11 @@ export class VerifiedMcpHttpSession {
   inventory() {
     return this.#connection?.inventory();
   }
+  /** See ManagedMcpConnection.operationChanges. CONNECTION_UNAVAILABLE while there is no ready connection. */
+  operationChanges(name: string) {
+    if (this.#closed || this.#busy || !this.#connection) deny('CONNECTION_UNAVAILABLE');
+    return this.#connection.operationChanges(name);
+  }
   /** Metadata refresh does not fetch keys or renew a credential. */
   async refresh(): Promise<void> {
     if (this.#closed || this.#busy || !this.#connection) deny('CONNECTION_UNAVAILABLE');
@@ -267,6 +272,9 @@ export class VerifiedMcpHttpSession {
             this.#generation === generation && !this.#closed && !controller.signal.aborted
               ? this.#options.guard.registerTool(definition)
               : 'inactive-credential-session',
+          ...(typeof this.#options.guard.toolChanges === 'function'
+            ? { toolChanges: (name: string) => this.#options.guard.toolChanges!(name) }
+            : {}),
         },
         identity: { ...this.#options.identity, transportIdentity: `jwt-session:${randomUUID()}` },
         transport,
