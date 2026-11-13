@@ -11,6 +11,10 @@ import { ExecutorError, type Ledger } from './store.js';
  *   migration run at executor open, inside the exclusive startup transaction, so the
  *   witness and mirror are updated in the same commit.
  *
+ * Additive optional fields do not take a format step. 1.1.0 added `tools[name].baseline` (the last
+ * approved tool definition, for toolChanges()): a 1.0.0 ledger simply has none, and a 1.0.0 reader
+ * ignores the field. It guards nothing, so losing it loses only a comparison.
+ *
  * Compatibility policy: every 1.x executor opens every ledger written by 0.1.0-alpha.3 or
  * later and migrates it forward. Downgrade is never supported: a ledger with a newer
  * formatVersion than this build knows is refused with STORE_FORMAT_UNSUPPORTED.

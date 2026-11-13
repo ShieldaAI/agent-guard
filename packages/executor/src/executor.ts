@@ -2,11 +2,14 @@ import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from
 import {
   AgentGuard,
   GuardError,
+  diffToolDefinitions,
+  type ApproveToolOptions,
   type Json,
   type Policy,
   type PreparedAction,
   type TaskOptions,
   type TaskSnapshot,
+  type ToolChanges,
   type ToolDefinition,
   type UntrustedContextMode,
 } from '@shieldaai/agent-guard';
@@ -133,7 +136,31 @@ const CRITICAL: LedgerWriteOptions = Object.freeze({
 });
 /** Internal signal: a policy decision was made on a task snapshot that has since changed. */
 class StalePolicyDecision extends Error {}
-type Registered = { definition: ToolDefinition; fingerprint: string; revision: number };
+type Registered = {
+  definition: ToolDefinition;
+  fingerprint: string;
+  revision: number;
+  /** The fingerprinted fields, frozen. Undefined when larger than maxToolDefinitionBytes. */
+  canonical: Json | undefined;
+};
+/** The approval behind `approvedFingerprint`, as the ledger records it. */
+export interface ToolApprovalRecord {
+  /** Executor clock time of the approval, in milliseconds. */
+  readonly approvedAt: number;
+  /** Who approved, when `approveTool()` was given an `approverId`. */
+  readonly approverId?: string;
+  /** The approved fingerprint this approval replaced. Absent for a first approval. */
+  readonly replacedFingerprint?: string;
+}
+/** `toolChanges()` of the executor: the guard's result plus the recorded approval. */
+export interface ExecutorToolChanges extends ToolChanges {
+  readonly approval?: ToolApprovalRecord;
+}
+/** Options for the executor's `approveTool()`. */
+export interface ExecutorApproveToolOptions extends ApproveToolOptions {
+  /** Recorded in the ledger with the approval. A non-empty string of at most 4,096 characters. */
+  approverId?: string;
+}
 
 export interface ExecutorOptions {
   database: string;
@@ -169,6 +196,12 @@ export interface ExecutorOptions {
    * normally: a backward step otherwise fails closed with CLOCK_INVALID.
    */
   acceptClockSkewMs?: number;
+  /**
+   * Largest tool definition kept in the ledger for `toolChanges()`, in bytes of compact JSON of
+   * the fingerprinted fields (integer 1,024-1,048,576, default 65,536). A larger definition
+   * still registers and can be approved; only its fingerprint is kept.
+   */
+  maxToolDefinitionBytes?: number;
   /** Maximum decoded ledger snapshot bytes: 1 MiB through 64 MiB; defaults to 16 MiB. */
   maxLedgerBytes?: number;
   /** Aggregate unresolved actions across a task family, including delegated children. */
@@ -193,6 +226,7 @@ export class DurableExecutor {
   readonly #clock: () => number;
   readonly #secrets: readonly string[];
   readonly #maxRecords: number;
+  readonly #maxToolDefinitionBytes: number;
   readonly #maxReceiptsPerFamily: number;
   readonly #maxReceiptsPerTenant: number;
   readonly #maxApprovalsPerAction: number;
@@ -248,6 +282,13 @@ export class DurableExecutor {
     const maxLedgerBytes = validatePublicLedgerMaxBytes(options.maxLedgerBytes);
     this.#clock = options.clock ?? Date.now;
     this.#policy = options.policy;
+    this.#maxToolDefinitionBytes = options.maxToolDefinitionBytes ?? 65_536;
+    if (
+      !Number.isSafeInteger(this.#maxToolDefinitionBytes) ||
+      this.#maxToolDefinitionBytes < 1_024 ||
+      this.#maxToolDefinitionBytes > 1_048_576
+    )
+      throw new GuardError('INVALID_INPUT');
     this.#maxRecords = options.maxRecords ?? 10_000;
     if (!Number.isSafeInteger(this.#maxRecords) || this.#maxRecords < 1) throw new GuardError('INVALID_INPUT');
     const familyShare = Math.max(1, Math.floor(this.#maxRecords / 4));
@@ -818,15 +859,19 @@ export class DurableExecutor {
    */
   registerTool(definition: ToolDefinition): string {
     // Reuse the core's definition validation and canonical fingerprint.
-    const verifier = new AgentGuard({ clock: this.#clock });
+    const verifier = new AgentGuard({
+      clock: this.#clock,
+      limits: { maxToolDefinitionBytes: this.#maxToolDefinitionBytes },
+    });
     const fingerprint = verifier.registerTool(definition);
+    const canonical = verifier.toolChanges(definition.name).definition;
     const trusted = Object.freeze({ ...definition });
     const recorded = own(this.#store.read().tools, definition.name);
     const unchanged = recorded !== undefined && recorded.fingerprint === fingerprint;
     // Opening the executor withdrew every approval and ended every earlier preparation, so the record
     // of a tool this process has not registered yet is already what registering it again would write.
     if (unchanged && !recorded.approved && !this.#tools.has(definition.name)) {
-      this.#tools.set(definition.name, { definition: trusted, fingerprint, revision: recorded.revision });
+      this.#tools.set(definition.name, { definition: trusted, fingerprint, revision: recorded.revision, canonical });
       return fingerprint;
     }
     // Replacing a record with the same fingerprint only withdraws its approval: that is not growth.
@@ -845,21 +890,132 @@ export class DurableExecutor {
         for (const action of Object.values(state.actions))
           if (action.action.tool === definition.name && action.toolRevision >= revision)
             revision = action.toolRevision + 1;
-      state.tools[definition.name] = { fingerprint, revision, approved: false };
+      // The approved definition stays: it is what toolChanges() compares the new registration with.
+      state.tools[definition.name] = {
+        fingerprint,
+        revision,
+        approved: false,
+        ...(old?.baseline === undefined ? {} : { baseline: old.baseline }),
+      };
       this.#audit(state, now, 'TOOL_REGISTERED');
       return revision;
     }, growth);
-    this.#tools.set(definition.name, { definition: trusted, fingerprint, revision });
+    this.#tools.set(definition.name, { definition: trusted, fingerprint, revision, canonical });
     return fingerprint;
   }
-  /** TOOL_UNKNOWN for a name this process has not registered; TOOL_CHANGED when the fingerprint is not current. */
-  approveTool(name: string, fingerprint: string): void {
-    this.#write(state => {
+  /**
+   * Approves the current registration and records the approval in the ledger: the fingerprint, the
+   * definition (for toolChanges() after a later change or a restart), the time, the optional
+   * `approverId` and the approved fingerprint it replaces. With `reviewedAgainst`, approval is refused
+   * unless that is still the last approved fingerprint. TOOL_UNKNOWN for a name this process has not
+   * registered; TOOL_CHANGED when the fingerprint is not current or `reviewedAgainst` does not match;
+   * INVALID_INPUT for malformed options.
+   */
+  approveTool(name: string, fingerprint: string, options?: ExecutorApproveToolOptions): void {
+    if (options !== undefined && (options === null || typeof options !== 'object'))
+      throw new GuardError('INVALID_INPUT');
+    const reviewed = options?.reviewedAgainst;
+    if (reviewed !== undefined && reviewed !== null && typeof reviewed !== 'string')
+      throw new GuardError('INVALID_INPUT');
+    const approverId = options?.approverId === undefined ? undefined : id(options.approverId);
+    const approve = (keepDefinition: boolean) => (state: Ledger) => {
       const tool = own(state.tools, id(name));
-      if (!tool || !this.#tools.has(name)) throw new GuardError('TOOL_UNKNOWN');
+      const registered = this.#tools.get(name);
+      if (!tool || !registered) throw new GuardError('TOOL_UNKNOWN');
       if (tool.fingerprint !== fingerprint) throw new GuardError('TOOL_CHANGED');
+      const previous = tool.baseline;
+      if (reviewed !== undefined && reviewed !== (previous?.fingerprint ?? null)) throw new GuardError('TOOL_CHANGED');
+      const now = this.#now(state);
+      // Approving the same definition again keeps what the first approval of it replaced.
+      const replaced = previous?.fingerprint === fingerprint ? previous.replaced : previous?.fingerprint;
+      let definition =
+        previous?.fingerprint === fingerprint && previous.definition !== undefined
+          ? previous.definition
+          : keepDefinition && registered.fingerprint === fingerprint
+            ? registered.canonical
+            : undefined;
+      // Kept definitions share an eighth of the ledger, so they cannot crowd out tasks and actions.
+      if (definition !== undefined && definition !== previous?.definition) {
+        let bytes = Buffer.byteLength(canonicalJson(definition as Json));
+        for (const [other, record] of Object.entries(state.tools))
+          if (other !== name && record.baseline?.definition !== undefined)
+            bytes += Buffer.byteLength(JSON.stringify(record.baseline.definition));
+        if (bytes > this.#store.maxBytes / 8) definition = undefined;
+      }
       tool.approved = true;
-      this.#audit(state, this.#now(state), 'TOOL_APPROVED');
+      tool.baseline = {
+        fingerprint,
+        ...(definition === undefined ? {} : { definition: clone(definition) }),
+        approvedAt: now,
+        ...(approverId === undefined ? {} : { approverId }),
+        ...(replaced === undefined ? {} : { replaced }),
+      };
+      this.#audit(state, now, 'TOOL_APPROVED');
+    };
+    // Approving a definition the ledger already holds adds nothing: a plain write, as in 1.0.
+    const held = own(this.#store.read().tools, name)?.baseline;
+    const adds =
+      this.#tools.get(name)?.canonical !== undefined &&
+      !(held?.fingerprint === fingerprint && held.definition !== undefined);
+    if (!adds) return this.#write(approve(false));
+    try {
+      // Keeping a new definition adds to the ledger, so it stops at the soft limit like any growth.
+      this.#write(approve(true), GROWTH);
+    } catch (error) {
+      if (!(error instanceof ExecutorError) || error.code !== 'STORE_CAPACITY_EXCEEDED') throw error;
+      // The approval itself must not be lost to a full ledger: record it without the definition.
+      // toolChanges() then reports APPROVED_DEFINITION_NOT_KEPT instead of a diff.
+      this.#write(approve(false));
+    }
+  }
+  /**
+   * Compares a tool's current registration with the last approved definition recorded in the ledger,
+   * so the comparison also works after a restart. See AgentGuard.toolChanges() for the result; the
+   * executor adds `approval`, the recorded approval behind `approvedFingerprint`. Read-only. A ledger
+   * written by 1.0.0 holds no approved definitions: its tools report `first_approval` until approved
+   * once. TOOL_UNKNOWN for a name this process has not registered.
+   */
+  toolChanges(name: string): ExecutorToolChanges {
+    const tool = own(this.#store.read().tools, id(name));
+    const registered = this.#tools.get(name);
+    if (!tool || !registered) throw new GuardError('TOOL_UNKNOWN');
+    const baseline = tool.baseline;
+    const approvedDefinition = baseline?.definition === undefined ? undefined : immutableJson(baseline.definition);
+    const base = {
+      name,
+      fingerprint: registered.fingerprint,
+      approved: tool.approved,
+      ...(baseline === undefined ? {} : { approvedFingerprint: baseline.fingerprint }),
+      ...(registered.canonical === undefined ? {} : { definition: registered.canonical }),
+      ...(approvedDefinition === undefined ? {} : { approvedDefinition: approvedDefinition as Json }),
+      ...(baseline === undefined
+        ? {}
+        : {
+            approval: Object.freeze({
+              approvedAt: baseline.approvedAt,
+              ...(baseline.approverId === undefined ? {} : { approverId: baseline.approverId }),
+              ...(baseline.replaced === undefined ? {} : { replacedFingerprint: baseline.replaced }),
+            }),
+          }),
+    };
+    const none = { changes: Object.freeze([]), truncated: false };
+    if (baseline === undefined) return Object.freeze({ ...base, status: 'first_approval' as const, ...none });
+    if (baseline.fingerprint === registered.fingerprint)
+      return Object.freeze({ ...base, status: 'unchanged' as const, ...none });
+    if (registered.canonical === undefined || approvedDefinition === undefined)
+      return Object.freeze({
+        ...base,
+        status: 'unavailable' as const,
+        reason:
+          registered.canonical === undefined
+            ? ('DEFINITION_TOO_LARGE' as const)
+            : ('APPROVED_DEFINITION_NOT_KEPT' as const),
+        ...none,
+      });
+    return Object.freeze({
+      ...base,
+      status: 'changed' as const,
+      ...diffToolDefinitions(approvedDefinition, registered.canonical),
     });
   }
   /**

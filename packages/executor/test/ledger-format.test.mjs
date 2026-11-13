@@ -44,7 +44,7 @@ function copy(t, name) {
   return { directory, manifest, open };
 }
 
-test('fixtures cover alpha.3, 0.1.0 and the pre-format 0.2 build, plain and witnessed', () => {
+test('fixtures cover alpha.3, 0.1.0, the pre-format 0.2 build and 1.0.0, plain and witnessed', () => {
   assert.deepEqual(fixtures, [
     '0.1.0-alpha.3-plain',
     '0.1.0-alpha.3-witnessed',
@@ -52,6 +52,8 @@ test('fixtures cover alpha.3, 0.1.0 and the pre-format 0.2 build, plain and witn
     '0.1.0-witnessed',
     '0.2.0-pre-format-plain',
     '0.2.0-pre-format-witnessed',
+    '1.0.0-plain',
+    '1.0.0-witnessed',
   ]);
 });
 
