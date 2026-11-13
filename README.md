@@ -25,6 +25,10 @@ misled agent is able to do. The agent may believe the ticket. It still cannot re
 records outside its task, send to a recipient you did not list, reuse an approval, or
 spend past its budget.
 
+These risks now have names in the OWASP Top 10 for Agentic Applications.
+[Risks and which package handles them](#risks-and-which-package-handles-them) shows what
+Agent Guard covers for each one, and what stays with you.
+
 ## How it works
 
 ```text
