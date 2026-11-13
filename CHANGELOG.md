@@ -1,5 +1,72 @@
 # Changelog
 
+## 1.1.0 — 2026-11-13
+
+Reviewers can now see what changed in a tool definition before they approve it again
+([issue 57](https://github.com/ShieldaAI/agent-guard/issues/57)). Nothing in the 1.0 API
+changes or is removed, and no existing check is weaker. The
+[release notes](docs/releases/1.1.0.md) are the short version.
+
+### Core
+
+- Add (core): `toolChanges(name)` compares a tool's current registration with the last
+  approved definition of that name and returns one entry per changed JSON path (`path` as
+  a JSON Pointer, `kind` added, removed or changed, `before`, `after`). Schemas are
+  compared structurally. `status` is `first_approval`, `unchanged`, `changed` or
+  `unavailable`. The comparison covers the fingerprinted fields, never what the tool's
+  code does.
+- Add (core): `approveTool()` keeps the approved definition. `unapproveTool()` keeps it;
+  `unregisterTool()` removes it. A definition larger than the new
+  `limits.maxToolDefinitionBytes` (64 KiB by default, 1 KiB to 1 MiB) is approved by
+  fingerprint only, as before, and `toolChanges()` reports `unavailable` instead of a diff.
+- Add (core): heuristic `hints` on each change (`INSTRUCTION_TEXT`, `HIDDEN_CHARACTERS`,
+  `SCHEMA_FIELD_ADDED`, `SCHEMA_LOOSENED`, `FLAG_LOOSENED`). They are for the human
+  reviewer and never block anything.
+- Add (core): `approveTool(name, fingerprint, { reviewedAgainst })` refuses with
+  `TOOL_CHANGED` when the last approved fingerprint is not the one the reviewer's
+  comparison showed (`null` for a first approval).
+- Add (core): `diffToolDefinitions(before, after)` and the types `ToolChanges`,
+  `ToolChange`, `ToolChangeHint`, `ToolDefinitionDiff` and `ApproveToolOptions`.
+
+### MCP
+
+- Add (mcp): `ManagedMcpConnection.operationChanges(name)` (also on
+  `VerifiedMcpHttpSession`) shows what the server changed in one operation since it was
+  last approved on the guard, after a `refresh()` or on a new connection, with
+  `descriptorDigest`, `approvedDescriptorDigest`, descriptor `changes` and the host's
+  `bindingChanges` (binding flags and connection identity). The connection session and
+  epoch are not reported as changes.
+- Change (mcp): the `guard` option may also provide `toolChanges` (type `McpGuard`). A
+  guard with only `registerTool` still works; `operationChanges()` then throws
+  `INVALID_CONFIGURATION`.
+
+### Executor
+
+- Add (executor): `approveTool()` records the approved definition in the ledger, with the
+  approval time, an optional `approverId` and the approved fingerprint it replaced.
+  `toolChanges(name)` compares against that record, so a tool that changed across a
+  restart shows its diff; `toolChanges(name).approval` returns the recorded approval.
+- Add (executor): option `maxToolDefinitionBytes` (64 KiB by default). Kept definitions
+  together use at most an eighth of `maxLedgerBytes`. A definition over either bound, or
+  one approved at the ledger's soft limit, is approved by fingerprint only (`APPROVED_DEFINITION_NOT_KEPT`); approval is never refused for that reason.
+- Ledger: the record is an additive optional field. `formatVersion` stays 1, a ledger
+  written by 1.0.0 opens unchanged (its tools report `first_approval` until approved once),
+  and 1.0.0 still opens a 1.1.0 ledger. A committed 1.0.0 fixture covers the first; the
+  second was checked once against the published 1.0.0 package and has no automated test.
+
+### Scenarios
+
+- Change (scenarios): catalog 1.4.0 extends S06 with the definition diff and an approval
+  against a comparison that was not shown. `GuardLike` gains an optional `toolChanges`;
+  the new checks run only for adapters that provide it.
+
+### Agent Ops (source only)
+
+- Add: Maintenance shows a **Tool definition** panel: what changed in the service's own
+  tool since it was last approved, old and new value side by side, hints marked, all
+  values shown as text. `GET /api/maintenance` adds `toolDefinition`. The service still
+  approves its own tool at startup, now with `system:startup` recorded as approver.
+
 ## 1.0.0 — 2026-11-12
 
 The first stable release. The last published version was `0.1.0-alpha.3`; this entry
