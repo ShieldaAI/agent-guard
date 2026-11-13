@@ -18,6 +18,9 @@ A documentation-only patch. No code, type or behavior changes from 1.1.0. The
 - Docs: `docs/releasing.md` says to publish from a full clone, because npm does not record
   `gitHead` from a `git worktree` checkout. `@shieldaai/agent-guard@1.1.0` was published
   without `gitHead` for this reason.
+- Security (Cartography integration, not published to npm): the locked `dnspython` moves
+  from 2.9.1 to 2.9.2 for [GHSA-vvf4-9x63-8xvv](https://github.com/rthalley/dnspython/security/advisories/GHSA-vvf4-9x63-8xvv),
+  excessive memory and CPU use when parsing a crafted WKS record in zone-file text.
 
 ## 1.1.0 — 2026-11-13
 
