@@ -1,5 +1,5 @@
 /** Version of the synthetic acceptance cases, independent of package releases. */
-export const SCENARIO_CATALOG_VERSION = '1.3.0' as const;
+export const SCENARIO_CATALOG_VERSION = '1.4.0' as const;
 
 export type ScenarioId =
   'S01' | 'S02' | 'S03' | 'S04' | 'S05' | 'S06' | 'S07' | 'S08' | 'S09' | 'S10' | 'S11' | 'S12' | 'S13';
@@ -77,10 +77,12 @@ const definitions: ScenarioDefinition[] = [
       'Unapproved changed definition',
       'Unapproved added tool',
       'Old prepared action after code re-registration',
+      'Approval against a comparison the reviewer did not see',
     ],
     benign: 'Approved v1 works; explicitly reviewed v2 works after registration.',
     limitations: [
       'These core checks do not certify MCP discovery or transport; stable metadata does not attest implementation.',
+      'The definition diff is checked only for an adapter that provides toolChanges(); it shows definitions, never code.',
     ],
   },
   {

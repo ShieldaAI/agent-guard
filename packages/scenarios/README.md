@@ -63,7 +63,7 @@ const report = await runConformance({
 });
 ```
 
-The factory is called once for each fixture and must return a new object with the methods of the exported `GuardLike` type: `registerTool`, `approveTool`, `createTask`, `delegateTask`, `revokeTask`, `setPolicy`, `prepare`, `approve`, `execute` and `snapshot`. It must use the `clock` and `secretValues` it is given. Refusals must be `GuardError`s with the documented codes; they are recognized with `isGuardError()`, so an implementation built on a second installed copy of the guard also passes.
+The factory is called once for each fixture and must return a new object with the methods of the exported `GuardLike` type: `registerTool`, `approveTool`, `createTask`, `delegateTask`, `revokeTask`, `setPolicy`, `prepare`, `approve`, `execute` and `snapshot`, and optionally `toolChanges`. It must use the `clock` and `secretValues` it is given. Refusals must be `GuardError`s with the documented codes; they are recognized with `isGuardError()`, so an implementation built on a second installed copy of the guard also passes.
 
 ## The report
 
@@ -77,7 +77,7 @@ A failure label is a fixed description of the check that failed. It never contai
 
 ## Catalog version
 
-The catalog has its own version, `SCENARIO_CATALOG_VERSION`, separate from the package version. Version `1.3.0` has thirteen scenarios and twenty-six cases. Compare reports by `catalogVersion`: a pass on an older catalog says nothing about checks added later.
+The catalog has its own version, `SCENARIO_CATALOG_VERSION`, separate from the package version. Version `1.4.0` has thirteen scenarios and twenty-six cases; it adds the tool-definition diff checks to S06, which run when the guard under test has `toolChanges`. Compare reports by `catalogVersion`: a pass on an older catalog says nothing about checks added later.
 
 ## Timeouts
 
