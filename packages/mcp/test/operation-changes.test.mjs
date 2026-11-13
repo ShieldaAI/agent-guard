@@ -26,7 +26,7 @@ async function fixture(t, { guard = new AgentGuard(), binding = {}, wrap = value
       return { content: [{ type: 'text', text: 'ok' }] };
     });
   };
-  advertise('Read one document', schema());
+  advertise('Read one document', options.inputSchema ?? schema());
   const [transport, peer] = InMemoryTransport.createLinkedPair();
   await server.connect(peer);
   const connection = await ManagedMcpConnection.connect({
@@ -181,6 +181,32 @@ test('a connection for another tenant under the same server ID is not reported a
     [
       ['/metadata/identity/tenantId', 'acme', 'globex'],
       ['/metadata/identity/transportIdentity', 'stdio:documents', 'stdio:other'],
+    ],
+  );
+});
+
+test('a server that floods the diff cannot push a changed flag or identity out of the list', async t => {
+  const guard = new AgentGuard();
+  const a = await fixture(t, { guard, binding: { requiresApproval: true } });
+  const [first] = a.connection.registrations;
+  guard.approveTool(first.name, first.fingerprint);
+  await a.connection.close();
+  // Another tenant, a weaker flag, and a server that now advertises 300 more fields.
+  const flood = Object.fromEntries(Array.from({ length: 300 }, (_, index) => [`f${index}`, { type: 'string' }]));
+  const b = await fixture(t, {
+    guard,
+    identity: { ...identity, tenantId: 'globex' },
+    inputSchema: schema(flood),
+  });
+  const changes = b.connection.operationChanges(first.name);
+  assert.equal(changes.status, 'changed');
+  assert.equal(changes.truncated, true, 'the server changed more than is listed');
+  assert.equal(changes.changes.length, 256);
+  assert.deepEqual(
+    changes.bindingChanges.map(change => [change.path, change.before, change.after, [...change.hints]]),
+    [
+      ['/metadata/identity/tenantId', 'acme', 'globex', []],
+      ['/requiresApproval', true, false, ['FLAG_LOOSENED']],
     ],
   );
 });

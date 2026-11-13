@@ -592,6 +592,8 @@ interface McpSkippedOperation {
   changed, by JSON Pointer into `descriptor`; `bindingChanges` lists what the
   host changed: binding flags and the connection identity (for example
   `/metadata/identity/tenantId`), by path into the guard's definition.
+  They are compared apart from the server's part, so a server that changes more
+  than the 256 listed fields cannot push them out of the list.
   `unchanged` means the same `descriptorDigest`, flags and identity: the
   session and epoch inside the fingerprint are not reported, and `approveTool` is
   still needed. Hints, limits and the rule that values are untrusted server text

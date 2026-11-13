@@ -182,6 +182,18 @@ function approvedDescriptor(definition: Json | undefined): Json | undefined {
   if (!Object.hasOwn(metadata, 'descriptor')) return undefined;
   return (metadata as { readonly [key: string]: Json }).descriptor;
 }
+/**
+ * A definition without the parts the server supplies (the schema and the descriptor), so that the
+ * host's flags and identity are compared on their own and a long server diff cannot crowd them out.
+ */
+function hostSide(definition: Json | undefined): Json {
+  if (definition === null || typeof definition !== 'object' || Array.isArray(definition)) return {};
+  const { inputSchema: _schema, metadata, ...flags } = definition as { readonly [key: string]: Json };
+  if (metadata === undefined) return flags;
+  if (metadata === null || typeof metadata !== 'object' || Array.isArray(metadata)) return { ...flags, metadata };
+  const { descriptor: _descriptor, ...identity } = metadata as { readonly [key: string]: Json };
+  return { ...flags, metadata: identity };
+}
 const EPOCH_META = 'shielda/connection-epoch';
 const SESSION_META = 'shielda/connection-session';
 const allowedControlMethods = new Set(['initialize', 'notifications/initialized', 'ping', 'notifications/cancelled']);
@@ -565,13 +577,17 @@ export class ManagedMcpConnection {
       descriptor: approved,
     })}`;
     let descriptor: ReturnType<typeof diffToolDefinitions>;
+    let host: ReturnType<typeof diffToolDefinitions>;
     try {
       descriptor = diffToolDefinitions(approved, registration.descriptor);
+      // Compared separately from the server's part: the guard's own list is capped, and a server
+      // that floods it must not be able to push a changed flag or identity out of it.
+      host = diffToolDefinitions(hostSide(core.approvedDefinition), hostSide(core.definition));
     } catch {
       throw new McpBoundaryError('JSON_LIMIT');
     }
     const bindingChanges = Object.freeze(
-      core.changes.filter(change => !NOT_BINDING.test(change.path) && !sessionTransportOnly(change)),
+      host.changes.filter(change => !NOT_BINDING.test(change.path) && !sessionTransportOnly(change)),
     );
     const changed = descriptor.changes.length > 0 || bindingChanges.length > 0;
     return Object.freeze({
@@ -580,7 +596,7 @@ export class ManagedMcpConnection {
       approvedDescriptorDigest,
       changes: descriptor.changes,
       bindingChanges,
-      truncated: descriptor.truncated || core.truncated,
+      truncated: descriptor.truncated || host.truncated,
     });
   }
 
