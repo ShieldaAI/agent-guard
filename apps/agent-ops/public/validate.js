@@ -216,6 +216,49 @@ function historyCapacityValue(value, message) {
     reject(message);
 }
 
+const TOOL_STATUSES = ['first_approval', 'unchanged', 'changed', 'unavailable'];
+const TOOL_CHANGE_KINDS = ['added', 'removed', 'changed'];
+const FINGERPRINT = /^sha256:[a-f0-9]{64}$/;
+const shown = value =>
+  value === null ||
+  (record(value) &&
+    typeof value.text === 'string' &&
+    value.text.length <= 2000 &&
+    typeof value.truncated === 'boolean');
+/** The tool-definition comparison on the Maintenance page. Its values are shown as text only. */
+function toolDefinitionValue(value, failed) {
+  if (
+    !record(value) ||
+    !text(value.name, 160) ||
+    !TOOL_STATUSES.includes(value.status) ||
+    !(value.reason === null || CODE.test(value.reason)) ||
+    !FINGERPRINT.test(value.fingerprint) ||
+    !(value.approvedFingerprint === null || FINGERPRINT.test(value.approvedFingerprint)) ||
+    !(value.approvedAt === null || count(value.approvedAt)) ||
+    typeof value.truncated !== 'boolean' ||
+    !Array.isArray(value.changes) ||
+    value.changes.length > 50 ||
+    (value.status !== 'changed' && value.changes.length > 0)
+  )
+    reject(failed);
+  for (const change of value.changes) {
+    if (
+      !record(change) ||
+      typeof change.path !== 'string' ||
+      change.path.length > 512 ||
+      !TOOL_CHANGE_KINDS.includes(change.kind) ||
+      !shown(change.before) ||
+      !shown(change.after) ||
+      (change.kind === 'added') !== (change.before === null) ||
+      (change.kind === 'removed') !== (change.after === null) ||
+      !Array.isArray(change.hints) ||
+      change.hints.length > 8 ||
+      change.hints.some(hint => !CODE.test(hint))
+    )
+      reject(failed);
+  }
+}
+
 export function maintenanceValue(value) {
   const failed = 'Maintenance information could not be verified. Refresh before continuing.';
   if (
@@ -242,6 +285,7 @@ export function maintenanceValue(value) {
   limitsValue(value.limits, failed);
   usageValue(value.usage, failed);
   historyCapacityValue(value.historyCapacity, failed);
+  toolDefinitionValue(value.toolDefinition, failed);
   const ids = new Set();
   for (const candidate of value.archiveCandidates) {
     if (

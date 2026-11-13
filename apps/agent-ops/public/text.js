@@ -79,3 +79,14 @@ export function archiveCandidateLabel(candidate) {
 
 export const blockerSentence = code =>
   Object.hasOwn(ARCHIVE_BLOCKERS, code) ? ARCHIVE_BLOCKERS[code] : `It cannot be archived yet (${code}).`;
+
+/** Reviewer-facing wording for the heuristic marks on a tool-definition change. */
+const TOOL_HINTS = {
+  INSTRUCTION_TEXT: 'New text reads like an instruction or names credentials',
+  HIDDEN_CHARACTERS: 'New text has invisible characters',
+  SCHEMA_FIELD_ADDED: 'New input field',
+  SCHEMA_LOOSENED: 'Input rule loosened',
+  FLAG_LOOSENED: 'Guard setting weakened',
+};
+export const toolHintLabel = hint => TOOL_HINTS[hint] ?? 'Check this change';
+export const TOOL_CHANGE_KINDS = { added: 'Added', removed: 'Removed', changed: 'Changed' };

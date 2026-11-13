@@ -1,6 +1,14 @@
 // Maintenance: operational status, capacity, history and archiving finished requests.
 import { button, empty, field, formField, lockable, node, notice, tag } from '../dom.js';
-import { archiveCandidateLabel, blockerSentence, countLabel, date, quantity } from '../text.js';
+import {
+  TOOL_CHANGE_KINDS,
+  archiveCandidateLabel,
+  blockerSentence,
+  countLabel,
+  date,
+  quantity,
+  toolHintLabel,
+} from '../text.js';
 import { capacityTable } from './shared.js';
 
 function operationalPanel(ctx) {
@@ -192,6 +200,87 @@ function archivePanel(ctx) {
   );
 }
 
+/** One side of a change. The value is the definition's own text and enters the page as a text node. */
+function toolValue(label, shown, absent) {
+  return node(
+    'div',
+    { class: 'tool-value' },
+    node('h4', {}, label),
+    shown === null
+      ? node('p', { class: 'subtle' }, absent)
+      : [node('pre', {}, shown.text), shown.truncated && node('p', { class: 'subtle' }, 'Cut after 2,000 characters.')],
+  );
+}
+/**
+ * What changed in the service's tool definition since it was last approved. Display only: the
+ * service approves its own tool at startup, so this is a record to read after an upgrade.
+ */
+function toolDefinitionPanel(tool) {
+  const summary = {
+    first_approval: 'No earlier approval is on record for this tool, so there is nothing to compare with.',
+    unchanged: 'The definition is the same as the one last approved.',
+    changed: 'The definition differs from the one last approved. This service approved it at startup.',
+    unavailable: 'The definition differs from the one last approved, but a definition was too large to keep.',
+  }[tool.status];
+  return node(
+    'section',
+    { class: 'panel setup-wide', 'aria-label': 'Tool definition', id: 'tool-definition' },
+    node(
+      'div',
+      { class: 'panel-head' },
+      node('div', {}, node('h2', {}, 'Tool definition'), node('p', {}, 'Compared when this service started.')),
+      tag(tool.status === 'changed' || tool.status === 'unavailable' ? 'Changed' : 'No change'),
+    ),
+    node(
+      'div',
+      { class: 'panel-body' },
+      tool.status === 'changed' || tool.status === 'unavailable' ? notice(summary, 'warning') : notice(summary),
+      node(
+        'dl',
+        { class: 'fields' },
+        field('Tool', node('code', {}, tool.name)),
+        field(
+          'Last approved before this start',
+          tool.approvedAt === null ? 'No approval on record' : date(tool.approvedAt),
+        ),
+        field('Fingerprint now', node('code', {}, tool.fingerprint), { wide: true }),
+        tool.approvedFingerprint &&
+          field('Fingerprint last approved', node('code', {}, tool.approvedFingerprint), { wide: true }),
+      ),
+      tool.changes.length > 0 &&
+        node(
+          'ol',
+          { class: 'tool-changes', 'aria-label': 'Changed fields' },
+          tool.changes.map(change =>
+            node(
+              'li',
+              {},
+              node(
+                'div',
+                { class: 'tool-change-head' },
+                node('code', {}, change.path || '(whole definition)'),
+                tag(TOOL_CHANGE_KINDS[change.kind]),
+                change.hints.map(hint => node('span', { class: 'badge hint-mark' }, toolHintLabel(hint))),
+              ),
+              node(
+                'div',
+                { class: 'tool-sides' },
+                toolValue('Approved', change.before, 'Not present.'),
+                toolValue('Now', change.after, 'Removed.'),
+              ),
+            ),
+          ),
+        ),
+      tool.truncated && notice('More fields changed than are listed here.', 'warning'),
+      node(
+        'p',
+        { class: 'review-note' },
+        'Values are the definition’s own text, shown as written. Marks such as “New input field” are automatic hints, not a verdict: an unmarked change can still matter. The comparison covers the definition only, never what the tool’s code does.',
+      ),
+    ),
+  );
+}
+
 export function maintenanceView(ctx) {
   const { state } = ctx,
     maintenance = state.maintenance;
@@ -263,6 +352,7 @@ export function maintenanceView(ctx) {
       ),
     ),
     archivePanel(ctx),
+    toolDefinitionPanel(maintenance.toolDefinition),
     node(
       'section',
       { class: 'panel' },

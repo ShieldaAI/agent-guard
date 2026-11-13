@@ -145,11 +145,51 @@ export const KEY_ROTATION = Object.freeze({
     'Stop the service, rotate keys with the reviewed offline custody commands for every enrolled store, verify each store, then restart. Keys never enter this browser.',
 });
 
+const TOOL_VALUE_CHARS = 2000;
+const TOOL_CHANGES_SHOWN = 50;
+// Characters a page would not show: controls, zero-width and bidirectional marks, tag characters.
+const INVISIBLE =
+  /[\u0000-\u0008\u000B-\u000C\u000E-\u001F\u007F-\u009F\u00AD\u034F\u061C\u115F-\u1160\u17B4-\u17B5\u180B-\u180F\u200B-\u200F\u2028-\u202E\u2060-\u206F\u3164\uFE00-\uFE0F\uFEFF\uFFA0]|[\u{E0000}-\u{E01EF}]/gu;
+const visible = text =>
+  text.replace(INVISIBLE, character => `\\u{${character.codePointAt(0).toString(16).toUpperCase()}}`);
+/**
+ * One value of a tool definition as text for the page: compact JSON, with invisible characters
+ * written out as \u escapes so a reviewer sees them. Long values are cut and marked as cut.
+ */
+function shownValue(value) {
+  if (value === undefined) return null;
+  const text = visible(JSON.stringify(value));
+  return { text: text.slice(0, TOOL_VALUE_CHARS), truncated: text.length > TOOL_VALUE_CHARS };
+}
+/**
+ * What the executor's toolChanges() reported for the service's tool at startup, bounded for the
+ * page. Values are the definition's own text: the client shows them as text, never as markup.
+ */
+export function toolReviewBody(changes) {
+  return {
+    name: changes.name,
+    status: changes.status,
+    reason: changes.reason ?? null,
+    fingerprint: changes.fingerprint,
+    approvedFingerprint: changes.approvedFingerprint ?? null,
+    approvedAt: changes.approval?.approvedAt ?? null,
+    changes: changes.changes.slice(0, TOOL_CHANGES_SHOWN).map(change => ({
+      path: visible(change.path).slice(0, 512),
+      kind: change.kind,
+      before: shownValue(change.before),
+      after: shownValue(change.after),
+      hints: [...change.hints],
+    })),
+    truncated: changes.truncated || changes.changes.length > TOOL_CHANGES_SHOWN,
+  };
+}
+
 /**
  * Maintenance view of one tenant. `requests` are that tenant's stored rows, `eligible` the ones
  * the single archive rule admits, `company` the tenant's committed history state (or undefined).
  */
 export function maintenanceBody({
+  tool,
   requests,
   eligible,
   now,
@@ -185,6 +225,7 @@ export function maintenanceBody({
       historyCapacity.total >= historyCapacity.limit * 0.8,
     statistics,
     keyRotation: KEY_ROTATION,
+    ...(tool === undefined ? {} : { toolDefinition: tool }),
   };
 }
 

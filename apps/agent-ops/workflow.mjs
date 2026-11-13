@@ -12,6 +12,7 @@ import {
   publicRequest,
   requestsBody,
   ticketsBody,
+  toolReviewBody,
 } from './responses.mjs';
 
 export class OpsError extends Error {
@@ -249,7 +250,14 @@ export class TicketWorkflow {
       },
       execute: args => ({ value: this.commit(args.requestId), actualCost: 1 }),
     });
-    executor.approveTool('ticket.update', fingerprint);
+    // The tool is this service's own code, so it is approved at startup. What changed since the
+    // last approved definition is kept for the Maintenance page; the ledger records the approval.
+    const changes = executor.toolChanges('ticket.update');
+    this.toolReview = Object.freeze(toolReviewBody(changes));
+    executor.approveTool('ticket.update', fingerprint, {
+      reviewedAgainst: changes.approvedFingerprint ?? null,
+      approverId: `${SYSTEM_ACTOR_PREFIX}startup`,
+    });
   }
   /**
    * The current business state, decoded and checked once per committed revision. Every call
@@ -817,6 +825,7 @@ export class TicketWorkflow {
       history = historyState(data);
     const requests = Object.values(data.requests).filter(r => r.tenantId === operator.tenantId);
     return maintenanceBody({
+      tool: this.toolReview,
       requests,
       eligible: requests.filter(r => this.#archivable(r, now)),
       now,
