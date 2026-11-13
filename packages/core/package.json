@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Limit what a misled AI agent can do: every tool call is checked against its task's grants, approvals and budget before it runs.",
   "license": "Apache-2.0",
   "type": "module",

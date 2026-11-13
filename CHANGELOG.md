@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.1.1 — 2026-11-13
+
+A documentation-only patch. No code, type or behavior changes from 1.1.0. The
+[release notes](docs/releases/1.1.1.md) are the short version.
+
+### Core
+
+- Docs (core): the npm README now opens with the problem Agent Guard addresses and links to
+  the OWASP Top 10 for Agentic Applications mapping before the install command and example.
+- Docs (core): the package `description` now leads with the outcome: limiting what a misled
+  AI agent can do.
+
+### Repository
+
+- Docs: the README's problem section points to the OWASP mapping table.
+- Docs: `docs/releasing.md` says to publish from a full clone, because npm does not record
+  `gitHead` from a `git worktree` checkout. `@shieldaai/agent-guard@1.1.0` was published
+  without `gitHead` for this reason.
+- Security (Cartography integration, not published to npm): the locked `dnspython` moves
+  from 2.9.1 to 2.9.2 for [GHSA-vvf4-9x63-8xvv](https://github.com/rthalley/dnspython/security/advisories/GHSA-vvf4-9x63-8xvv),
+  excessive memory and CPU use when parsing a crafted WKS record in zone-file text.
+
 ## 1.1.0 — 2026-11-13
 
 Reviewers can now see what changed in a tool definition before they approve it again
