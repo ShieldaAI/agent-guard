@@ -34,6 +34,10 @@ npm run check
 npm run pack
 ```
 
+Publish from a full clone of the repository at the release commit, not from a `git worktree` checkout:
+npm does not record `gitHead` when it publishes from a worktree, and a published version cannot be
+corrected. `@shieldaai/agent-guard@1.1.0` has no `gitHead` for this reason; its bytes match the reviewed pack.
+
 Publish in this order, one command per verified step:
 
 ```sh
