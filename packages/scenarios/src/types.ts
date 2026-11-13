@@ -14,7 +14,9 @@ export type GuardLike = Pick<
   | 'approve'
   | 'execute'
   | 'snapshot'
->;
+> &
+  // Optional since catalog 1.4.0: an adapter that has it also runs the S06 definition-diff checks.
+  Partial<Pick<AgentGuard, 'toolChanges'>>;
 
 export type ConformanceGuardFactory = (options: GuardOptions) => GuardLike;
 

@@ -217,6 +217,79 @@ export interface GuardLimits {
    * Nesting is limited to 64 levels and is not configurable.
    */
   maxJsonNodes?: number;
+  /**
+   * Largest tool definition the guard keeps for `toolChanges()`, in bytes of compact UTF-8
+   * JSON of the fingerprinted fields. A larger definition still registers and can be approved;
+   * the guard keeps only its fingerprint, and `toolChanges()` says so with `status:
+   * 'unavailable'` instead of a diff. Integer 1,024-1,048,576, default 65,536 (64 KiB).
+   */
+  maxToolDefinitionBytes?: number;
+}
+/**
+ * Heuristic marks on one change, for the human reviewer. They are never a verdict and never
+ * block anything: an empty list does not mean the change is safe.
+ * - INSTRUCTION_TEXT: new text reads like an instruction to a model, or names credentials.
+ * - HIDDEN_CHARACTERS: new text holds zero-width, bidirectional-control or control characters.
+ * - SCHEMA_FIELD_ADDED: the input schema gained a property.
+ * - SCHEMA_LOOSENED: the input schema accepts more than before (a constraint removed or changed,
+ *   a wider enum, type or bound, a field no longer required, extra properties allowed).
+ * - FLAG_LOOSENED: a guard flag became weaker (for example `requiresApproval` removed, or `maxCost` raised).
+ */
+export type ToolChangeHint =
+  'INSTRUCTION_TEXT' | 'HIDDEN_CHARACTERS' | 'SCHEMA_FIELD_ADDED' | 'SCHEMA_LOOSENED' | 'FLAG_LOOSENED';
+/** One changed JSON path of a tool definition. Values come from the tool: treat them as untrusted data. */
+export interface ToolChange {
+  /** RFC 6901 JSON Pointer into the fingerprinted definition, for example `/inputSchema/properties/path/type`. */
+  readonly path: string;
+  readonly kind: 'added' | 'removed' | 'changed';
+  /** The approved value. Absent when `kind` is `added`. */
+  readonly before?: Json;
+  /** The value now registered. Absent when `kind` is `removed`. */
+  readonly after?: Json;
+  readonly hints: readonly ToolChangeHint[];
+}
+/** Result of `diffToolDefinitions()`. */
+export interface ToolDefinitionDiff {
+  readonly changes: readonly ToolChange[];
+  /** True when there were more than 256 changes; the rest are not listed. Top-level guard fields are always listed. */
+  readonly truncated: boolean;
+}
+/**
+ * What `toolChanges()` reports: the current registration compared with the last approved
+ * definition of the same name. Frozen. Descriptions, schemas and metadata in it are the
+ * tool's own text: show them as data, never as markup or instructions.
+ */
+export interface ToolChanges extends ToolDefinitionDiff {
+  readonly name: string;
+  /**
+   * - `first_approval`: no definition of this name has been approved (or it was unregistered since).
+   * - `unchanged`: the registration has the approved fingerprint.
+   * - `changed`: it differs; `changes` lists how.
+   * - `unavailable`: it differs, but a definition was too large to keep, so there is no diff.
+   *   `reason` says which. Compare the definitions yourself before approving.
+   */
+  readonly status: 'first_approval' | 'unchanged' | 'changed' | 'unavailable';
+  /** Set only with `unavailable`: the current definition or the approved one exceeded `maxToolDefinitionBytes`. */
+  readonly reason?: 'DEFINITION_TOO_LARGE' | 'APPROVED_DEFINITION_TOO_LARGE' | 'APPROVED_DEFINITION_NOT_KEPT';
+  /** Fingerprint of the current registration: what `approveTool()` takes. */
+  readonly fingerprint: string;
+  /** Whether the current registration is approved. */
+  readonly approved: boolean;
+  /** Fingerprint of the last approved definition. Pass it as `reviewedAgainst` when approving. */
+  readonly approvedFingerprint?: string;
+  /** The fingerprinted fields of the current registration. Absent when too large to keep. */
+  readonly definition?: Json;
+  /** The fingerprinted fields of the last approved definition. Absent when none, or too large to keep. */
+  readonly approvedDefinition?: Json;
+}
+/** Options for `approveTool()`. */
+export interface ApproveToolOptions {
+  /**
+   * The `approvedFingerprint` of the `toolChanges()` result the reviewer read, or `null` when it
+   * was a first approval. When given, approval fails with TOOL_CHANGED unless that is still the
+   * last approved definition, so a reviewer never approves against a comparison they did not see.
+   */
+  reviewedAgainst?: string | null;
 }
 /**
  * One authorization decision, for audit. Carries identifiers only: never arguments,

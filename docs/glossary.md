@@ -10,6 +10,8 @@ The words Agent Guard uses, in the order you meet them.
 | **The executor** | The `@shieldaai/agent-guard-executor` package: the same checks, with state kept in an encrypted file (the ledger) so it survives restarts, and a token for each task. |
 | **Tool** | One operation the agent may ask for, such as "read a ticket" or "send an email". You register it with a `resolve` function (which resource does this call touch?) and an `execute` function (do it). |
 | **Fingerprint** | A hash of a tool's definition. You approve a tool by its fingerprint; if the definition changes, the fingerprint changes and the tool is refused until you approve it again. |
+| **Tool changes** | `toolChanges(name)`: what differs between a tool's current definition and the one last approved, one entry per changed field, for a reviewer to read before approving again. It covers the definition, not the tool's code. |
+| **Change hint** | An automatic mark on a changed field that often matters, such as new instruction-like text or a loosened schema. A heuristic for the reviewer: never a verdict, and never a block. |
 | **Tool approval** | `approveTool(name, fingerprint)`: your code accepts a tool's definition. Done once per definition. It never allows a specific action. |
 | **Task** | One piece of work for an agent, created by the host, with its own grants, tenant, principal and budget. |
 | **Task handle** | The object the host gets back from `createTask`. Only that object carries the task's authority; a copy with the same ID does not. |
@@ -32,7 +34,7 @@ The words Agent Guard uses, in the order you meet them.
 | **Ledger** | The executor's encrypted SQLite file holding tasks, approvals, budgets and receipts. |
 | **Rollback witness** | A second small file, kept separately, that lets the executor notice that an old copy of the ledger was restored. |
 | **Model Context Protocol (MCP)** | An open protocol through which an agent's host connects to tool servers. The MCP adapter puts those tools behind the guard. |
-| **Descriptor digest** | A hash of an MCP tool's advertised definition that stays the same across connections. Store it when you review a tool; compare it before approving. |
+| **Descriptor digest** | A hash of an MCP tool's advertised definition that stays the same across connections. The guard's `operationChanges()` uses it to say whether the server changed a tool since it was approved. |
 | **Quarantine** | The MCP adapter's state after something changed or went wrong: every tool from that connection is unavailable until you refresh and approve again. |
 | **Sandbox** | The executor's optional Docker profile for running code you do not trust: no network, no host credentials. |
 | **Governed memory** | The executor's memory tools: each entry records where it came from and can be quarantined or rolled back. |

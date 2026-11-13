@@ -152,6 +152,20 @@ export interface AuditEvent {
   taskId?: string;
   actionId?: string;
 }
+/**
+ * The last approved definition of one tool, kept so a later registration can be compared with it.
+ * Additive since 1.1.0: absent in older ledgers. A 1.0.0 reader ignores it and drops it when
+ * the tool is registered again, which loses only the comparison, never an approval check.
+ */
+export interface ToolBaseline {
+  fingerprint: string;
+  /** The fingerprinted fields. Absent when too large to keep or the ledger was at its soft limit. */
+  definition?: unknown;
+  approvedAt: number;
+  approverId?: string;
+  /** The approved fingerprint this approval replaced: with `fingerprint`, it names the comparison the reviewer had. */
+  replaced?: string;
+}
 export interface Ledger {
   schema: 1 | 2 | 3;
   revision: number;
@@ -162,7 +176,7 @@ export interface Ledger {
   tasks: Record<string, StoredTask>;
   /** untrusted: a family call read outside content (set at admission, never cleared). */
   families: Record<string, { sensitive: boolean; untrusted?: boolean; memorySources?: string[] }>;
-  tools: Record<string, { fingerprint: string; revision: number; approved: boolean }>;
+  tools: Record<string, { fingerprint: string; revision: number; approved: boolean; baseline?: ToolBaseline }>;
   actions: Record<string, StoredAction>;
   /** untrusted: the family state when the approval was issued; absent on approvals older than 0.2. */
   approvals: Record<

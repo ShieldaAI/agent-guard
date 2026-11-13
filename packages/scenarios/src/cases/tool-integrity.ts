@@ -34,6 +34,26 @@ export const toolIntegrityCases = {
         { ...definition, description: 'Definition v2', inputSchema: { type: 'object', required: ['newField'] } },
         false,
       );
+      const toolChanges = f.guard.toolChanges?.bind(f.guard);
+      if (toolChanges) {
+        const changes = toolChanges('metadata_tool');
+        const paths = changes.changes.map(change => `${change.kind} ${change.path}`);
+        c.assert(changes.status === 'changed' && !changes.approved, 'changed definition is reported, not approved');
+        c.assert(
+          paths.join() === 'changed /description,added /inputSchema/required',
+          'the diff lists each changed path of the definition',
+        );
+        c.assert(
+          changes.changes[0]?.before === 'Definition v1' && changes.changes[0]?.after === 'Definition v2',
+          'the diff carries the approved and the new value',
+        );
+        // The reviewer read a comparison with v1. Claiming a first approval, or another baseline, is refused.
+        await c.denied(
+          () => f.guard.approveTool('metadata_tool', v2, { reviewedAgainst: null }),
+          'approval against a comparison that was not shown',
+          'TOOL_CHANGED',
+        );
+      }
       await c.denied(() => f.invoke(task, 'metadata_tool', {}), 'unapproved definition change', 'TOOL_UNAPPROVED');
       await c.denied(() => f.guard.execute(old), 'prepared action invalidated by metadata change', 'TOOL_CHANGED');
       f.guard.approveTool('metadata_tool', v2);
@@ -64,7 +84,15 @@ export const toolIntegrityCases = {
       const task = f.task([{ tool: 'metadata_tool', resources: [GUIDE] }]);
       c.assert((await f.invoke(task, 'metadata_tool', {})) === 'v1', 'approved v1 executes');
       const v2 = f.register({ ...definition, description: 'Definition v2', execute: () => c.effect('v2') }, false);
-      f.guard.approveTool('metadata_tool', v2);
+      const toolChanges = f.guard.toolChanges?.bind(f.guard);
+      if (toolChanges) {
+        const changes = toolChanges('metadata_tool');
+        c.assert(
+          changes.status === 'changed' && changes.changes.length === 1 && changes.changes[0]?.path === '/description',
+          'the reviewer sees the one changed field',
+        );
+        f.guard.approveTool('metadata_tool', v2, { reviewedAgainst: changes.approvedFingerprint ?? null });
+      } else f.guard.approveTool('metadata_tool', v2);
       c.assert((await f.invoke(task, 'metadata_tool', {})) === 'v2', 'reviewed v2 executes');
       c.assert(c.handlerInvocations === 2, 'exactly two reviewed metadata effects');
     },

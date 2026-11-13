@@ -42,7 +42,7 @@ const FILE_LIMIT = 2 * 1024 * 1024,
 export const admissionReportLimit = cpuProfile =>
   cpuProfile === true ? REPORT_LIMIT + 4 * 16 * 1024 * 1024 : REPORT_LIMIT;
 const modules = {
-  core: 'authorization errors index internal json policy-admission types'.split(' '),
+  core: 'authorization errors index internal json policy-admission tool-diff types'.split(' '),
   executor:
     'adapters artifacts build-provenance client custody-cli custody-files custody-snapshot entry-internal entry-inventory entry-ops entry-pilot entry-sandbox evidence-json executor http identifiers index inventory-http inventory-manifest-file inventory-manifest inventory-mcp-capture inventory-mcp inventory-observer inventory-scheduling inventory-worker inventory ledger-custody ledger-format ledger-maintenance-cli ledger-maintenance ledger-recovery lifecycle model network path-rules pilot-review-cli pilot-review private-files response-code retention sandbox signed-evidence store tool-errors traces workspace-input-windows workspace-input'.split(
       ' ',

@@ -1,0 +1,29 @@
+{
+  "label": "1.0.0",
+  "witnessed": false,
+  "tokens": {
+    "root": "_mvJaZH7rNWrnRcnJWb7XEGYaVveQFSJmJR2CjvEVlw",
+    "child": "65979KGZFV2nwh828-Notkn9g-E_OAQ9YPyktWxHBrI",
+    "other": "UbydNOliHFT2kNFPbqFSXxOQfCN3ZPIjwr5rQPKEvNw"
+  },
+  "actions": {
+    "succeeded": "a0ccb348-d225-40e5-a08f-2b28a3db881c",
+    "delegated": "5e62abba-b8e6-472d-abe1-bf11b7bbd197",
+    "uncertain": "83dbe27d-b409-4361-93ca-bebde0f93783",
+    "reconciled": "b040587c-ad1a-4a4b-807f-9267429f28e7",
+    "pending": "22988c37-5334-45f1-8218-c5706e9a5d88"
+  },
+  "approvalId": "89af3e33-40f9-4c72-b94f-1d1b3b84de9d",
+  "expected": {
+    "root": {
+      "calls": 4,
+      "spent": 5,
+      "reserved": 5
+    },
+    "child": {
+      "calls": 1,
+      "spent": 2,
+      "reserved": 0
+    }
+  }
+}

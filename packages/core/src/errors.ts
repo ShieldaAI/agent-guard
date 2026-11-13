@@ -60,7 +60,7 @@ export const GuardErrorCatalog: Readonly<Record<GuardErrorCodeValue, GuardErrorI
   TOOL_CHANGED: entry(
     'The tool registration is not the one this call refers to.',
     false,
-    'The tool was registered again or removed with unregisterTool() after the action was prepared, or approveTool() was given a fingerprint that is not the current one. Approve the current fingerprint, then prepare and review the action again.',
+    'The tool was registered again or removed with unregisterTool() after the action was prepared, or approveTool() was given a fingerprint that is not the current one or a reviewedAgainst value that is not the last approved fingerprint. Read toolChanges() again, approve the current fingerprint, then prepare and review the action again.',
   ),
   TASK_REVOKED: entry(
     'The task or one of its ancestors was revoked.',

@@ -79,7 +79,7 @@ const executor = new DurableExecutor({
 | After a restart | |
 | --- | --- |
 | Kept | Tasks, budgets and what was spent, revocations, sensitivity marks, used approvals, receipts of finished calls. |
-| Done again by your code | `registerTool` and `approveTool` for every tool: tools are code. |
+| Done again by your code | `registerTool` and `approveTool` for every tool: tools are code. The ledger keeps each approved definition, so `toolChanges(name)` shows what changed since the last approval before you approve again. |
 | Done again by a person | Any action that was prepared or approved but had not run. Executing it fails with `POLICY_CHANGED`; prepare it again and have it reviewed. |
 | Left for an operator | A call that was running when the process stopped is `UNKNOWN`. It is never retried; settle it with `reconcile`. |
 
@@ -141,6 +141,15 @@ budget) and then your optional `policy`, which can only tighten them. Changing t
 or a tool's definition invalidates every action prepared before the change.
 `unapproveTool(name)` withdraws a tool's approval; `unregisterTool(name)` removes the tool
 and its ledger record, and actions already prepared for it fail with `TOOL_CHANGED`.
+
+`approveTool(name, fingerprint, { approverId, reviewedAgainst })` records the approved
+definition in the ledger with the time, the approver and the fingerprint it replaced.
+`toolChanges(name)` compares the current registration with that record, also after a
+restart, and returns the changed fields with old and new values, heuristic hints and the
+recorded `approval`. It covers the definition (name, description, schema, metadata, flags),
+never what the handler does; its values are the tool's own text and must be shown as data.
+Definitions over `maxToolDefinitionBytes` (64 KiB by default) are approved by fingerprint
+only. Details are in the [API contract](../../docs/api-contract.md#what-changed-in-a-tool-definition).
 
 ## Approvals
 

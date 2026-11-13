@@ -382,6 +382,13 @@ audit archive or a distributed/HA service.
 
 ## Monitoring and verification
 
+Maintenance also shows a **Tool definition** panel: whether the definition of the
+service's own tool (`ticket.update`) differs from the one last approved, and if so
+each changed field with the approved and the current value. The service approves
+its own tool at startup, so this is a record to read after an upgrade, not an
+approval step. The changed fields are shown until the service restarts again;
+after that the panel reports no change. It covers the definition, not the tool's code.
+
 Operator-only **Maintenance** includes current operational status, scoped
 unresolved outcomes, configured capacity alerts and a reviewed activity-snapshot
 download. The snapshot reports its bounded coverage and omissions.

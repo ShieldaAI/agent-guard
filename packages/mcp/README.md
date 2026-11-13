@@ -80,6 +80,8 @@ Each entry in `connection.registrations` carries two identifiers:
 - `fingerprint` is what `guard.approveTool()` takes. It changes on every connection and every refresh, so it cannot be stored.
 - `descriptorDigest` is a `sha256:` digest of the kind, the remote name and the accepted definition. It stays the same while the server advertises the same definition.
 
+`connection.operationChanges(name)` shows what the server changed since the operation was last approved on this guard: one entry per changed JSON path of the descriptor, with the approved and the new value, plus `descriptorDigest` and `approvedDescriptorDigest`. It works after a `refresh()` and on a new connection to the same server ID. `status` is `first_approval`, `unchanged`, `changed` or `unavailable` (a definition was too large for the guard to keep). `bindingChanges` lists changes to your own binding flags. Hints such as `INSTRUCTION_TEXT` or `SCHEMA_FIELD_ADDED` are heuristics, not a verdict. Descriptor text comes from the server: show it as data, never as markup, and never give it to a model as instructions. The comparison never shows a change in what the server's code does. The in-memory guard forgets approved definitions on restart; pass a `DurableExecutor` as `guard` to keep them in the ledger, or keep recording digests yourself as above.
+
 The first time, read `tool.descriptor` and `tool.descriptorDigest` from `connection.registrations`, have a person review the definition, and record the digest. After that, approve only when the digest matches, as in the example above. A new or changed definition has a different digest and stays unapproved.
 
 Record each digest under the server ID and the remote name, for example under `tool.name` as above. The digest covers the definition only, not the server, so the same definition on another server has the same digest: a record keyed by the remote name alone would approve a tool on a server nobody reviewed.
@@ -97,7 +99,13 @@ if (connection.status === 'quarantined') {
   console.log(connection.failureReason); // for example REGISTRY_CHANGED
   await connection.refresh();
   console.log(connection.skipped); // [{ kind, remoteName, reason }]
-  // Compare each descriptorDigest again, then approve the new fingerprints.
+  // Read what changed, then approve the new fingerprints.
+  for (const tool of connection.registrations) {
+    const review = connection.operationChanges(tool.name);
+    if (review.status === 'unchanged')
+      guard.approveTool(tool.name, tool.fingerprint, { reviewedAgainst: review.approvedFingerprint });
+    else console.log(tool.name, review.status, review.changes, review.bindingChanges); // for a person to review
+  }
 }
 ```
 
