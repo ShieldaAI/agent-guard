@@ -12,6 +12,7 @@ const STABLE = [
   'GuardErrorCatalog',
   'GuardErrorCode',
   'InvalidJsonError',
+  'diffToolDefinitions',
   'isGuardError',
   'monotonicClock',
 ];

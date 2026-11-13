@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import { isPromise } from 'node:util/types';
-import { digestJson, immutableJson, type JsonObject } from './json.js';
+import { Buffer } from 'node:buffer';
+import { canonicalJson, digestJson, immutableJson, type JsonObject } from './json.js';
+import { diffFrozenDefinitions } from './tool-diff.js';
 import { GuardError, safeErrorDetail } from './types.js';
 import { assertActionAuthority, type AuthorityPhase, type AuthorityView } from './authorization.js';
 import { PolicyAdmission } from './policy-admission.js';
 import type {
   Action,
+  ApproveToolOptions,
   UntrustedContextMode,
   Budget,
   ExecutionResult,
@@ -21,6 +24,7 @@ import type {
   TaskOptions,
   TaskSnapshot,
   TaskStatus,
+  ToolChanges,
   ToolDefinition,
   ToolResult,
 } from './types.js';
@@ -28,9 +32,11 @@ import type {
 export { GuardError, GuardErrorCode, isGuardError } from './types.js';
 export { InvalidJsonError } from './json.js';
 export { GuardErrorCatalog, type GuardErrorInfo } from './errors.js';
+export { diffToolDefinitions } from './tool-diff.js';
 
 export type {
   Action,
+  ApproveToolOptions,
   UntrustedContextMode,
   Budget,
   Capability,
@@ -49,7 +55,11 @@ export type {
   TaskOptions,
   TaskSnapshot,
   TaskStatus,
+  ToolChange,
+  ToolChangeHint,
+  ToolChanges,
   ToolDefinition,
+  ToolDefinitionDiff,
   ToolResult,
 } from './types.js';
 
@@ -70,6 +80,8 @@ type ToolState = {
   fingerprint: string;
   revision: number;
   approved: boolean;
+  /** The fingerprinted fields, frozen. Undefined when larger than maxToolDefinitionBytes. */
+  definition: JsonObject | undefined;
   requiresApproval: boolean;
   controlPlane: boolean;
   maxCost: number;
@@ -80,6 +92,8 @@ type ToolState = {
   execute: ToolDefinition['execute'];
   parse: ToolDefinition['parse'];
 };
+/** The last approved definition of one tool name. Outlives re-registration; removed by unregisterTool(). */
+type ApprovedTool = { fingerprint: string; definition: JsonObject | undefined };
 type TaskState = {
   identity: Readonly<TaskIdentity>;
   grants: Map<string, Set<string>>;
@@ -247,6 +261,8 @@ function authorityView(task: TaskState): AuthorityView {
  */
 export class AgentGuard {
   #tools = new Map<string, ToolState>();
+  #approvedTools = new Map<string, ApprovedTool>();
+  #maxToolDefinitionBytes: number;
   #tasks = new WeakMap<TaskHandle, TaskState>();
   #prepared = new WeakMap<PreparedAction, PreparedState>();
   #policyAdmission: PolicyAdmission;
@@ -288,6 +304,7 @@ export class AgentGuard {
       maxBytes: bounded(limits.maxJsonBytes, 1_048_576, 65_536, 67_108_864),
       maxNodes: bounded(limits.maxJsonNodes, 100_000, 1_000, 10_000_000),
     });
+    this.#maxToolDefinitionBytes = bounded(limits.maxToolDefinitionBytes, 65_536, 1_024, 1_048_576);
     this.#untrustedDefault = untrustedMode(options.untrustedContextDefault) ?? 'allow';
     this.#policyAdmission = new PolicyAdmission({
       maxPending: bounded(limits.maxPolicyEvaluations, 64, 1, 1024),
@@ -304,7 +321,8 @@ export class AgentGuard {
    * Registers a tool, or replaces the tool of the same name, and returns its fingerprint: a
    * `sha256:` digest of the definition's name, description, schema, metadata and flags. The
    * tool cannot be called until `approveTool()` is given that fingerprint. Registering again
-   * withdraws the approval and fails actions already prepared for the tool with TOOL_CHANGED.
+   * withdraws the approval and fails actions already prepared for the tool with TOOL_CHANGED;
+   * `toolChanges()` then shows what differs from the last approved definition.
    * Throws INVALID_INPUT for a malformed definition and INVALID_JSON when the schema or
    * metadata is not plain JSON within the limits.
    */
@@ -342,11 +360,13 @@ export class AgentGuard {
       ...(sendsExternal === undefined ? {} : { sendsExternal }),
     });
     const fingerprint = `sha256:${digestJson(metadata)}`;
+    const kept = Buffer.byteLength(canonicalJson(metadata)) <= this.#maxToolDefinitionBytes;
     this.#tools.set(name, {
       name,
       fingerprint,
       revision: ++this.#revision,
       approved: false,
+      definition: kept ? (metadata as JsonObject) : undefined,
       requiresApproval,
       controlPlane,
       maxCost,
@@ -363,20 +383,71 @@ export class AgentGuard {
   /**
    * Approves one tool definition, identified by the fingerprint `registerTool()` returned, so
    * tasks holding a grant can call it. This approves the definition once; it is not the
-   * per-call approval, which is `approve()`. Throws TOOL_UNKNOWN for an unregistered name
-   * and TOOL_CHANGED when the fingerprint is not the current registration's.
+   * per-call approval, which is `approve()`. The guard keeps the approved definition so that
+   * `toolChanges()` can show what a later registration changes. Pass `reviewedAgainst` to
+   * approve only if the comparison the reviewer read is still the current one. Throws
+   * TOOL_UNKNOWN for an unregistered name, TOOL_CHANGED when the fingerprint is not the
+   * current registration's or `reviewedAgainst` is not the last approved fingerprint, and
+   * INVALID_INPUT for malformed options.
    */
-  approveTool(name: string, fingerprint: string): void {
+  approveTool(name: string, fingerprint: string, options?: ApproveToolOptions): void {
     this.#now();
     const tool = this.#tools.get(name);
     if (!tool) fail('TOOL_UNKNOWN');
     if (fingerprint !== tool.fingerprint) fail('TOOL_CHANGED');
+    if (options !== undefined) {
+      if (options === null || typeof options !== 'object') fail('INVALID_INPUT');
+      const reviewed = options.reviewedAgainst;
+      if (reviewed !== undefined) {
+        if (reviewed !== null && typeof reviewed !== 'string') fail('INVALID_INPUT');
+        if (reviewed !== (this.#approvedTools.get(name)?.fingerprint ?? null)) fail('TOOL_CHANGED');
+      }
+    }
     tool.approved = true;
+    this.#approvedTools.set(name, { fingerprint: tool.fingerprint, definition: tool.definition });
+  }
+
+  /**
+   * Compares a tool's current registration with the last approved definition of that name
+   * and returns what changed, one entry per JSON path, so a reviewer can read the change
+   * before calling `approveTool()`. It covers the fingerprinted fields only (name,
+   * description, schema, metadata and flags), never what `parse`, `resolve` or `execute` do.
+   * Values in the result are the tool's own text: untrusted data. Hints are heuristics.
+   * Read-only: it changes nothing. Throws TOOL_UNKNOWN for an unregistered name.
+   */
+  toolChanges(name: string): ToolChanges {
+    const tool = this.#tools.get(name);
+    if (!tool) fail('TOOL_UNKNOWN');
+    const approved = this.#approvedTools.get(name);
+    const base = {
+      name: tool.name,
+      fingerprint: tool.fingerprint,
+      approved: tool.approved,
+      ...(approved === undefined ? {} : { approvedFingerprint: approved.fingerprint }),
+      ...(tool.definition === undefined ? {} : { definition: tool.definition }),
+      ...(approved?.definition === undefined ? {} : { approvedDefinition: approved.definition }),
+    };
+    const none = { changes: Object.freeze([]), truncated: false };
+    if (approved === undefined) return Object.freeze({ ...base, status: 'first_approval', ...none });
+    if (approved.fingerprint === tool.fingerprint) return Object.freeze({ ...base, status: 'unchanged', ...none });
+    if (tool.definition === undefined || approved.definition === undefined)
+      return Object.freeze({
+        ...base,
+        status: 'unavailable',
+        reason: tool.definition === undefined ? 'DEFINITION_TOO_LARGE' : 'APPROVED_DEFINITION_TOO_LARGE',
+        ...none,
+      });
+    return Object.freeze({
+      ...base,
+      status: 'changed',
+      ...diffFrozenDefinitions(approved.definition, tool.definition),
+    });
   }
 
   /**
    * Withdraws a tool's approval: new and prepared actions for it fail with TOOL_UNAPPROVED
-   * until `approveTool()` is called again. Throws TOOL_UNKNOWN for an unregistered name.
+   * until `approveTool()` is called again. The approved definition is kept for
+   * `toolChanges()`. Throws TOOL_UNKNOWN for an unregistered name.
    */
   unapproveTool(name: string): void {
     const tool = this.#tools.get(name);
@@ -385,12 +456,13 @@ export class AgentGuard {
   }
 
   /**
-   * Removes a tool. Actions already prepared for it fail with TOOL_CHANGED and new ones with
-   * TOOL_UNKNOWN; a later registration needs a new approval. Throws TOOL_UNKNOWN for an
-   * unregistered name.
+   * Removes a tool and the approved definition kept for it. Actions already prepared for it
+   * fail with TOOL_CHANGED and new ones with TOOL_UNKNOWN; a later registration needs a new
+   * approval and is a first approval again. Throws TOOL_UNKNOWN for an unregistered name.
    */
   unregisterTool(name: string): void {
     if (!this.#tools.delete(name)) fail('TOOL_UNKNOWN');
+    this.#approvedTools.delete(name);
   }
 
   /**

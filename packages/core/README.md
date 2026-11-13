@@ -178,10 +178,33 @@ Use `isGuardError()` rather than `instanceof`: it also recognizes errors from a 
 
 `EXECUTION_ABORTED` with `error.detail === 'EFFECT_COMMITTED'` means the handler returned normally after the task was revoked or expired: the guard takes the effect as done and withholds the result. A handler that is aborted before it performs its effect must therefore throw (for example `signal.throwIfAborted()`), not return; the call then fails with `EXECUTION_ABORTED` and no detail.
 
+## See what changed before approving again
+
+Registering a tool again withdraws its approval. Before you approve the new definition, ask the guard what changed:
+
+```js
+const fingerprint = guard.registerTool(changedDefinition);
+const review = guard.toolChanges('read-report');
+// review.status: 'first_approval' | 'unchanged' | 'changed' | 'unavailable'
+for (const change of review.changes) {
+  // change.path is a JSON Pointer such as /description or /inputSchema/properties/path/maxLength
+  console.log(change.kind, change.path, JSON.stringify(change.before), JSON.stringify(change.after), change.hints);
+}
+// Approve only against the comparison the reviewer read.
+guard.approveTool('read-report', fingerprint, { reviewedAgainst: review.approvedFingerprint ?? null });
+```
+
+- The comparison covers the fingerprinted fields: name, description, schema, metadata and flags. It never shows a change in what `parse`, `resolve` or `execute` do.
+- `hints` (`INSTRUCTION_TEXT`, `HIDDEN_CHARACTERS`, `SCHEMA_FIELD_ADDED`, `SCHEMA_LOOSENED`, `FLAG_LOOSENED`) are heuristics for the reviewer. They block nothing, and an empty list does not mean a change is safe.
+- The values are the tool's own text. Show them as data: escape them in any page, and do not hand them to a model as instructions.
+- A definition over `limits.maxToolDefinitionBytes` (64 KiB by default) is approved by fingerprint only, and `toolChanges` reports `unavailable` instead of a diff.
+- The guard keeps approved definitions in memory. The executor keeps them in its ledger, so the comparison survives a restart.
+
 ## Long-running hosts
 
 - `retireTask(task)` revokes a finished task and frees its ID and memory. The guard remembers the ID of every task until it is retired.
 - `unapproveTool(name)` and `unregisterTool(name)` withdraw a tool.
+- `toolChanges(name)` shows what a re-registered tool changed since it was last approved; see below.
 - `executeDetailed(prepared)` returns the value together with the charged cost and the action ID, for receipts.
 - Deadlines use `Date.now()` by default. If the system clock steps backward, time-dependent calls fail with `CLOCK_INVALID` until it catches up; pass `clock: monotonicClock` to avoid this. Revocation works even then.
 - The guard holds a prepared action only while your code holds its handle. Keep a bounded review queue and drop handles when a review ends.
