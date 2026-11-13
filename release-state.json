@@ -1,13 +1,15 @@
 {
   "schemaVersion": 1,
-  "version": "1.1.0",
-  "status": "approved",
-  "blockers": [],
+  "version": "1.1.1",
+  "status": "pending",
+  "blockers": [
+    "Maintainer approval of 1.1.1 is not recorded yet. Approve only after CI and CodeQL pass on the exact release commit, then set status to approved, empty this list and link the CI run in docs/releases/1.1.1.md."
+  ],
   "outOfScope": [
-    "The inventory observer is experimental in 1.1.0; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
-    "@shieldaai/agent-map is published at 1.1.0 as experimental and is outside the 1.x compatibility promise."
+    "The inventory observer is experimental in 1.1.1; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
+    "@shieldaai/agent-map is published at 1.1.1 as experimental and is outside the 1.x compatibility promise."
   ],
   "evidence": [
-    "docs/releases/1.1.0.md"
+    "docs/releases/1.1.1.md"
   ]
 }

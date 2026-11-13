@@ -6,7 +6,7 @@ calls through one guard. A call outside what the task was given never runs. A de
 call can wait until a person approves that exact action.
 
 It is a TypeScript library for Node.js 22 or newer (22.13 for the executor and Agent
-Map). The core has no third-party runtime dependencies. Version 1.1.0; licensed under
+Map). The core has no third-party runtime dependencies. Version 1.1.1; licensed under
 Apache-2.0.
 
 ## The problem
@@ -290,7 +290,7 @@ the model says. An `approverId` records who approved; signing that person in is 
 | [Threat model](docs/threat-model.md) | Who is trusted and what is assumed hostile |
 | [API contract](docs/api-contract.md) and [error codes](docs/errors.md) | Exact signatures, rules and codes |
 | [Scenarios](docs/scenarios.md) | The thirteen hostile and ordinary test cases |
-| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.1.0.md) | What changed |
+| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.1.1.md) | What changed |
 
 ## Stability
 
