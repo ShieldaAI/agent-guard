@@ -9,7 +9,7 @@
   },
   "dependencies": {
     "@shieldaai/agent-map": "1.1.1",
-    "cytoscape": "3.34.4",
+    "cytoscape": "3.35.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
