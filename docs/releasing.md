@@ -11,14 +11,17 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
    dependency versions together. Set `publishConfig.tag` to `latest` (stable) or `alpha`.
    Never publish changed source under an existing version.
 3. Run the checks and pack; tarballs in `artifacts/` hold only JS, declarations, metadata, README, license.
-4. Commit `release-state.json` with `schemaVersion: 1`, the exact `version`, `status: "approved"`,
-   an empty `blockers` array and nonempty `evidence`. Never approve from a diagnostic or smoke result.
-5. Merge through the protected branch; require CI and CodeQL on the exact merged commit and a clean checkout.
+4. In the same release pull request, set `release-state.json` to `schemaVersion: 1`, the exact `version`,
+   `status: "approved"`, an empty `blockers` array and nonempty `evidence`. One pull request per release:
+   `npm publish` is still blocked by the preflight until this file approves the version, and nothing is
+   published until step 5 holds.
+5. Merge, then require CI and CodeQL to pass on the exact merged commit before publishing. If they fail,
+   fix forward in a new pull request; do not publish from a commit whose checks failed.
 6. Publish one package at a time in the order below. Before the next one, wait for the version to
    appear and verify its `gitHead`, registry integrity and package bytes. Never use `--ignore-scripts` to bypass publish hooks.
 7. Install the exact versions from the registry into a clean project, then tag and create the GitHub release.
 
-Release notes link the CI run for the release commit. If you publish from CI, use npm trusted publishing with `--provenance` so each package carries a signed statement of the commit it was built from; no workflow in this repository holds a publishing token today.
+Release notes link the release pull request and its CI run; add the merged commit's CI run in the GitHub release. If you publish from CI, use npm trusted publishing with `--provenance` so each package carries a signed statement of the commit it was built from; no workflow in this repository holds a publishing token today.
 
 Timing signals (admission during polling, and the constrained observer) do not run on pull requests. Both run nightly on the
 default branch and on manual dispatch; the job summary shows the p95 ratio, skipped polls and reasons. They are never a required check.

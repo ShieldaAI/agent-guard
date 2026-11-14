@@ -221,7 +221,10 @@ test('the same session on return keeps its place and reads the list and health a
   const before = page.server.requests.length;
   page.away();
   page.back();
-  await until(() => page.server.requests.slice(before).includes('get_inventory_health:alice'), 'the refresh');
+  await until(() => {
+    const refreshed = page.server.requests.slice(before);
+    return refreshed.includes('get_inventory_health:alice') && refreshed.includes('list_agents:alice');
+  }, 'the refresh of the list and health');
   await until(() => !page.view.covered && page.view.listing.state === 'ready', 'the uncovered workspace');
   const { view } = page;
   assert.equal(view.tab, 'resources');

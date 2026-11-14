@@ -218,8 +218,13 @@ jobs:
           if not selected or any(entry.get('Signed-By', '').strip() != '/usr/share/keyrings/ubuntu-archive-keyring.gpg' for entry in selected):
               raise SystemExit('Expected signed Ubuntu mirror-list configuration was not found.')
           mirrors = Path('/etc/apt/apt-mirrors.txt')
-          expected = [('http://azure.archive.ubuntu.com/ubuntu/', 'priority:1'), ('https://archive.ubuntu.com/ubuntu/', 'priority:2'), ('https://security.ubuntu.com/ubuntu/', 'priority:3')]
+          import re
+          # GitHub runs on Azure or AWS hosts; the first mirror is that cloud's official Ubuntu archive.
+          cloud_mirror = re.compile(r'http://(azure|[a-z]{2}-[a-z]+-[0-9]\.ec2)\.archive\.ubuntu\.com/ubuntu/')
+          expected = [('<cloud mirror>', 'priority:1'), ('https://archive.ubuntu.com/ubuntu/', 'priority:2'), ('https://security.ubuntu.com/ubuntu/', 'priority:3')]
           observed = [tuple(line.split()) for line in mirrors.read_text().splitlines() if line.strip()]
+          if len(observed) == 3 and len(observed[0]) == 2 and cloud_mirror.fullmatch(observed[0][0]):
+              observed = [('<cloud mirror>', observed[0][1])] + observed[1:]
           if observed != expected:
               # Show what the runner has, so a reviewer can decide; the check itself is unchanged.
               print('Expected apt mirror list:', expected)
