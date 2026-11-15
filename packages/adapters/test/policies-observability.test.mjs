@@ -272,9 +272,10 @@ test('the agent-guard-explain command', () => {
   const json = JSON.parse(run('--json', 'APPROVAL_TIMEOUT').stdout);
   assert.equal(json.source, 'adapter');
   assert.equal(run('--list').stdout.trim().split('\n').length, knownCodes().length);
-  const unknown = run('<script>');
+  // Anything outside A-Z, 0-9 and _ is printed as "?", so the input is never echoed.
+  const unknown = run('<b>');
   assert.equal(unknown.status, 1);
-  assert.doesNotMatch(unknown.stderr, /<script>/);
+  assert.equal(unknown.stderr, 'Unknown code: ?B?. Run with --list to see every code.\n');
   assert.equal(run().status, 2);
   assert.equal(run('--help').status, 0);
 });
