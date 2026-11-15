@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+### Adapters
+
+- Tests: every adapter (Anthropic, OpenAI Responses, OpenAI Chat Completions, Gemini, Bedrock,
+  Vercel AI SDK, OpenAI Agents SDK, LangChain, MCP server) now gets the same blocked calls: a
+  denied call, a call waiting for approval, a rejected wait and a timed-out wait. Each test
+  checks that the tool handler never ran, that the model is told the call was blocked (never
+  `ok`), and that the format's error flag is set where it has one. Matching an SDK's types
+  proves a result's shape, not its meaning. No change to published code.
+
 ## 1.2.0 — 2026-11-15
 
 A new package, `@shieldaai/agent-guard-adapters`, connects the guard to model providers and
