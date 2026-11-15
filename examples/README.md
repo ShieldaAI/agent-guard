@@ -28,6 +28,16 @@ shows where your own SDK client goes.
 
 The other files in `providers/` are shared by those three and are not entry points.
 
+### With the adapters package
+
+[`@shieldaai/agent-guard-adapters`](../packages/adapters/README.md) replaces the hand-written
+dispatcher. See [Connect your model or framework](../docs/guides/integrations.md).
+
+| File | Shows | Prints |
+| --- | --- | --- |
+| [`model-adapters.mjs`](model-adapters.mjs) | One model turn (an allowed read, a read outside the task, a close that needs a person) in the formats of the Anthropic, OpenAI Responses, OpenAI Chat Completions, Gemini and Bedrock APIs. | One line per provider |
+| [`mcp-guarded-server.mjs`](mcp-guarded-server.mjs) | An MCP server whose tools go through the guard, for Claude Code, Cursor or any MCP client. `--self-test` connects an in-memory client. | One line per call |
+
 ## Inventory and Agent Map (experimental)
 
 These print one JSON document each. They are for people integrating the inventory observer

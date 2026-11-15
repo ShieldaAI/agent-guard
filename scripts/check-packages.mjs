@@ -20,6 +20,7 @@ try {
     'packages/core',
     'packages/mcp',
     'packages/scenarios',
+    'packages/adapters',
     'packages/executor',
     'packages/agent-map',
   ]) {
@@ -54,6 +55,14 @@ try {
       for (const path of ['dist/identity-cli.js', 'dist/identity-http.js', 'dist/oidc.js']) {
         if (!pack.files.some(file => file.path === path)) throw new Error(`Missing identity package file: ${path}`);
       }
+    }
+    if (workspace === 'packages/adapters') {
+      if (!pack.files.some(file => file.path === 'dist/explain-cli.js'))
+        throw new Error('Missing installed agent-guard-explain executable.');
+      const metadata = JSON.parse(readFileSync(join(root, workspace, 'package.json'), 'utf8'));
+      const dependencies = Object.keys(metadata.dependencies ?? {});
+      if (dependencies.length !== 1 || dependencies[0] !== '@shieldaai/agent-guard')
+        throw new Error('The adapters package may depend on the core package only.');
     }
     if (workspace === 'packages/mcp') {
       const metadata = JSON.parse(readFileSync(join(root, workspace, 'package.json'), 'utf8'));
@@ -94,9 +103,14 @@ try {
   console.log(run(process.execPath, ['pilot-review-consumer.mjs'], consumer).trim());
   const readmes = [
     join(root, 'README.md'),
-    ...['agent-guard', 'agent-guard-mcp', 'agent-guard-scenarios', 'agent-guard-executor', 'agent-map'].map(name =>
-      join(consumer, 'node_modules', '@shieldaai', name, 'README.md'),
-    ),
+    ...[
+      'agent-guard',
+      'agent-guard-mcp',
+      'agent-guard-scenarios',
+      'agent-guard-adapters',
+      'agent-guard-executor',
+      'agent-map',
+    ].map(name => join(consumer, 'node_modules', '@shieldaai', name, 'README.md')),
   ];
   for (const [index, path] of readmes.entries()) {
     const examples = [...readFileSync(path, 'utf8').matchAll(/```ts\r?\n([\s\S]*?)\r?\n```/g)];

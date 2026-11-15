@@ -1,13 +1,14 @@
 {
   "schemaVersion": 1,
-  "version": "1.1.1",
+  "version": "1.2.0",
   "status": "approved",
   "blockers": [],
   "outOfScope": [
-    "The inventory observer is experimental in 1.1.1; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
-    "@shieldaai/agent-map is published at 1.1.1 as experimental and is outside the 1.x compatibility promise."
+    "The inventory observer is experimental in 1.2.0; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
+    "@shieldaai/agent-map is published at 1.2.0 as experimental and is outside the 1.x compatibility promise.",
+    "The adapters' ApprovalQueue and RateLimiter keep their state in memory in one process; a restart drops pending approvals (nothing runs) and resets rate counts."
   ],
   "evidence": [
-    "docs/releases/1.1.1.md"
+    "docs/releases/1.2.0.md"
   ]
 }

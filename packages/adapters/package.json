@@ -1,0 +1,62 @@
+{
+  "name": "@shieldaai/agent-guard-adapters",
+  "version": "1.2.0",
+  "description": "Connect Agent Guard to model providers and agent frameworks: one dispatcher, an approval queue, tool schemas, policies and telemetry hooks. No third-party runtime dependencies.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agent-guard-explain": "./dist/explain-cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/adapters"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/adapters#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "agent-guard",
+    "ai-agents",
+    "security",
+    "tool-calling",
+    "anthropic",
+    "openai",
+    "gemini",
+    "vercel-ai-sdk",
+    "langchain",
+    "openai-agents",
+    "opentelemetry",
+    "human-in-the-loop"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/build.mjs",
+    "prepublishOnly": "node ../../scripts/release-check.mjs"
+  },
+  "dependencies": {
+    "@shieldaai/agent-guard": "1.2.0"
+  }
+}

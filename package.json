@@ -1,13 +1,14 @@
 {
   "name": "shielda-agent-guard-workspace",
   "private": true,
-  "version": "1.1.1",
+  "version": "1.2.0",
   "license": "Apache-2.0",
   "type": "module",
   "workspaces": [
     "packages/core",
     "packages/mcp",
     "packages/scenarios",
+    "packages/adapters",
     "packages/executor",
     "packages/agent-map",
     "apps/agent-map"
@@ -17,7 +18,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
-    "test": "npm run build && node scripts/test-workspace.mjs packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs packages/executor/test/*.test.mjs packages/agent-map/test/*.test.mjs apps/agent-map/test/*.test.mjs apps/agent-ops/test/*.test.mjs scripts/*.test.mjs",
+    "test": "npm run build && node scripts/test-workspace.mjs packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs packages/adapters/test/*.test.mjs packages/executor/test/*.test.mjs packages/agent-map/test/*.test.mjs apps/agent-map/test/*.test.mjs apps/agent-ops/test/*.test.mjs scripts/*.test.mjs",
     "test:pack": "node scripts/check-packages.mjs",
     "check": "npm test && npm run test:pack",
     "evaluate:provider-trials": "npm run build && node scripts/evaluate-provider-trials.mjs",

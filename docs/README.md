@@ -9,6 +9,7 @@ example. The [glossary](glossary.md) defines the terms.
 | --- | --- |
 | [Tool-permissions walkthrough](guides/tool-permissions.md) | The first example, step by step: a denial, an approval, a refused replay. |
 | [Package guide](package-guide.md) | Which package to install for what. |
+| [Connect your model or framework](guides/integrations.md) | Anthropic, OpenAI, Gemini, Bedrock, Vercel AI SDK, OpenAI Agents SDK, LangChain, and guarded tools for MCP clients such as Claude Code. |
 | [Delegation](guides/delegation.md) | Hand part of a task to a sub-agent. |
 | [Audit log](guides/audit-log.md) | Record every decision. |
 | [OpenAI and Anthropic ticket workflow](guides/provider-ticket-workflow.md) | The guard inside a real tool-calling loop. |
@@ -36,7 +37,7 @@ example. The [glossary](glossary.md) defines the terms.
 | [Error codes](errors.md) | Every code, whether a retry is safe, the usual cause. |
 | [Scenarios](scenarios.md) | The thirteen hostile and ordinary test cases. |
 | [Inventory formats](agent-cartography-contract.md) | Host manifest and snapshot fields. |
-| [Release notes](releases/1.1.1.md) and [changelog](../CHANGELOG.md) | What changed. |
+| [Release notes](releases/1.2.0.md) and [changelog](../CHANGELOG.md) | What changed. |
 
 ## Evaluate a deployment
 
