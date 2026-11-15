@@ -26,6 +26,19 @@ import {
 } from '@shieldaai/agent-guard-mcp';
 import { runConformance, scenarioCatalog, type GuardLike } from '@shieldaai/agent-guard-scenarios';
 import {
+  ApprovalQueue,
+  anthropicToolResults,
+  createDispatcher,
+  defineTool,
+  jsonSchemaParser,
+  registerApprovedTools,
+  RateLimiter,
+  taskBudget,
+  toolSpecs,
+  type DispatchOutcome,
+  type ToolSpec,
+} from '@shieldaai/agent-guard-adapters';
+import {
   ArtifactBroker,
   validateSandboxProfile,
   createSandboxTool,
@@ -472,5 +485,56 @@ const provider: MapOidcOptions = {
 };
 assert.equal(typeof identityFactory, 'function');
 assert.equal(provider.redirectUri, 'https://map.example/auth/callback');
+{
+  // The packed adapters package against the packed core.
+  const adapterGuard = new AgentGuard();
+  const schema = { type: 'object', properties: { id: { type: 'string' } }, required: ['id'] } as const;
+  registerApprovedTools(adapterGuard, [
+    {
+      name: 'ticket_close',
+      description: 'Close one ticket',
+      inputSchema: schema,
+      parse: jsonSchemaParser(schema),
+      requiresApproval: true,
+      resolve: args => ({ resourceId: `ticket:${(args as { id: string }).id}`, tenantId: 'acme' }),
+      execute: () => ({ value: 'closed' }),
+    },
+  ]);
+  const adapterTask = adapterGuard.createTask({
+    id: 'adapters',
+    principalId: 'p',
+    tenantId: 'acme',
+    grants: [{ tool: 'ticket_close', resources: ['ticket:42'] }],
+    budget: taskBudget({ maxCalls: 3, ttlMs: 60_000 }),
+  });
+  const approvals = new ApprovalQueue();
+  const adapterDispatch = createDispatcher({ guard: adapterGuard, task: adapterTask }, { approvals });
+  const specs: readonly ToolSpec[] = toolSpecs(adapterGuard, ['ticket_close']);
+  assert.equal(specs[0]?.name, 'ticket_close');
+  const blocks = await anthropicToolResults(
+    [
+      { type: 'tool_use', id: 'a', name: 'ticket_close', input: { id: '7' } },
+      { type: 'tool_use', id: 'b', name: 'ticket_close', input: { id: '42' } },
+    ],
+    adapterDispatch,
+  );
+  assert.deepEqual(
+    blocks.map(block => JSON.parse(block.content).status),
+    ['denied', 'waiting_for_approval'],
+  );
+  const typed = defineTool({
+    name: 'typed',
+    description: 'Typed arguments',
+    parse: jsonSchemaParser<{ id: string }>(schema),
+    resolve: args => ({ resourceId: args.id, tenantId: 'acme' }),
+    // @ts-expect-error `count` is not an argument of this tool.
+    execute: args => ({ value: args.count }),
+  });
+  assert.equal(typed.name, 'typed');
+  assert.equal(typeof new RateLimiter([{ max: 1, windowMs: 60_000 }]).policy, 'function');
+  const [pending] = approvals.pending();
+  const done: DispatchOutcome = await approvals.approve(pending!.actionId, { approverId: 'alice' });
+  assert.equal(done.status, 'ok');
+}
 console.log('Packed executor admission, model adapter, observer HTTP transport and public exports passed.');
 console.log('Packed reference service, scoped HTTP/MCP and policy-evidence contract passed.');

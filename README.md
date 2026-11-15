@@ -6,8 +6,11 @@ calls through one guard. A call outside what the task was given never runs. A de
 call can wait until a person approves that exact action.
 
 It is a TypeScript library for Node.js 22 or newer (22.13 for the executor and Agent
-Map). The core has no third-party runtime dependencies. Version 1.1.1; licensed under
+Map). The core has no third-party runtime dependencies. Version 1.2.0; licensed under
 Apache-2.0.
+
+It works with Claude, OpenAI, Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK,
+LangChain and any MCP client such as Claude Code: see [Connect it to a model](#connect-it-to-a-model).
 
 ## The problem
 
@@ -132,10 +135,51 @@ The [tool-permissions walkthrough](docs/guides/tool-permissions.md) explains eac
 
 ## Connect it to a model
 
-The model never calls the guard. Your code gives it one function, and every tool call the
-model makes goes through that function. This works the same with any provider: `call` is
-the tool name and arguments the model asked for, and the return value is what you send
-back as the tool result.
+The model never calls the guard. Your code gives it one function, the dispatcher, and every
+tool call the model makes goes through it. A call the guard refuses never runs; the model
+gets the denial back as an ordinary tool result, with a message that tells it what to do
+next.
+
+[`@shieldaai/agent-guard-adapters`](packages/adapters/README.md) provides the dispatcher, an
+approval queue for actions that wait for a person, and a ready-made adapter for each of
+these:
+
+| Integration | Adapter | What it does |
+| --- | --- | --- |
+| Anthropic Messages API (Claude) | `anthropicTools`, `anthropicToolResults` | Tools for `messages.create()`; runs the `tool_use` blocks and returns `tool_result` blocks |
+| OpenAI Responses API | `openAIResponsesTools`, `openAIResponsesToolOutputs` | Runs `function_call` items and returns `function_call_output` items |
+| OpenAI Chat Completions and compatible APIs (Groq, Mistral, OpenRouter, vLLM, Ollama, ...) | `openAIChatTools`, `openAIChatToolMessages` | Runs `tool_calls` and returns `tool` messages |
+| Google Gemini (`@google/genai`) | `geminiTools`, `geminiFunctionResponses` | Runs function calls and returns `functionResponse` parts |
+| Amazon Bedrock Converse | `bedrockTools`, `bedrockToolResults` | Runs `toolUse` blocks and returns `toolResult` blocks |
+| Vercel AI SDK | `aiSdkTools` | Tools for `generateText` and `streamText` |
+| OpenAI Agents SDK | `openAIAgentsTools` | Tools for an `Agent` |
+| LangChain.js and LangGraph.js | `langChainTools` | Tools for `bindTools`, `ToolNode` and `createReactAgent` |
+| Claude Code, Claude Desktop, Cursor, VS Code, the Claude Agent SDK (any MCP client) | `registerMcpServerTools` | An MCP server whose tools go through the guard |
+| OpenTelemetry and log shippers | `openTelemetryDecisionHook`, `jsonLinesDecisionLogger` | A metric and span events for every decision, or one JSON line per decision |
+
+With Claude, for example:
+
+```js
+import { ApprovalQueue, anthropicToolResults, anthropicTools, createDispatcher, toolSpecs }
+  from '@shieldaai/agent-guard-adapters';
+
+const approvals = new ApprovalQueue(); // your review screen reads approvals.pending()
+const dispatch = createDispatcher({ guard, task }, { approvals });
+const tools = anthropicTools(toolSpecs(guard, ['delete-ticket'])); // pass as `tools`
+// After each assistant message, send these back as the next user turn:
+const results = await anthropicToolResults(message.content, dispatch);
+```
+
+When a signed-in person approves, your own code calls
+`approvals.approve(actionId, { approverId })`. The model cannot. The guide
+[Connect your model or framework](docs/guides/integrations.md) shows every integration in
+the table.
+
+### Without the adapters package
+
+The dispatcher is a few lines if you prefer to write it yourself. `call` is the tool name
+and arguments the model asked for; the return value is what you send back as the tool
+result:
 
 ```js
 const waiting = new Map(); // prepared actions that wait for a person
@@ -156,14 +200,21 @@ async function dispatch(call) {
 }
 ```
 
-When a signed-in person approves, your own code calls `guard.approve(prepared, …)` and
-`guard.execute(prepared, { approvalId })`. The model cannot do either.
+When a signed-in person approves, your code calls `guard.approve(prepared, …)` and
+`guard.execute(prepared, { approvalId })`.
 
-- [`examples/agent-loop.mjs`](examples/agent-loop.mjs) is this dispatcher with a review
-  step, runnable without an API key.
-- The [provider workflow guide](docs/guides/provider-ticket-workflow.md) runs the same
-  flow in the request and response shapes of the Anthropic Messages API and the OpenAI
-  Responses API, offline first, and then shows where your own SDK client goes.
+### Runnable examples
+
+All of them run offline, without an API key:
+
+- [`examples/model-adapters.mjs`](examples/model-adapters.mjs): one model turn in the
+  formats of the Anthropic, OpenAI Responses, OpenAI Chat Completions, Gemini and Bedrock APIs.
+- [`examples/mcp-guarded-server.mjs`](examples/mcp-guarded-server.mjs): an MCP server with
+  guarded tools for Claude Code or Cursor.
+- [`examples/agent-loop.mjs`](examples/agent-loop.mjs): the hand-written dispatcher with a
+  review step.
+- The [provider workflow guide](docs/guides/provider-ticket-workflow.md) runs one flow in
+  the Anthropic and OpenAI request and response shapes, then shows where your SDK client goes.
 
 ## Which package do I need?
 
@@ -172,6 +223,7 @@ When a signed-in person approves, your own code calls `guard.approve(prepared, �
 | Limit which tools an agent can call, on which resources, with approvals and budgets, in one process | [`@shieldaai/agent-guard`](packages/core) (start here) |
 | Put tools from a Model Context Protocol (MCP) server behind the same checks, and notice when a tool's definition changes | [`@shieldaai/agent-guard-mcp`](packages/mcp) |
 | Keep budgets, revocations and used approvals across restarts (an action still waiting at a restart is reviewed again); give each task its own token; governed memory; run untrusted code in a locked-down container | [`@shieldaai/agent-guard-executor`](packages/executor) |
+| Connect the guard to Claude, OpenAI, Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK or LangChain; an approval queue; serve guarded tools to MCP clients | [`@shieldaai/agent-guard-adapters`](packages/adapters) |
 | Test that my integration really blocks the hostile cases and still allows the ordinary ones | [`@shieldaai/agent-guard-scenarios`](packages/scenarios) |
 | See which agents my company declared, what they can reach, and which are risky (experimental) | [`@shieldaai/agent-map`](packages/agent-map) |
 
@@ -205,6 +257,7 @@ Every row applies only to calls routed through the guard.
 - **In your logs.** Pass `onDecision` to the core guard to receive one event for every
   prepare, approve and execute, allowed or denied. Events carry identifiers and the denial
   code, never arguments or results. See the [audit log guide](docs/guides/audit-log.md).
+  The adapters package sends the same events to OpenTelemetry or as JSON log lines.
 - **Across restarts.** The executor keeps receipts and recent events in its ledger and can
   export decision traces.
 - **For reviewers.** [Agent Ops](apps/agent-ops/README.md) is a reference web app in this
@@ -284,13 +337,14 @@ the model says. An `approverId` records who approved; signing that person in is 
 | [Docs index](docs/README.md) | Everything below, grouped by what you are doing |
 | [Glossary](docs/glossary.md) | Host, task, grant, tenant, principal, approval, task family |
 | [Tool-permissions walkthrough](docs/guides/tool-permissions.md) | The first example, step by step |
+| [Connect your model or framework](docs/guides/integrations.md) | Anthropic, OpenAI, Gemini, Bedrock, Vercel AI SDK, OpenAI Agents SDK, LangChain, MCP clients |
 | [Delegation](docs/guides/delegation.md) | Hand part of a task to a sub-agent |
 | [Risks](docs/risks.md) and [standards](docs/standards.md) | What is covered, mapped to OWASP and others |
 | [Support and limits](docs/support-and-limits.md) | What it enforces, what stays with you |
 | [Threat model](docs/threat-model.md) | Who is trusted and what is assumed hostile |
 | [API contract](docs/api-contract.md) and [error codes](docs/errors.md) | Exact signatures, rules and codes |
 | [Scenarios](docs/scenarios.md) | The thirteen hostile and ordinary test cases |
-| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.1.1.md) | What changed |
+| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.2.0.md) | What changed |
 
 ## Stability
 
@@ -299,6 +353,7 @@ All packages share one version number. What it promises differs:
 | Package | In 1.0 |
 | --- | --- |
 | `@shieldaai/agent-guard`, `-mcp`, `-scenarios` | Stable. Root exports follow semantic versioning. |
+| `@shieldaai/agent-guard-adapters` | Stable from 1.2.0 (its first release). Root exports follow semantic versioning. Provider and framework shapes follow those APIs; a breaking change on their side is fixed in a minor release. |
 | `@shieldaai/agent-guard-executor` | Stable for the root, `/sandbox`, `/pilot` and `/ops` exports and for the ledger format. `/inventory` is experimental; `/internal` has no promise. |
 | `@shieldaai/agent-map` | Experimental. Its API and graph model may change in a minor release. |
 | Agent Ops, the viewer, the Python collector | Source in this repository, not npm packages. |
@@ -327,6 +382,7 @@ The product is the guard in `packages/core`. Everything else builds on it or sup
 | --- | --- |
 | `packages/core` | The guard: `@shieldaai/agent-guard`. Start here. |
 | `packages/mcp`, `packages/executor`, `packages/scenarios` | The MCP adapter, the durable executor and the conformance scenarios. |
+| `packages/adapters` | Provider and framework adapters, the dispatcher and the approval queue. |
 | `packages/agent-map`, `apps/agent-map` | Agent Map (experimental): the inventory service and its browser viewer. |
 | `apps/agent-ops` | Agent Ops: a reference web app for reviewing and approving agent requests. Not an npm package. |
 | `integrations/cartography` | A Python collector that feeds Agent Map from the executor and from AWS. |

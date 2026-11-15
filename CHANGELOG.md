@@ -1,5 +1,66 @@
 # Changelog
 
+## 1.2.0 — 2026-11-15
+
+A new package, `@shieldaai/agent-guard-adapters`, connects the guard to model providers and
+agent frameworks. The other five packages are unchanged apart from their version. The
+[release notes](docs/releases/1.2.0.md) are the short version.
+
+### Adapters (new package: `@shieldaai/agent-guard-adapters`)
+
+Connect the guard to model providers and agent frameworks without writing the dispatcher
+yourself. No third-party runtime dependencies; framework factories are passed in.
+
+- Feature: `createDispatcher()` routes every model tool call through prepare, an optional
+  wait for a person, and execute, and returns a plain outcome (`ok`, `denied`,
+  `waiting_for_approval`, `failed`) with a model-facing message for every guard code. Works
+  with the core guard, the durable executor (`executorBackend`) and the executor's task client
+  (`executorClientBackend`).
+- Feature: `ApprovalQueue`: pending actions for reviewers, `approve()`, `reject()`,
+  `complete()` with an externally issued approval, `waitFor()`, and an optional
+  `waitForApproval` mode for frameworks whose tool function must return the final result.
+  Each task has its own share of a shared queue (`maxPendingPerTask`); actions of a revoked
+  or expired task, or older than `maxWaitMs`, are dropped; a refused approval keeps the
+  action waiting (`APPROVAL_NOT_ACCEPTED`).
+- Feature: host errors (a broken backend, a network failure to a remote executor) reach the
+  dispatcher's `onHostError` hook; the model gets `HOST_ERROR` with no detail, and the other
+  calls of the turn keep their results. A remote execute that fails with a transport or
+  response code is reported as `failed` (effect unknown), never `denied`.
+- Feature: provider adapters for the Anthropic Messages API, OpenAI Responses and Chat
+  Completions (and compatible APIs), Google Gemini and Amazon Bedrock Converse.
+- Feature: framework adapters for the Vercel AI SDK, the OpenAI Agents SDK, LangChain.js and
+  LangGraph.js, and `registerMcpServerTools()` / `mcpServerTools()` to offer guarded tools to
+  any MCP client (Claude Code, Claude Desktop, Cursor, VS Code).
+- Feature: `toolSpecs()` reads tool specs from the guard's approved registrations, so the
+  model never sees a changed definition before review; `registerApprovedTools()` with
+  optional fingerprint pins; `taskBudget()`.
+- Feature: `jsonSchemaParser()` and `validateJsonSchema()` enforce the tool's JSON Schema as its
+  `parse` (unsupported keywords, and patterns with nested quantifiers, fail when the parser is
+  built; work on oversized arrays and strings is bounded); `standardSchemaParser()` for
+  Zod, Valibot and ArkType.
+- Feature: composable policies: `combinePolicies`, `denyTools`, `requireApprovalForTools`,
+  `requireApprovalForExternal`, `requireApprovalAfterUntrusted`, `withinHours`, `denyWhen`,
+  `requireApprovalWhen`.
+- Feature: `RateLimiter`: per-tool limits shared across tasks (per tenant, principal or
+  globally) in a sliding window; calls are counted when dispatched, so denials never use
+  the allowance.
+- Feature: `defineTool()` types a tool's arguments from its `parse`; `jsonSchemaParser` and
+  `standardSchemaParser` take the parsed type as a type parameter.
+- Feature: decision hooks: `openTelemetryDecisionHook` (counter and span events, no
+  OpenTelemetry dependency), `jsonLinesDecisionLogger`, `DecisionStats`, `combineDecisionHooks`.
+- Feature: the `agent-guard-explain` command explains any guard or adapter code.
+
+### Repository
+
+- Examples: `examples/model-adapters.mjs` (one model turn in five provider formats) and
+  `examples/mcp-guarded-server.mjs` (a stdio MCP server with guarded tools, with an offline
+  `--self-test`).
+- Docs: [Connect your model or framework](docs/guides/integrations.md).
+- Scripts: `scripts/verify-adapters-real-packages.mjs`, run by hand, runs the framework
+  adapters against the real framework packages and type-checks the provider adapters against
+  the official SDKs.
+- Release: the build, pack, package checks and `docs/releasing.md` include the sixth package.
+
 ## 1.1.1 — 2026-11-13
 
 A documentation-only patch. No code, type or behavior changes from 1.1.0. The

@@ -9,6 +9,7 @@ for (const workspace of [
   'packages/core',
   'packages/mcp',
   'packages/scenarios',
+  'packages/adapters',
   'packages/executor',
   'packages/agent-map',
 ]) {

@@ -122,6 +122,32 @@ All but the nesting depth can be changed; ranges are in the
 | One protocol message | 1 MiB |
 | Inbound messages | 10,000 per 10 seconds |
 
+### Adapters (`@shieldaai/agent-guard-adapters`)
+
+- They add no authority. Every decision is still the guard's or the executor's; the
+  adapters only translate between provider formats and the dispatcher.
+- They cover calls routed through the dispatcher. A framework tool registered without it,
+  or a second MCP connection, bypasses the guard.
+- `ApprovalQueue` and `RateLimiter` keep their state in memory, in one process. A restart
+  drops pending approvals (nothing runs) and resets rate counts. A rate limit can be
+  exceeded by the number of calls already in flight when it is reached.
+- `jsonSchemaParser` enforces a documented subset of JSON Schema; any other keyword,
+  including `$ref`, is refused when the parser is built, and so is a `pattern` with a
+  quantified group that contains a quantifier (`(a+)+`) unless `allowNestedQuantifiers` is
+  set. Overlapping alternatives such as `(a|a)+` are not detected: keep host patterns simple.
+  `multipleOf` refuses values it cannot check exactly (beyond 2^53 after scaling). `format`
+  is not validated.
+- Provider and framework shapes follow those APIs. The versions checked are listed in
+  [Connect your model or framework](guides/integrations.md#which-versions-are-checked).
+
+| Limit | Default |
+| --- | --- |
+| Actions waiting in one approval queue | 100 (1 to 10,000) |
+| Actions one task may have waiting | 10 (1 to 10,000) |
+| Longest an action may wait | One day (up to 30 days); also never past the task deadline |
+| Approval issued by the queue | 60 seconds, never past the task deadline |
+| Rate-limit keys kept | 100,000; the oldest is forgotten first, which can only loosen a limit |
+
 ### The executor (`@shieldaai/agent-guard-executor`)
 
 - **One owner.** One process owns one ledger on a local file system. A second
@@ -211,6 +237,7 @@ current security fixes.
 | `@shieldaai/agent-guard` | Stable |
 | `@shieldaai/agent-guard-mcp` | Stable |
 | `@shieldaai/agent-guard-scenarios` | Stable. The scenario catalog has its own version. |
+| `@shieldaai/agent-guard-adapters` | Stable root export from its first release. Provider and framework shapes follow those APIs; a breaking change on their side is fixed in a minor release. |
 | `@shieldaai/agent-guard-executor` | Stable, except `/inventory` (experimental) and `/internal` (no promise). Every 1.x executor opens ledgers written by earlier 1.x versions and by `0.1.0-alpha.3`. |
 | `@shieldaai/agent-map` and the Cartography integration | Experimental. Published as 1.0.0 but outside the compatibility promise. |
 | Agent Ops | Reference app in the source tree |

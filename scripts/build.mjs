@@ -5,7 +5,14 @@ import { join } from 'node:path';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const compiler = join(root, 'node_modules', 'typescript', 'bin', 'tsc');
-const workspaces = ['packages/core', 'packages/mcp', 'packages/scenarios', 'packages/executor', 'packages/agent-map'];
+const workspaces = [
+  'packages/core',
+  'packages/mcp',
+  'packages/scenarios',
+  'packages/adapters',
+  'packages/executor',
+  'packages/agent-map',
+];
 
 // tsc leaves output from deleted source files behind. Remove it before packing.
 for (const workspace of workspaces) {

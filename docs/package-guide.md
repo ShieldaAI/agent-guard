@@ -1,6 +1,6 @@
 # Package guide
 
-Agent Guard is five npm packages. Most projects start with the first and add
+Agent Guard is six npm packages. Most projects start with the first and add
 others when they need them. Install the same version of each.
 
 ## Which package do I need?
@@ -8,6 +8,7 @@ others when they need them. Install the same version of each.
 | I want to ... | Use | Needs |
 | --- | --- | --- |
 | Control which tools an agent can call, on which resources, with approvals and budgets | [`@shieldaai/agent-guard`](#the-guard) (the guard) | Node.js 22+ |
+| Connect the guard to a model provider or agent framework, with an approval queue | [`@shieldaai/agent-guard-adapters`](#adapters) | Node.js 22+ |
 | Put the tools of a Model Context Protocol (MCP) server behind the same checks | [`@shieldaai/agent-guard-mcp`](#mcp-adapter) with the guard or the executor | Node.js 22+ |
 | Keep budgets, revocations and used approvals across restarts, or serve an agent in another process | [`@shieldaai/agent-guard-executor`](#the-executor) (the executor) | Node.js 22.13+ |
 | Run untrusted code with no network and no host credentials | The executor's `/sandbox` subpath and the [Docker isolation profile](../deployment/README.md) | Node.js 22.13+, Docker |
@@ -38,6 +39,28 @@ guard.approveTool('report.read', fingerprint);
 The guard runs inside your application and keeps its state in memory. Continue
 with the [tool-permissions walkthrough](guides/tool-permissions.md), which adds
 a task, a denial, an approval and a refused replay.
+
+## Adapters
+
+```sh
+npm install @shieldaai/agent-guard @shieldaai/agent-guard-adapters
+```
+
+```js
+import { ApprovalQueue, createDispatcher, openAIResponsesToolOutputs, openAIResponsesTools, toolSpecs }
+  from '@shieldaai/agent-guard-adapters';
+
+const approvals = new ApprovalQueue();
+const dispatch = createDispatcher({ guard, task }, { approvals });
+const tools = openAIResponsesTools(toolSpecs(guard, ['report.read']));
+// After each response: input.push(...response.output, ...await openAIResponsesToolOutputs(response.output, dispatch));
+```
+
+The dispatcher returns `ok`, `denied`, `waiting_for_approval` or `failed`, with a message the
+model can act on. The package also has adapters for Anthropic, OpenAI Chat Completions,
+Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK and LangChain, an MCP server helper
+for Claude Code and other MCP clients, JSON Schema and Standard Schema parsers, composable
+policies and OpenTelemetry hooks. See [Connect your model or framework](guides/integrations.md).
 
 ## MCP adapter
 
