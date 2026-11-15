@@ -296,9 +296,15 @@ test('options are validated', () => {
 
 test('the durable executor works through executorBackend, approvals included', async t => {
   const directory = realpathSync(mkdtempSync(join(tmpdir(), 'adapters-executor-')));
-  t.after(() => rmSync(directory, { recursive: true, force: true }));
   const executor = new DurableExecutor({ database: join(directory, 'ledger.sqlite'), encryptionKey: randomBytes(32) });
-  t.after(() => executor.close());
+  // Close before removing: Windows cannot delete the open ledger file.
+  t.after(() => {
+    try {
+      executor.close();
+    } finally {
+      rmSync(directory, { recursive: true, force: true });
+    }
+  });
   let refunds = 0;
   registerApprovedTools(executor, [
     {
