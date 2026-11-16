@@ -97,4 +97,28 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       }
     },
   ),
+  rule(
+    {
+      id: 'AGC-GOV-003',
+      title: 'Agent model is a moving alias',
+      severity: 'info',
+      confidence: 'high',
+      owasp: [ASI.supply],
+      help: 'An alias such as "sonnet" or "-latest" moves to a new model without a change in the repository, which can change how the agent follows its instructions. Pin the full model ID where behavior must stay reviewable.',
+    },
+    (project, report) => {
+      for (const choice of project.models) {
+        const model = choice.model.trim().toLowerCase();
+        if (!MODEL_ALIAS.test(model)) continue;
+        report({
+          message: `${choice.agent} uses model "${choice.model}", an alias that can change without a commit.`,
+          location: choice.location,
+          subject: `model:${choice.agent}`,
+          fix: 'Use a full, dated model ID.',
+        });
+      }
+    },
+  ),
 ];
+
+const MODEL_ALIAS = /^(sonnet|opus|haiku|opusplan|default|best|sonnet\[1m\])$|(^|[-_])latest$/;

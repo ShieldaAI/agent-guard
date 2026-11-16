@@ -4,7 +4,7 @@ import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js
 /** One MCP server as a config file declares it. */
 export interface McpServer {
   readonly name: string;
-  readonly client: 'claude-code' | 'vscode' | 'cursor' | 'workflow';
+  readonly client: 'claude-code' | 'vscode' | 'cursor' | 'workflow' | 'codex' | 'gemini' | 'subagent';
   readonly command?: string;
   readonly args: readonly string[];
   readonly url?: string;
@@ -287,7 +287,7 @@ export function serversFromObject(
     if (!isRecord(raw)) continue;
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
-    const url = asString(raw['url']) ?? asString(raw['serverUrl']);
+    const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
     const catalog = identify(command, args, url);
     servers.push({
       name,

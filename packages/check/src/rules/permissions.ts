@@ -36,6 +36,16 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
             fix: 'Replace the bypass flag with --allowedTools listing only the tools this job needs.',
           });
         }
+      for (const bypass of project.bypasses)
+        report({
+          message: `${bypass.agent} runs every action without asking (${bypass.what}).`,
+          location: bypass.location,
+          subject: `bypass:${bypass.what}`,
+          agent: project.agents.find(agent => agent.location.file === bypass.location.file),
+          fix: bypass.agent.startsWith('Codex')
+            ? 'Use approval_policy = "on-request" with sandbox_mode = "workspace-write".'
+            : 'Remove defaultApprovalMode "yolo", or set security.disableYoloMode to true.',
+        });
       for (const file of project.scripts) {
         const index = file.text.search(/--dangerously-(skip-permissions|bypass-approvals-and-sandbox)/);
         if (index >= 0)
@@ -152,6 +162,48 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
             location: allowed.location,
             subject: allowed.raw,
             fix: `Move "${allowed.raw}" from allow to ask.`,
+          });
+      }
+    },
+  ),
+  rule(
+    {
+      id: 'AGC-PERM-006',
+      title: 'Subagent runs with broader permissions than its parent',
+      severity: 'high',
+      confidence: 'high',
+      owasp: [ASI.tools, ASI.trust],
+      help: 'A subagent’s permissionMode replaces the session’s for its own calls. bypassPermissions skips every prompt; acceptEdits and auto write files without asking. Claude Code ignores permissionMode for plugin subagents, not for project ones.',
+    },
+    (project, report) => {
+      for (const sub of project.subagents) {
+        const mode = sub.permissionMode;
+        if (!mode) continue;
+        const parentMode = [...project.settings]
+          .reverse()
+          .find(file => file.defaultMode && file.path.startsWith(sub.projectDir))?.defaultMode?.value;
+        const agent = project.agents.find(item => item.id === `subagent:${sub.path}`);
+        if (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions')
+          report({
+            message: `Subagent ${sub.name} sets permissionMode: bypassPermissions, so ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'} run without asking.`,
+            location: mode.location,
+            subject: `mode:${sub.path}`,
+            agent,
+            fix: 'Remove permissionMode, or use plan or default and allow the specific tools it needs.',
+          });
+        else if (
+          (mode.value === 'acceptEdits' || mode.value === 'auto') &&
+          parentMode !== 'acceptEdits' &&
+          parentMode !== 'bypassPermissions' &&
+          parentMode !== 'auto'
+        )
+          report({
+            message: `Subagent ${sub.name} sets permissionMode: ${mode.value}, so it edits files without asking while the session asks.`,
+            location: mode.location,
+            subject: `mode:${sub.path}`,
+            agent,
+            severity: 'low',
+            fix: 'Remove permissionMode unless this subagent is meant to edit unattended.',
           });
       }
     },

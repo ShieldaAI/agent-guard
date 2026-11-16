@@ -10,8 +10,18 @@ import {
   type ClaudeSettings,
   type PermissionRule,
 } from './claude.js';
-import { actionBuiltinServers, parseMcpConfig, type McpServer } from './mcp.js';
-import { asString, asStringArray, frontmatter, isRecord } from './text.js';
+import { actionBuiltinServers, parseMcpConfig, serversFromObject, type McpServer } from './mcp.js';
+import { asString, asStringArray, frontmatter, isRecord, lineOf } from './text.js';
+import {
+  parseCodex,
+  parseGemini,
+  parseMarketplace,
+  parsePluginSettings,
+  type Bypass,
+  type ModelChoice,
+  type OtherAgent,
+  type PluginSource,
+} from './formats.js';
 import { parseWorkflow, PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS, type WorkflowAgent } from './workflows.js';
 
 export interface Subagent {
@@ -19,6 +29,14 @@ export interface Subagent {
   readonly name: string;
   readonly description?: string;
   readonly tools?: readonly string[];
+  readonly disallowedTools: readonly string[];
+  /** `permissionMode` from the frontmatter, with the line that sets it. */
+  readonly permissionMode?: { readonly value: string; readonly location: Location };
+  readonly model?: { readonly value: string; readonly location: Location };
+  /** MCP servers defined inline for this subagent only. */
+  readonly servers: readonly McpServer[];
+  /** Server names it references from the project's `.mcp.json`. */
+  readonly serverNames: readonly string[];
   readonly location: Location;
   readonly projectDir: string;
 }
@@ -47,6 +65,14 @@ export interface Project {
   readonly filesRead: number;
   /** Agent Guard's own records found in the repo or given on the command line (Mode B). */
   readonly agentGuard: AgentGuardEvidence;
+  /** Tools other agents (Gemini CLI) run without asking, as Claude Code permission rules. */
+  readonly otherAllow: readonly PermissionRule[];
+  /** Settings that run every action without asking, outside Claude Code's own settings. */
+  readonly bypasses: readonly Bypass[];
+  /** Model names agents are configured with, for pinning checks. */
+  readonly models: readonly ModelChoice[];
+  /** Where plugins and plugin marketplaces are fetched from. */
+  readonly pluginSources: readonly PluginSource[];
 }
 
 /** The directory a `.claude/...` or `.mcp.json` path belongs to ('' for the repo root). */
@@ -126,6 +152,8 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
   const dependencies = new Set<string>();
   let filesRead = 0;
   const guardFiles: { path: string; text: string; data: unknown }[] = [];
+  const others: OtherAgent[] = [];
+  const pluginSources: PluginSource[] = [];
   const fail = (file: string, error: unknown) =>
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
@@ -145,8 +173,13 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     try {
       if (/^agent-guard[\w.-]*\.json$/.test(name) || extraPaths.has(path))
         guardFiles.push({ path, text, data: JSON.parse(text) as unknown });
-      else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json'))
+      else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) {
         settings.push(parseSettings(path, text));
+        pluginSources.push(...parsePluginSettings(path, text));
+      } else if (parent === '.codex' && name === 'config.toml') others.push(parseCodex(path, text));
+      else if (parent === '.gemini' && name === 'settings.json') others.push(parseGemini(path, text));
+      else if (parent === '.claude-plugin' && name === 'marketplace.json')
+        pluginSources.push(...parseMarketplace(path, text));
       else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code'));
       else if (path.endsWith('.vscode/mcp.json')) servers.push(...parseMcpConfig(path, text, 'vscode'));
       else if (path.endsWith('.cursor/mcp.json')) servers.push(...parseMcpConfig(path, text, 'cursor'));
@@ -174,11 +207,34 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
           const { data } = frontmatter(text);
           const tools = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
           const description = asString(data['description']);
+          const fm = (key: string): Location => ({ file: path, line: lineOf(text, `${key}:`) || 1 });
+          const permissionMode = asString(data['permissionMode']);
+          const model = asString(data['model']);
+          const inline: Record<string, unknown> = {};
+          const serverNames: string[] = [];
+          const declared = data['mcpServers'];
+          if (Array.isArray(declared)) {
+            for (const item of declared) {
+              if (typeof item === 'string') serverNames.push(item);
+              else if (isRecord(item)) {
+                // `- name: {command...}` or `- {name: x, command: ...}`
+                const named = asString(item['name']);
+                if (named) inline[named] = item;
+                else for (const [key, value] of Object.entries(item)) if (isRecord(value)) inline[key] = value;
+              }
+            }
+          } else if (isRecord(declared)) Object.assign(inline, declared);
+          const subServers = serversFromObject({ mcpServers: inline }, path, text, 'subagent');
           subagents.push({
             path,
             name: asString(data['name']) ?? name.replace(/\.md$/, ''),
             ...(description ? { description } : {}),
             ...(tools ? { tools } : {}),
+            disallowedTools: data['disallowedTools'] === undefined ? [] : asStringArray(data['disallowedTools']),
+            ...(permissionMode ? { permissionMode: { value: permissionMode, location: fm('permissionMode') } } : {}),
+            ...(model ? { model: { value: model, location: fm('model') } } : {}),
+            servers: subServers,
+            serverNames,
             location: { file: path, line: 1 },
             projectDir: projectDir(path),
           });
@@ -233,22 +289,45 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     };
     agents.push(main);
     for (const sub of subagents.filter(item => item.projectDir === dir)) {
-      if (!sub.tools) continue;
+      const mode = sub.permissionMode?.value;
+      const bypass = mode === 'bypassPermissions';
+      const edits = mode === 'acceptEdits' || mode === 'auto';
+      // A subagent with no tools list, no own mode and no own servers is the main agent again.
+      if (!sub.tools && !bypass && !edits && !sub.servers.length) continue;
       const tools = sub.tools;
       const keeps = (grant: Grant) =>
-        grant.tool !== undefined &&
-        tools.some(
-          tool =>
-            tool === grant.tool ||
-            (grant.tool!.startsWith('mcp__') && tool.startsWith(`${grant.tool}__`)) ||
-            tool === `${grant.tool}__*`,
-        );
+        tools === undefined ||
+        (grant.tool !== undefined &&
+          tools.some(
+            tool =>
+              tool === grant.tool ||
+              (grant.tool!.startsWith('mcp__') && tool.startsWith(`${grant.tool}__`)) ||
+              tool === `${grant.tool}__*`,
+          ));
+      const modeAt = sub.permissionMode?.location ?? sub.location;
+      const own = sub.servers.flatMap(server =>
+        grantsForRule(parseRule(`mcp__${server.name}`, server.location), bypass ? 'auto' : 'ask', sub.servers),
+      );
+      let grants = [...main.grants.filter(keeps), ...own].map(item =>
+        bypass && item.approval === 'ask'
+          ? {
+              ...item,
+              approval: 'auto' as const,
+              via: `${item.via} (permissionMode: bypassPermissions)`,
+              location: modeAt,
+            }
+          : item,
+      );
+      if (edits && (tools === undefined || tools.some(tool => ['Edit', 'Write', 'MultiEdit'].includes(tool))))
+        grants.push(...grantsForRule(parseRule('Edit', modeAt), 'auto', []));
+      const deny = sub.disallowedTools.map(tool => parseRule(tool, sub.location));
+      grants = withoutDenied(grants, deny);
       agents.push({
         id: `subagent:${sub.path}`,
         kind: 'subagent',
         name: `Subagent ${sub.name}`,
         location: sub.location,
-        grants: main.grants.filter(keeps),
+        grants,
         mediators,
         headless: false,
       });
@@ -358,6 +437,26 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     });
   }
 
+  for (const other of others) agents.push(other.agent);
+  servers.push(...others.flatMap(other => other.servers), ...subagents.flatMap(sub => sub.servers));
+  const models: ModelChoice[] = [
+    ...others.flatMap(other => other.models),
+    ...subagents.flatMap(sub =>
+      sub.model ? [{ agent: `Subagent ${sub.name}`, model: sub.model.value, location: sub.model.location }] : [],
+    ),
+    ...workflows.flatMap(step =>
+      step.model
+        ? [
+            {
+              agent: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
+              model: step.model.value,
+              location: step.model.location,
+            },
+          ]
+        : [],
+    ),
+  ];
+
   return {
     settings,
     servers,
@@ -372,5 +471,9 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     errors,
     filesRead,
     agentGuard: guardFiles.length ? readAgentGuardFiles(guardFiles, errors) : EMPTY_EVIDENCE,
+    otherAllow: others.flatMap(other => other.allow),
+    bypasses: others.flatMap(other => other.bypasses),
+    models,
+    pluginSources,
   };
 }

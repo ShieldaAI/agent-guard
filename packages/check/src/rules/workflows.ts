@@ -120,4 +120,74 @@ export const WORKFLOWS_RULES: readonly Rule[] = [
             });
     },
   ),
+  rule(
+    {
+      id: 'AGC-TRG-002',
+      title: 'Unattended agent changes the repository with no reviewer',
+      severity: 'medium',
+      confidence: 'high',
+      owasp: [ASI.trust, ASI.cascade],
+      help: 'A scheduled or push-triggered agent with write access acts with no person in the loop. A GitHub environment with required reviewers, or proposing changes as a pull request from a read-only job, puts one back.',
+    },
+    (project, report) => {
+      for (const step of project.workflows) {
+        if (step.environment) continue;
+        if (step.triggers.some(trigger => UNTRUSTED_TRIGGERS.has(trigger))) continue; // AGC-TRG-001
+        const automatic = step.triggers.filter(trigger => AUTOMATIC_TRIGGERS.has(trigger));
+        if (!automatic.length) continue;
+        const writes = step.permissions.write.filter(scope => scope === '*' || scope === 'contents');
+        if (!writes.length && !step.appToken) continue;
+        const agent = project.agents.find(item => item.id === `workflow:${step.path}#${step.job}/${step.step}`);
+        report({
+          message: `The ${step.job} job runs the agent on ${automatic.join(', ')} with ${step.appToken ? 'the Claude GitHub App token' : 'contents: write'} and nobody reviews before it acts.`,
+          location: step.location,
+          subject: `${step.job}/${step.step}`,
+          agent,
+          fix: 'Add a GitHub environment with required reviewers to the job, or give it contents: read and have it open a pull request.',
+        });
+      }
+    },
+  ),
+  rule(
+    {
+      id: 'AGC-IDN-002',
+      title: 'Agent gets long-lived cloud keys',
+      severity: 'medium',
+      confidence: 'high',
+      owasp: [ASI.identity],
+      help: 'Static cloud keys work from anywhere until someone rotates them. Workload identity (OIDC) gives the job short-lived credentials scoped to the repository and branch.',
+    },
+    (project, report) => {
+      for (const step of project.workflows)
+        for (const secret of step.secrets)
+          if (STATIC_CLOUD_KEY.test(secret.name))
+            report({
+              message: `The ${step.job} job hands secret ${secret.name}, a long-lived cloud key, to the agent step.`,
+              location: secret.location,
+              subject: `${step.job}:${secret.name}`,
+              fix: 'Use OIDC: aws-actions/configure-aws-credentials with role-to-assume, google-github-actions/auth with workload_identity_provider, or azure/login with a federated credential.',
+            });
+      for (const server of project.servers)
+        for (const key of Object.keys(server.env))
+          if (STATIC_CLOUD_KEY.test(key))
+            report({
+              message: `MCP server "${server.name}" gets ${key}, a long-lived cloud key.`,
+              location: server.location,
+              subject: `server:${server.client}:${server.name}:${key}`,
+              fix: 'Give the server a short-lived role or profile (for example AWS_PROFILE with SSO) instead of static keys.',
+            });
+    },
+  ),
 ];
+
+/** Events that start a run with nobody choosing to: a schedule, a push, another system. */
+const AUTOMATIC_TRIGGERS = new Set([
+  'schedule',
+  'push',
+  'repository_dispatch',
+  'check_suite',
+  'status',
+  'deployment_status',
+]);
+const STATIC_CLOUD_KEY =
+  /^(AWS_SECRET_ACCESS_KEY|AWS_SECRET_KEY|AZURE_CLIENT_SECRET|ARM_CLIENT_SECRET|GOOGLE_APPLICATION_CREDENTIALS_JSON|GCP_SA_KEY|GCP_CREDENTIALS|GCLOUD_SERVICE_KEY|GOOGLE_CREDENTIALS|[A-Z0-9_]*SERVICE_ACCOUNT_KEY)$/;

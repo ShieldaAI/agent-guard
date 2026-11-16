@@ -157,4 +157,47 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
       }
     },
   ),
+  rule(
+    {
+      id: 'AGC-SUP-005',
+      title: 'Plugin or marketplace not pinned',
+      severity: 'medium',
+      confidence: 'high',
+      owasp: [ASI.supply],
+      help: 'Claude Code plugins can add hooks, MCP servers, commands and skills, which run with the agent’s permissions. A source with no commit pin installs whatever the branch holds when it is fetched; autoUpdate fetches again in the background.',
+    },
+    (project, report) => {
+      for (const source of project.pluginSources) {
+        const full = /^[0-9a-f]{40}$/.test(source.sha ?? '');
+        if (source.kind === 'plugin') {
+          if (source.type === 'npm') {
+            if (source.version && /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(source.version)) continue;
+            report({
+              message: `Plugin "${source.name}" installs npm package ${source.from}${source.version ? ` at range ${source.version}` : ' at its latest version'}.`,
+              location: source.location,
+              subject: `plugin:${source.name}`,
+              fix: 'Set version to an exact release, such as "1.4.2".',
+            });
+          } else if (!full)
+            report({
+              message: `Plugin "${source.name}" comes from ${source.from}${source.ref ? ` at ${source.ref}` : ''} with no sha, so a push to that ${source.ref ? 'ref' : 'repository'} changes what runs.`,
+              location: source.location,
+              subject: `plugin:${source.name}`,
+              severity: source.ref ? 'low' : 'medium',
+              fix: 'Add "sha" with the full 40-character commit you reviewed.',
+            });
+          continue;
+        }
+        // Marketplace sources accept a ref but not a sha.
+        if (source.ref && !source.autoUpdate) continue;
+        report({
+          message: `Marketplace "${source.name}" comes from ${source.from}${source.ref ? ` at ${source.ref}` : ' at its default branch'}${source.autoUpdate ? ' and updates itself in the background' : ''}.`,
+          location: source.location,
+          subject: `marketplace:${source.name}`,
+          severity: source.autoUpdate && !source.ref ? 'high' : source.autoUpdate ? 'medium' : 'low',
+          fix: 'Set "ref" to a release tag and autoUpdate to false; pin each plugin in the marketplace with a sha.',
+        });
+      }
+    },
+  ),
 ];

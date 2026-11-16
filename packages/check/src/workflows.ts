@@ -32,6 +32,10 @@ export interface WorkflowAgent {
   /** `pull_request_target` workflow that checks out the pull request's own code. */
   readonly checksOutPullRequest?: Location;
   readonly servers: readonly McpServer[];
+  /** The model the step asks for, from `--model` or a `model` input. */
+  readonly model?: { readonly value: string; readonly location: Location };
+  /** Whether the job runs in a GitHub environment, which can require a reviewer before it starts. */
+  readonly environment: boolean;
   readonly literalInputs: readonly { readonly key: string; readonly value: string; readonly location: Location }[];
 }
 
@@ -92,6 +96,7 @@ interface Flags {
   skip: boolean;
   maxTurns: boolean;
   mcpConfig?: string;
+  model?: string;
 }
 
 function toolList(value: string): string[] {
@@ -128,6 +133,8 @@ function readFlags(text: string): Flags {
       value();
     } else if (name === '--mcp-config') {
       flags.mcpConfig = value();
+    } else if (name === '--model' || name === '-m') {
+      flags.model = value();
     }
   }
   return flags;
@@ -257,6 +264,7 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
           servers = [];
         }
       }
+      const modelValue = input('model') ?? flags.model;
       const nonWrite = input('allowed_non_write_users');
       const literalInputs = Object.entries(inputs)
         .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !entry[1].includes('${{'))
@@ -293,6 +301,18 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
             }
           : {}),
         servers,
+        ...(modelValue
+          ? {
+              model: {
+                value: modelValue,
+                location: {
+                  file: path,
+                  line: input('model') !== undefined ? inputLine('model') : inputLine('claude_args'),
+                },
+              },
+            }
+          : {}),
+        environment: job['environment'] !== undefined,
         literalInputs,
       });
     });

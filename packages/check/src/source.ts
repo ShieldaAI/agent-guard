@@ -56,6 +56,10 @@ export function isCandidate(path: string): boolean {
   if (name === '.mcp.json') return true;
   if (name === 'mcp.json' && (parent === '.vscode' || parent === '.cursor')) return true;
   if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) return true;
+  if (parent === '.codex' && name === 'config.toml') return true;
+  if (parent === '.gemini' && name === 'settings.json') return true;
+  if (parent === '.claude-plugin' && name === 'marketplace.json') return true;
+  if (name === 'GEMINI.md') return true;
   const claude = parts.indexOf('.claude');
   if (claude >= 0) {
     const area = parts.at(claude + 1);

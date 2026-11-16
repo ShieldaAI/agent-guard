@@ -45,7 +45,7 @@ export interface Grant {
   readonly location: Location;
 }
 
-export type AgentKind = 'claude-code' | 'subagent' | 'workflow' | 'mcp-client';
+export type AgentKind = 'claude-code' | 'subagent' | 'workflow' | 'mcp-client' | 'codex' | 'gemini';
 
 /** Something that mediates tool calls at runtime. */
 export interface Mediator {
