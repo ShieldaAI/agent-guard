@@ -23,6 +23,7 @@ try {
     'packages/adapters',
     'packages/executor',
     'packages/agent-map',
+    'packages/check',
   ]) {
     mkdirSync(join(root, workspace, 'dist'), { recursive: true });
     writeFileSync(

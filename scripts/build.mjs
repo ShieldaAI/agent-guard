@@ -12,6 +12,7 @@ const workspaces = [
   'packages/adapters',
   'packages/executor',
   'packages/agent-map',
+  'packages/check',
 ];
 
 // tsc leaves output from deleted source files behind. Remove it before packing.

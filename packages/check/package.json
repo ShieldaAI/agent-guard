@@ -1,0 +1,57 @@
+{
+  "name": "@shieldaai/agent-guard-check",
+  "version": "0.1.0-alpha.0",
+  "description": "Static scanner for AI agent configuration: shows what each agent in a repo can do, flags authority it does not need, and reports what a pull request widened.",
+  "license": "Apache-2.0",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "agent-guard-check": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "yaml": "2.9.1"
+  },
+  "publishConfig": {
+    "access": "public",
+    "tag": "alpha"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ShieldaAI/agent-guard.git",
+    "directory": "packages/check"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/check#readme",
+  "bugs": {
+    "url": "https://github.com/ShieldaAI/agent-guard/issues"
+  },
+  "keywords": [
+    "ai-agents",
+    "security",
+    "static-analysis",
+    "sast",
+    "mcp",
+    "claude-code",
+    "lethal-trifecta",
+    "sarif"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "prepack": "node ../../scripts/build.mjs"
+  }
+}

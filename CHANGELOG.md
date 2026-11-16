@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+### Check (new package: `@shieldaai/agent-guard-check`, alpha)
+
+A static scanner for AI agent configuration in a repository. It reads files only: it never
+runs repository code, never starts an MCP server and makes no network calls. It works with
+or without Agent Guard.
+
+- Feature: builds each agent's authority (reads private data, reads untrusted input, writes,
+  runs code, sends data out, spends money, changes itself) from Claude Code settings, `.mcp.json`,
+  subagents, skills and hooks, VS Code and Cursor MCP config, and GitHub workflow steps that run
+  `claude-code-action`, `codex-action`, `claude -p` or `codex exec`. Each capability is `no`,
+  `unknown`, with approval or without approval, and cites the granting file and line.
+- Feature: 26 rules (`AGC-*`) mapped to OWASP ASI01–ASI10, including the lethal trifecta,
+  unpinned MCP packages, agents triggered by outsiders while holding a write token, agents that
+  can rewrite their own instructions or permissions, and hardcoded credentials (masked in output).
+- Feature: `--base <ref>` reports only capabilities that grew and findings that are new, reading
+  the base commit with `git show`.
+- Feature: text, JSON, SARIF 2.1.0 and Markdown output; `.agc.yaml` with reasoned ignores and
+  severity overrides; inline `agc-ignore` comments; baseline files.
+
 ### Adapters
 
 - Tests: every adapter (Anthropic, OpenAI Responses, OpenAI Chat Completions, Gemini, Bedrock,
