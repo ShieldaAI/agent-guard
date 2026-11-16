@@ -278,12 +278,15 @@ function sourceOf(
   if (typeof raw === 'string') return undefined; // a relative path inside the marketplace: pinned with it
   if (!isRecord(raw)) return undefined;
   const type = asString(raw['source']) ?? asString(raw['type']) ?? 'unknown';
-  if (type === 'directory' || type === 'file' || type === 'settings') return undefined; // local
+  // Local folders and files, and a directory printed by a tool already on the machine, are not fetched.
+  if (type === 'directory' || type === 'file' || type === 'settings' || type === 'command') return undefined;
   const from =
     asString(raw['repo']) ?? asString(raw['url']) ?? asString(raw['package']) ?? asString(raw['path']) ?? '?';
   const ref = asString(raw['ref']);
-  const sha = asString(raw['sha']);
-  const version = asString(raw['version']);
+  // A git commit for github, url and git-subdir sources; the archive digest for archive sources.
+  const sha = asString(raw['sha']) ?? asString(raw['sha256']);
+  const appended = type === 'npm' ? /^(@?[^@]+)@(.+)$/.exec(asString(raw['package']) ?? '')?.[2] : undefined;
+  const version = asString(raw['version']) ?? appended;
   return {
     kind,
     name,
@@ -304,6 +307,21 @@ export function parsePluginSettings(path: string, text: string): PluginSource[] 
   const out: PluginSource[] = [];
   for (const [name, entry] of Object.entries(data['extraKnownMarketplaces'])) {
     if (!isRecord(entry)) continue;
+    // A `settings` marketplace lists its plugins inline: judge each plugin's own source.
+    if (
+      isRecord(entry['source']) &&
+      entry['source']['source'] === 'settings' &&
+      Array.isArray(entry['source']['plugins'])
+    )
+      for (const plugin of entry['source']['plugins']) {
+        if (!isRecord(plugin)) continue;
+        const pluginName = asString(plugin['name']) ?? '?';
+        const found = sourceOf('plugin', pluginName, plugin['source'], false, {
+          file: path,
+          line: lineOf(text, JSON.stringify(pluginName)) || 1,
+        });
+        if (found) out.push(found);
+      }
     const found = sourceOf('marketplace', name, entry['source'], entry['autoUpdate'] === true, {
       file: path,
       line: lineOf(text, JSON.stringify(name)) || 1,

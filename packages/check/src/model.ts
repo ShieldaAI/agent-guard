@@ -207,7 +207,13 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
           const { data } = frontmatter(text);
           const tools = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
           const description = asString(data['description']);
-          const fm = (key: string): Location => ({ file: path, line: lineOf(text, `${key}:`) || 1 });
+          // The line of a top-level frontmatter key (never a match in the body or a description).
+          const fm = (key: string): Location => {
+            const lines = text.split('\n');
+            const end = lines.findIndex((line, i) => i > 0 && /^---\s*$/.test(line));
+            const index = lines.slice(0, end < 0 ? lines.length : end).findIndex(line => line.startsWith(`${key}:`));
+            return { file: path, line: index >= 0 ? index + 1 : 1 };
+          };
           const permissionMode = asString(data['permissionMode']);
           const model = asString(data['model']);
           const inline: Record<string, unknown> = {};

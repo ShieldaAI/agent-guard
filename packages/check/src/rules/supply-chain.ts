@@ -168,7 +168,10 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
     },
     (project, report) => {
       for (const source of project.pluginSources) {
-        const full = /^[0-9a-f]{40}$/.test(source.sha ?? '');
+        const full =
+          source.type === 'archive'
+            ? /^[0-9a-fA-F]{64}$/.test(source.sha ?? '')
+            : /^[0-9a-f]{40}$/.test(source.sha ?? '');
         if (source.kind === 'plugin') {
           if (source.type === 'npm') {
             if (source.version && /^\d+\.\d+\.\d+(-[\w.]+)?$/.test(source.version)) continue;
@@ -178,7 +181,14 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
               subject: `plugin:${source.name}`,
               fix: 'Set version to an exact release, such as "1.4.2".',
             });
-          } else if (!full)
+          } else if (source.type === 'archive' && !full)
+            report({
+              message: `Plugin "${source.name}" downloads an archive from ${source.from} with no sha256, so whatever the server returns is installed.`,
+              location: source.location,
+              subject: `plugin:${source.name}`,
+              fix: 'Add "sha256" with the digest of the archive you reviewed.',
+            });
+          else if (!full)
             report({
               message: `Plugin "${source.name}" comes from ${source.from}${source.ref ? ` at ${source.ref}` : ''} with no sha, so a push to that ${source.ref ? 'ref' : 'repository'} changes what runs.`,
               location: source.location,
@@ -190,6 +200,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
         }
         // Marketplace sources accept a ref but not a sha.
         if (source.ref && !source.autoUpdate) continue;
+        if (source.type === 'url' && !source.autoUpdate) continue; // one file: takes no ref
         report({
           message: `Marketplace "${source.name}" comes from ${source.from}${source.ref ? ` at ${source.ref}` : ' at its default branch'}${source.autoUpdate ? ' and updates itself in the background' : ''}.`,
           location: source.location,

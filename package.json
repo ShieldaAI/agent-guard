@@ -21,6 +21,7 @@
     "build": "node scripts/build.mjs",
     "test": "npm run build && node scripts/test-workspace.mjs packages/core/test/*.test.mjs packages/mcp/test/*.test.mjs packages/scenarios/test/*.test.mjs packages/adapters/test/*.test.mjs packages/executor/test/*.test.mjs packages/agent-map/test/*.test.mjs packages/check/test/*.test.mjs apps/agent-map/test/*.test.mjs apps/agent-ops/test/*.test.mjs scripts/*.test.mjs",
     "test:pack": "node scripts/check-packages.mjs",
+    "bench:check": "npm run build && node packages/check/bench/run.mjs",
     "check": "npm test && npm run test:pack",
     "evaluate:provider-trials": "npm run build && node scripts/evaluate-provider-trials.mjs",
     "evaluate:providers": "npm run build && node scripts/evaluate-provider-tools.mjs",

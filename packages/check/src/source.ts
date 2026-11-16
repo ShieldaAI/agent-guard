@@ -181,9 +181,10 @@ export class GitSource implements FileSource {
     this.label = `${ref}`;
   }
 
-  #git(args: string[]): Buffer {
+  #git(args: string[], input?: string): Buffer {
     const result = spawnSync('git', ['-C', this.#root, ...args], {
       maxBuffer: 64 * 1024 * 1024,
+      ...(input === undefined ? {} : { input }),
       env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
     });
     if (result.error) throw result.error;
@@ -193,23 +194,32 @@ export class GitSource implements FileSource {
 
   list(): readonly string[] {
     if (this.#paths) return this.#paths;
-    const out = this.#git(['ls-tree', '-r', '-z', '--long', this.#ref]).toString('utf8');
-    const found: string[] = [];
+    // No --long: sizes are read only for candidates, in one batch, so a partial (blobless)
+    // clone does not fetch every blob in the tree.
+    const out = this.#git(['ls-tree', '-r', '-z', this.#ref]).toString('utf8');
+    const candidates: { path: string; object: string }[] = [];
     for (const record of out.split('\0')) {
       if (!record) continue;
       const tab = record.indexOf('\t');
       if (tab < 0) continue;
-      const [mode, type, , size] = record.slice(0, tab).trim().split(/\s+/);
+      const [mode, type, object] = record.slice(0, tab).trim().split(/\s+/);
       const path = record.slice(tab + 1);
-      if (type !== 'blob' || mode === '120000' || !isCandidate(path)) continue;
+      if (type !== 'blob' || mode === '120000' || !object || !isCandidate(path)) continue;
       const parts = path.split('/');
       if (parts.slice(0, -1).some(part => SKIPPED_DIRECTORIES.has(part))) continue;
-      if (Number(size) > MAX_FILE_BYTES) {
-        this.skipped += 1;
-        continue;
-      }
-      found.push(path);
+      candidates.push({ path, object });
     }
+    const sizes = candidates.length
+      ? this.#git(['cat-file', '--batch-check=%(objectsize)'], candidates.map(item => item.object).join('\n') + '\n')
+          .toString('utf8')
+          .trim()
+          .split('\n')
+      : [];
+    const found: string[] = [];
+    candidates.forEach((item, index) => {
+      if (Number(sizes[index]) > MAX_FILE_BYTES) this.skipped += 1;
+      else found.push(item.path);
+    });
     found.sort();
     this.#paths = found;
     return found;
