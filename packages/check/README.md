@@ -63,10 +63,12 @@ grants it. An unknown capability is never treated as safe.
 | Evidence | When it runs | What it adds |
 | --- | --- | --- |
 | Repository files | Always | Agents, their capabilities and 34 rules on configuration |
-| Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in the repository, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
+| Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
 | Live Agent Map | Only with `--live` or `--agent-map-url` and a read-only token | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory |
 
-Agent Guard records are recognised by content, not by name. Write one at build time:
+Files named `agent-guard*.json` are read automatically, and what each one is (describe() output,
+inventory snapshot or manifest) is recognised from its content. Name any other path in
+`agent_guard.files`, or pass `--agent-guard`. Write a description at build time:
 
 ```ts
 import { writeFileSync } from 'node:fs';
