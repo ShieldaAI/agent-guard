@@ -159,9 +159,13 @@ export class DirectorySource implements FileSource {
         current = join(current, part);
         if (lstatSync(current).isSymbolicLink()) return undefined;
       }
-      fd = openSync(join(current, parts.at(-1)!), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      const target = join(current, parts.at(-1)!);
+      fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
       const info = fstatSync(fd);
       if (!info.isFile() || info.size > MAX_FILE_BYTES) return undefined;
+      // Windows has no O_NOFOLLOW: confirm the opened file is the entry itself, not a link's target.
+      const entry = lstatSync(target);
+      if (entry.isSymbolicLink() || entry.ino !== info.ino || entry.dev !== info.dev) return undefined;
       return readFileSync(fd, 'utf8');
     } catch {
       return undefined;
