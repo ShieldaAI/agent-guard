@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-check",
-  "version": "0.1.0-alpha.0",
+  "version": "1.2.0",
   "description": "Static scanner for AI agent configuration: shows what each agent in a repo can do, flags authority it does not need, and reports what a pull request widened.",
   "license": "Apache-2.0",
   "type": "module",
@@ -13,7 +13,8 @@
     }
   },
   "bin": {
-    "agent-guard-check": "./dist/cli.js"
+    "agent-guard-check": "./dist/cli.js",
+    "agent-guard-check-mcp": "./dist/mcp-server.js"
   },
   "files": [
     "dist",
@@ -30,7 +31,7 @@
   },
   "publishConfig": {
     "access": "public",
-    "tag": "alpha"
+    "tag": "latest"
   },
   "repository": {
     "type": "git",
@@ -48,8 +49,11 @@
     "sast",
     "mcp",
     "claude-code",
+    "codex",
+    "gemini-cli",
     "lethal-trifecta",
-    "sarif"
+    "sarif",
+    "agent-guard"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
