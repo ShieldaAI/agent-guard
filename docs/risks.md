@@ -202,8 +202,9 @@ An agent keeps operating outside what anyone intended, or nobody knows it exists
   The leads are candidates to review, not findings: they cover only activity through the
   guard and identities in enrolled AWS accounts. An agent that uses neither is not seen.
   Nothing here scans infrastructure, code or networks, or detects unusual behaviour. The
-  alpha [check package](../packages/check/README.md) reads agent configuration files in a
-  repository (permissions, MCP servers, agent workflows) before they merge; it does not scan
+  [check package](../packages/check/README.md) reads agent configuration files in a
+  repository (permissions, MCP servers, plugins, agent workflows) before they merge, and can
+  compare them with Agent Guard's records and a running Agent Map; it does not scan
   application code either.
 
 ## What no package covers

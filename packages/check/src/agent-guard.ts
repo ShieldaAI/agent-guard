@@ -1,5 +1,5 @@
 import type { Location } from './types.js';
-import { isRecord, lineOf } from './text.js';
+import { isRecord, lineLocator } from './text.js';
 
 /**
  * Agent Guard's own records, read from files: `guard.describe()` output, executor inventory
@@ -134,6 +134,7 @@ function mode(value: unknown): UntrustedMode | null {
 }
 
 export type ArtifactKind = 'description' | 'inventory' | 'manifest';
+type Locate = (needle: string) => number;
 
 /** What kind of Agent Guard file this is, or undefined when it is not one. */
 export function artifactKind(data: unknown): ArtifactKind | undefined {
@@ -145,7 +146,7 @@ export function artifactKind(data: unknown): ArtifactKind | undefined {
   return undefined;
 }
 
-function readTool(raw: unknown, path: string, text: string, i: number): GuardTool {
+function readTool(raw: unknown, path: string, at: Locate, i: number): GuardTool {
   if (!isRecord(raw)) throw new Malformed(`tools[${i}] must be an object`);
   const name = str(raw['name'], `tools[${i}].name`);
   return {
@@ -157,11 +158,11 @@ function readTool(raw: unknown, path: string, text: string, i: number): GuardToo
     readsUntrusted: optBool(raw['readsUntrusted']),
     untrustedContext: mode(raw['untrustedContext']),
     sendsExternal: optBool(raw['sendsExternal']),
-    location: { file: path, line: lineOf(text, JSON.stringify(name)) },
+    location: { file: path, line: at(JSON.stringify(name)) },
   };
 }
 
-function readTask(raw: unknown, path: string, text: string, i: number): GuardTask {
+function readTask(raw: unknown, path: string, at: Locate, i: number): GuardTask {
   if (!isRecord(raw)) throw new Malformed(`tasks[${i}] must be an object`);
   const id = str(raw['id'], `tasks[${i}].id`);
   const budget = raw['budget'];
@@ -194,11 +195,11 @@ function readTask(raw: unknown, path: string, text: string, i: number): GuardTas
     revoked: bool(raw['revoked'], `tasks[${i}].revoked`),
     sensitive: optBool(raw['sensitive']),
     untrusted: optBool(raw['untrusted']),
-    location: { file: path, line: lineOf(text, JSON.stringify(id)) },
+    location: { file: path, line: at(JSON.stringify(id)) },
   };
 }
 
-function readManifest(data: Record<string, unknown>, path: string, text: string) {
+function readManifest(data: Record<string, unknown>, path: string, at: Locate) {
   const agents = list(data['agents'], 'agents').map((raw, i): GuardManifestAgent => {
     if (!isRecord(raw)) throw new Malformed(`agents[${i}] must be an object`);
     const id = str(raw['id'], `agents[${i}].id`);
@@ -208,7 +209,7 @@ function readManifest(data: Record<string, unknown>, path: string, text: string)
       ownerId: optStr(raw['ownerId']),
       lifecycleState: optStr(raw['lifecycleState']) ?? 'unknown',
       ownershipStatus: optStr(raw['ownershipStatus']) ?? 'unknown',
-      location: { file: path, line: lineOf(text, JSON.stringify(id)) },
+      location: { file: path, line: at(JSON.stringify(id)) },
     };
   });
   const deployments = list(data['deployments'] ?? [], 'deployments').map((raw, i) => {
@@ -243,7 +244,7 @@ function readManifest(data: Record<string, unknown>, path: string, text: string)
       kind: str(raw['kind'], `directAccess[${i}].kind`),
       targetRef: optStr(raw['targetRef']),
       description: optStr(raw['description']) ?? '',
-      location: { file: path, line: lineOf(text, JSON.stringify(id)) },
+      location: { file: path, line: at(JSON.stringify(id)) },
     };
   });
   return { agents, deployments, taskBindings, resourceBindings, directAccess };
@@ -271,17 +272,16 @@ export function readAgentGuardFiles(
     const kind = artifactKind(file.data);
     if (!kind || !isRecord(file.data)) continue;
     const data = file.data;
+    const locate = lineLocator(file.text);
     try {
       if (kind === 'description' || kind === 'inventory') {
         if (kind === 'description' && data['schemaVersion'] !== 1)
           throw new Malformed(`unsupported describe() schemaVersion ${String(data['schemaVersion'])}`);
         if (kind === 'inventory' && data['schemaVersion'] !== 1 && data['schemaVersion'] !== 2)
           throw new Malformed(`unsupported inventory schemaVersion ${String(data['schemaVersion'])}`);
-        const tools = list(data['tools'], 'tools').map((raw, i) => readTool(raw, file.path, file.text, i));
+        const tools = list(data['tools'], 'tools').map((raw, i) => readTool(raw, file.path, locate, i));
         const tasks =
-          kind === 'inventory'
-            ? list(data['tasks'], 'tasks').map((raw, i) => readTask(raw, file.path, file.text, i))
-            : [];
+          kind === 'inventory' ? list(data['tasks'], 'tasks').map((raw, i) => readTask(raw, file.path, locate, i)) : [];
         out.untrustedContextDefault ??= mode(data['untrustedContextDefault']);
         for (const tool of tools) out.tools.set(tool.name, tool);
         out.tasks.push(...tasks);
@@ -300,7 +300,7 @@ export function readAgentGuardFiles(
           }
         }
         if (kind === 'inventory' && isRecord(data['manifest'])) {
-          const embedded = readManifest(data['manifest'], file.path, file.text);
+          const embedded = readManifest(data['manifest'], file.path, locate);
           out.agents.push(...embedded.agents);
           out.deployments.push(...embedded.deployments);
           out.taskBindings.push(...embedded.taskBindings);
@@ -310,7 +310,7 @@ export function readAgentGuardFiles(
       } else {
         if (![1, 2, 3].includes(data['schemaVersion'] as number))
           throw new Malformed(`unsupported manifest schemaVersion ${String(data['schemaVersion'])}`);
-        const manifest = readManifest(data, file.path, file.text);
+        const manifest = readManifest(data, file.path, locate);
         out.agents.push(...manifest.agents);
         out.deployments.push(...manifest.deployments);
         out.taskBindings.push(...manifest.taskBindings);
@@ -329,6 +329,34 @@ export function readAgentGuardFiles(
     ...out,
     tools: [...out.tools.values()].sort((a, b) => a.name.localeCompare(b.name)),
   };
+}
+
+interface EvidenceIndex {
+  readonly tools: ReadonlyMap<string, GuardTool>;
+  readonly tasks: ReadonlyMap<string, GuardTask>;
+  readonly bindingsByTool: ReadonlyMap<string, readonly GuardResourceBinding[]>;
+}
+
+const INDEXES = new WeakMap<AgentGuardEvidence, EvidenceIndex>();
+
+/** Lookup tables for one evidence set, built once: rules ask per task, and inventories can be large. */
+export function indexOf(evidence: AgentGuardEvidence): EvidenceIndex {
+  let index = INDEXES.get(evidence);
+  if (!index) {
+    const bindingsByTool = new Map<string, GuardResourceBinding[]>();
+    for (const binding of evidence.resourceBindings) {
+      const list = bindingsByTool.get(binding.tool) ?? [];
+      list.push(binding);
+      bindingsByTool.set(binding.tool, list);
+    }
+    index = {
+      tools: new Map(evidence.tools.map(tool => [tool.name, tool])),
+      tasks: new Map(evidence.tasks.map(task => [task.id, task])),
+      bindingsByTool,
+    };
+    INDEXES.set(evidence, index);
+  }
+  return index;
 }
 
 /** The mode a tool runs in after untrusted content: its own, else the guard default. */
@@ -359,7 +387,8 @@ function combine(legs: readonly Leg[]): Leg {
  * is sensitive or has no recipients (the core refuses those sends). Undeclared means unknown.
  */
 export function taskExposure(task: GuardTask, evidence: AgentGuardEvidence): TaskExposure {
-  const tools = new Map(evidence.tools.map(tool => [tool.name, tool]));
+  const index = indexOf(evidence);
+  const tools = index.tools;
   const privateLegs: Leg[] = [];
   const outsideLegs: Leg[] = [];
   const sendLegs: Leg[] = [];
@@ -376,7 +405,7 @@ export function taskExposure(task: GuardTask, evidence: AgentGuardEvidence): Tas
   const granted = new Set<string>();
   for (const grant of task.grants) {
     granted.add(grant.tool);
-    const bindings = evidence.resourceBindings.filter(binding => binding.tool === grant.tool);
+    const bindings = index.bindingsByTool.get(grant.tool) ?? [];
     const judge = (binding: GuardResourceBinding): void => {
       if (SENSITIVE.has(binding.sensitivity)) {
         privateLegs.push('present');
@@ -448,7 +477,7 @@ export function taskExposure(task: GuardTask, evidence: AgentGuardEvidence): Tas
  * and, when the snapshot time is known, not past their deadlines (the core checks the whole chain).
  */
 export function isLive(task: GuardTask, evidence: AgentGuardEvidence): boolean {
-  const byId = new Map(evidence.tasks.map(item => [item.id, item]));
+  const byId = indexOf(evidence).tasks;
   let current: GuardTask | undefined = task;
   for (let depth = 0; current && depth <= 16; depth += 1) {
     if (current.revoked) return false;

@@ -57,6 +57,10 @@ try {
         if (!pack.files.some(file => file.path === path)) throw new Error(`Missing identity package file: ${path}`);
       }
     }
+    if (workspace === 'packages/check') {
+      for (const path of ['dist/cli.js', 'dist/mcp-server.js'])
+        if (!pack.files.some(file => file.path === path)) throw new Error(`Missing check executable: ${path}`);
+    }
     if (workspace === 'packages/adapters') {
       if (!pack.files.some(file => file.path === 'dist/explain-cli.js'))
         throw new Error('Missing installed agent-guard-explain executable.');

@@ -6,6 +6,31 @@ export function lineOf(text: string, needle: string, from = 0): number {
   return index < 0 ? 1 : lineAt(text, index);
 }
 
+/**
+ * A fast line finder for large files: line starts are computed once and needles are looked up
+ * from a moving cursor (records usually appear in file order), falling back to the start.
+ */
+export function lineLocator(text: string): (needle: string) => number {
+  const starts = [0];
+  for (let i = 0; i < text.length; i += 1) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+  let cursor = 0;
+  return needle => {
+    if (!needle) return 1;
+    let index = text.indexOf(needle, cursor);
+    if (index < 0) index = text.indexOf(needle);
+    if (index < 0) return 1;
+    cursor = index + needle.length;
+    let low = 0;
+    let high = starts.length - 1;
+    while (low < high) {
+      const mid = (low + high + 1) >> 1;
+      if (starts[mid]! <= index) low = mid;
+      else high = mid - 1;
+    }
+    return low + 1;
+  };
+}
+
 /** 1-based line of a character offset. */
 export function lineAt(text: string, index: number): number {
   let line = 1;

@@ -81,6 +81,7 @@ test('describe carries no functions, arguments or secret values', () => {
   const text = JSON.stringify(guard.describe());
   assert.ok(!text.includes('s3cr3t'));
   const keys = Object.keys(guard.describe().tools[0]);
-  for (const key of ['description', 'metadata', 'inputSchema', 'resolve', 'execute']) assert.ok(!keys.includes(key), key);
+  for (const key of ['description', 'metadata', 'inputSchema', 'resolve', 'execute'])
+    assert.ok(!keys.includes(key), key);
   assert.ok(!text.includes('owner'));
 });

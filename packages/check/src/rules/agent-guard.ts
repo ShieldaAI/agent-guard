@@ -1,6 +1,6 @@
 import { ASI, rule } from './common.js';
 import type { Rule } from './common.js';
-import { effectiveMode, isLive, taskExposure } from '../agent-guard.js';
+import { effectiveMode, indexOf, isLive, taskExposure } from '../agent-guard.js';
 import type { Location } from '../types.js';
 
 const HOUR = 3_600_000;
@@ -127,7 +127,7 @@ export const AGENT_GUARD_RULES: readonly Rule[] = [
         const deployments = evidence.deployments.filter(item => item.agentId === agent.id).map(item => item.id);
         const liveTasks = evidence.taskBindings
           .filter(binding => deployments.includes(binding.deploymentId))
-          .map(binding => evidence.tasks.find(task => task.id === binding.taskId))
+          .map(binding => indexOf(evidence).tasks.get(binding.taskId))
           .filter(task => task !== undefined && isLive(task, evidence));
         if ((agent.lifecycleState === 'retired' || agent.lifecycleState === 'inactive') && liveTasks.length)
           report({
@@ -180,7 +180,7 @@ export const AGENT_GUARD_RULES: readonly Rule[] = [
     },
     (project, report) => {
       const evidence = project.agentGuard;
-      const tools = new Map(evidence.tools.map(tool => [tool.name, tool]));
+      const tools = indexOf(evidence).tools;
       for (const task of evidence.tasks) {
         if (!isLive(task, evidence)) continue;
         for (const grant of task.grants) {
@@ -196,10 +196,8 @@ export const AGENT_GUARD_RULES: readonly Rule[] = [
             continue;
           }
           if (!grant.resources.includes('*')) continue;
-          const sensitive = evidence.resourceBindings.some(
-            binding =>
-              binding.tool === grant.tool &&
-              (binding.sensitivity === 'confidential' || binding.sensitivity === 'restricted'),
+          const sensitive = (indexOf(evidence).bindingsByTool.get(grant.tool) ?? []).some(
+            binding => binding.sensitivity === 'confidential' || binding.sensitivity === 'restricted',
           );
           if (tool.sendsExternal === true || sensitive)
             report({
