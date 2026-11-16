@@ -16,7 +16,9 @@ function repo(files) {
 }
 
 test('scanning never runs hooks, scripts or MCP servers', t => {
-  const marker = join(tmpdir(), `agc-ran-${process.pid}-${Date.now()}`);
+  const markerDir = mkdtempSync(join(tmpdir(), 'agc-marker-'));
+  t.after(() => rmSync(markerDir, { recursive: true, force: true }));
+  const marker = join(markerDir, 'ran');
   const dir = repo({
     '.claude/settings.json': settings(
       {},
@@ -61,7 +63,11 @@ test('node_modules, symbolic links and oversized files are skipped', t => {
     'CLAUDE.md': `${'a'.repeat(1_100_000)}`,
   });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
-  symlinkSync(join(dir, 'outside'), join(dir, 'linked'));
+  try {
+    symlinkSync(join(dir, 'outside'), join(dir, 'linked'), 'dir');
+  } catch (error) {
+    if (error.code !== 'EPERM') throw error; // Windows without symlink privilege: the rest still applies.
+  }
   const source = new DirectorySource(dir);
   assert.deepEqual(source.list(), ['outside/.mcp.json']);
   assert.equal(source.skipped, 1);

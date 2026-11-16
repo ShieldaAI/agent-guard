@@ -1,5 +1,8 @@
 #!/usr/bin/env node
 import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
+
+/** Reports and baselines can name internal paths and masked secrets: write them for the owner only. */
+const PRIVATE_FILE = { mode: 0o600 } as const;
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
@@ -100,6 +103,7 @@ export function runCli(argv: readonly string[], io: CliIo): number {
       writeFileSync(
         resolve(io.cwd, values['write-baseline']),
         formatBaseline([...head.findings, ...head.suppressed.map(s => s.finding)]),
+        PRIVATE_FILE,
       );
       io.stdout(
         `Wrote ${head.findings.length + head.suppressed.length} fingerprint(s) to ${values['write-baseline']}.\n`,
@@ -109,7 +113,7 @@ export function runCli(argv: readonly string[], io: CliIo): number {
     let diff: ScanDiff | undefined;
     if (values.base) diff = diffScans(scan({ root, ref: values.base, config, baseline }), head);
     const report = render(format, head, diff);
-    if (values.output) writeFileSync(resolve(io.cwd, values.output), report);
+    if (values.output) writeFileSync(resolve(io.cwd, values.output), report, PRIVATE_FILE);
     else io.stdout(report);
     for (const error of head.errors) io.stderr(`warning: could not read ${error.file}: ${error.message}\n`);
     const failOn = (failOnFlag ?? config.failOn) as FailOn;
