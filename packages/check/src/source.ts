@@ -1,5 +1,5 @@
 import { spawnSync } from 'node:child_process';
-import { lstatSync, readdirSync, readFileSync } from 'node:fs';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative, sep } from 'node:path';
 
 /** Files larger than this are skipped: agent config is small, and a huge file is not worth parsing. */
@@ -148,18 +148,25 @@ export class DirectorySource implements FileSource {
   readNamed(path: string): string | undefined {
     const clean = safeRelative(path);
     if (!clean) return undefined;
+    const parts = clean.split('/');
     let current = this.#root;
+    let fd: number | undefined;
     try {
-      for (const part of clean.split('/')) {
+      // Folders on the way must not be links; the file itself is opened without following a
+      // link (O_NOFOLLOW), and its type and size are checked on the open descriptor, so a swap
+      // between check and read cannot redirect it.
+      for (const part of parts.slice(0, -1)) {
         current = join(current, part);
-        const info = lstatSync(current);
-        if (info.isSymbolicLink()) return undefined;
+        if (lstatSync(current).isSymbolicLink()) return undefined;
       }
-      const info = lstatSync(current);
+      fd = openSync(join(current, parts.at(-1)!), constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      const info = fstatSync(fd);
       if (!info.isFile() || info.size > MAX_FILE_BYTES) return undefined;
-      return readFileSync(current, 'utf8');
+      return readFileSync(fd, 'utf8');
     } catch {
       return undefined;
+    } finally {
+      if (fd !== undefined) closeSync(fd);
     }
   }
 }

@@ -120,3 +120,33 @@ test('Markdown next to workflows is read as instructions, not as a workflow', ()
   });
   assert.deepEqual(result.errors, []);
 });
+
+test('named files are read only inside the root, never through a link', async t => {
+  const { DirectorySource } = await import('@shieldaai/agent-guard-check');
+  const { mkdtempSync, mkdirSync, writeFileSync, symlinkSync, rmSync } = await import('node:fs');
+  const { join } = await import('node:path');
+  const { tmpdir } = await import('node:os');
+  const root = mkdtempSync(join(tmpdir(), 'agc-named-'));
+  const outside = mkdtempSync(join(tmpdir(), 'agc-named-out-'));
+  t.after(() => {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(outside, { recursive: true, force: true });
+  });
+  mkdirSync(join(root, 'build'));
+  writeFileSync(join(root, 'build/guard.json'), '{"ok":true}');
+  writeFileSync(join(outside, 'secret.json'), 'secret');
+  const source = new DirectorySource(root);
+  assert.equal(source.readNamed('build/guard.json'), '{"ok":true}');
+  assert.equal(source.readNamed('./build/guard.json'), '{"ok":true}');
+  for (const path of ['../secret.json', '/etc/passwd', 'build', 'build/../build/guard.json', ''])
+    assert.equal(source.readNamed(path), undefined, path);
+  try {
+    symlinkSync(join(outside, 'secret.json'), join(root, 'build/link.json'));
+    symlinkSync(outside, join(root, 'out'), 'dir');
+  } catch (error) {
+    if (error.code === 'EPERM') return; // Windows without symlink rights
+    throw error;
+  }
+  assert.equal(source.readNamed('build/link.json'), undefined);
+  assert.equal(source.readNamed('out/secret.json'), undefined);
+});
