@@ -2,6 +2,7 @@ import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, r
 import type { Rule } from './common.js';
 import { bashScope } from '../claude.js';
 import { lineAt } from '../text.js';
+import { projectDir } from '../model.js';
 import { UNTRUSTED_TRIGGERS } from '../workflows.js';
 
 export const PERMISSIONS_RULES: readonly Rule[] = [
@@ -181,7 +182,8 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
         if (!mode) continue;
         const parentMode = [...project.settings]
           .reverse()
-          .find(file => file.defaultMode && file.path.startsWith(sub.projectDir))?.defaultMode?.value;
+          // The session's own settings: the same project directory, settings.local.json first.
+          .find(file => file.defaultMode && projectDir(file.path) === sub.projectDir)?.defaultMode?.value;
         const agent = project.agents.find(item => item.id === `subagent:${sub.path}`);
         if (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions')
           report({

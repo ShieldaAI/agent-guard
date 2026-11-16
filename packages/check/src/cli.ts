@@ -1,6 +1,16 @@
 #!/usr/bin/env node
-import { readFileSync, realpathSync, writeFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import {
+  closeSync,
+  constants,
+  fchmodSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
+import { relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
@@ -24,16 +34,29 @@ import {
   TOOL_VERSION,
 } from './report.js';
 import { SEVERITY_ORDER, type Confidence, type Finding, type ScanResult } from './types.js';
-import { DirectorySource, safeRelative } from './source.js';
+import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
 import { fetchLiveEvidence, AgentMapError, type LiveEvidence } from './agent-map.js';
 import { importSarif } from './sarif-import.js';
 import { formatDiff, planFixes } from './fix.js';
 import { RULES } from './rules/index.js';
 import type { TextFile } from './model.js';
+import { oneLine } from './text.js';
 
-/** Reports and baselines can name internal paths and masked secrets: write them for the owner only. */
-const PRIVATE_FILE = { mode: 0o600 } as const;
 const MAX_INPUT_BYTES = 16 * 1024 * 1024;
+
+/**
+ * Reports and baselines can name internal paths and masked secrets: write them for the owner only,
+ * also when the file already exists (the mode given to writeFileSync applies only on creation).
+ */
+function writePrivate(path: string, text: string): void {
+  const fd = openSync(path, 'w', 0o600);
+  try {
+    fchmodSync(fd, 0o600);
+    writeFileSync(fd, text);
+  } finally {
+    closeSync(fd);
+  }
+}
 
 const USAGE = `Usage: ${TOOL_NAME} [path] [options]
 
@@ -58,7 +81,8 @@ Evidence:
                                        snapshot or a host manifest (repeatable)
   --live                               Query the Agent Map named in agent_map in .agc.yaml (read-only)
   --agent-map-url <url>                Query this Agent Map (read-only); implies --live
-                                       The token comes from AGENT_MAP_TOKEN (or agent_map.token_env)
+                                       The token comes from AGENT_MAP_TOKEN (or agent_map.token_env,
+                                       which must end in AGENT_MAP_TOKEN)
   --import-sarif <file>                Merge another tool's SARIF 2.1.0 findings (repeatable)
 
 Fixing:
@@ -83,10 +107,49 @@ export interface CliIo {
 
 class UsageError extends Error {}
 
+/**
+ * Reads a file named on the command line. Files in a checkout can be planted by the change under
+ * review, so a link is refused and the type and size are checked on the open descriptor before reading.
+ */
 function readInput(path: string): string {
-  const text = readFileSync(path);
-  if (text.byteLength > MAX_INPUT_BYTES) throw new UsageError(`${path} is larger than ${MAX_INPUT_BYTES} bytes`);
-  return text.toString('utf8');
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const info = fstatSync(fd);
+    if (!info.isFile()) throw new UsageError(`${path} is not a regular file`);
+    if (info.size > MAX_INPUT_BYTES) throw new UsageError(`${path} is larger than ${MAX_INPUT_BYTES} bytes`);
+    // Windows has no O_NOFOLLOW: confirm the opened file is the entry itself, not a link's target.
+    const entry = lstatSync(path);
+    if (entry.isSymbolicLink() || entry.ino !== info.ino || entry.dev !== info.dev)
+      throw new UsageError(`${path} is a symbolic link; name the file itself`);
+    return readFileSync(fd, 'utf8');
+  } catch (error) {
+    if (error instanceof UsageError) throw error;
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ELOOP' || code === 'EMLINK') throw new UsageError(`${path} is a symbolic link; name the file itself`);
+    throw new UsageError(`could not read ${path}${code ? ` (${code})` : ''}`);
+  } finally {
+    if (fd !== undefined) closeSync(fd);
+  }
+}
+
+/** Parses `.agc.yaml` from a source; a parse error keeps its first line only, so file content is never echoed. */
+function loadConfig(source: FileSource, ref?: string): { config: CheckConfig; text: string | undefined } {
+  const text = source.readNamed('.agc.yaml');
+  if (text === undefined) return { config: DEFAULT_CONFIG, text };
+  try {
+    return { config: parseConfig(text), text };
+  } catch (error) {
+    const first = (error instanceof Error ? error.message : String(error)).split(/\r?\n/)[0]!;
+    throw new UsageError(`${ref ? `${ref}:` : ''}.agc.yaml: ${first.replace(/^\.agc\.yaml:?\s*/, '')}`);
+  }
+}
+
+/** The repo-relative form of a path inside `root`, or undefined when it is outside. */
+function insideRoot(root: string, path: string): string | undefined {
+  const rel = relative(root, path);
+  if (!rel || rel === '..' || rel.startsWith(`..${sep}`)) return undefined;
+  return safeRelative(rel.split(sep).join('/'));
 }
 
 function listRules(): string {
@@ -158,13 +221,27 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   const root = resolve(io.cwd, positionals[0] ?? '.');
   const env = io.env ?? process.env;
   try {
-    let config: CheckConfig = DEFAULT_CONFIG;
-    try {
-      config = parseConfig(readFileSync(resolve(root, '.agc.yaml'), 'utf8'));
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw new UsageError((error as Error).message);
+    // With --base, the change under review must not set its own gate: .agc.yaml and an in-repo
+    // baseline are read from the base commit, so an edit to either takes effect once merged.
+    const baseSource = values.base ? new GitSource(root, values.base) : undefined;
+    const working = loadConfig(new DirectorySource(root));
+    if (working.text === undefined && lstatSync(resolve(root, '.agc.yaml'), { throwIfNoEntry: false }))
+      io.stderr('note: .agc.yaml is not a plain file under 1 MiB (a link, a device or too large); it was not read.\n');
+    const { config } = baseSource ? loadConfig(baseSource, values.base) : working;
+    if (baseSource && working.text !== baseSource.readNamed('.agc.yaml'))
+      io.stderr(`note: .agc.yaml differs from ${values.base}; the version at ${values.base} is used.\n`);
+    let baseline = new Set<string>();
+    if (values.baseline) {
+      const path = resolve(io.cwd, values.baseline);
+      const inRepo = baseSource ? insideRoot(root, path) : undefined;
+      if (baseSource && inRepo !== undefined) {
+        const text = baseSource.readNamed(inRepo);
+        if (text === undefined) io.stderr(`note: ${inRepo} is not in ${values.base}; no baseline applied.\n`);
+        else baseline = parseBaseline(text);
+        if (text !== undefined && text !== new DirectorySource(root).readNamed(inRepo))
+          io.stderr(`note: ${inRepo} differs from ${values.base}; the version at ${values.base} is used.\n`);
+      } else baseline = parseBaseline(readInput(path));
     }
-    const baseline = values.baseline ? parseBaseline(readInput(resolve(io.cwd, values.baseline))) : new Set<string>();
     const agentGuardFiles: TextFile[] = (values['agent-guard'] ?? []).map(path => ({
       path: safeRelative(path) ?? path,
       text: readInput(resolve(io.cwd, path)),
@@ -188,6 +265,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         return usage('The Agent Map URL must use https (http only for localhost).');
       if (parsedUrl.username || parsedUrl.password || parsedUrl.search)
         return usage('Put the Agent Map token in the environment, never in the URL.');
+      // parseConfig only accepts a token variable whose name ends in AGENT_MAP_TOKEN, so the
+      // repository cannot choose which secret is sent.
       const tokenEnv = config.agentMap?.tokenEnv ?? 'AGENT_MAP_TOKEN';
       const token = env[tokenEnv];
       if (!token) return usage(`Live evidence needs a read-only Agent Map token in ${tokenEnv}.`);
@@ -222,7 +301,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       if (values['fix-dry-run']) {
         io.stdout(diffs || 'No safe fixes to apply.\n');
         for (const skip of plan.skipped)
-          io.stderr(`not fixed: ${skip.finding.ruleId} ${skip.finding.location.file}: ${skip.reason}\n`);
+          io.stderr(oneLine(`not fixed: ${skip.finding.ruleId} ${skip.finding.location.file}: ${skip.reason}`) + '\n');
         return 0;
       }
       for (const edit of plan.edits) {
@@ -230,18 +309,18 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         // Re-check the file did not change while planning: never overwrite someone's edit.
         if (readFileSync(target, 'utf8') !== edit.before) throw new UsageError(`${edit.path} changed during --fix`);
         writeFileSync(target, edit.after);
-        for (const item of edit.fixed) io.stderr(`fixed: ${item.ruleId} ${edit.path}: ${item.description}\n`);
+        for (const item of edit.fixed)
+          io.stderr(oneLine(`fixed: ${item.ruleId} ${edit.path}: ${item.description}`) + '\n');
       }
       for (const skip of plan.skipped)
-        io.stderr(`not fixed: ${skip.finding.ruleId} ${skip.finding.location.file}: ${skip.reason}\n`);
+        io.stderr(oneLine(`not fixed: ${skip.finding.ruleId} ${skip.finding.location.file}: ${skip.reason}`) + '\n');
       if (plan.edits.length) head = scan({ root, ...options });
     }
 
     if (values['write-baseline']) {
-      writeFileSync(
+      writePrivate(
         resolve(io.cwd, values['write-baseline']),
         formatBaseline([...head.findings, ...head.suppressed.map(s => s.finding)]),
-        PRIVATE_FILE,
       );
       io.stdout(
         `Wrote ${head.findings.length + head.suppressed.length} fingerprint(s) to ${values['write-baseline']}.\n`,
@@ -250,16 +329,17 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     }
     let diff: ScanDiff | undefined;
     // The base is read from git with the same evidence: live and imported findings are not "new".
-    if (values.base) diff = diffScans(scan({ root, ref: values.base, ...options }), head);
+    if (baseSource) diff = diffScans(scan({ root, ...options, source: baseSource }), head);
     const report = render(format, head, diff);
-    if (values.output) writeFileSync(resolve(io.cwd, values.output), report, PRIVATE_FILE);
+    if (values.output) writePrivate(resolve(io.cwd, values.output), report);
     else io.stdout(report);
-    for (const error of head.errors) io.stderr(`warning: could not read ${error.file}: ${error.message}\n`);
+    for (const error of head.errors)
+      io.stderr(oneLine(`warning: could not read ${error.file}: ${error.message}`) + '\n');
     const failOn = (failOnFlag ?? config.failOn) as FailOn;
     const minConfidence = (minFlag ?? config.minConfidence) as Confidence;
     return shouldFail(diff ? diff.added : head.findings, failOn, minConfidence) ? 1 : 0;
   } catch (error) {
-    io.stderr(`${TOOL_NAME}: ${error instanceof Error ? error.message : String(error)}\n`);
+    io.stderr(oneLine(`${TOOL_NAME}: ${error instanceof Error ? error.message : String(error)}`) + '\n');
     return 2;
   }
 }

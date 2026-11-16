@@ -12,7 +12,9 @@
       "repo": "PostHog/posthog",
       "commit": "89e2b9090f4142944efff32be147ea17a69b5f08",
       "agents": 3,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 1
+      }
     },
     {
       "repo": "anthropics/claude-agent-sdk-python",
@@ -115,7 +117,7 @@
       "expected": {
         "AGC-PERM-003:high": 5,
         "AGC-PERM-005:medium": 3,
-        "AGC-COV-001:medium": 1,
+        "AGC-COV-001:medium": 2,
         "AGC-TRI-002:medium": 1
       }
     },

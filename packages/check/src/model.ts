@@ -121,14 +121,31 @@ function withoutDenied(grants: readonly Grant[], deny: readonly PermissionRule[]
   });
 }
 
+/** Whether a PreToolUse matcher (a tool name or a regular expression over names) covers Bash. */
+function coversBash(matcher: string): boolean {
+  const value = matcher.trim();
+  if (value === '' || value === '*') return true;
+  if (/^[A-Za-z0-9_|]+$/.test(value)) return value.split('|').includes('Bash');
+  try {
+    return new RegExp(`^(?:${value})$`).test('Bash');
+  } catch {
+    return false;
+  }
+}
+
+/** An MCP server that names Agent Guard; not this scanner's own read-only MCP server, which guards nothing. */
+const AGENT_GUARD_SERVER = /agent-guard(?!-check)/;
+
 function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly McpServer[]): Mediator[] {
   const out: Mediator[] = [];
+  // Only a hook that sees shell commands mediates the risky calls this check is about.
   for (const file of settings)
     for (const hook of file.hooks)
-      if (hook.event === 'PreToolUse') out.push({ kind: 'pre-tool-hook', location: hook.location });
+      if (hook.event === 'PreToolUse' && coversBash(hook.matcher))
+        out.push({ kind: 'pre-tool-hook', location: hook.location });
   for (const server of servers) {
     const text = [server.command ?? '', ...server.args, server.url ?? ''].join(' ');
-    if (/agent-guard/.test(text)) out.push({ kind: 'agent-guard', location: server.location });
+    if (AGENT_GUARD_SERVER.test(text)) out.push({ kind: 'agent-guard', location: server.location });
     else if (/\bmcp[- ]gateway\b|docker mcp gateway/.test(text))
       out.push({ kind: 'mcp-gateway', location: server.location });
   }
@@ -384,7 +401,17 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
         location: step.permissions.location,
       });
     }
-    if (!step.permissions.known && !step.appToken)
+    if (step.customToken) {
+      // The token's scopes live outside the repository: assume it can do what a bot token usually does.
+      for (const capability of ['egress', 'write'] as const)
+        add({
+          capability,
+          via: `token secrets.${step.customToken.name}`,
+          certainty: 'unknown',
+          location: step.customToken.location,
+        });
+    }
+    if (!step.permissions.known && !step.appToken && !step.customToken)
       add({
         capability: 'egress',
         via: 'default GITHUB_TOKEN permissions (not set in the workflow)',
@@ -399,7 +426,7 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
       ...(step.action === 'claude-code-action' ? actionBuiltinServers(at) : []),
     ];
     // Commands that publish to the repository (gh pr comment, git push) only work with a token that can write.
-    const canPublish = publishing.length > 0 || step.appToken;
+    const canPublish = publishing.length > 0 || step.appToken || step.customToken !== undefined;
     const toolGrants = [
       ...step.allowedTools.flatMap(rule => grantsForRule(rule, 'auto', reachable)),
       ...(step.action.startsWith('claude')

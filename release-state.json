@@ -1,14 +1,15 @@
 {
   "schemaVersion": 1,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "status": "approved",
   "blockers": [],
   "outOfScope": [
-    "The inventory observer is experimental in 1.2.0; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
-    "@shieldaai/agent-map is published at 1.2.0 as experimental and is outside the 1.x compatibility promise.",
-    "The adapters' ApprovalQueue and RateLimiter keep their state in memory in one process; a restart drops pending approvals (nothing runs) and resets rate counts."
+    "The inventory observer is experimental in 1.3.0; running the observer-owning service on one logical CPU with 250 ms polling is not supported.",
+    "@shieldaai/agent-map is published at 1.3.0 as experimental and is outside the 1.x compatibility promise.",
+    "The adapters' ApprovalQueue and RateLimiter keep their state in memory in one process; a restart drops pending approvals (nothing runs) and resets rate counts.",
+    "@shieldaai/agent-guard-check reads configuration files only. It does not see settings outside the repository (user-level Claude Code, Codex or Gemini settings, managed policy) or what an MCP server does at run time, and its recall on real repositories is not measured."
   ],
   "evidence": [
-    "docs/releases/1.2.0.md"
+    "docs/releases/1.3.0.md"
   ]
 }

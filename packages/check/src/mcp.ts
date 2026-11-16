@@ -177,7 +177,16 @@ export function runnerPackage(
   args: readonly string[],
 ): { readonly runner: string; readonly spec: string; readonly localOnly: boolean } | undefined {
   if (!command) return undefined;
-  const base = command.split(/[\\/]/).at(-1) ?? command;
+  const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+  // Launchers that run a command line: `cmd /c npx -y pkg` (the documented Windows form) and `sh -c "npx -y pkg"`.
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const line = args.length === 2 ? splitShell(args[1]) : args.slice(1);
+    return runnerPackage(line[0], line.slice(1));
+  }
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args[0] === '-c' && args[1] !== undefined) {
+    const line = splitShell(args[1]);
+    return runnerPackage(line[0], line.slice(1));
+  }
   let rest = [...args];
   let runner = base;
   if ((base === 'pnpm' || base === 'yarn') && rest[0] === 'dlx') {
@@ -206,13 +215,45 @@ export function runnerPackage(
   return undefined;
 }
 
-/** Splits `name@version` (npm, including scoped names) or `name==version` (Python). */
-export function splitSpec(spec: string): { readonly name: string; readonly version?: string } {
-  const python = /^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?(==|>=|<=|~=|@)(.+)$/.exec(spec);
-  if (python && !spec.startsWith('@')) return { name: python[1]!, version: python[3]! };
+/** Splits a shell command line into words, honouring quotes. */
+function splitShell(text: string): string[] {
+  const out: string[] = [];
+  const pattern = /"((?:[^"\\]|\\.)*)"|'([^']*)'|(\S+)/g;
+  let match: RegExpExecArray | null;
+  while ((match = pattern.exec(text))) out.push(match[1] ?? match[2] ?? match[3] ?? '');
+  return out;
+}
+
+/**
+ * Splits `name@version` (npm, including scoped names) or a Python requirement such as `name==1.0`.
+ * `operator` is `@` for npm, and the comparison (`==`, `>=`, `~=`, ...) or `@` for Python.
+ */
+export function splitSpec(spec: string): {
+  readonly name: string;
+  readonly version?: string;
+  readonly operator?: string;
+} {
+  const python = /^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(===|==|>=|<=|~=|!=|>|<|@)\s*(.+)$/.exec(spec);
+  if (python && !spec.startsWith('@')) return { name: python[1]!, version: python[3]!, operator: python[2]! };
   const at = spec.lastIndexOf('@');
-  if (at > 0) return { name: spec.slice(0, at), version: spec.slice(at + 1) };
+  if (at > 0) return { name: spec.slice(0, at), version: spec.slice(at + 1), operator: '@' };
   return { name: spec };
+}
+
+/** Whether a package spec names one exact release: `pkg@1.2.3` (npm) or `pkg==1.2.3` (Python). */
+export function isPinnedSpec(runner: string, spec: string): boolean {
+  const { version, operator } = splitSpec(spec);
+  if (!version) return false;
+  if (runner === 'uvx' || runner === 'pipx') {
+    // A Python requirement: only == (or ===) with a version that has no wildcard.
+    return (
+      (operator === '==' || operator === '===') &&
+      /^v?\d+(\.\d+)*([a-z0-9.+-]*)$/i.test(version) &&
+      !version.includes('*')
+    );
+  }
+  // npm: an exact semantic version. A range, a major alone (@1), or a tag (@latest, @beta) moves.
+  return operator === '@' && /^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.test(version);
 }
 
 /** The image a `docker run` command starts, or undefined. */

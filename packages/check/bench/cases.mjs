@@ -179,6 +179,33 @@ export const CASES = [
     },
   },
   {
+    id: 'perm1-multiline-cli',
+    rule: 'AGC-PERM-001',
+    expect: true,
+    files: {
+      '.github/workflows/a.yml':
+        'on: issue_comment\npermissions:\n  contents: write\njobs:\n  agent:\n    runs-on: ubuntu-latest\n    steps:\n      - run: |\n          claude \\\n            -p "fix" \\\n            --dangerously-skip-permissions\n',
+    },
+  },
+  {
+    id: 'perm1-codex-short-sandbox',
+    rule: 'AGC-PERM-001',
+    expect: true,
+    files: {
+      '.github/workflows/a.yml':
+        'on: issue_comment\npermissions:\n  contents: write\njobs:\n  agent:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npx -y @openai/codex exec -s danger-full-access "fix"\n',
+    },
+  },
+  {
+    id: 'perm1-codex-workspace-sandbox',
+    rule: 'AGC-PERM-001',
+    expect: false,
+    files: {
+      '.github/workflows/a.yml':
+        'on: issue_comment\npermissions:\n  contents: write\njobs:\n  agent:\n    runs-on: ubuntu-latest\n    steps:\n      - run: npx -y @openai/codex exec -s workspace-write "fix"\n',
+    },
+  },
+  {
     id: 'perm2-bash',
     rule: 'AGC-PERM-002',
     expect: true,
@@ -276,6 +303,15 @@ export const CASES = [
     files: { '.claude/agents/plan.md': subagent('name: plan\ndescription: plans\npermissionMode: plan') },
   },
   {
+    id: 'perm6-sibling-package-bypass',
+    rule: 'AGC-PERM-006',
+    expect: true,
+    files: {
+      'packages/sandbox/.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }),
+      '.claude/agents/fix.md': subagent('name: fix\ndescription: fixes\npermissionMode: bypassPermissions'),
+    },
+  },
+  {
     id: 'perm6-parent-bypass',
     rule: 'AGC-PERM-006',
     expect: false,
@@ -355,6 +391,36 @@ export const CASES = [
     files: { '.mcp.json': mcp({ s: { command: 'docker', args: ['run', '-i', 'mcp/github'] } }) },
   },
   { id: 'sup1-pinned', rule: 'AGC-SUP-001', expect: false, files: { '.mcp.json': mcp({ db: pinned }) } },
+  {
+    id: 'sup1-major-only',
+    rule: 'AGC-SUP-001',
+    expect: true,
+    files: { '.mcp.json': mcp({ s: { command: 'npx', args: ['-y', 'some-mcp-server@1'] } }) },
+  },
+  {
+    id: 'sup1-windows-cmd',
+    rule: 'AGC-SUP-001',
+    expect: true,
+    files: { '.mcp.json': mcp({ s: { command: 'cmd', args: ['/c', 'npx', '-y', 'some-mcp-server'] } }) },
+  },
+  {
+    id: 'sup1-python-range',
+    rule: 'AGC-SUP-001',
+    expect: true,
+    files: { '.mcp.json': mcp({ s: { command: 'uvx', args: ['some-mcp-server>=1.0'] } }) },
+  },
+  {
+    id: 'sup1-windows-cmd-pinned',
+    rule: 'AGC-SUP-001',
+    expect: false,
+    files: { '.mcp.json': mcp({ s: { command: 'cmd', args: ['/c', 'npx', '-y', 'some-mcp-server@1.4.2'] } }) },
+  },
+  {
+    id: 'sup1-python-exact',
+    rule: 'AGC-SUP-001',
+    expect: false,
+    files: { '.mcp.json': mcp({ s: { command: 'uvx', args: ['some-mcp-server==1.4.2'] } }) },
+  },
   {
     id: 'sup1-no-install',
     rule: 'AGC-SUP-001',
@@ -566,10 +632,32 @@ export const CASES = [
     files: { '.github/workflows/a.yml': workflow({ permissions: 'issues: write' }) },
   },
   {
+    id: 'trg1-bot-token',
+    rule: 'AGC-TRG-001',
+    expect: true,
+    files: {
+      '.github/workflows/a.yml': workflow({
+        permissions: 'contents: read',
+        withLines: 'github_token: ${{ secrets.BOT_TOKEN }}',
+      }),
+    },
+  },
+  {
     id: 'trg1-pull-request',
     rule: 'AGC-TRG-001',
     expect: false,
     files: { '.github/workflows/a.yml': workflow({ on: 'pull_request', permissions: 'pull-requests: write' }) },
+  },
+  {
+    id: 'trg1-own-token-read-only',
+    rule: 'AGC-TRG-001',
+    expect: false,
+    files: {
+      '.github/workflows/a.yml': workflow({
+        permissions: 'contents: read',
+        withLines: 'github_token: ${{ secrets.GITHUB_TOKEN }}',
+      }),
+    },
   },
   {
     id: 'trg2-schedule',

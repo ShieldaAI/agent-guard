@@ -1,13 +1,13 @@
 # Releasing the npm packages
 
-Six ESM workspaces (core, MCP, scenarios, adapters, executor, Agent Map) are versioned together under `@shieldaai`;
-the private viewer and Python Cartography are not published. Gates: [release notes](releases/1.2.0.md),
+Seven ESM workspaces (core, MCP, scenarios, adapters, executor, Agent Map, Check) are versioned together under `@shieldaai`;
+the private viewer and Python Cartography are not published. Gates: [release notes](releases/1.3.0.md),
 root [release state](../release-state.json) (do not publish while blocked), [support and limits](support-and-limits.md).
 
 ## Checklist
 
 1. Confirm publishing rights in the npm `shieldaai` organization. Never put a token in the repository.
-2. Update the version in the root, all six package and the private viewer manifests, and internal
+2. Update the version in the root, all seven package and the private viewer manifests, and internal
    dependency versions together. Set `publishConfig.tag` to `latest` (stable) or `alpha`.
    Never publish changed source under an existing version.
 3. Run the checks and pack; tarballs in `artifacts/` hold only JS, declarations, metadata, README, license.
@@ -50,32 +50,33 @@ npm publish --workspace packages/scenarios --access public --tag latest
 npm publish --workspace packages/adapters --access public --tag latest
 npm publish --workspace packages/executor --access public --tag latest
 npm publish --workspace packages/agent-map --access public --tag latest
+npm publish --workspace packages/check --access public --tag latest
 ```
 
 Wait for each with `npm view <package>@<version> version dist-tags --json`. Then verify and release (`RELEASE_COMMIT` = verified merged commit):
 
 ```sh
-mkdir -p artifacts/registry-1.2.0
+mkdir -p artifacts/registry-1.3.0
 for package in @shieldaai/agent-guard @shieldaai/agent-guard-mcp \
   @shieldaai/agent-guard-scenarios @shieldaai/agent-guard-adapters @shieldaai/agent-guard-executor \
-  @shieldaai/agent-map; do
-  npm view "$package@1.2.0" version dist.integrity gitHead --json
+  @shieldaai/agent-map @shieldaai/agent-guard-check; do
+  npm view "$package@1.3.0" version dist.integrity gitHead --json
   npm view "$package" dist-tags --json
-  npm pack "$package@1.2.0" --ignore-scripts --pack-destination artifacts/registry-1.2.0
+  npm pack "$package@1.3.0" --ignore-scripts --pack-destination artifacts/registry-1.3.0
 done
-git tag -a v1.2.0 "$RELEASE_COMMIT" -m 'Agent Guard 1.2.0'
-git push origin refs/tags/v1.2.0
-gh release create v1.2.0 artifacts/registry-1.2.0/*-1.2.0.tgz --verify-tag --latest \
-  --title 'Agent Guard 1.2.0' --notes-file docs/releases/1.2.0.md
+git tag -a v1.3.0 "$RELEASE_COMMIT" -m 'Agent Guard 1.3.0'
+git push origin refs/tags/v1.3.0
+gh release create v1.3.0 artifacts/registry-1.3.0/*-1.3.0.tgz --verify-tag --latest \
+  --title 'Agent Guard 1.3.0' --notes-file docs/releases/1.3.0.md
 ```
 
 ## Rollback and partial publication
 
 npm versions are immutable: never reuse a published version or change source to repair a mismatch.
 Do not move `latest` back from an accepted stable release. If publication stops partway, keep the
-approved commit, reviewed artifacts and each upload result, and reconcile all six versions with the
+approved commit, reviewed artifacts and each upload result, and reconcile all seven versions with the
 registry commands above. A temporary 404 or lost connection does not prove npm rejected an upload;
 await a still-processing upload, never repeat it. Resume, in order, only packages confirmed not accepted.
-Create no tag or GitHub release until all six packages and registry-installed consumers pass.
+Create no tag or GitHub release until all seven packages and registry-installed consumers pass.
 Service image rollback: [upgrade and rollback procedure](../deployment/production/upgrades.md).
 

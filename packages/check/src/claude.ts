@@ -119,9 +119,15 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
   };
 }
 
-/** Commands that read or move local files only. */
+/** Commands that read local files only. */
 const LOCAL_COMMANDS =
-  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|fetch|pull|clone|remote|checkout|switch|add|commit|stash|restore|merge|rebase|tag)|ls|cat|head|tail|wc|grep|rg|find|echo|pwd|which|tree|sort|uniq|diff|jq|date|mkdir|touch|cp|mv|chmod|sed|awk|kill|pkill|xargs kill|lsof|ps|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|git grep|git worktree|git config --get|true|test|\[)\b/;
+  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|remote|checkout|switch|add|commit|stash|restore|merge|rebase|tag)|ls|cat|head|tail|wc|grep|rg|echo|pwd|which|tree|sort|uniq|diff|jq|date|kill|pkill|xargs kill|lsof|ps|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|git grep|git worktree|git config --get|true|test|\[)\b/;
+/** Commands that change local files, including the agent's own settings, without running code. */
+const EDIT_COMMANDS = /^(mkdir|touch|cp|mv|chmod|ln|rm|rmdir|tee|truncate)\b/;
+/** Commands that bring in text from a remote repository: untrusted input, not egress. */
+const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)\b/;
+// find -exec, awk system(), GNU sed's e command and xargs run arbitrary commands: they are not
+// listed above, so they fall through to 'other' (runs code, may send data out).
 /** The project's own test, lint, build and install commands: they run project code, nothing chosen by the agent. */
 const PROJECT_COMMANDS =
   /^((npm|pnpm|yarn|bun) (test|install|ci|i|add|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npx|bunx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx)|tsc|eslint|prettier|biome|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest|pip install -r)|uv (run (pytest|ruff|mypy|python -m pytest)|sync|lock)|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod)|cargo (test|check|build|clippy|fmt|run)|make|just|gradlew? (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))\b/;
@@ -135,7 +141,7 @@ const PUBLISH_COMMANDS =
 const NETWORK_COMMANDS =
   /^(curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|ftp|telnet|gh|git push|npm publish|pnpm publish|yarn publish|docker (push|login|run)|aws|gcloud|gsutil|az|kubectl|helm|terraform|python3?|node|deno|bun|ruby|perl|php|bash|sh|zsh|pwsh|powershell|npx|bunx|uvx|pipx|pip3? install|eval|env)\b/;
 
-export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'local' | 'project' | 'other';
+export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'fetch' | 'edit' | 'local' | 'project' | 'other';
 
 /** How much a `Bash(...)` rule lets the agent do. Narrower scopes are checked first. */
 export function bashScope(specifier: string | undefined): BashScope {
@@ -148,6 +154,8 @@ export function bashScope(specifier: string | undefined): BashScope {
   if (READ_COMMANDS.test(command)) return 'read';
   if (PUBLISH_COMMANDS.test(command)) return 'publish';
   if (PROJECT_COMMANDS.test(command)) return 'project';
+  if (FETCH_COMMANDS.test(command)) return 'fetch';
+  if (EDIT_COMMANDS.test(command)) return 'edit';
   if (LOCAL_COMMANDS.test(command)) return 'local';
   if (NETWORK_COMMANDS.test(command)) return 'network';
   return 'other';
@@ -183,7 +191,8 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
         return [make('exec', 'yes', 'Bash'), make('egress', 'yes', 'Bash'), make('write', 'yes', 'Bash')];
       if (scope === 'publish') return [make('egress', 'yes', 'Bash'), make('write', 'yes', 'Bash')];
       if (scope === 'project') return [make('exec', 'yes', 'Bash')];
-      if (scope === 'read') return [make('untrustedInput', 'yes', 'Bash')];
+      if (scope === 'read' || scope === 'fetch') return [make('untrustedInput', 'yes', 'Bash')];
+      if (scope === 'edit') return [make('write', 'yes', 'Bash')];
       if (scope === 'local') return [];
       return [make('exec', 'yes', 'Bash'), make('egress', 'unknown', 'Bash')];
     }

@@ -217,7 +217,7 @@ Sessions, tokens and rate limits are in the
 
 | Component | Requirement |
 | --- | --- |
-| Guard, MCP adapter, scenarios | Node.js 22 or later |
+| Guard, MCP adapter, scenarios, adapters, Check | Node.js 22 or later |
 | Executor, Agent Map | Node.js 22.13 or later |
 | Rollback witness, key custody and recovery tools, manifest file loader | Linux and macOS |
 | Agent Ops and the production image | Linux |
@@ -240,6 +240,7 @@ current security fixes.
 | `@shieldaai/agent-guard-adapters` | Stable root export from its first release. Provider and framework shapes follow those APIs; a breaking change on their side is fixed in a minor release. |
 | `@shieldaai/agent-guard-executor` | Stable, except `/inventory` (experimental) and `/internal` (no promise). Every 1.x executor opens ledgers written by earlier 1.x versions and by `0.1.0-alpha.3`. |
 | `@shieldaai/agent-map` and the Cartography integration | Experimental. Published as 1.0.0 but outside the compatibility promise. |
+| `@shieldaai/agent-guard-check` | Stable from 1.3.0 (its first release) for its command-line flags, exit codes, rule IDs and JSON and SARIF output. A minor release can add rules or widen one to catch a missed case, so pin the exact version in CI; the GitHub Action and the pre-commit hook do. |
 | Agent Ops | Reference app in the source tree |
 
 Stable exports follow semantic versioning from 1.0.0. Experimental exports can

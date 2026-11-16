@@ -20,7 +20,7 @@ export const WORKFLOWS_RULES: readonly Rule[] = [
         if (!untrusted.length) continue;
         // id-token: write only mints OIDC tokens; it is repository write access only through the app token.
         const repoWrite = step.permissions.write.filter(scope => scope !== 'id-token');
-        const write = repoWrite.length > 0 || step.appToken;
+        const write = repoWrite.length > 0 || step.appToken || step.customToken !== undefined;
         if (step.permissions.known && !write) continue;
         const agent = project.agents.find(item => item.id === `workflow:${step.path}#${step.job}/${step.step}`);
         const open = step.nonWriteUsers?.value.trim() === '*';
@@ -33,7 +33,9 @@ export const WORKFLOWS_RULES: readonly Rule[] = [
           );
         const severity: Severity =
           step.checksOutPullRequest || (open && broad) ? 'critical' : open || !gated || broad ? 'high' : 'medium';
-        const scope = step.appToken ? 'Claude GitHub App token' : repoWrite.join(', ');
+        const scope = step.appToken
+          ? 'Claude GitHub App token'
+          : [...repoWrite, ...(step.customToken ? [`token secrets.${step.customToken.name}`] : [])].join(', ');
         const why = step.checksOutPullRequest
           ? 'and checks out the pull request’s own code under pull_request_target'
           : open
