@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Core
+
+- Add: `guard.describe()` lists registered tools, sorted by name, with fingerprint, approval and
+  declared safety labels (`readsUntrusted`, `untrustedContext`, `sendsExternal`; `null` when not
+  declared). Read-only, frozen and free of task, argument and secret data. It lets a static reviewer
+  compare a core-only host with its agents' configuration.
+
 ### Check (new package: `@shieldaai/agent-guard-check`, alpha)
 
 A static scanner for AI agent configuration in a repository. It reads files only: it never

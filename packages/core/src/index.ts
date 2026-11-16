@@ -13,6 +13,7 @@ import type {
   Budget,
   ExecutionResult,
   GuardDecision,
+  GuardDescription,
   GuardOptions,
   Json,
   Policy,
@@ -42,6 +43,7 @@ export type {
   Capability,
   ExecutionResult,
   GuardDecision,
+  GuardDescription,
   GuardLimits,
   GuardOptions,
   GuardErrorCodeValue,
@@ -60,6 +62,7 @@ export type {
   ToolChanges,
   ToolDefinition,
   ToolDefinitionDiff,
+  ToolDescription,
   ToolResult,
 } from './types.js';
 
@@ -86,6 +89,8 @@ type ToolState = {
   controlPlane: boolean;
   maxCost: number;
   readsUntrusted: boolean;
+  /** Whether the definition declared `readsUntrusted` at all. */
+  readsUntrustedDeclared: boolean;
   untrustedContext: UntrustedContextMode | undefined;
   sendsExternal: boolean | undefined;
   resolve: ToolDefinition['resolve'];
@@ -371,6 +376,7 @@ export class AgentGuard {
       controlPlane,
       maxCost,
       readsUntrusted,
+      readsUntrustedDeclared: definition.readsUntrusted !== undefined,
       untrustedContext,
       sendsExternal,
       resolve: definition.resolve,
@@ -441,6 +447,36 @@ export class AgentGuard {
       ...base,
       status: 'changed',
       ...diffFrozenDefinitions(approved.definition, tool.definition),
+    });
+  }
+
+  /**
+   * Describes every registered tool and its declared safety labels, sorted by name. Read-only:
+   * it holds no task, argument or secret data. Write it to a file at build time so a static
+   * reviewer such as `@shieldaai/agent-guard-check` can compare it with agent configuration.
+   */
+  describe(): Readonly<GuardDescription> {
+    const tools = [...this.#tools.values()]
+      .sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+      .map(tool =>
+        Object.freeze({
+          name: tool.name,
+          fingerprint: tool.fingerprint,
+          revision: tool.revision,
+          approved: tool.approved,
+          requiresApproval: tool.requiresApproval,
+          controlPlane: tool.controlPlane,
+          maxCost: tool.maxCost,
+          readsUntrusted: tool.readsUntrustedDeclared ? tool.readsUntrusted : null,
+          untrustedContext: tool.untrustedContext ?? null,
+          sendsExternal: tool.sendsExternal ?? null,
+        }),
+      );
+    return Object.freeze({
+      kind: 'agent-guard-description',
+      schemaVersion: 1,
+      untrustedContextDefault: this.#untrustedDefault,
+      tools: Object.freeze(tools),
     });
   }
 
