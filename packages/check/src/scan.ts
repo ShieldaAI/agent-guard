@@ -2,7 +2,7 @@ import type { Finding, ScanResult } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
 import { DirectorySource, GitSource, type FileSource } from './source.js';
 import { buildProject } from './model.js';
-import { runRules } from './rules.js';
+import { runRules } from './rules/index.js';
 import { applySuppressions, DEFAULT_CONFIG, parseConfig, type CheckConfig } from './config.js';
 import { authority, level } from './authority.js';
 import { CAPABILITIES, type Agent, type Capability, type CapabilityState } from './types.js';

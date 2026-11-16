@@ -1,7 +1,7 @@
 import type { Agent, Finding, ScanResult, Severity } from './types.js';
 import { CAPABILITIES, CAPABILITY_LABELS, SEVERITY_ORDER } from './types.js';
 import { authority, describeLevel } from './authority.js';
-import { RULES, RULES_BY_ID } from './rules.js';
+import { RULES, RULES_BY_ID } from './rules/index.js';
 import type { ScanDiff } from './scan.js';
 
 export const TOOL_NAME = 'agent-guard-check';
