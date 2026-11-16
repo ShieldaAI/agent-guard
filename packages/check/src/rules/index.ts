@@ -1,6 +1,9 @@
 import type { Finding, RuleMeta } from '../types.js';
 import type { Project } from '../model.js';
-import { fingerprint, type Report, type Rule } from './common.js';
+import { fingerprint, type Report, type Rule, type RuleContext } from './common.js';
+import { AGENT_GUARD_RULES } from './agent-guard.js';
+import { AGENT_MAP_RULES } from './agent-map.js';
+import { DEFAULT_CONFIG } from '../config.js';
 import { PERMISSIONS_RULES } from './permissions.js';
 import { TRIFECTA_RULES } from './trifecta.js';
 import { SUPPLY_CHAIN_RULES } from './supply-chain.js';
@@ -11,7 +14,7 @@ import { WORKFLOWS_RULES } from './workflows.js';
 import { GOVERNANCE_RULES } from './governance.js';
 
 export { fingerprint } from './common.js';
-export type { Rule } from './common.js';
+export type { Rule, RuleContext } from './common.js';
 
 /** Every rule, in report order. IDs are never reused once retired. */
 export const RULES: readonly Rule[] = Object.freeze([
@@ -23,6 +26,8 @@ export const RULES: readonly Rule[] = Object.freeze([
   ...INSTRUCTIONS_RULES,
   ...WORKFLOWS_RULES,
   ...GOVERNANCE_RULES,
+  ...AGENT_GUARD_RULES,
+  ...AGENT_MAP_RULES,
 ]);
 
 export const RULES_BY_ID: Readonly<Record<string, RuleMeta>> = Object.freeze(
@@ -38,7 +43,11 @@ export const RULES_BY_ID: Readonly<Record<string, RuleMeta>> = Object.freeze(
  * Runs every rule. Duplicate findings (same fingerprint) are reported once. A rule that fails on
  * unexpected input is reported as an error and the other rules still run.
  */
-export function runRules(project: Project, errors: { file: string; message: string }[] = []): Finding[] {
+export function runRules(
+  project: Project,
+  errors: { file: string; message: string }[] = [],
+  context: RuleContext = { config: DEFAULT_CONFIG },
+): Finding[] {
   const findings = new Map<string, Finding>();
   for (const item of RULES) {
     const report: Report = input => {
@@ -57,7 +66,7 @@ export function runRules(project: Project, errors: { file: string; message: stri
       });
     };
     try {
-      item.check(project, report);
+      item.check(project, report, context);
     } catch (error) {
       errors.push({
         file: '',

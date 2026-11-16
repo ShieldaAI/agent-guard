@@ -124,4 +124,9 @@ export interface ScanResult {
   readonly suppressed: readonly Suppressed[];
   readonly errors: readonly { readonly file: string; readonly message: string }[];
   readonly stats: ScanStats;
+  /** Which modes ran: files always; Agent Guard records when found; live Agent Map when asked. */
+  readonly modes: {
+    readonly agentGuard: readonly { readonly path: string; readonly kind: string }[];
+    readonly live: { readonly url: string; readonly notes: readonly string[] } | null;
+  };
 }

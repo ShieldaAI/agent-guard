@@ -1,7 +1,8 @@
 import type { Finding, ScanResult } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
-import { DirectorySource, GitSource, type FileSource } from './source.js';
-import { buildProject } from './model.js';
+import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
+import type { LiveEvidence } from './agent-map.js';
+import { buildProject, type TextFile } from './model.js';
 import { runRules } from './rules/index.js';
 import { applySuppressions, DEFAULT_CONFIG, parseConfig, type CheckConfig } from './config.js';
 import { authority, level } from './authority.js';
@@ -17,6 +18,10 @@ export interface ScanOptions {
   /** Use this config instead of the repo's `.agc.yaml`. */
   readonly config?: CheckConfig;
   readonly baseline?: ReadonlySet<string>;
+  /** Agent Guard records outside the repository (describe() output, inventory, manifest). */
+  readonly agentGuardFiles?: readonly TextFile[];
+  /** Live evidence from a running Agent Map (Mode C), fetched by `fetchLiveEvidence`. */
+  readonly live?: LiveEvidence;
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -28,12 +33,14 @@ function bySeverity(a: Finding, b: Finding): number {
   );
 }
 
-/** Scans one repository state. Never runs code from the repository and makes no network calls. */
+/**
+ * Scans one repository state. Never runs code from the repository and makes no network calls:
+ * live evidence, when wanted, is fetched beforehand with `fetchLiveEvidence` and passed in.
+ */
 export function scan(options: ScanOptions): ScanResult {
   const source =
     options.source ?? (options.ref ? new GitSource(options.root, options.ref) : new DirectorySource(options.root));
-  const project = buildProject(source);
-  const errors = [...project.errors];
+  const errors: { file: string; message: string }[] = [];
   let config = options.config ?? DEFAULT_CONFIG;
   if (!options.config) {
     const text = source.read('.agc.yaml');
@@ -45,8 +52,22 @@ export function scan(options: ScanOptions): ScanResult {
       }
     }
   }
+  // Agent Guard records named in .agc.yaml are read from the same source (repo-relative paths).
+  const named: TextFile[] = [];
+  for (const path of config.agentGuard.files) {
+    const clean = safeRelative(path);
+    const text = clean === undefined ? undefined : source.readNamed(clean);
+    if (clean === undefined || text === undefined)
+      errors.push({
+        file: '.agc.yaml',
+        message: `agent_guard.files: ${path} was not found, or is not a plain file inside the repository under 1 MiB`,
+      });
+    else named.push({ path: clean, text });
+  }
+  const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])]);
+  errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
-    runRules(project, errors),
+    runRules(project, errors, { config, live: options.live }),
     config,
     path => source.read(path),
     options.baseline ?? new Set(),
@@ -58,6 +79,10 @@ export function scan(options: ScanOptions): ScanResult {
     suppressed,
     errors,
     stats: { filesRead: project.filesRead, filesSkipped: source.skipped },
+    modes: {
+      agentGuard: project.agentGuard.files,
+      live: options.live ? { url: options.live.url, notes: options.live.notes } : null,
+    },
   };
 }
 

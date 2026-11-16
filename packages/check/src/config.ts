@@ -1,6 +1,6 @@
 import { parse as parseYaml } from 'yaml';
-import type { Confidence, Finding, Severity, Suppressed } from './types.js';
-import { SEVERITY_ORDER } from './types.js';
+import type { Capability, Confidence, Finding, Severity, Suppressed } from './types.js';
+import { CAPABILITIES, SEVERITY_ORDER } from './types.js';
 import { isRecord } from './text.js';
 
 export type FailOn = Severity | 'none';
@@ -11,11 +11,46 @@ export interface IgnoreEntry {
   readonly reason: string;
 }
 
+/** Ceilings for Agent Guard task budgets (AGC-AGX-007). `maxCost: null` means no ceiling. */
+export interface AgentGuardLimits {
+  readonly files: readonly string[];
+  readonly maxDeadlineHours: number;
+  readonly maxCalls: number;
+  readonly maxCost: number | null;
+}
+
+/** Where to read live evidence (Mode C). The token is read from the named environment variable. */
+export interface AgentMapConfig {
+  readonly url: string;
+  readonly tokenEnv: string;
+}
+
+export type CapabilityLevel = 'auto' | 'any';
+
+/** A capability combination no agent may hold, for example untrusted input plus unasked egress. */
+export interface ForbiddenCombination {
+  readonly name: string;
+  readonly when: Readonly<Partial<Record<Capability, CapabilityLevel>>>;
+  readonly severity: Severity;
+  readonly agents?: readonly string[];
+}
+
+export interface PolicyConfig {
+  /** MCP servers any agent may use, by config name, catalog ID or package name; null: no allowlist. */
+  readonly allowedMcpServers: readonly string[] | null;
+  /** Hosts remote MCP servers may use; null: no allowlist. */
+  readonly allowedMcpHosts: readonly string[] | null;
+  readonly forbid: readonly ForbiddenCombination[];
+}
+
 export interface CheckConfig {
   readonly failOn: FailOn;
   readonly minConfidence: Confidence;
   readonly severity: Readonly<Record<string, Severity>>;
   readonly ignore: readonly IgnoreEntry[];
+  readonly agentGuard: AgentGuardLimits;
+  readonly agentMap: AgentMapConfig | null;
+  readonly policy: PolicyConfig;
 }
 
 export const DEFAULT_CONFIG: CheckConfig = Object.freeze({
@@ -23,18 +58,126 @@ export const DEFAULT_CONFIG: CheckConfig = Object.freeze({
   minConfidence: 'high',
   severity: Object.freeze({}),
   ignore: Object.freeze([]),
+  agentGuard: Object.freeze({ files: Object.freeze([]), maxDeadlineHours: 24, maxCalls: 1000, maxCost: null }),
+  agentMap: null,
+  policy: Object.freeze({ allowedMcpServers: null, allowedMcpHosts: null, forbid: Object.freeze([]) }),
 });
 
 const SEVERITIES = new Set<string>(SEVERITY_ORDER);
+const TOP_KEYS = ['fail_on', 'min_confidence', 'severity', 'ignore', 'agent_guard', 'agent_map', 'policy'];
+
+function onlyKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): void {
+  for (const key of Object.keys(value))
+    if (!allowed.includes(key)) throw new Error(`.agc.yaml: unknown key "${where}${key}"`);
+}
+
+function stringList(value: unknown, where: string): string[] {
+  if (!Array.isArray(value) || !value.every(item => typeof item === 'string' && item.trim()))
+    throw new Error(`.agc.yaml: ${where} must be a list of strings`);
+  return value.map(item => (item as string).trim());
+}
+
+function positive(value: unknown, where: string): number {
+  if (typeof value !== 'number' || !Number.isFinite(value) || value <= 0)
+    throw new Error(`.agc.yaml: ${where} must be a positive number`);
+  return value;
+}
+
+function parseAgentGuard(value: unknown): AgentGuardLimits {
+  if (value === undefined) return DEFAULT_CONFIG.agentGuard;
+  if (!isRecord(value)) throw new Error('.agc.yaml: agent_guard must be a mapping');
+  onlyKeys(value, ['files', 'max_deadline_hours', 'max_calls', 'max_cost'], 'agent_guard.');
+  const defaults = DEFAULT_CONFIG.agentGuard;
+  return {
+    files: value['files'] === undefined ? [] : stringList(value['files'], 'agent_guard.files'),
+    maxDeadlineHours:
+      value['max_deadline_hours'] === undefined
+        ? defaults.maxDeadlineHours
+        : positive(value['max_deadline_hours'], 'agent_guard.max_deadline_hours'),
+    maxCalls:
+      value['max_calls'] === undefined ? defaults.maxCalls : positive(value['max_calls'], 'agent_guard.max_calls'),
+    maxCost: value['max_cost'] === undefined ? null : positive(value['max_cost'], 'agent_guard.max_cost'),
+  };
+}
+
+function parseAgentMap(value: unknown): AgentMapConfig | null {
+  if (value === undefined) return null;
+  if (!isRecord(value)) throw new Error('.agc.yaml: agent_map must be a mapping');
+  onlyKeys(value, ['url', 'token_env'], 'agent_map.');
+  if (Object.keys(value).some(key => /token$/i.test(key) && key !== 'token_env'))
+    throw new Error('.agc.yaml: never put an Agent Map token in the file; name its environment variable in token_env');
+  const url = value['url'];
+  if (typeof url !== 'string') throw new Error('.agc.yaml: agent_map.url is required');
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new Error('.agc.yaml: agent_map.url must be a URL');
+  }
+  const local = /^(localhost|127\.\d+\.\d+\.\d+|\[::1\])$/.test(parsed.hostname);
+  if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local))
+    throw new Error('.agc.yaml: agent_map.url must use https (http only for localhost)');
+  const tokenEnv = value['token_env'] ?? 'AGENT_MAP_TOKEN';
+  if (typeof tokenEnv !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(tokenEnv))
+    throw new Error('.agc.yaml: agent_map.token_env must be an environment variable name');
+  return { url: parsed.href.replace(/\/$/, ''), tokenEnv };
+}
+
+const LEVELS = new Set(['auto', 'any']);
+
+function parsePolicy(value: unknown): PolicyConfig {
+  if (value === undefined) return DEFAULT_CONFIG.policy;
+  if (!isRecord(value)) throw new Error('.agc.yaml: policy must be a mapping');
+  onlyKeys(value, ['allowed_mcp_servers', 'allowed_mcp_hosts', 'forbid'], 'policy.');
+  const forbid: ForbiddenCombination[] = [];
+  if (value['forbid'] !== undefined) {
+    if (!Array.isArray(value['forbid'])) throw new Error('.agc.yaml: policy.forbid must be a list');
+    value['forbid'].forEach((entry, i) => {
+      const where = `policy.forbid[${i}]`;
+      if (!isRecord(entry)) throw new Error(`.agc.yaml: ${where} must be a mapping`);
+      onlyKeys(entry, ['name', 'when', 'severity', 'agents'], `${where}.`);
+      if (typeof entry['name'] !== 'string' || !entry['name'].trim())
+        throw new Error(`.agc.yaml: ${where}.name is required`);
+      if (!isRecord(entry['when']) || !Object.keys(entry['when']).length)
+        throw new Error(`.agc.yaml: ${where}.when must map capabilities to auto or any`);
+      for (const [capability, level] of Object.entries(entry['when'])) {
+        if (!(CAPABILITIES as readonly string[]).includes(capability))
+          throw new Error(
+            `.agc.yaml: ${where}.when: unknown capability "${capability}" (use ${CAPABILITIES.join(', ')})`,
+          );
+        if (typeof level !== 'string' || !LEVELS.has(level))
+          throw new Error(`.agc.yaml: ${where}.when.${capability} must be auto or any`);
+      }
+      const severity = entry['severity'] ?? 'high';
+      if (typeof severity !== 'string' || !SEVERITIES.has(severity))
+        throw new Error(`.agc.yaml: ${where}.severity is invalid`);
+      forbid.push({
+        name: entry['name'].trim(),
+        when: entry['when'] as Partial<Record<Capability, CapabilityLevel>>,
+        severity: severity as Severity,
+        ...(entry['agents'] === undefined ? {} : { agents: stringList(entry['agents'], `${where}.agents`) }),
+      });
+    });
+  }
+  return {
+    allowedMcpServers:
+      value['allowed_mcp_servers'] === undefined
+        ? null
+        : stringList(value['allowed_mcp_servers'], 'policy.allowed_mcp_servers'),
+    allowedMcpHosts:
+      value['allowed_mcp_hosts'] === undefined
+        ? null
+        : stringList(value['allowed_mcp_hosts'], 'policy.allowed_mcp_hosts'),
+    forbid,
+  };
+}
 
 /** Parses `.agc.yaml`. Unknown keys and invalid values are errors, so a typo never silently disables a check. */
 export function parseConfig(text: string): CheckConfig {
   const data = parseYaml(text, { maxAliasCount: 20 }) as unknown;
   if (data === null || data === undefined) return DEFAULT_CONFIG;
   if (!isRecord(data)) throw new Error('.agc.yaml must be a mapping');
-  for (const key of Object.keys(data))
-    if (!['fail_on', 'min_confidence', 'severity', 'ignore'].includes(key))
-      throw new Error(`.agc.yaml: unknown key "${key}"`);
+  onlyKeys(data, TOP_KEYS, '');
   const failOn = data['fail_on'] ?? DEFAULT_CONFIG.failOn;
   if (typeof failOn !== 'string' || (failOn !== 'none' && !SEVERITIES.has(failOn)))
     throw new Error('.agc.yaml: fail_on must be critical, high, medium, low, info or none');
@@ -65,7 +208,15 @@ export function parseConfig(text: string): CheckConfig {
       });
     }
   }
-  return { failOn: failOn as FailOn, minConfidence, severity, ignore };
+  return {
+    failOn: failOn as FailOn,
+    minConfidence,
+    severity,
+    ignore,
+    agentGuard: parseAgentGuard(data['agent_guard']),
+    agentMap: parseAgentMap(data['agent_map']),
+    policy: parsePolicy(data['policy']),
+  };
 }
 
 const INLINE = /agc-ignore\s+(AGC-[A-Z]+-\d{3})\s*:\s*(\S.*?)\s*(?:-->|\*\/)?\s*$/;

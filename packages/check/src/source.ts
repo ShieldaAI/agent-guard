@@ -28,7 +28,21 @@ export interface FileSource {
   readonly label: string;
   list(): readonly string[];
   read(path: string): string | undefined;
+  /**
+   * Reads one file the config names explicitly, even if it is not a candidate. The same limits
+   * apply: no symbolic links, no paths outside the root, at most 1 MiB.
+   */
+  readNamed(path: string): string | undefined;
   readonly skipped: number;
+}
+
+/** A repo-relative path with no `..`, no absolute prefix and no empty segment; undefined otherwise. */
+export function safeRelative(path: string): string | undefined {
+  const clean = path.replace(/\\/g, '/').replace(/^\.\//, '');
+  const parts = clean.split('/');
+  if (!clean || clean.startsWith('/') || /^[A-Za-z]:/.test(clean)) return undefined;
+  if (parts.some(part => part === '' || part === '.' || part === '..')) return undefined;
+  return clean;
 }
 
 const SKILL_SCRIPT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|ps1)$/;
@@ -56,6 +70,8 @@ export function isCandidate(path: string): boolean {
   )
     return true;
   if (path === 'package.json' || path === '.agc.yaml') return true;
+  // Agent Guard records: describe() output, inventory snapshots, host manifests.
+  if (/^agent-guard[\w.-]*\.json$/.test(name) && parts.length <= 6) return true;
   return false;
 }
 
@@ -124,6 +140,24 @@ export class DirectorySource implements FileSource {
       return undefined;
     }
   }
+
+  readNamed(path: string): string | undefined {
+    const clean = safeRelative(path);
+    if (!clean) return undefined;
+    let current = this.#root;
+    try {
+      for (const part of clean.split('/')) {
+        current = join(current, part);
+        const info = lstatSync(current);
+        if (info.isSymbolicLink()) return undefined;
+      }
+      const info = lstatSync(current);
+      if (!info.isFile() || info.size > MAX_FILE_BYTES) return undefined;
+      return readFileSync(current, 'utf8');
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/@~^{}-]*$/;
@@ -186,6 +220,22 @@ export class GitSource implements FileSource {
       return undefined;
     }
   }
+
+  readNamed(path: string): string | undefined {
+    const clean = safeRelative(path);
+    if (!clean) return undefined;
+    try {
+      const record = this.#git(['ls-tree', '-z', '--long', this.#ref, '--', `./${clean}`])
+        .toString('utf8')
+        .split('\0')[0];
+      if (!record) return undefined;
+      const [mode, type, , size] = record.slice(0, record.indexOf('\t')).trim().split(/\s+/);
+      if (type !== 'blob' || mode === '120000' || Number(size) > MAX_FILE_BYTES) return undefined;
+      return this.#git(['show', `${this.#ref}:./${clean}`]).toString('utf8');
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 /** An in-memory source, for tests and for callers that already hold the files. */
@@ -193,10 +243,18 @@ export class MemorySource implements FileSource {
   readonly label: string;
   readonly skipped = 0;
   readonly #files: ReadonlyMap<string, string>;
+  readonly #all: ReadonlyMap<string, string>;
 
   constructor(files: Readonly<Record<string, string>>, label = 'memory') {
+    this.#all = new Map(Object.entries(files));
     this.#files = new Map(Object.entries(files).filter(([path]) => isCandidate(path)));
     this.label = label;
+  }
+
+  readNamed(path: string): string | undefined {
+    const clean = safeRelative(path);
+    const text = clean === undefined ? undefined : this.#all.get(clean);
+    return text !== undefined && Buffer.byteLength(text) <= MAX_FILE_BYTES ? text : undefined;
   }
 
   list(): readonly string[] {

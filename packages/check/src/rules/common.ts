@@ -3,6 +3,8 @@ import type { Agent, Confidence, Location, RuleMeta, Severity } from '../types.j
 import type { Project } from '../model.js';
 import type { PermissionRule } from '../claude.js';
 import type { McpServer } from '../mcp.js';
+import type { CheckConfig } from '../config.js';
+import type { LiveEvidence } from '../agent-map.js';
 
 /** What a rule reports. The rule's own metadata fills in the rest. */
 export interface ReportInput {
@@ -17,9 +19,15 @@ export interface ReportInput {
 }
 export type Report = (input: ReportInput) => void;
 
+/** What a rule may consult besides the project: the effective config and live evidence (Mode C). */
+export interface RuleContext {
+  readonly config: CheckConfig;
+  readonly live?: LiveEvidence | undefined;
+}
+
 export interface Rule extends RuleMeta {
   readonly mode: 'files' | 'agent-guard' | 'agent-map';
-  check(project: Project, report: Report): void;
+  check(project: Project, report: Report, context: RuleContext): void;
 }
 
 export function fingerprint(ruleId: string, agentId: string, file: string, subject: string): string {

@@ -1,4 +1,5 @@
 import type { Agent, Grant, Location, Mediator } from './types.js';
+import { EMPTY_EVIDENCE, readAgentGuardFiles, type AgentGuardEvidence } from './agent-guard.js';
 import type { FileSource } from './source.js';
 import {
   bashScope,
@@ -44,6 +45,8 @@ export interface Project {
   readonly agents: readonly Agent[];
   readonly errors: readonly { readonly file: string; readonly message: string }[];
   readonly filesRead: number;
+  /** Agent Guard's own records found in the repo or given on the command line (Mode B). */
+  readonly agentGuard: AgentGuardEvidence;
 }
 
 /** The directory a `.claude/...` or `.mcp.json` path belongs to ('' for the repo root). */
@@ -106,8 +109,11 @@ function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly Mcp
   return out;
 }
 
-/** Reads every candidate file in a source and builds the project model. Never throws on bad input. */
-export function buildProject(source: FileSource): Project {
+/**
+ * Reads every candidate file in a source and builds the project model. Never throws on bad input.
+ * `extraFiles` are read as well (Agent Guard records given on the command line, for example).
+ */
+export function buildProject(source: FileSource, extraFiles: readonly TextFile[] = []): Project {
   const errors: { file: string; message: string }[] = [];
   const settings: ClaudeSettings[] = [];
   const servers: McpServer[] = [];
@@ -119,16 +125,28 @@ export function buildProject(source: FileSource): Project {
   let usesAgentGuard: Location | undefined;
   const dependencies = new Set<string>();
   let filesRead = 0;
+  const guardFiles: { path: string; text: string; data: unknown }[] = [];
   const fail = (file: string, error: unknown) =>
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
-  for (const path of source.list()) {
-    const text = source.read(path);
+  const extraPaths = new Set(extraFiles.map(file => file.path));
+  const inputs = [
+    ...source
+      .list()
+      .filter(path => !extraPaths.has(path))
+      .map(path => ({ path, text: source.read(path) })),
+    ...extraFiles,
+  ];
+  for (const { path, text } of inputs) {
     if (text === undefined) continue;
     filesRead += 1;
     const name = path.split('/').at(-1)!;
+    const parent = path.split('/').at(-2);
     try {
-      if (name === 'settings.json' || name === 'settings.local.json') settings.push(parseSettings(path, text));
+      if (/^agent-guard[\w.-]*\.json$/.test(name) || extraPaths.has(path))
+        guardFiles.push({ path, text, data: JSON.parse(text) as unknown });
+      else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json'))
+        settings.push(parseSettings(path, text));
       else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code'));
       else if (path.endsWith('.vscode/mcp.json')) servers.push(...parseMcpConfig(path, text, 'vscode'));
       else if (path.endsWith('.cursor/mcp.json')) servers.push(...parseMcpConfig(path, text, 'cursor'));
@@ -353,5 +371,6 @@ export function buildProject(source: FileSource): Project {
     agents,
     errors,
     filesRead,
+    agentGuard: guardFiles.length ? readAgentGuardFiles(guardFiles, errors) : EMPTY_EVIDENCE,
   };
 }
