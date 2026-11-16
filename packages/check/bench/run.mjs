@@ -4,7 +4,7 @@
 // critical, high and medium findings with the reviewed results. Prints Markdown.
 import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { RULES, scan } from '@shieldaai/agent-guard-check';
 import { CASES } from './cases.mjs';
@@ -30,8 +30,9 @@ let failed = score.misses.length > 0;
 if (args.includes('--real')) {
   const manifest = JSON.parse(readFileSync(new URL('./real-repos.json', import.meta.url), 'utf8'));
   const cacheIndex = args.indexOf('--cache');
-  const cache = cacheIndex >= 0 ? args[cacheIndex + 1] : join(tmpdir(), 'agc-bench-repos');
-  mkdirSync(cache, { recursive: true });
+  // A cache under the user's home, not a predictable path in the shared temp folder.
+  const cache = cacheIndex >= 0 ? args[cacheIndex + 1] : join(homedir(), '.cache', 'agent-guard-check-bench');
+  mkdirSync(cache, { recursive: true, mode: 0o700 });
   let expectedTotal = 0;
   let agents = 0;
   const diffs = [];
