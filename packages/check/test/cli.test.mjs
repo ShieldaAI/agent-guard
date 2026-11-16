@@ -211,7 +211,7 @@ test('Markdown with --base shows the widened capabilities as a table', t => {
   assert.match(out, /^### Agent Guard Check: Agent authority changed: \d+ widened/);
   assert.match(
     out,
-    /\| Claude Code \(project\) \| sends data out \| yes, with approval \| \*\*yes, no approval\*\* \| `WebFetch` \(\.claude\/settings\.json:5\) \|/,
+    /\| Claude Code \(project\) \| sends data out \| yes, with approval \| \*\*yes, no approval\*\* \| WebFetch \(\.claude\/settings\.json:5\) \|/,
   );
 });
 

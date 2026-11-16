@@ -77,12 +77,10 @@ export function formatText(result: ScanResult, diff?: ScanDiff): string {
 
 const ICON: Readonly<Record<Severity, string>> = { critical: '🔴', high: '🟠', medium: '🟡', low: '⚪', info: 'ℹ️' };
 
-/** Text inside a code span: backslashes are literal there, so only pipes and backticks need handling. */
-function codeSpan(text: string): string {
-  return text.replace(/`/g, "'").replace(/\|/g, '\\|').replace(/\r?\n/g, ' ');
-}
-
-/** Escapes text for a Markdown table cell: backslashes first, then the characters that end a cell or open HTML. */
+/**
+ * Escapes untrusted text for a Markdown table cell: backslashes first, then the characters that end a
+ * cell, open HTML or start formatting. Untrusted text is never put in code spans, where backslashes are literal.
+ */
 function escapeMd(text: string): string {
   return text
     .replace(/\\/g, '\\\\')
@@ -111,7 +109,7 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
       const via = relevant
         .filter(grant => !seen.has(grant.via) && seen.add(grant.via))
         .slice(0, 2)
-        .map(grant => `\`${codeSpan(grant.via)}\` (${escapeMd(grant.location.file)}:${grant.location.line})`)
+        .map(grant => `${escapeMd(grant.via)} (${escapeMd(grant.location.file)}:${grant.location.line})`)
         .join(', ');
       out.push(
         `| ${escapeMd(change.agent.name)} | ${CAPABILITY_LABELS[change.capability]} | ${change.before ? describeLevel(change.before) : 'no'} | **${describeLevel(change.after)}** | ${via} |`,
@@ -122,15 +120,12 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
     out.push('', '| | Rule | Where | Finding | Fix |', '| --- | --- | --- | --- | --- |');
     for (const finding of shown)
       out.push(
-        `| ${ICON[finding.severity]} ${finding.severity} | ${finding.ruleId} | \`${codeSpan(where(finding))}\` | ${escapeMd(finding.message)}${finding.confidence === 'low' ? ' _(low confidence)_' : ''} | ${escapeMd(finding.fix ?? '')} |`,
+        `| ${ICON[finding.severity]} ${finding.severity} | ${finding.ruleId} | ${escapeMd(where(finding))} | ${escapeMd(finding.message)}${finding.confidence === 'low' ? ' _(low confidence)_' : ''} | ${escapeMd(finding.fix ?? '')} |`,
       );
   }
   if (diff?.resolved.length) out.push('', `Resolved by this change: ${diff.resolved.length} finding(s).`);
   if (result.errors.length)
-    out.push(
-      '',
-      ...result.errors.map(error => `- Could not read \`${codeSpan(error.file)}\`: ${escapeMd(error.message)}`),
-    );
+    out.push('', ...result.errors.map(error => `- Could not read ${escapeMd(error.file)}: ${escapeMd(error.message)}`));
   return `${out.join('\n')}\n`;
 }
 
