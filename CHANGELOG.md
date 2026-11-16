@@ -2,6 +2,48 @@
 
 ## Unreleased
 
+### Core
+
+- Add: `guard.describe()` lists registered tools, sorted by name, with fingerprint, approval and
+  declared safety labels (`readsUntrusted`, `untrustedContext`, `sendsExternal`; `null` when not
+  declared). Read-only, frozen and free of task, argument and secret data. It lets a static reviewer
+  compare a core-only host with its agents' configuration.
+
+### Check (new package: `@shieldaai/agent-guard-check`)
+
+A scanner for AI agent configuration in a repository. By default it reads files only: it never
+runs repository code, never starts an MCP server and makes no network calls. It works with or
+without Agent Guard.
+
+- Feature: builds each agent's authority (reads private data, reads untrusted input, writes,
+  runs code, sends data out, spends money, changes itself) from Claude Code settings, `.mcp.json`,
+  subagents (`permissionMode`, `disallowedTools`, inline `mcpServers`), skills and hooks, plugin
+  marketplaces, OpenAI Codex `.codex/config.toml`, Gemini CLI `.gemini/settings.json`, VS Code and
+  Cursor MCP config, and GitHub workflow steps that run `claude-code-action`, `codex-action`,
+  `claude -p` or `codex exec`. Each capability is `no`, `unknown`, with approval or without
+  approval, and cites the granting file and line.
+- Feature: 46 rules (`AGC-*`) mapped to OWASP ASI01–ASI10. 34 run on repository files, including
+  the lethal trifecta, unpinned MCP packages and plugins, agents triggered by outsiders while
+  holding a write token, unattended agents with write access, long-lived cloud keys, subagents
+  broader than their parent, and hardcoded credentials (masked in output).
+- Feature: Agent Guard records. `guard.describe()` output, executor inventory snapshots and host
+  manifests add 8 rules (`AGC-AGX-*`) that mirror Agent Map's dangerous-three verdicts.
+- Feature: live evidence. `--live` or `--agent-map-url` queries a running Agent Map read-only and
+  adds 4 rules (`AGC-DRF-*`) on undeclared activity, unclaimed identities, exposed agents and
+  stale inventory. The token comes from the environment only.
+- Feature: policy as code in `.agc.yaml` (approved MCP servers and hosts, forbidden capability
+  combinations).
+- Feature: `--fix` and `--fix-dry-run` apply safe fixes, each verified by scanning again.
+- Feature: `--base <ref>` reports only capabilities that grew and findings that are new.
+- Feature: text, JSON, SARIF 2.1.0, Markdown and inventory output; `--import-sarif` merges other
+  scanners' findings; reasoned ignores, severity overrides, inline `agc-ignore` comments and
+  baselines.
+- Feature: a GitHub Action (`packages/check/action`), a read-only MCP server
+  (`agent-guard-check-mcp`), a Claude Code skill, a pre-commit hook and a container image.
+- Tests: a labeled benchmark of 112 cases (each rule flags at least one configuration and stays
+  quiet on a look-alike) gates the build; 32 public repositories at pinned commits reproduce 27
+  hand-reviewed findings.
+
 ### Adapters
 
 - Tests: every adapter (Anthropic, OpenAI Responses, OpenAI Chat Completions, Gemini, Bedrock,

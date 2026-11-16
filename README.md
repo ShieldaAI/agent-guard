@@ -226,6 +226,7 @@ All of them run offline, without an API key:
 | Connect the guard to Claude, OpenAI, Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK or LangChain; an approval queue; serve guarded tools to MCP clients | [`@shieldaai/agent-guard-adapters`](packages/adapters) |
 | Test that my integration really blocks the hostile cases and still allows the ordinary ones | [`@shieldaai/agent-guard-scenarios`](packages/scenarios) |
 | See which agents my company declared, what they can reach, and which are risky (experimental) | [`@shieldaai/agent-map`](packages/agent-map) |
+| Check agent configuration in a repository (Claude Code, Codex, Gemini CLI, MCP servers, plugins, agent workflows) before it merges: what each agent can do, what a pull request widened, and whether it matches the guard and what is deployed | [`@shieldaai/agent-guard-check`](packages/check) |
 
 Install the same version of each package you use. The [package guide](docs/package-guide.md)
 has a short example for each.
@@ -384,6 +385,7 @@ The product is the guard in `packages/core`. Everything else builds on it or sup
 | `packages/mcp`, `packages/executor`, `packages/scenarios` | The MCP adapter, the durable executor and the conformance scenarios. |
 | `packages/adapters` | Provider and framework adapters, the dispatcher and the approval queue. |
 | `packages/agent-map`, `apps/agent-map` | Agent Map (experimental): the inventory service and its browser viewer. |
+| `packages/check` | Agent Guard Check: a scanner for agent configuration files, with a GitHub Action, an MCP server, a pre-commit hook and a container. |
 | `apps/agent-ops` | Agent Ops: a reference web app for reviewing and approving agent requests. Not an npm package. |
 | `integrations/cartography` | A Python collector that feeds Agent Map from the executor and from AWS. |
 | `deployment` | The Docker isolation profile for untrusted code, and the runbooks for running Agent Ops and the collector. |

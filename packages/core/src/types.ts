@@ -259,6 +259,35 @@ export interface ToolDefinitionDiff {
  * definition of the same name. Frozen. Descriptions, schemas and metadata in it are the
  * tool's own text: show them as data, never as markup or instructions.
  */
+/** One registered tool as `describe()` reports it: its identity and declared safety labels. */
+export interface ToolDescription {
+  readonly name: string;
+  readonly fingerprint: string;
+  readonly revision: number;
+  readonly approved: boolean;
+  readonly requiresApproval: boolean;
+  readonly controlPlane: boolean;
+  readonly maxCost: number;
+  /** `null` when the tool does not declare it; a resolver can still mark a call untrusted. */
+  readonly readsUntrusted: boolean | null;
+  /** The tool's own mode; `null` when it declares none and `untrustedContextDefault` applies. */
+  readonly untrustedContext: UntrustedContextMode | null;
+  /** `null` when the tool does not declare whether it sends data out. */
+  readonly sendsExternal: boolean | null;
+}
+
+/**
+ * A read-only description of a guard's registered tools, for static review (for example by
+ * `@shieldaai/agent-guard-check`) and inventory. It holds no task, argument or secret data.
+ */
+export interface GuardDescription {
+  readonly kind: 'agent-guard-description';
+  readonly schemaVersion: 1;
+  readonly untrustedContextDefault: UntrustedContextMode;
+  /** Sorted by name. */
+  readonly tools: readonly ToolDescription[];
+}
+
 export interface ToolChanges extends ToolDefinitionDiff {
   readonly name: string;
   /**

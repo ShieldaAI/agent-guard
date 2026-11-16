@@ -12,6 +12,7 @@ for (const workspace of [
   'packages/adapters',
   'packages/executor',
   'packages/agent-map',
+  'packages/check',
 ]) {
   const result = spawnSync(
     process.execPath,

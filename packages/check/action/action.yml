@@ -1,0 +1,120 @@
+name: Agent Guard Check
+description: Shows what each AI agent in the repository can do and flags authority a change widened.
+author: Shielda
+branding:
+  icon: shield
+  color: blue
+
+inputs:
+  path:
+    description: Directory to scan, relative to the workspace.
+    default: .
+  fail-on:
+    description: Fail at or above this severity (critical, high, medium, low, info, none). Default from .agc.yaml, else high.
+    default: ''
+  base:
+    description: Git ref to compare with. On pull requests it defaults to the base commit, so only what the change made worse is reported.
+    default: ''
+  baseline:
+    description: Baseline file of accepted findings.
+    default: ''
+  agent-guard-files:
+    description: Newline-separated Agent Guard records (describe() output, inventory snapshots, manifests) to read.
+    default: ''
+  sarif:
+    description: Upload results to GitHub code scanning (needs security-events write).
+    default: 'false'
+  comment:
+    description: Post or update one pull-request comment with the report (needs pull-requests write).
+    default: 'false'
+  version:
+    description: Version of @shieldaai/agent-guard-check to run.
+    default: 1.2.0
+
+outputs:
+  exit-code:
+    description: 0 no findings at or above fail-on, 1 findings, 2 error.
+    value: ${{ steps.check.outputs.exit-code }}
+  sarif-file:
+    description: Path of the SARIF report.
+    value: ${{ steps.check.outputs.sarif-file }}
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: 22
+
+    - id: check
+      shell: bash
+      env:
+        AGC_PATH: ${{ inputs.path }}
+        AGC_FAIL_ON: ${{ inputs.fail-on }}
+        AGC_BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+        AGC_BASELINE: ${{ inputs.baseline }}
+        AGC_FILES: ${{ inputs.agent-guard-files }}
+        AGC_VERSION: ${{ inputs.version }}
+      run: |
+        set -uo pipefail
+        if ! [[ "$AGC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+          echo "::error::version must be an exact release, such as 1.2.0" >&2
+          exit 2
+        fi
+        out="${RUNNER_TEMP}/agent-guard-check"
+        mkdir -p "$out"
+        args=("$AGC_PATH")
+        [ -n "$AGC_FAIL_ON" ] && args+=(--fail-on "$AGC_FAIL_ON")
+        [ -n "$AGC_BASELINE" ] && args+=(--baseline "$AGC_BASELINE")
+        if [ -n "$AGC_BASE" ]; then
+          # A shallow checkout may not have the base commit; fetch just that commit.
+          git cat-file -e "${AGC_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$AGC_BASE" || true
+          args+=(--base "$AGC_BASE")
+        fi
+        while IFS= read -r file; do
+          [ -n "$file" ] && args+=(--agent-guard "$file")
+        done <<< "$AGC_FILES"
+        run() { npx --yes "@shieldaai/agent-guard-check@${AGC_VERSION}" "${args[@]}" "$@"; }
+        run --format markdown --output "$out/report.md" --fail-on none || true
+        run --format sarif --output "$out/results.sarif" --fail-on none || true
+        set +e
+        run --format text
+        code=$?
+        set -e
+        [ -f "$out/report.md" ] && cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
+        echo "exit-code=$code" >> "$GITHUB_OUTPUT"
+        echo "sarif-file=$out/results.sarif" >> "$GITHUB_OUTPUT"
+        echo "report-file=$out/report.md" >> "$GITHUB_OUTPUT"
+
+    - if: ${{ inputs.sarif == 'true' && always() }}
+      uses: github/codeql-action/upload-sarif@33d7b85da1a04171e211befe2c739303b9a4c066 # v4.39.3
+      with:
+        sarif_file: ${{ steps.check.outputs.sarif-file }}
+        category: agent-guard-check
+
+    - if: ${{ inputs.comment == 'true' && github.event.pull_request && always() }}
+      shell: bash
+      env:
+        GH_TOKEN: ${{ github.token }}
+        PR: ${{ github.event.pull_request.number }}
+        REPORT: ${{ steps.check.outputs.report-file }}
+      run: |
+        set -euo pipefail
+        [ -f "$REPORT" ] || exit 0
+        marker='<!-- agent-guard-check -->'
+        body="$(printf '%s\n%s' "$marker" "$(cat "$REPORT")")"
+        id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
+          --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)"
+        if [ -n "$id" ]; then
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" > /dev/null
+        else
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" > /dev/null
+        fi
+
+    - if: ${{ steps.check.outputs.exit-code != '0' }}
+      shell: bash
+      env:
+        CODE: ${{ steps.check.outputs.exit-code }}
+      run: |
+        echo "::error::agent-guard-check found authority at or above the fail-on severity (exit $CODE). See the job summary."
+        exit "$CODE"

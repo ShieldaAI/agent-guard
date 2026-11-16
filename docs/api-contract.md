@@ -186,6 +186,7 @@ class AgentGuard {
   registerTool(definition: ToolDefinition): string;
   approveTool(name: string, fingerprint: string, options?: { reviewedAgainst?: string | null }): void;
   toolChanges(name: string): ToolChanges;
+  describe(): Readonly<GuardDescription>;
   unapproveTool(name: string): void;
   unregisterTool(name: string): void;
   createTask(options: TaskOptions): TaskHandle;
@@ -206,6 +207,7 @@ class AgentGuard {
 | `registerTool` | Registers or replaces a tool and returns its fingerprint. The tool cannot be called until it is approved. |
 | `approveTool` | Accepts one tool definition by its fingerprint and keeps that definition for later comparison. This is not an approval of any action. |
 | `toolChanges` | Compares the current registration with the last approved definition and lists what changed. Read-only. |
+| `describe` | Lists every registered tool, sorted by name, with its fingerprint, approval and declared safety labels. Undeclared labels are `null`. Read-only; it holds no task, argument or secret data. See [Describing tools for static review](#describing-tools-for-static-review). |
 | `unapproveTool` | Withdraws that approval. Calls fail with `TOOL_UNAPPROVED` until the tool is approved again. The approved definition is kept. |
 | `unregisterTool` | Removes the tool and its approved definition. Prepared actions for it fail with `TOOL_CHANGED`. |
 | `createTask` | Creates a task with its own identity, grants and budget, and returns its handle. |
@@ -312,6 +314,39 @@ const fingerprint = guard.registerTool(definition); // the definition changed
 const review = guard.toolChanges(definition.name);
 if (review.status !== 'unchanged') await showToReviewer(review); // escape every value
 guard.approveTool(definition.name, fingerprint, { reviewedAgainst: review.approvedFingerprint ?? null });
+```
+
+### Describing tools for static review
+
+`describe()` returns what a static reviewer needs to compare a guard with an agent's
+configuration, such as [`@shieldaai/agent-guard-check`](../packages/check/README.md):
+
+```ts
+interface GuardDescription {
+  kind: 'agent-guard-description';
+  schemaVersion: 1;
+  untrustedContextDefault: 'allow' | 'require_approval' | 'deny';
+  tools: readonly {
+    name: string;
+    fingerprint: string; // sha256:..., as registerTool() returned it
+    revision: number;
+    approved: boolean;
+    requiresApproval: boolean;
+    controlPlane: boolean;
+    maxCost: number;
+    readsUntrusted: boolean | null;   // null: not declared
+    untrustedContext: 'allow' | 'require_approval' | 'deny' | null; // null: the default applies
+    sendsExternal: boolean | null;    // null: not declared
+  }[];
+}
+```
+
+The field meanings match the executor's inventory snapshot. Write it at build or deploy
+time, after registering tools:
+
+```ts
+import { writeFileSync } from 'node:fs';
+writeFileSync('agent-guard-description.json', JSON.stringify(guard.describe(), null, 2));
 ```
 
 ### Prepare

@@ -1,0 +1,14 @@
+# pre-commit hook for agent-guard-check. In .pre-commit-config.yaml:
+#   - repo: https://github.com/ShieldaAI/agent-guard
+#     rev: <release tag or commit>
+#     hooks:
+#       - id: agent-guard-check
+- id: agent-guard-check
+  name: agent-guard-check
+  description: Flags AI agent authority a change widened (settings, MCP configs, subagents, agent workflows).
+  language: node
+  entry: agent-guard-check --base HEAD
+  additional_dependencies: ['@shieldaai/agent-guard-check@1.2.0']
+  pass_filenames: false
+  always_run: false
+  files: (^|/)(\.claude/|\.codex/|\.gemini/|\.claude-plugin/|\.cursor/mcp\.json$|\.vscode/mcp\.json$|\.mcp\.json$|\.agc\.yaml$|CLAUDE(\.local)?\.md$|AGENTS\.md$|GEMINI\.md$|\.github/workflows/|agent-guard[^/]*\.json$)
