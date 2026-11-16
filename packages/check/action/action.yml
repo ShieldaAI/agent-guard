@@ -29,7 +29,7 @@ inputs:
     default: 'false'
   version:
     description: Version of @shieldaai/agent-guard-check to run.
-    default: 1.2.0
+    default: 1.3.0
 
 outputs:
   exit-code:
@@ -58,28 +58,43 @@ runs:
       run: |
         set -uo pipefail
         if ! [[ "$AGC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-          echo "::error::version must be an exact release, such as 1.2.0" >&2
+          echo "::error::version must be an exact release, such as 1.3.0" >&2
           exit 2
         fi
         out="${RUNNER_TEMP}/agent-guard-check"
         mkdir -p "$out"
-        args=("$AGC_PATH")
+        workspace="$(pwd -P)"
+        # Paths are made absolute: the scanner runs from a folder outside the checkout.
+        abs() { case "$1" in /*) printf '%s' "$1" ;; *) printf '%s/%s' "$workspace" "$1" ;; esac; }
+        args=("$(abs "$AGC_PATH")")
         [ -n "$AGC_FAIL_ON" ] && args+=(--fail-on "$AGC_FAIL_ON")
-        [ -n "$AGC_BASELINE" ] && args+=(--baseline "$AGC_BASELINE")
+        [ -n "$AGC_BASELINE" ] && args+=(--baseline "$(abs "$AGC_BASELINE")")
         if [ -n "$AGC_BASE" ]; then
           # A shallow checkout may not have the base commit; fetch just that commit.
           git cat-file -e "${AGC_BASE}^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$AGC_BASE" || true
           args+=(--base "$AGC_BASE")
         fi
         while IFS= read -r file; do
-          [ -n "$file" ] && args+=(--agent-guard "$file")
+          [ -n "$file" ] && args+=(--agent-guard "$(abs "$file")")
         done <<< "$AGC_FILES"
-        run() { npx --yes "@shieldaai/agent-guard-check@${AGC_VERSION}" "${args[@]}" "$@"; }
+        # The checkout is the change under review. npx run inside it would use a copy of the scanner
+        # in its node_modules and the registry in its .npmrc, so run it from an empty folder, with no
+        # user config and the public registry named explicitly.
+        runner="${RUNNER_TEMP}/agent-guard-check-runner"
+        mkdir -p "$runner"
+        run() {
+          (cd "$runner" && NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+            npx --yes "@shieldaai/agent-guard-check@${AGC_VERSION}" "${args[@]}" "$@")
+        }
         run --format markdown --output "$out/report.md" --fail-on none || true
         run --format sarif --output "$out/results.sarif" --fail-on none || true
         set +e
+        # Stop workflow commands for the text report: it quotes names from repository files.
+        token="agc-$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+        echo "::stop-commands::${token}"
         run --format text
         code=$?
+        echo "::${token}::"
         set -e
         [ -f "$out/report.md" ] && cat "$out/report.md" >> "$GITHUB_STEP_SUMMARY"
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"

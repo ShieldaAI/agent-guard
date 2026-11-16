@@ -148,3 +148,16 @@ export function mask(value: string): string {
   if (value.length <= 8) return '*'.repeat(value.length);
   return `${value.slice(0, 4)}${'*'.repeat(Math.min(value.length - 6, 12))}${value.slice(-2)}`;
 }
+
+/** Line breaks, other C0 and C1 controls, and the invisible characters in HIDDEN. */
+const UNSAFE_IN_LINE =
+  /[\u0000-\u001f\u007f-\u009f\u2028\u2029\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\u{E0000}-\u{E007F}]/gu;
+
+/**
+ * Makes untrusted text safe for one line of a log: controls and line breaks become spaces, and a
+ * line cannot start with `::`, which GitHub Actions reads as a workflow command (annotations,
+ * add-mask, stop-commands).
+ */
+export function oneLine(text: string): string {
+  return text.replace(UNSAFE_IN_LINE, ' ').replace(/^(\s*):(?=:)/, '$1: ');
+}

@@ -16,7 +16,7 @@ It only reads files. It never runs repository code.
 1. Note the current state:
 
    ```sh
-   npx --yes @shieldaai/agent-guard-check@1.2.0 . --fail-on none
+   npx --yes @shieldaai/agent-guard-check@1.3.0 . --fail-on none
    ```
 
 2. Make the change.
@@ -24,7 +24,7 @@ It only reads files. It never runs repository code.
 3. Check what the change made worse, compared with the last commit:
 
    ```sh
-   npx --yes @shieldaai/agent-guard-check@1.2.0 . --base HEAD
+   npx --yes @shieldaai/agent-guard-check@1.3.0 . --base HEAD
    ```
 
    Exit code 1 means the change added a finding at or above the fail-on severity (high by
@@ -40,7 +40,7 @@ If the `agent-guard-check` MCP server is connected, use its `check_agent_config_
 - **AGC-TRI-001** (lethal trifecta) is the most serious: one agent can read private data, read
   untrusted input and send data out, all without approval. Fix it by putting the outbound path
   behind approval (move the rule from `permissions.allow` to `permissions.ask`) or removing one leg.
-- Every finding names a file, a line and a fix. `npx --yes @shieldaai/agent-guard-check@1.2.0
+- Every finding names a file, a line and a fix. `npx --yes @shieldaai/agent-guard-check@1.3.0
   --list-rules` lists all rules.
 
 ## Fixing

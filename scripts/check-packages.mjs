@@ -44,6 +44,10 @@ try {
     for (const path of ['dist/index.js', 'dist/index.d.ts', 'README.md', 'LICENSE']) {
       if (!pack.files.some(file => file.path === path)) throw new Error(`Missing package file: ${path}`);
     }
+    // npm publish must run the release preflight and the full check for every package.
+    const scripts = JSON.parse(readFileSync(join(root, workspace, 'package.json'), 'utf8')).scripts ?? {};
+    if (scripts.prepublishOnly !== 'node ../../scripts/release-check.mjs')
+      throw new Error(`${workspace} must run scripts/release-check.mjs before npm publish.`);
     if (workspace === 'packages/core') {
       for (const path of ['dist/internal.js', 'dist/internal.d.ts']) {
         if (!pack.files.some(file => file.path === path)) throw new Error(`Missing internal entry file: ${path}`);

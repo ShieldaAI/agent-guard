@@ -254,11 +254,6 @@ export interface ToolDefinitionDiff {
   /** True when there were more than 256 changes; the rest are not listed. Top-level guard fields are always listed. */
   readonly truncated: boolean;
 }
-/**
- * What `toolChanges()` reports: the current registration compared with the last approved
- * definition of the same name. Frozen. Descriptions, schemas and metadata in it are the
- * tool's own text: show them as data, never as markup or instructions.
- */
 /** One registered tool as `describe()` reports it: its identity and declared safety labels. */
 export interface ToolDescription {
   readonly name: string;
@@ -288,6 +283,11 @@ export interface GuardDescription {
   readonly tools: readonly ToolDescription[];
 }
 
+/**
+ * What `toolChanges()` reports: the current registration compared with the last approved
+ * definition of the same name. Frozen. Descriptions, schemas and metadata in it are the
+ * tool's own text: show them as data, never as markup or instructions.
+ */
 export interface ToolChanges extends ToolDefinitionDiff {
   readonly name: string;
   /**

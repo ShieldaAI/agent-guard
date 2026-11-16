@@ -103,9 +103,21 @@ export interface ScanDiff {
   readonly newAgents: readonly Agent[];
 }
 
-/** What a change did to agent authority. Only growth is reported as widened. */
+const rank = (finding: Finding) => SEVERITY_ORDER.indexOf(finding.severity);
+
+/**
+ * What a change did to agent authority. Only growth is reported as widened. A finding counts as
+ * added when it is new, when its severity rose (the same configuration made more dangerous), or when
+ * the change introduced it (or raised its severity) and silenced it with an inline `agc-ignore` comment.
+ */
 export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
+  const baseSeverity = new Map<string, number>();
+  for (const finding of [...base.findings, ...base.suppressed.map(item => item.finding)])
+    baseSeverity.set(finding.fingerprint, Math.max(rank(finding), baseSeverity.get(finding.fingerprint) ?? -1));
   const before = new Set(base.findings.map(finding => finding.fingerprint));
+  const baseInline = new Set(
+    base.suppressed.filter(item => item.source === 'inline').map(item => item.finding.fingerprint),
+  );
   const after = new Set(head.findings.map(finding => finding.fingerprint));
   const widened: CapabilityChange[] = [];
   const newAgents: Agent[] = [];
@@ -121,7 +133,21 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
     }
   }
   return {
-    added: head.findings.filter(finding => !before.has(finding.fingerprint)),
+    added: [
+      ...head.findings.filter(
+        finding => !before.has(finding.fingerprint) || rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
+      ),
+      // Silencing a finding the base already had is accepting known debt; silencing one this change
+      // introduced (or made more severe) is not.
+      ...head.suppressed
+        .filter(
+          item =>
+            item.source === 'inline' &&
+            !baseInline.has(item.finding.fingerprint) &&
+            rank(item.finding) > (baseSeverity.get(item.finding.fingerprint) ?? -1),
+        )
+        .map(item => item.finding),
+    ].sort(bySeverity),
     resolved: base.findings.filter(finding => !after.has(finding.fingerprint)),
     widened,
     newAgents,

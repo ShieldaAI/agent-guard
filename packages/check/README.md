@@ -23,7 +23,7 @@ Node.js 22 or later. Two runtime dependencies (`yaml`, `smol-toml`), both pinned
 ## What it shows
 
 ```text
-agent-guard-check 1.2.0: 1 agent(s), 1 critical, 1 medium
+agent-guard-check 1.3.0: 1 agent(s), 1 critical, 1 medium
 Evidence: repository files
 
 Claude Code (project)  (.claude/settings.json)
@@ -83,8 +83,9 @@ sends from sensitive tasks and tasks without recipients, and so does the scanner
 
 Live evidence is three read-only queries (`get_inventory_health`, `list_unclaimed_identities`,
 `list_agents`). The token comes from `AGENT_MAP_TOKEN`, or the variable named in
-`agent_map.token_env`; it is never accepted in a file or a URL. The URL must use `https`
-(plain `http` only for localhost).
+`agent_map.token_env`, which must end in `AGENT_MAP_TOKEN` (for example `PROD_AGENT_MAP_TOKEN`),
+so the repository cannot choose another secret to send. It is never accepted in a file or a
+URL. The URL must use `https` (plain `http` only for localhost).
 
 ## What it reads
 
@@ -110,8 +111,14 @@ npx @shieldaai/agent-guard-check --base origin/main --format markdown
 
 With `--base`, the files at that commit are read with `git` (nothing is checked out) and
 compared with the working tree. The report lists capabilities that grew (from `no` to `yes`,
-or from "with approval" to "no approval") and findings that are new. The exit code depends on
-new findings only, so existing debt does not block unrelated changes.
+or from "with approval" to "no approval") and findings that are new. A finding whose severity
+rose counts as new, and so does a new finding that the same change silences with an inline
+`agc-ignore` comment. The exit code depends on new findings only, so existing debt does not
+block unrelated changes.
+
+The change under review does not set its own gate: `.agc.yaml`, and a `--baseline` file inside
+the repository, are read from the base commit. An edit to either takes effect once it is merged,
+and the scanner notes on stderr that the file differs.
 
 ### GitHub Action
 
@@ -136,7 +143,9 @@ jobs:
 
 On pull requests the action compares with the base commit by itself, writes the Markdown
 report to the job summary, optionally uploads SARIF to code scanning and keeps one pull-request
-comment up to date. It runs an exact package version (input `version`, default `1.2.0`).
+comment up to date. It runs an exact package version (input `version`, default `1.3.0`),
+from a folder outside the checkout and with the public npm registry, so a `node_modules` or
+`.npmrc` committed in the pull request cannot replace the scanner.
 Inputs: `path`, `fail-on`, `base`, `baseline`, `agent-guard-files`, `sarif`, `comment`,
 `version`.
 
@@ -196,7 +205,7 @@ policy:
 configuration before it changes it. It scans one root fixed at start-up and never leaves it.
 
 ```json
-{ "mcpServers": { "agent-guard-check": { "command": "npx", "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.2.0", "agent-guard-check-mcp", "."] } } }
+{ "mcpServers": { "agent-guard-check": { "command": "npx", "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.3.0", "agent-guard-check-mcp", "."] } } }
 ```
 
 Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref) and
@@ -316,12 +325,12 @@ agent, and critical when anyone can start it with broad tools or when a
 
 Two measurements, both reproducible with `npm run bench:check` (and `--real` for the second):
 
-- **Labeled cases.** 112 configurations, at least one that each of the 46 rules must flag and
+- **Labeled cases.** 123 configurations, at least one that each of the 46 rules must flag and
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 74 agents.
-  Every critical, high and medium finding, 27 in all, was reviewed by hand: all true positives.
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 77 agents.
+  Every critical, high and medium finding, 29 in all, was reviewed by hand: all true positives.
   Recall on real repositories is not measured, because no ground truth exists for them.
 
 ## How it decides
@@ -335,9 +344,11 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   in the way while untrusted input arrives unasked, or when one leg is unknown. When a
   person approves both untrusted input and sending out, it is not reported.
 - **Shell commands** are sorted by what they can reach: the project's own test, lint, build
-  and install commands; read-only commands; commands that publish to the repository itself
-  (`gh pr comment`, `git push`); and commands that can reach any host or run arbitrary code
-  (`curl`, `ssh`, `node`, `python`, `npx`). Only the last group is AGC-PERM-003.
+  and install commands; read-only commands; commands that bring in remote text (`git clone`,
+  `git pull`); commands that change files (`cp`, `mv`, `tee`); commands that publish to the
+  repository itself (`gh pr comment`, `git push`); and commands that can reach any host or run
+  arbitrary code (`curl`, `ssh`, `node`, `python`, `npx`). Only the last group is AGC-PERM-003.
+  `find`, `awk`, `sed` and `xargs` can run other commands, so they count as running code.
 - **Codex** runs commands inside its sandbox without asking unless `approval_policy` is
   `untrusted`; `workspace-write` has no network unless `network_access = true`; leaving the
   sandbox needs approval unless the policy is `never`. `never` with `danger-full-access` is
@@ -369,8 +380,9 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
 
 The scanner treats every file as hostile input. It never executes repository content, never
 follows symbolic links, caps file sizes and counts, validates git refs before passing them to
-`git`, writes reports and baselines with owner-only permissions, masks secrets in messages and
-escapes untrusted text in Markdown. Network access happens only for live evidence you ask for,
+`git`, writes reports and baselines with owner-only permissions, masks secrets in messages,
+escapes untrusted text in Markdown (including line breaks, mentions and links) and keeps it on
+one line in text output, so a name in a repository file cannot start a GitHub workflow command. Network access happens only for live evidence you ask for,
 with redirects refused and responses capped at 8 MiB. Report problems as described in
 [SECURITY.md](../../SECURITY.md).
 

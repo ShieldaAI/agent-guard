@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.3.0 — 2026-11-16
 
 ### Core
 
@@ -40,9 +40,43 @@ without Agent Guard.
   baselines.
 - Feature: a GitHub Action (`packages/check/action`), a read-only MCP server
   (`agent-guard-check-mcp`), a Claude Code skill, a pre-commit hook and a container image.
-- Tests: a labeled benchmark of 112 cases (each rule flags at least one configuration and stays
-  quiet on a look-alike) gates the build; 32 public repositories at pinned commits reproduce 27
+- Tests: a labeled benchmark of 123 cases (each rule flags at least one configuration and stays
+  quiet on a look-alike) gates the build; 32 public repositories at pinned commits reproduce the
   hand-reviewed findings.
+
+Changes from the first merged version (pull request 70), after two pre-release reviews:
+
+- Security: with `--base`, `.agc.yaml` and an in-repository baseline are read from the base
+  commit, so a pull request can no longer lower its own gate (`fail_on: none`, severity
+  overrides, ignores or new baseline entries).
+- Security: `agent_map.token_env` must end in `AGENT_MAP_TOKEN`; before, a repository's
+  `.agc.yaml` could name any secret to send to the Agent Map URL it chose.
+- Security: `.agc.yaml` and files named on the command line are opened without following links,
+  with the size checked first; a parse error prints one line, never the file.
+- Security: the GitHub Action runs the scanner outside the checkout with the public registry, so
+  a committed `node_modules` or `.npmrc` cannot replace it; its text report runs with workflow
+  commands stopped.
+- Security: text output keeps names from repository files on one line (no injected workflow
+  commands); Markdown also neutralises line breaks, mentions and links. Existing report and
+  baseline files are made owner-only too.
+- Fix: `--base` reports a finding whose severity rose, and a new finding silenced inline in the
+  same change.
+- Fix: Claude and Codex commands split over lines or started through `npx`; Codex
+  `-s danger-full-access` and `-c sandbox_mode=...`; `${{ env.X }}` in agent flags; a
+  `github_token` from a secret counted as write access; `pull_request_target` checkouts of the
+  merge ref or with `gh pr checkout`.
+- Fix: an MCP package counts as pinned only at an exact version (`@1`, `@beta` and `>=1.0` do
+  not), also behind `cmd /c`, `sh -c` and `npx.cmd`.
+- Fix: AGC-PERM-006 compares a subagent with its own project's settings, not a sibling
+  package's; `find`, `awk`, `sed` and `xargs` count as running code, `cp`/`mv`/`tee` as writing,
+  `git clone`/`pull`/`fetch` as untrusted input; only a PreToolUse hook that sees Bash, and not
+  this scanner's own MCP server, counts as a runtime check.
+
+### Release
+
+- Every published package now runs the release check before `npm publish` (`prepublishOnly`);
+  `npm run test:pack` fails if one does not. The lockfile now records the check package's
+  version and both of its executables.
 
 ### Adapters
 

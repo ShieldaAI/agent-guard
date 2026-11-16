@@ -1,6 +1,6 @@
 import { ASI, LOCAL_HOST, PIPE_TO_SHELL, REMOTE_FETCH, agentServers, hooks, rule, serverLabel } from './common.js';
 import type { Rule } from './common.js';
-import { dockerImage, runnerPackage, splitSpec } from '../mcp.js';
+import { dockerImage, isPinnedSpec, runnerPackage, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
 
 export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
@@ -17,7 +17,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
       for (const server of agentServers(project)) {
         const runner = runnerPackage(server.command, server.args);
         if (runner) {
-          const { name, version } = splitSpec(runner.spec);
+          const { name } = splitSpec(runner.spec);
           // A project dependency or a local path resolves inside the repo, not from the registry.
           if (
             runner.localOnly ||
@@ -25,13 +25,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
             /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)
           )
             continue;
-          if (
-            !version ||
-            version === 'latest' ||
-            version === 'next' ||
-            version.startsWith('^') ||
-            version.startsWith('~')
-          )
+          if (!isPinnedSpec(runner.runner, runner.spec))
             report({
               message: `${serverLabel(server)} starts "${runner.spec}" with ${runner.runner} and no pinned version, so every new release runs automatically.`,
               location: server.location,

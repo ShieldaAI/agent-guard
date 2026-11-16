@@ -19,6 +19,11 @@ export interface WorkflowAgent {
   readonly permissions: { readonly write: readonly string[]; readonly known: boolean; readonly location: Location };
   /** The Claude GitHub App token: the action exchanges an OIDC token for it when `id-token: write` is granted. */
   readonly appToken: boolean;
+  /**
+   * A token from a secret handed to the agent instead of the workflow's GITHUB_TOKEN (`github_token`
+   * input, or GH_TOKEN / GITHUB_TOKEN in its environment). Its scopes are not visible in the repository.
+   */
+  readonly customToken?: { readonly name: string; readonly location: Location };
   readonly allowedTools: readonly PermissionRule[];
   readonly disallowedTools: readonly PermissionRule[];
   readonly skipPermissions?: Location;
@@ -126,8 +131,18 @@ function readFlags(text: string): Flags {
       flags.skip = true;
     } else if (name === '--permission-mode') {
       if (value() === 'bypassPermissions') flags.skip = true;
-    } else if (name === '--sandbox') {
+    } else if (name === '--sandbox' || name === '-s') {
       if (value() === 'danger-full-access') flags.skip = true;
+    } else if (name === '-c' || name === '--config') {
+      // Codex config overrides (-c sandbox_mode="danger-full-access"). For Claude, -c is --continue and
+      // takes no value, so only a key=value argument is consumed.
+      const next = inline ?? args[i + 1];
+      if (next !== undefined && !next.startsWith('-') && next.includes('=')) {
+        if (inline === undefined) i += 1;
+        const [key, setting] = next.split(/=(.*)/s, 2);
+        if (key?.trim() === 'sandbox_mode' && setting?.trim().replace(/^["']|["']$/g, '') === 'danger-full-access')
+          flags.skip = true;
+      }
     } else if (name === '--max-turns') {
       flags.maxTurns = true;
       value();
@@ -142,8 +157,20 @@ function readFlags(text: string): Flags {
 
 const CLAUDE_ACTION = /^anthropics\/claude-code(-base)?-action@/;
 const CODEX_ACTION = /^openai\/codex-action@/;
-const CLAUDE_CLI = /(^|[\s;&|(])claude\s+[^\n]*(-p\b|--print\b)/;
-const CODEX_CLI = /(^|[\s;&|(])codex\s+exec\b/;
+// The CLI may be started by path or through npx (`npx -y @anthropic-ai/claude-code -p`, `@openai/codex exec`).
+const CLAUDE_CLI = /(^|[\s;&|(/])claude(-code(@\S*)?)?\s(?:[^\n]*\s)?(-p|--print)\b/;
+const CODEX_CLI = /(^|[\s;&|(/])codex(@\S*)?\s+(exec|e)\b/;
+/** Steps that put the pull request's own code in the workspace. */
+const PR_REF = /github\.event\.pull_request\.(head\.(sha|ref)|number|merge_commit_sha)|github\.head_ref|refs\/pull\//;
+const PR_CHECKOUT_RUN =
+  /\bgh\s+pr\s+checkout\b|\bgit\s+(fetch|checkout|pull)\b[^\n]*(refs\/pull\/|pull\/\$\{\{|github\.event\.pull_request\.|github\.head_ref)/;
+const ENV_REF = /\$\{\{\s*env\.([A-Za-z_][A-Za-z0-9_]*)\s*\}\}/g;
+const TOKEN_SECRET = /^\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}$/;
+
+/** Joins shell line continuations, so a command split over several lines is read as one. */
+function joinLines(text: string): string {
+  return text.replace(/\\\r?\n\s*/g, ' ');
+}
 const HARNESS_ENV = /^(OTEL_|CLAUDE_CODE_|ANTHROPIC_|CLAUDE_|DISABLE_|MCP_TIMEOUT|BASH_DEFAULT_TIMEOUT)/;
 const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 
@@ -177,14 +204,28 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
     const checkout = steps.find(
       step =>
         isRecord(step) &&
-        /^actions\/checkout@/.test(asString(step['uses']) ?? '') &&
-        isRecord(step['with']) &&
-        /github\.event\.pull_request\.head\.(sha|ref)|github\.head_ref/.test(String(step['with']['ref'] ?? '')),
+        ((/^actions\/checkout@/.test(asString(step['uses']) ?? '') &&
+          isRecord(step['with']) &&
+          PR_REF.test(String(step['with']['ref'] ?? ''))) ||
+          PR_CHECKOUT_RUN.test(joinLines(asString(step['run']) ?? ''))),
     );
+    const jobEnv = isRecord(job['env']) ? job['env'] : {};
     steps.forEach((step, index) => {
       if (!isRecord(step)) return;
       const uses = asString(step['uses']) ?? '';
-      const run = asString(step['run']) ?? '';
+      // Workflow, job and step `env` values are static text: resolve ${{ env.X }} before reading flags.
+      const stepEnv = isRecord(step['env']) ? step['env'] : {};
+      const envValue = (name: string): string | undefined => {
+        for (const env of [stepEnv, jobEnv, workflowEnv]) {
+          const value = env[name];
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+            return String(value);
+        }
+        return undefined;
+      };
+      const resolveEnv = (text: string): string =>
+        text.replace(ENV_REF, (match, name: string) => envValue(name) ?? match);
+      const run = resolveEnv(joinLines(asString(step['run']) ?? ''));
       const action: AgentAction | undefined = CLAUDE_ACTION.test(uses)
         ? 'claude-code-action'
         : CODEX_ACTION.test(uses)
@@ -200,7 +241,7 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
       const inputs = isRecord(step['with']) ? step['with'] : {};
       const input = (key: string): string | undefined => {
         const value = inputs[key];
-        return typeof value === 'string' ? value : typeof value === 'number' ? String(value) : undefined;
+        return typeof value === 'string' ? resolveEnv(value) : typeof value === 'number' ? String(value) : undefined;
       };
       const inputLine = (key: string): number =>
         nodeLine(doc.getIn(['jobs', jobName, 'steps', index, 'with', key], true), line);
@@ -264,6 +305,25 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
           servers = [];
         }
       }
+      const tokenInput = asString(inputs['github_token']);
+      const tokenEnvValue = ['GH_TOKEN', 'GITHUB_TOKEN']
+        .map(name => envValue(name))
+        .find(value => value !== undefined && TOKEN_SECRET.test(value.trim()));
+      const tokenText = (tokenInput && TOKEN_SECRET.test(tokenInput.trim()) ? tokenInput : tokenEnvValue)?.trim();
+      const tokenName = tokenText ? TOKEN_SECRET.exec(tokenText)?.[1] : undefined;
+      const customToken =
+        tokenName && tokenName !== 'GITHUB_TOKEN'
+          ? {
+              name: tokenName,
+              location: {
+                file: path,
+                line:
+                  tokenInput && tokenText === tokenInput.trim()
+                    ? inputLine('github_token')
+                    : lineOf(text, `secrets.${tokenName}`),
+              },
+            }
+          : undefined;
       const modelValue = input('model') ?? flags.model;
       const nonWrite = input('allowed_non_write_users');
       const literalInputs = Object.entries(inputs)
@@ -282,6 +342,7 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
           action === 'claude-code-action' &&
           input('github_token') === undefined &&
           grantsIdToken(job['permissions'] ?? data['permissions']),
+        ...(customToken ? { customToken } : {}),
         allowedTools,
         disallowedTools,
         ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),

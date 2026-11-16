@@ -118,8 +118,9 @@ function parseAgentMap(value: unknown): AgentMapConfig | null {
   if (parsed.protocol !== 'https:' && !(parsed.protocol === 'http:' && local))
     throw new Error('.agc.yaml: agent_map.url must use https (http only for localhost)');
   const tokenEnv = value['token_env'] ?? 'AGENT_MAP_TOKEN';
-  if (typeof tokenEnv !== 'string' || !/^[A-Z_][A-Z0-9_]*$/.test(tokenEnv))
-    throw new Error('.agc.yaml: agent_map.token_env must be an environment variable name');
+  // The file is part of the repository, so it may not pick an arbitrary secret to send.
+  if (typeof tokenEnv !== 'string' || !/^([A-Z][A-Z0-9_]*_)?AGENT_MAP_TOKEN$/.test(tokenEnv))
+    throw new Error('.agc.yaml: agent_map.token_env must be an environment variable name ending in AGENT_MAP_TOKEN');
   return { url: parsed.href.replace(/\/$/, ''), tokenEnv };
 }
 

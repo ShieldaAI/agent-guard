@@ -6,7 +6,7 @@ calls through one guard. A call outside what the task was given never runs. A de
 call can wait until a person approves that exact action.
 
 It is a TypeScript library for Node.js 22 or newer (22.13 for the executor and Agent
-Map). The core has no third-party runtime dependencies. Version 1.2.0; licensed under
+Map). The core has no third-party runtime dependencies. Version 1.3.0; licensed under
 Apache-2.0.
 
 It works with Claude, OpenAI, Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK,
@@ -345,7 +345,7 @@ the model says. An `approverId` records who approved; signing that person in is 
 | [Threat model](docs/threat-model.md) | Who is trusted and what is assumed hostile |
 | [API contract](docs/api-contract.md) and [error codes](docs/errors.md) | Exact signatures, rules and codes |
 | [Scenarios](docs/scenarios.md) | The thirteen hostile and ordinary test cases |
-| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.2.0.md) | What changed |
+| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.3.0.md) | What changed |
 
 ## Stability
 
@@ -357,6 +357,7 @@ All packages share one version number. What it promises differs:
 | `@shieldaai/agent-guard-adapters` | Stable from 1.2.0 (its first release). Root exports follow semantic versioning. Provider and framework shapes follow those APIs; a breaking change on their side is fixed in a minor release. |
 | `@shieldaai/agent-guard-executor` | Stable for the root, `/sandbox`, `/pilot` and `/ops` exports and for the ledger format. `/inventory` is experimental; `/internal` has no promise. |
 | `@shieldaai/agent-map` | Experimental. Its API and graph model may change in a minor release. |
+| `@shieldaai/agent-guard-check` | Stable from 1.3.0 (its first release) for its command-line flags, exit codes, rule IDs and JSON and SARIF output. A minor release can add rules, so pin the exact version in CI. |
 | Agent Ops, the viewer, the Python collector | Source in this repository, not npm packages. |
 
 ## Run from source

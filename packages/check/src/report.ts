@@ -4,7 +4,7 @@ import { authority, describeLevel } from './authority.js';
 import { RULES, RULES_BY_ID } from './rules/index.js';
 import type { ScanDiff } from './scan.js';
 import { readFileSync } from 'node:fs';
-import { isRecord } from './text.js';
+import { isRecord, oneLine } from './text.js';
 
 export const TOOL_NAME = 'agent-guard-check';
 /** The package version, read once from package.json next to dist/. */
@@ -96,20 +96,25 @@ export function formatText(result: ScanResult, diff?: ScanDiff): string {
   if (result.suppressed.length)
     out.push('', `Suppressed: ${result.suppressed.length} (see --format json for reasons).`);
   for (const error of result.errors) out.push(`Could not read ${error.file}: ${error.message}`);
-  return `${out.join('\n')}\n`;
+  // Names, paths and messages come from repository files: one entry is exactly one log line.
+  return `${out.map(oneLine).join('\n')}\n`;
 }
 
 const ICON: Readonly<Record<Severity, string>> = { critical: '🔴', high: '🟠', medium: '🟡', low: '⚪', info: 'ℹ️' };
 
 /**
- * Escapes untrusted text for a Markdown table cell: backslashes first, then the characters that end a
- * cell, open HTML or start formatting. Untrusted text is never put in code spans, where backslashes are literal.
+ * Escapes untrusted text for a Markdown table cell: line breaks and controls become spaces, backslashes
+ * are escaped first, then the characters that end a cell, open HTML or start formatting. A word joiner
+ * (U+2060) after `@`, `#` and `:` stops GitHub from turning the text into a mention, a reference or a
+ * link. Untrusted text is never put in code spans, where backslashes are literal.
  */
-function escapeMd(text: string): string {
-  return text
+export function escapeMd(text: string): string {
+  return oneLine(text)
     .replace(/\\/g, '\\\\')
-    .replace(/([|<>`*_[\]])/g, '\\$1')
-    .replace(/\r?\n/g, ' ');
+    .replace(/([|<>`*_[\]~!])/g, '\\$1')
+    .replace(/([@#])(?=\w)/g, '$1\u2060')
+    .replace(/:\/\//g, ':\u2060//')
+    .replace(/\bwww\./gi, match => `${match.slice(0, 3)}\u2060.`);
 }
 
 /** A pull-request comment. With a diff it shows only what the change made worse. */
@@ -145,7 +150,7 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
     out.push('', '| | Rule | Where | Finding | Fix |', '| --- | --- | --- | --- | --- |');
     for (const finding of shown)
       out.push(
-        `| ${ICON[finding.severity]} ${finding.severity} | ${finding.ruleId} | ${escapeMd(where(finding))} | ${escapeMd(finding.message)}${finding.confidence === 'low' ? ' _(low confidence)_' : ''} | ${escapeMd(finding.fix ?? '')} |`,
+        `| ${ICON[finding.severity]} ${finding.severity} | ${escapeMd(finding.ruleId)} | ${escapeMd(where(finding))} | ${escapeMd(finding.message)}${finding.confidence === 'low' ? ' _(low confidence)_' : ''} | ${escapeMd(finding.fix ?? '')} |`,
       );
   }
   if (diff?.resolved.length) out.push('', `Resolved by this change: ${diff.resolved.length} finding(s).`);
