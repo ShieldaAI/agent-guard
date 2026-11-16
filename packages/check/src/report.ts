@@ -3,10 +3,21 @@ import { CAPABILITIES, CAPABILITY_LABELS, SEVERITY_ORDER } from './types.js';
 import { authority, describeLevel } from './authority.js';
 import { RULES, RULES_BY_ID } from './rules/index.js';
 import type { ScanDiff } from './scan.js';
+import { readFileSync } from 'node:fs';
+import { isRecord } from './text.js';
 
 export const TOOL_NAME = 'agent-guard-check';
-export const TOOL_VERSION = '0.1.0-alpha.0';
+/** The package version, read once from package.json next to dist/. */
+export const TOOL_VERSION: string = (() => {
+  try {
+    const data = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as unknown;
+    return isRecord(data) && typeof data['version'] === 'string' ? data['version'] : 'unknown';
+  } catch {
+    return 'unknown';
+  }
+})();
 const INFO_URI = 'https://github.com/ShieldaAI/agent-guard/tree/main/packages/check';
+export const RULES_URI = 'https://github.com/ShieldaAI/agent-guard/blob/main/packages/check/docs/rules.md';
 
 function counts(findings: readonly Finding[]): string {
   const parts = [...SEVERITY_ORDER]
@@ -15,6 +26,17 @@ function counts(findings: readonly Finding[]): string {
     .filter(([, n]) => n > 0)
     .map(([severity, n]) => `${n} ${severity}`);
   return parts.length ? parts.join(', ') : 'no findings';
+}
+
+/** Which evidence the scan used, in one line. */
+function modes(result: ScanResult): string {
+  const parts = ['repository files'];
+  if (result.modes.agentGuard.length)
+    parts.push(
+      `Agent Guard records (${result.modes.agentGuard.map(file => `${file.path} [${file.kind}]`).join(', ')})`,
+    );
+  if (result.modes.live) parts.push(`live Agent Map (${result.modes.live.url})`);
+  return parts.join(' + ');
 }
 
 function where(finding: Finding): string {
@@ -38,6 +60,8 @@ function authorityLines(agent: Agent): string[] {
 export function formatText(result: ScanResult, diff?: ScanDiff): string {
   const out: string[] = [];
   out.push(`${TOOL_NAME} ${TOOL_VERSION}: ${result.agents.length} agent(s), ${counts(result.findings)}`);
+  out.push(`Evidence: ${modes(result)}`);
+  for (const note of result.modes.live?.notes ?? []) out.push(`  note: ${note}`);
   if (diff) {
     out.push('');
     out.push(diff.widened.length ? 'Authority widened by this change:' : 'No agent gained authority in this change.');
@@ -98,6 +122,7 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
       : 'No agent gained authority in this change'
     : `${result.agents.length} agent(s), ${counts(result.findings)}`;
   out.push(`### Agent Guard Check: ${title}`);
+  out.push('', `_Evidence: ${escapeMd(modes(result))}_`);
   if (diff?.widened.length) {
     out.push('', '| Agent | Capability | Before | After | Via |', '| --- | --- | --- | --- | --- |');
     for (const change of diff.widened) {
@@ -146,6 +171,18 @@ const SECURITY_SEVERITY: Readonly<Record<Severity, string>> = {
 
 /** SARIF 2.1.0 for GitHub code scanning and other tools. */
 export function formatSarif(result: ScanResult, findings: readonly Finding[] = result.findings): string {
+  const own = findings.filter(finding => !finding.origin);
+  const imported = new Map<string, Finding[]>();
+  for (const finding of findings)
+    if (finding.origin) imported.set(finding.origin.tool, [...(imported.get(finding.origin.tool) ?? []), finding]);
+  const location = (finding: Finding) => [
+    {
+      physicalLocation: {
+        artifactLocation: { uri: finding.location.file },
+        region: { startLine: Math.max(1, finding.location.line) },
+      },
+    },
+  ];
   const sarif = {
     $schema: 'https://json.schemastore.org/sarif-2.1.0.json',
     version: '2.1.0',
@@ -161,7 +198,7 @@ export function formatSarif(result: ScanResult, findings: readonly Finding[] = r
               name: rule.id.replace(/-/g, ''),
               shortDescription: { text: rule.title },
               fullDescription: { text: rule.help },
-              helpUri: `${INFO_URI}#rules`,
+              helpUri: `${RULES_URI}#${rule.id.toLowerCase()}`,
               defaultConfiguration: { level: SARIF_LEVEL[rule.severity] },
               properties: {
                 tags: ['security', 'ai-agents', ...rule.owasp],
@@ -171,19 +208,12 @@ export function formatSarif(result: ScanResult, findings: readonly Finding[] = r
             })),
           },
         },
-        results: findings.map(finding => ({
+        results: own.map(finding => ({
           ruleId: finding.ruleId,
           ruleIndex: RULES.findIndex(rule => rule.id === finding.ruleId),
           level: SARIF_LEVEL[finding.severity],
           message: { text: finding.fix ? `${finding.message} Fix: ${finding.fix}` : finding.message },
-          locations: [
-            {
-              physicalLocation: {
-                artifactLocation: { uri: finding.location.file },
-                region: { startLine: Math.max(1, finding.location.line) },
-              },
-            },
-          ],
+          locations: location(finding),
           partialFingerprints: { 'agcFingerprint/v1': finding.fingerprint },
           properties: {
             severity: finding.severity,
@@ -193,6 +223,25 @@ export function formatSarif(result: ScanResult, findings: readonly Finding[] = r
           },
         })),
       },
+      // Imported findings keep their own tool's run, as SARIF expects.
+      ...[...imported].map(([tool, items]) => {
+        const ids = [...new Set(items.map(finding => finding.ruleId.slice(tool.length + 1)))];
+        return {
+          tool: { driver: { name: tool, rules: ids.map(id => ({ id })) } },
+          results: items.map(finding => {
+            const id = finding.ruleId.slice(tool.length + 1);
+            return {
+              ruleId: id,
+              ruleIndex: ids.indexOf(id),
+              level: SARIF_LEVEL[finding.severity],
+              message: { text: finding.message },
+              locations: location(finding),
+              partialFingerprints: { 'agcFingerprint/v1': finding.fingerprint },
+              properties: { severity: finding.severity, 'security-severity': SECURITY_SEVERITY[finding.severity] },
+            };
+          }),
+        };
+      }),
     ],
   };
   return `${JSON.stringify(sarif, null, 2)}\n`;
@@ -227,10 +276,14 @@ export function formatJson(result: ScanResult, diff?: ScanDiff): string {
       [...SEVERITY_ORDER].reverse().map(s => [s, result.findings.filter(f => f.severity === s).length]),
     ),
     agents,
-    findings: result.findings.map(finding => ({ ...finding, title: RULES_BY_ID[finding.ruleId]?.title })),
+    findings: result.findings.map(finding => ({
+      ...finding,
+      title: RULES_BY_ID[finding.ruleId]?.title ?? finding.origin?.title,
+    })),
     suppressed: result.suppressed,
     errors: result.errors,
     stats: result.stats,
+    modes: result.modes,
     ...(diff
       ? {
           diff: {
@@ -245,6 +298,56 @@ export function formatJson(result: ScanResult, diff?: ScanDiff): string {
           },
         }
       : {}),
+  };
+  return `${JSON.stringify(body, null, 2)}\n`;
+}
+
+/**
+ * An auditor's inventory: every agent, what it can do and through what, every MCP server, and
+ * the finding count, without finding text. Stable across runs for the same files.
+ */
+export function formatInventory(result: ScanResult): string {
+  const body = {
+    kind: 'agent-guard-check-inventory',
+    schemaVersion: 1,
+    tool: { name: TOOL_NAME, version: TOOL_VERSION },
+    evidence: {
+      files: true,
+      agentGuard: result.modes.agentGuard,
+      live: result.modes.live ? { url: result.modes.live.url } : null,
+    },
+    agents: result.agents.map(agent => {
+      const states = authority(agent);
+      const mine = result.findings.filter(finding => finding.agentId === agent.id);
+      return {
+        id: agent.id,
+        kind: agent.kind,
+        name: agent.name,
+        definedIn: agent.location,
+        headless: agent.headless,
+        runtimeChecks: [...new Set(agent.mediators.map(mediator => mediator.kind))],
+        capabilities: Object.fromEntries(
+          CAPABILITIES.filter(capability => states[capability].value !== 'no').map(capability => {
+            const state = states[capability];
+            return [
+              capability,
+              {
+                level: describeLevel(state),
+                via: [...new Set(state.grants.map(grant => grant.via))].sort(),
+              },
+            ];
+          }),
+        ),
+        tools: [...new Set(agent.grants.map(grant => grant.tool).filter((tool): tool is string => !!tool))].sort(),
+        findings: Object.fromEntries(
+          [...SEVERITY_ORDER].reverse().map(severity => [severity, mine.filter(f => f.severity === severity).length]),
+        ),
+      };
+    }),
+    summary: Object.fromEntries(
+      [...SEVERITY_ORDER].reverse().map(s => [s, result.findings.filter(f => f.severity === s).length]),
+    ),
+    suppressed: result.suppressed.length,
   };
   return `${JSON.stringify(body, null, 2)}\n`;
 }

@@ -103,9 +103,9 @@ function parseAgentGuard(value: unknown): AgentGuardLimits {
 function parseAgentMap(value: unknown): AgentMapConfig | null {
   if (value === undefined) return null;
   if (!isRecord(value)) throw new Error('.agc.yaml: agent_map must be a mapping');
-  onlyKeys(value, ['url', 'token_env'], 'agent_map.');
   if (Object.keys(value).some(key => /token$/i.test(key) && key !== 'token_env'))
     throw new Error('.agc.yaml: never put an Agent Map token in the file; name its environment variable in token_env');
+  onlyKeys(value, ['url', 'token_env'], 'agent_map.');
   const url = value['url'];
   if (typeof url !== 'string') throw new Error('.agc.yaml: agent_map.url is required');
   let parsed: URL;

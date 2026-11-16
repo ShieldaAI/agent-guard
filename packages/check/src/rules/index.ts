@@ -2,6 +2,7 @@ import type { Finding, RuleMeta } from '../types.js';
 import type { Project } from '../model.js';
 import { fingerprint, type Report, type Rule, type RuleContext } from './common.js';
 import { AGENT_GUARD_RULES } from './agent-guard.js';
+import { POLICY_RULES } from './policy.js';
 import { AGENT_MAP_RULES } from './agent-map.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { PERMISSIONS_RULES } from './permissions.js';
@@ -26,6 +27,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   ...INSTRUCTIONS_RULES,
   ...WORKFLOWS_RULES,
   ...GOVERNANCE_RULES,
+  ...POLICY_RULES,
   ...AGENT_GUARD_RULES,
   ...AGENT_MAP_RULES,
 ]);

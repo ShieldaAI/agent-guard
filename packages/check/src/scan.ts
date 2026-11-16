@@ -22,6 +22,8 @@ export interface ScanOptions {
   readonly agentGuardFiles?: readonly TextFile[];
   /** Live evidence from a running Agent Map (Mode C), fetched by `fetchLiveEvidence`. */
   readonly live?: LiveEvidence;
+  /** Findings from other tools (see `importSarif`), reported and suppressed like this tool's own. */
+  readonly imported?: readonly Finding[];
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -67,7 +69,7 @@ export function scan(options: ScanOptions): ScanResult {
   const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])]);
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
-    runRules(project, errors, { config, live: options.live }),
+    [...runRules(project, errors, { config, live: options.live }), ...(options.imported ?? [])],
     config,
     path => source.read(path),
     options.baseline ?? new Set(),

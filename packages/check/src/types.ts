@@ -98,6 +98,8 @@ export interface Finding {
   /** A stable key: rule, agent, file and subject. Line numbers are left out so moved text keeps its key. */
   readonly fingerprint: string;
   readonly fix?: string;
+  /** Set on findings imported from another tool's SARIF: that tool and its rule title. */
+  readonly origin?: { readonly tool: string; readonly title?: string };
 }
 
 export interface Suppressed {
