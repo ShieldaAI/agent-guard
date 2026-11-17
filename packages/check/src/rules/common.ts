@@ -115,4 +115,4 @@ export function allowRules(project: Project): PermissionRule[] {
   ];
 }
 
-export const hooks = (project: Project) => project.settings.flatMap(file => file.hooks);
+export const hooks = (project: Project) => [...project.settings.flatMap(file => file.hooks), ...project.pluginHooks];

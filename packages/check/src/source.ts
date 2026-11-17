@@ -60,6 +60,25 @@ export function isCandidate(path: string): boolean {
   if (parent === '.gemini' && name === 'settings.json') return true;
   if (parent === '.claude-plugin' && name === 'marketplace.json') return true;
   if (name === 'GEMINI.md') return true;
+  // OpenCode, the Cursor CLI, Copilot custom agents and instructions, Kiro, Windsurf and Cursor rules.
+  if (name === 'opencode.json' || name === 'opencode.jsonc') return true;
+  if (parent === '.cursor' && name === 'cli.json') return true;
+  if (parts.length >= 3 && parts.at(-3) === '.kiro' && parent === 'settings' && name === 'mcp.json') return true;
+  if (parts.length >= 3 && parts.at(-3) === '.kiro' && parent === 'steering' && name.endsWith('.md')) return true;
+  if (parts[0] === '.github' && parts.length === 3 && parent === 'agents' && name.endsWith('.md')) return true;
+  if (parts[0] === '.github' && parts.length === 2 && name === 'copilot-instructions.md') return true;
+  if (parts[0] === '.github' && parts.length === 3 && parent === 'instructions' && name.endsWith('.instructions.md'))
+    return true;
+  if (parts[0] === '.github' && parts.length === 3 && parent === 'prompts' && name.endsWith('.prompt.md')) return true;
+  if (name === '.cursorrules' || name === '.windsurfrules') return true;
+  if (parts.length >= 3 && parts.at(-3) === '.cursor' && parent === 'rules' && /\.mdc?$/.test(name)) return true;
+  if (parts.length >= 3 && parts.at(-3) === '.windsurf' && parent === 'rules' && name.endsWith('.md')) return true;
+  // Plugins: Claude Code plugin manifests and hooks, Agent Plugins (plugin.json beside mcp.json or
+  // skills/), and skills anywhere.
+  if (parent === '.claude-plugin' && name === 'plugin.json') return true;
+  if (name === 'plugin.json' || name === 'mcp.json') return true;
+  if (parent === 'hooks' && name === 'hooks.json') return true;
+  if (name === 'SKILL.md' && parts.includes('skills')) return true;
   const claude = parts.indexOf('.claude');
   if (claude >= 0) {
     const area = parts.at(claude + 1);

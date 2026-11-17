@@ -45,7 +45,18 @@ export interface Grant {
   readonly location: Location;
 }
 
-export type AgentKind = 'claude-code' | 'subagent' | 'workflow' | 'mcp-client' | 'codex' | 'gemini';
+export type AgentKind =
+  | 'claude-code'
+  | 'subagent'
+  | 'workflow'
+  | 'mcp-client'
+  | 'codex'
+  | 'gemini'
+  | 'opencode'
+  | 'cursor'
+  | 'copilot'
+  | 'kiro'
+  | 'plugin';
 
 /**
  * A setting the scanner does not model: an unknown value, or a feature it does not evaluate. The

@@ -42,6 +42,21 @@ test('only agent configuration paths are read', () => {
     'AGENTS.md',
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
+    'opencode.json',
+    '.opencode/opencode.jsonc',
+    '.cursor/cli.json',
+    '.cursor/rules/style.mdc',
+    '.github/agents/reviewer.agent.md',
+    '.github/copilot-instructions.md',
+    '.kiro/settings/mcp.json',
+    '.kiro/steering/product.md',
+    '.windsurfrules',
+    'plugins/x/.claude-plugin/plugin.json',
+    'plugins/x/hooks/hooks.json',
+    // Agent Plugins: plugin.json beside mcp.json; whether a folder is a plugin is decided from both.
+    'plugin.json',
+    'mcp.json',
+    'skills/pdf/SKILL.md',
   ])
     assert.ok(isCandidate(path), path);
   for (const path of [
@@ -50,8 +65,11 @@ test('only agent configuration paths are read', () => {
     '.claude/notes.txt',
     'docs/workflows/a.yml',
     '.github/workflows/sub/a.yml',
-    'mcp.json',
     'sub/package.json',
+    '.github/agents/notes.txt',
+    '.cursor/settings.json',
+    'skills/pdf/helper.py',
+    'hooks.json',
   ])
     assert.ok(!isCandidate(path), path);
 });

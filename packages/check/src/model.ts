@@ -8,10 +8,11 @@ import {
   parseRule,
   parseSettings,
   type ClaudeSettings,
+  type Hook,
   type PermissionRule,
 } from './claude.js';
 import { actionBuiltinServers, parseMcpConfig, serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
-import { asString, asStringArray, frontmatter, isRecord, lineOf } from './text.js';
+import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
 import {
   parseCodex,
   parseGemini,
@@ -22,6 +23,7 @@ import {
   type OtherAgent,
   type PluginSource,
 } from './formats.js';
+import { parseCopilotAgent, parseCursorCli, parseKiroMcp, parseOpenCode } from './agents.js';
 import { parseWorkflow, PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS, type WorkflowAgent } from './workflows.js';
 
 export interface Subagent {
@@ -75,6 +77,29 @@ export interface Project {
   readonly pluginSources: readonly PluginSource[];
   /** Settings the scanner does not model, and what it assumed instead. */
   readonly unrecognized: readonly Unrecognized[];
+  /** Hooks that plugins in the repository install into every session that enables them. */
+  readonly pluginHooks: readonly Hook[];
+}
+
+/**
+ * Plugin folders: a Claude Code plugin (`.claude-plugin/plugin.json`) or an Agent Plugin
+ * (`plugin.json` beside `mcp.json` or a `skills/` folder). Returns each root ('' for the repo root).
+ */
+function pluginRoots(paths: readonly string[]): Set<string> {
+  const roots = new Set<string>();
+  const dirOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
+  const files = new Set(paths);
+  for (const path of paths) {
+    const parts = path.split('/');
+    if (parts.at(-1) !== 'plugin.json') continue;
+    if (parts.at(-2) === '.claude-plugin') roots.add(dirOf(path, 2));
+    else {
+      const root = dirOf(path, 1);
+      const prefix = root ? `${root}/` : '';
+      if (files.has(`${prefix}mcp.json`) || paths.some(item => item.startsWith(`${prefix}skills/`))) roots.add(root);
+    }
+  }
+  return roots;
 }
 
 /** The directory a `.claude/...` or `.mcp.json` path belongs to ('' for the repo root). */
@@ -210,6 +235,9 @@ export function buildProject(
   const others: OtherAgent[] = [];
   const pluginSources: PluginSource[] = [];
   const unrecognized: Unrecognized[] = [];
+  const pluginHooks: Hook[] = [];
+  const plugins = new Map<string, { name: string; location: Location }>();
+  const cursorCli: TextFile[] = [];
   const fail = (file: string, error: unknown) =>
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
@@ -221,12 +249,70 @@ export function buildProject(
       .map(path => ({ path, text: source.read(path) })),
     ...extraFiles,
   ];
+  const roots = pluginRoots(inputs.map(input => input.path));
+  const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
   for (const { path, text } of inputs) {
     if (text === undefined) continue;
     filesRead += 1;
     const name = path.split('/').at(-1)!;
     const parent = path.split('/').at(-2);
     try {
+      if (parent === '.claude-plugin' && name === 'plugin.json' && roots.has(rootOf(path, 2))) {
+        // A Claude Code plugin manifest: its name, and servers or hooks it declares inline.
+        const data = parseJsonc(text);
+        const root = rootOf(path, 2);
+        const manifest = isRecord(data) ? data : {};
+        plugins.set(root, {
+          name: asString(manifest['name']) ?? (root.split('/').at(-1) || 'plugin'),
+          location: { file: path, line: 1 },
+        });
+        if (isRecord(manifest['mcpServers']))
+          servers.push(...serversFromObject(manifest, path, text, 'plugin', 0, declaredServers));
+        if (isRecord(manifest['hooks'])) pluginHooks.push(...parseSettings(path, text).hooks);
+        continue;
+      }
+      if (name === 'plugin.json' && roots.has(rootOf(path, 1))) {
+        const data = parseJsonc(text);
+        const root = rootOf(path, 1);
+        plugins.set(root, {
+          name: (isRecord(data) ? asString(data['name']) : undefined) ?? (root.split('/').at(-1) || 'plugin'),
+          location: { file: path, line: 1 },
+        });
+        continue;
+      }
+      if (
+        (name === 'mcp.json' && roots.has(rootOf(path, 1)) && parent !== '.vscode' && parent !== '.cursor') ||
+        (name === '.mcp.json' && roots.has(rootOf(path, 1)))
+      ) {
+        servers.push(...parseMcpConfig(path, text, 'plugin', declaredServers));
+        continue;
+      }
+      if (parent === 'hooks' && name === 'hooks.json') {
+        if (roots.has(rootOf(path, 2))) pluginHooks.push(...parseSettings(path, text).hooks);
+        continue;
+      }
+      if (name === 'opencode.json' || name === 'opencode.jsonc') {
+        others.push(parseOpenCode(path, text, declaredServers));
+        continue;
+      }
+      if (parent === '.cursor' && name === 'cli.json') {
+        cursorCli.push({ path, text });
+        continue;
+      }
+      if (path.endsWith('.kiro/settings/mcp.json') && path.split('/').at(-3) === '.kiro') {
+        others.push(parseKiroMcp(path, text, declaredServers));
+        continue;
+      }
+      if (/^\.github\/agents\/[^/]+\.md$/.test(path)) {
+        others.push(parseCopilotAgent(path, text, declaredServers));
+        prompts.push({ path, text });
+        continue;
+      }
+      if (name === '.cursorrules' || name === '.windsurfrules' || name.endsWith('.mdc')) {
+        prompts.push({ path, text });
+        continue;
+      }
+      if (name === 'plugin.json' || (name === 'mcp.json' && parent !== '.vscode' && parent !== '.cursor')) continue;
       if (/^agent-guard[\w.-]*\.json$/.test(name) || extraPaths.has(path))
         guardFiles.push({ path, text, data: JSON.parse(text) as unknown });
       else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) {
@@ -541,6 +627,34 @@ export function buildProject(
     });
   }
 
+  for (const file of cursorCli) {
+    const dir = file.path.split('/').slice(0, -2).join('/');
+    const own = servers.filter(server => server.client === 'cursor' && rootOf(server.location.file, 2) === dir);
+    try {
+      others.push(parseCursorCli(file.path, file.text, own));
+    } catch (error) {
+      fail(file.path, error);
+    }
+  }
+
+  for (const [root, plugin] of [...plugins].sort(([a], [b]) => a.localeCompare(b))) {
+    const own = servers.filter(
+      server =>
+        server.client === 'plugin' &&
+        (rootOf(server.location.file, 1) === root || rootOf(server.location.file, 2) === root),
+    );
+    // Whoever enables the plugin gets its servers; Claude Code asks before their tools run by default.
+    agents.push({
+      id: `plugin:${root || '.'}`,
+      kind: 'plugin',
+      name: `Plugin ${plugin.name}`,
+      location: plugin.location,
+      grants: own.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', own)),
+      mediators: [],
+      headless: false,
+    });
+  }
+
   for (const other of others) agents.push(other.agent);
   servers.push(...others.flatMap(other => other.servers), ...subagents.flatMap(sub => sub.servers));
   const models: ModelChoice[] = [
@@ -580,5 +694,6 @@ export function buildProject(
     models,
     pluginSources,
     unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
+    pluginHooks,
   };
 }

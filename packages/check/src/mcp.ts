@@ -4,7 +4,18 @@ import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js
 /** One MCP server as a config file declares it. */
 export interface McpServer {
   readonly name: string;
-  readonly client: 'claude-code' | 'vscode' | 'cursor' | 'workflow' | 'codex' | 'gemini' | 'subagent';
+  readonly client:
+    | 'claude-code'
+    | 'vscode'
+    | 'cursor'
+    | 'workflow'
+    | 'codex'
+    | 'gemini'
+    | 'subagent'
+    | 'opencode'
+    | 'copilot'
+    | 'kiro'
+    | 'plugin';
   readonly command?: string;
   readonly args: readonly string[];
   readonly url?: string;
