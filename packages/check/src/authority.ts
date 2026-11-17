@@ -92,6 +92,7 @@ function shapeAccepts(alt: string, tool: string): boolean {
  */
 export function mediates(mediator: Mediator, tool: string | undefined): boolean {
   if (tool === undefined) return false;
+  if (mediator.kind === 'safe-outputs') return tool === 'safe-outputs';
   if (mediator.kind !== 'pre-tool-hook') return mediator.server !== undefined && tool === `mcp__${mediator.server}`;
   const matcher = validMatcher(mediator.matcher ?? '');
   if (matcher === undefined) return false;

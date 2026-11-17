@@ -34,7 +34,17 @@
   `autoAllowBashIfSandboxed` is false; the sandbox never lowers network reach.
 - Fix: AGC-TXT-001 no longer reports the zero-width joiner inside an emoji, and AGC-TXT-002 no
   longer reports a phrase quoted as an example of an attack, or "do not tell the user to ...".
-- Note: the inventory's `runtimeChecks` now lists every `PreToolUse` hook, not only those that
+- Add: GitHub Agentic Workflows (`.github/workflows/*.md`) are read as unattended agents, with
+  their triggers, tools, safe outputs (a runtime check for what they post), permissions, MCP
+  servers and repository imports; a custom engine or a remote import is unknown reach.
+- Fix: `openai/codex-action` steps and `codex exec` run commands without asking inside their
+  sandbox; they were reported with no capabilities. A workflow agent with a GitHub token and a
+  shell has unknown untrusted input. VS Code and Cursor agents have their built-in terminal,
+  fetch and edits. An agent that can edit any file or run any command can change itself.
+- Add: the Sentry CLI server (`sentry mcp`) is in the catalog, and Sentry can write.
+- Add: the benchmark measures recall against independent labels for 8 public repositories
+  (`bench/recall-labels.json`): 97% of agents found, 80% of labelled capabilities reported.
+- Note: the inventory's `runtimeChecks` may now list `safe-outputs`, and lists every `PreToolUse` hook, not only those that
   see Bash. Which calls each check sees is in the JSON report (`mediators`), and AGC-COV-001
   uses it.
 - Add: OpenCode (`opencode.json`, agent overrides and `.opencode/agent/*.md`), the Cursor CLI

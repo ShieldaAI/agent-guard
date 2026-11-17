@@ -24,7 +24,14 @@ import {
   type PluginSource,
 } from './formats.js';
 import { MANAGED_DIR } from './user.js';
-import { parseCopilotAgent, parseCursorCli, parseKiroMcp, parseOpenCode } from './agents.js';
+import {
+  isAgenticWorkflow,
+  parseAgenticWorkflow,
+  parseCopilotAgent,
+  parseCursorCli,
+  parseKiroMcp,
+  parseOpenCode,
+} from './agents.js';
 import { parseWorkflow, PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS, type WorkflowAgent } from './workflows.js';
 
 export interface Subagent {
@@ -260,6 +267,8 @@ export function buildProject(
   /** Plugins whose hook file could not be read: they may run any command. */
   const pluginUnknownHooks = new Map<string, Location>();
   const cursorCli: TextFile[] = [];
+  /** The first VS Code and Cursor MCP files: the IDE agent exists even when they list no server. */
+  const ideFiles: { vscode?: string; cursor?: string } = {};
   const openCode: TextFile[] = [];
   const openCodeAgents: TextFile[] = [];
   const fail = (file: string, error: unknown) =>
@@ -420,6 +429,16 @@ export function buildProject(
         others.push(parseKiroMcp(path, text, declaredServers));
         continue;
       }
+      if (/^\.github\/workflows\/[^/]+\.md$/.test(path) && isAgenticWorkflow(text)) {
+        others.push(
+          parseAgenticWorkflow(path, text, declaredServers, item => {
+            const relative = safeRelative(`.github/workflows/${item.replace(/^\.\//, '')}`);
+            return relative === undefined ? undefined : source.readNamed(relative);
+          }),
+        );
+        prompts.push({ path, text });
+        continue;
+      }
       if (/^\.github\/agents\/[^/]+\.md$/.test(path)) {
         others.push(parseCopilotAgent(path, text, declaredServers));
         prompts.push({ path, text });
@@ -440,9 +459,9 @@ export function buildProject(
       else if (parent === '.claude-plugin' && name === 'marketplace.json')
         pluginSources.push(...parseMarketplace(path, text));
       else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code', declaredServers));
-      else if (path.endsWith('.vscode/mcp.json'))
+      else if (path.endsWith('.vscode/mcp.json') && (ideFiles.vscode ??= path))
         servers.push(...parseMcpConfig(path, text, 'vscode', declaredServers));
-      else if (path.endsWith('.cursor/mcp.json'))
+      else if (path.endsWith('.cursor/mcp.json') && (ideFiles.cursor ??= path))
         servers.push(...parseMcpConfig(path, text, 'cursor', declaredServers));
       else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name))
         workflows.push(...parseWorkflow(path, text, declaredServers));
@@ -770,6 +789,36 @@ export function buildProject(
       else if (!step.permissions.known) grants.push({ ...grant, certainty: 'unknown' });
     }
     if (step.skipPermissions) grants.push(...baselineGrants('auto', step.skipPermissions, reachable, [], [], true));
+    else if (step.codex) {
+      // Codex in a workflow runs commands without asking, inside its sandbox. What the commands can
+      // write and reach is the sandbox's: read-only writes nothing; workspace-write writes the
+      // checkout; the network is off unless the config or a permission profile turns it on.
+      const { sandbox, profile, location } = step.codex;
+      const via = `Codex ${sandbox ? `sandbox ${sandbox}` : profile ? `permission profile ${profile}` : 'default sandbox'}`;
+      add({ capability: 'exec', via, tool: 'shell', certainty: 'yes', location });
+      if (sandbox !== 'read-only')
+        add({
+          capability: 'write',
+          via,
+          tool: 'shell',
+          certainty: sandbox === 'workspace-write' ? 'yes' : 'unknown',
+          location,
+        });
+      add({ capability: 'egress', via, tool: 'shell', certainty: 'unknown', location });
+    }
+    // With a GitHub token and a shell, the agent can read any issue or pull request, which anyone can
+    // write, whatever started the workflow. Whether its prompt does is not in the file: unknown.
+    if (
+      step.githubToken &&
+      grants.some(grant => grant.capability === 'exec' && grant.approval === 'auto') &&
+      !grants.some(grant => grant.capability === 'untrustedInput')
+    )
+      add({
+        capability: 'untrustedInput',
+        via: 'GitHub token with a shell (issue and pull-request text)',
+        certainty: 'unknown',
+        location: at,
+      });
     const deny = [
       ...step.disallowedTools,
       ...(step.action.startsWith('claude') ? rootSettings.flatMap(file => file.deny) : []),
@@ -787,14 +836,20 @@ export function buildProject(
 
   for (const client of ['vscode', 'cursor'] as const) {
     const list = servers.filter(server => server.client === client);
-    if (!list.length) continue;
-    const file = list[0]!.location.file;
+    const file = list[0]?.location.file ?? ideFiles[client];
+    if (file === undefined) continue;
     agents.push({
       id: `mcp-client:${file}`,
       kind: 'mcp-client',
       name: client === 'vscode' ? 'VS Code agent mode' : 'Cursor agent',
       location: { file, line: 1 },
-      grants: list.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', list)),
+      // The IDE agent's own tools: it asks before terminal commands and fetches, and applies edits.
+      grants: [
+        ...grantsForRule(parseRule('Bash', { file, line: 1 }), 'ask', []),
+        ...grantsForRule(parseRule('WebFetch', { file, line: 1 }), 'ask', []),
+        ...grantsForRule(parseRule('Edit', { file, line: 1 }), 'auto', []),
+        ...list.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', list)),
+      ],
       mediators: mediatorsFor([], list),
       headless: false,
     });

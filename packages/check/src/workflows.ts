@@ -42,6 +42,13 @@ export interface WorkflowAgent {
   /** Whether the job runs in a GitHub environment, which can require a reviewer before it starts. */
   readonly environment: boolean;
   readonly literalInputs: readonly { readonly key: string; readonly value: string; readonly location: Location }[];
+  /**
+   * For Codex steps: the sandbox (`sandbox` input or CLI flag; undefined when not set here) and the
+   * permission profile, whose filesystem and network rules live in Codex's own config.
+   */
+  readonly codex?: { readonly sandbox?: string; readonly profile?: string; readonly location: Location };
+  /** A GitHub token reaches the agent (`github_token`, GH_TOKEN or GITHUB_TOKEN, or claude-code-action's own). */
+  readonly githubToken: boolean;
 }
 
 /**
@@ -102,6 +109,8 @@ interface Flags {
   maxTurns: boolean;
   mcpConfig?: string;
   model?: string;
+  /** Codex sandbox from `--sandbox`, `-s`, `-c sandbox_mode=...` or `--full-auto`. */
+  sandbox?: string;
 }
 
 function toolList(value: string): string[] {
@@ -132,7 +141,10 @@ function readFlags(text: string): Flags {
     } else if (name === '--permission-mode') {
       if (value() === 'bypassPermissions') flags.skip = true;
     } else if (name === '--sandbox' || name === '-s') {
-      if (value() === 'danger-full-access') flags.skip = true;
+      flags.sandbox = value();
+      if (flags.sandbox === 'danger-full-access') flags.skip = true;
+    } else if (name === '--full-auto') {
+      flags.sandbox ??= 'workspace-write';
     } else if (name === '-c' || name === '--config') {
       // Codex config overrides (-c sandbox_mode="danger-full-access"). For Claude, -c is --continue and
       // takes no value, so only a key=value argument is consumed.
@@ -140,8 +152,10 @@ function readFlags(text: string): Flags {
       if (next !== undefined && !next.startsWith('-') && next.includes('=')) {
         if (inline === undefined) i += 1;
         const [key, setting] = next.split(/=(.*)/s, 2);
-        if (key?.trim() === 'sandbox_mode' && setting?.trim().replace(/^["']|["']$/g, '') === 'danger-full-access')
-          flags.skip = true;
+        if (key?.trim() === 'sandbox_mode') {
+          flags.sandbox = (setting ?? '').trim().replace(/^["']|["']$/g, '');
+          if (flags.sandbox === 'danger-full-access') flags.skip = true;
+        }
       }
     } else if (name === '--max-turns') {
       flags.maxTurns = true;
@@ -346,6 +360,29 @@ export function parseWorkflow(path: string, text: string, declared: readonly Dec
         allowedTools,
         disallowedTools,
         ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),
+        githubToken:
+          action === 'claude-code-action' ||
+          tokenInput !== undefined ||
+          ['GH_TOKEN', 'GITHUB_TOKEN'].some(name => envValue(name) !== undefined),
+        ...(action.startsWith('codex')
+          ? {
+              codex: {
+                ...((input('sandbox') ?? flags.sandbox) !== undefined
+                  ? { sandbox: (input('sandbox') ?? flags.sandbox)! }
+                  : {}),
+                ...(input('permission-profile') !== undefined ? { profile: input('permission-profile')! } : {}),
+                location: {
+                  file: path,
+                  line:
+                    input('sandbox') !== undefined
+                      ? inputLine('sandbox')
+                      : input('permission-profile') !== undefined
+                        ? inputLine('permission-profile')
+                        : line,
+                },
+              },
+            }
+          : {}),
         maxTurns: flags.maxTurns || input('max_turns') !== undefined,
         timeout: job['timeout-minutes'] !== undefined || step['timeout-minutes'] !== undefined,
         secrets,

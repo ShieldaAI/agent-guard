@@ -92,7 +92,8 @@ export function isCandidate(path: string): boolean {
     if (area === 'skills' && (name === 'SKILL.md' || SKILL_SCRIPT.test(name))) return true;
     if (area === 'hooks' && SKILL_SCRIPT.test(name)) return true;
   }
-  if (parts.length === 3 && parts[0] === '.github' && parts[1] === 'workflows' && /\.ya?ml$/.test(name)) return true;
+  if (parts.length === 3 && parts[0] === '.github' && parts[1] === 'workflows' && /\.(ya?ml|md)$/.test(name))
+    return true;
   if (
     name === 'CODEOWNERS' &&
     (parts.length === 1 || (parts.length === 2 && (parent === '.github' || parent === 'docs')))

@@ -6,7 +6,9 @@
       "repo": "BerriAI/litellm",
       "commit": "2aa57d7e0492f8cbd91f411a6e7005d4f780d620",
       "agents": 1,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 1
+      }
     },
     {
       "repo": "PostHog/posthog",
@@ -74,7 +76,9 @@
       "repo": "astral-sh/uv",
       "commit": "d5c3f174417418c24ec3c276e01b0f62b961b13c",
       "agents": 10,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 10
+      }
     },
     {
       "repo": "browser-use/browser-use",
@@ -126,13 +130,14 @@
         "AGC-PERM-003:high": 5,
         "AGC-PERM-005:medium": 3,
         "AGC-SUP-004:medium": 1,
+        "AGC-TRI-001:critical": 1,
         "AGC-TRI-002:medium": 1
       }
     },
     {
       "repo": "github/github-mcp-server",
       "commit": "0663b830582af923e30fb14cb2e10dd3248baa86",
-      "agents": 2,
+      "agents": 4,
       "expected": {
         "AGC-COV-001:medium": 1,
         "AGC-TRI-002:medium": 1
@@ -171,6 +176,7 @@
       "commit": "9893f280efbceb0dd54b0327120977223e49af93",
       "agents": 2,
       "expected": {
+        "AGC-COV-001:medium": 1,
         "AGC-SUP-004:medium": 1
       }
     },
@@ -198,7 +204,9 @@
       "repo": "openai/codex",
       "commit": "aea4c6ee4b652d84b416731b11c2b8299d767209",
       "agents": 4,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 3
+      }
     },
     {
       "repo": "oven-sh/bun",
@@ -209,9 +217,10 @@
     {
       "repo": "pydantic/pydantic-ai",
       "commit": "a9db02ed3f86668eaaad8bdc6ecc9758f8a5b970",
-      "agents": 5,
+      "agents": 17,
       "expected": {
-        "AGC-COV-001:medium": 1,
+        "AGC-COV-001:medium": 2,
+        "AGC-PERM-002:high": 1,
         "AGC-PERM-005:medium": 1,
         "AGC-TRG-001:medium": 2
       }

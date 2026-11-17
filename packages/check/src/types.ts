@@ -73,10 +73,11 @@ export interface Unrecognized {
 /**
  * Something that mediates tool calls at runtime, and which calls it sees. A pre-tool hook sees the
  * tools its `matcher` names; Agent Guard or a gateway reached as an MCP server sees only the calls
- * made through that `server`. Every other call bypasses it.
+ * made through that `server`; gh-aw safe outputs see only what the agent asks to post. Every other
+ * call bypasses it.
  */
 export interface Mediator {
-  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway';
+  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway' | 'safe-outputs';
   readonly location: Location;
   /** For a hook: its matcher (`''` or `*` means every tool). */
   readonly matcher?: string;

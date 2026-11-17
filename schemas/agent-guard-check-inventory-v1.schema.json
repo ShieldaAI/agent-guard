@@ -226,7 +226,8 @@
             "enum": [
               "agent-guard",
               "pre-tool-hook",
-              "mcp-gateway"
+              "mcp-gateway",
+              "safe-outputs"
             ]
           }
         },

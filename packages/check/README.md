@@ -96,7 +96,8 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Agent Plugins | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/` |
 | OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
 | Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
-| GitHub workflows | Steps that use `anthropics/claude-code-action`, `openai/codex-action`, or run `claude -p` or `codex exec` |
+| GitHub workflows | Steps that use `anthropics/claude-code-action`, `openai/codex-action` (with its `sandbox` and `permission-profile`), or run `claude -p` or `codex exec` |
+| GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` and gh-aw settings: triggers, `engine`, `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github`), `safe-outputs`, `permissions`, `mcp-servers`, and `imports` from the repository |
 | VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
 | Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
 | OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md` |
@@ -380,15 +381,38 @@ agent, and critical when anyone can start it with broad tools or when a
 
 ## Accuracy
 
-Two measurements, both reproducible with `npm run bench:check` (and `--real` for the second):
+Three measurements, all reproducible with `npm run bench:check` (and `--real` for the last two):
 
 - **Labeled cases.** 129 configurations, at least one that each of the 48 rules must flag and
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 153 agents.
-  Every critical, high and medium finding, 40 in all, was reviewed by hand: 39 true positives
-  and 1 false positive (a low-confidence text rule), precision 97.5%.
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 167 agents.
+  Every critical, high and medium finding, 58 in all, was reviewed by hand: 57 true positives
+  and 1 false positive (a low-confidence text rule), precision 98.3%.
+- **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
+  the scanner's output nor its source labelled every agent and its seven capabilities from the
+  configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
+  (97%). Of the 300 capabilities labelled yes it reports 80% (as yes or unknown), and 62% at the
+  labelled approval level or wider:
+
+  | Capability | Labelled yes | Reported | At level |
+  | --- | --- | --- | --- |
+  | untrustedInput | 64 | 88% | 77% |
+  | write | 58 | 85% | 60% |
+  | egress | 56 | 96% | 71% |
+  | exec | 48 | 94% | 75% |
+  | privateData | 29 | 55% | 21% |
+  | selfModify | 23 | 87% | 83% |
+  | spend | 22 | 0% | 0% |
+
+  Most of the gap is a difference in definitions, not a missed setting. The labels count money
+  spent by any command that runs unsandboxed and data read outside the project after a prompt;
+  the scanner counts spending only through a tool known to spend, and private data only where
+  the agent reaches it without a person approving that read (otherwise every agent that can
+  fetch a web page would be a lethal trifecta). It also does not see what a prompt tells the
+  agent to fetch, or what a later job does with the agent's output. The two agents it misses
+  are an OpenCode CLI started from a workflow script and an empty desktop plugin.
 
 ## How it decides
 
@@ -426,6 +450,18 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   command can leave it (`allowUnsandboxedCommands`, `excludedCommands`) through the normal
   permission flow, where an allowed command still runs without asking, and the sandbox's allowed
   domains are not modelled.
+- **Workflow agents.** A Codex step runs commands without asking, inside its sandbox:
+  `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
+  unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
+  leaves writes unknown. A workflow agent with a GitHub token and a shell can read issue and
+  pull-request text whatever started it, so that input is unknown. A GitHub Agentic Workflow is
+  unattended; its `safe-outputs` are posted by a separate job that checks them, which counts as
+  a runtime check for them; an engine gh-aw does not build in, or an import from another
+  repository, is unknown reach. The repository a workflow runs in is not counted as private data.
+- **IDE agents.** The VS Code and Cursor agents behind `.vscode/mcp.json` and `.cursor/mcp.json`
+  ask before terminal commands and fetches, apply edits without asking, and ask before MCP tools.
+- **Changing itself.** An agent that can edit any file, or run any shell command, can rewrite its
+  own settings and instructions, with the same approval.
 - **Workflow triggers.** `issues`, `issue_comment`, `pull_request_target`, discussions and
   `workflow_run` carry text anyone can write and run with the repository's secrets.
   `pull_request` from forks gets no secrets and a read-only token, so it is not treated as

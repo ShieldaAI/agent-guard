@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
-import { RULES, scan } from '@shieldaai/agent-guard-check';
+import { CAPABILITIES, RULES, authority, scan } from '@shieldaai/agent-guard-check';
 import { CASES } from './cases.mjs';
 import { scoreCases } from './score.mjs';
 
@@ -81,6 +81,59 @@ if (args.includes('--real')) {
       : 'Results match the reviewed findings exactly.',
   );
   failed ||= diffs.length > 0;
+
+  // Recall against independent labels (recall-labels.json) for 8 of the repositories.
+  const labels = JSON.parse(readFileSync(new URL('./recall-labels.json', import.meta.url), 'utf8'));
+  const rank = { no: 0, unknown: 1, ask: 2, auto: 3 };
+  const levelOf = state => (state.value === 'no' ? 'no' : state.value === 'unknown' ? 'unknown' : state.approval);
+  const per = Object.fromEntries(CAPABILITIES.map(c => [c, { yes: 0, detected: 0, level: 0 }]));
+  let labelled = 0;
+  let found = 0;
+  for (const repo of labels.repos) {
+    const result = scan({ root: join(cache, repo.repo.replace('/', '_')) });
+    for (const item of repo.agents) {
+      if (/^\[(extra format|test workflow)\]/.test(item.why ?? '')) continue;
+      labelled += 1;
+      const file = item.file.replace(/^\.\//, '');
+      const matches = result.agents.filter(
+        agent =>
+          agent.location.file === file ||
+          agent.id.includes(file) ||
+          (agent.kind === 'plugin' && file.startsWith(agent.id.slice('plugin:'.length).replace(/^\.$/, ''))),
+      );
+      // A subagent with no tools list or mode of its own is the session again.
+      if (!matches.length && item.tool === 'subagent') {
+        const dir = file.startsWith('.claude/') ? '.' : file.split('/.claude/')[0];
+        const session = result.agents.find(agent => agent.id === `claude-code:${dir}`);
+        if (session) matches.push(session);
+      }
+      if (!matches.length) continue;
+      found += 1;
+      for (const capability of CAPABILITIES) {
+        const want = item.capabilities[capability];
+        if (want !== 'ask' && want !== 'auto') continue;
+        per[capability].yes += 1;
+        const got = matches.map(agent => levelOf(authority(agent)[capability])).sort((a, b) => rank[b] - rank[a])[0];
+        if (got !== 'no') per[capability].detected += 1;
+        if (got === want || (got === 'auto' && want === 'ask')) per[capability].level += 1;
+      }
+    }
+  }
+  const total = Object.values(per).reduce(
+    (sum, item) => ({ yes: sum.yes + item.yes, detected: sum.detected + item.detected, level: sum.level + item.level }),
+    { yes: 0, detected: 0, level: 0 },
+  );
+  out.push('', '## Recall against independent labels', '');
+  out.push(
+    `${labels.repos.length} repositories, ${labelled} labelled agents, ${found} found (${pct(found / labelled)}). Of ${total.yes} capabilities labelled yes: ${pct(total.detected / total.yes)} reported (yes or unknown), ${pct(total.level / total.yes)} at the labelled approval level or wider.`,
+    '',
+    '| Capability | Labelled yes | Reported | At level |',
+    '| --- | --- | --- | --- |',
+  );
+  for (const [capability, item] of Object.entries(per))
+    out.push(
+      `| ${capability} | ${item.yes} | ${item.yes ? pct(item.detected / item.yes) : '-'} | ${item.yes ? pct(item.level / item.yes) : '-'} |`,
+    );
 }
 process.stdout.write(`${out.join('\n')}\n`);
 process.exitCode = failed ? 1 : 0;

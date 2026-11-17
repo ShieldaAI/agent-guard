@@ -39,6 +39,8 @@ const CATALOG: readonly (CatalogEntry & {
   readonly packages?: readonly string[];
   readonly images?: readonly string[];
   readonly hosts?: readonly string[];
+  /** An installed command and its first argument (`sentry mcp`), found on the PATH, not in the repository. */
+  readonly commands?: readonly (readonly [string, string])[];
 })[] = [
   {
     id: 'github',
@@ -149,7 +151,9 @@ const CATALOG: readonly (CatalogEntry & {
     label: 'Sentry',
     packages: ['@sentry/mcp-server'],
     hosts: ['mcp.sentry.dev'],
-    capabilities: { privateData: 'yes', untrustedInput: 'yes' },
+    commands: [['sentry', 'mcp']],
+    // It can also update issues and create projects and DSNs.
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
   },
   {
     id: 'notion',
@@ -611,6 +615,11 @@ function identify(
   if (command !== undefined && url !== undefined) return undefined;
   const pkg = catalogPackage(command, args, env);
   const image = catalogImage(command, args);
+  // A bare command name (no path, so not a file in the repository) and its first argument.
+  const installed =
+    command !== undefined && /^[A-Za-z0-9_-]+$/.test(command) && !Object.keys(env).some(name => LOADER_ENV.test(name))
+      ? [command, args[0] ?? '']
+      : undefined;
   let host: string | undefined;
   if (url) {
     try {
@@ -623,7 +632,9 @@ function identify(
     entry =>
       (pkg !== undefined && entry.packages?.includes(pkg)) ||
       (image !== undefined && entry.images?.includes(image)) ||
-      (host !== undefined && entry.hosts?.includes(host)),
+      (host !== undefined && entry.hosts?.includes(host)) ||
+      (installed !== undefined &&
+        entry.commands?.some(([name, first]) => name === installed[0] && first === installed[1])),
   );
   // A declaration matches what runs (package, image, host, or the catalog entry they identify), never
   // the config name: a change under review chooses names, so a name could claim another server's entry.

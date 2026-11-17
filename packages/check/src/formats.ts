@@ -100,10 +100,12 @@ export function parseCodex(path: string, text: string, declared: readonly Declar
     for (const capability of ['exec', 'write', 'egress'] as const)
       grants.push(grant(capability, via(`sandbox_mode = "${sandbox}"`), approval, sandboxAt, 'unknown', 'shell'));
   } else if (sandbox === 'danger-full-access') {
-    for (const capability of ['exec', 'write', 'egress'] as const)
+    for (const capability of ['exec', 'write', 'egress', 'selfModify'] as const)
       grants.push(grant(capability, via('sandbox_mode = "danger-full-access"'), approval, sandboxAt, 'yes', 'shell'));
   } else if (sandbox === 'workspace-write') {
     grants.push(grant('write', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
+    // The workspace holds .codex/config.toml and AGENTS.md: it can rewrite its own settings and instructions.
+    grants.push(grant('selfModify', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
     grants.push(grant('exec', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
     if (network)
       grants.push(

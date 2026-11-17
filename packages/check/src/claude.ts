@@ -199,12 +199,18 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
       return (['exec', 'egress', 'write', 'untrustedInput'] as const).map(c => make(c, 'yes', '*'));
     case 'Bash': {
       const scope = bashScope(rule.specifier);
+      // A shell that can write any file can rewrite the agent's own settings and instructions.
       if (scope === 'any' || scope === 'network')
-        return [make('exec', 'yes', 'Bash'), make('egress', 'yes', 'Bash'), make('write', 'yes', 'Bash')];
+        return [
+          make('exec', 'yes', 'Bash'),
+          make('egress', 'yes', 'Bash'),
+          make('write', 'yes', 'Bash'),
+          make('selfModify', 'yes', 'Bash'),
+        ];
       if (scope === 'publish') return [make('egress', 'yes', 'Bash'), make('write', 'yes', 'Bash')];
       if (scope === 'project') return [make('exec', 'yes', 'Bash')];
       if (scope === 'read' || scope === 'fetch') return [make('untrustedInput', 'yes', 'Bash')];
-      if (scope === 'edit') return [make('write', 'yes', 'Bash')];
+      if (scope === 'edit') return [make('write', 'yes', 'Bash'), make('selfModify', 'yes', 'Bash')];
       if (scope === 'local') return [];
       return [make('exec', 'yes', 'Bash'), make('egress', 'unknown', 'Bash')];
     }
@@ -218,7 +224,9 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
     case 'MultiEdit':
     case 'NotebookEdit': {
       const out = [make('write', 'yes', rule.tool)];
-      if (rule.specifier && IDENTITY_PATH.test(rule.specifier.replace(/\/\*\*$/, '/')))
+      // Unrestricted (or every-file) edits reach the agent's own files too.
+      const everyFile = !rule.specifier || /^(\.\/)?(\*\*?|\*\*\/\*)?$/.test(rule.specifier.replace(/^\/\//, ''));
+      if (everyFile || (rule.specifier && IDENTITY_PATH.test(rule.specifier.replace(/\/\*\*$/, '/'))))
         out.push(make('selfModify', 'yes', rule.tool));
       return out;
     }
