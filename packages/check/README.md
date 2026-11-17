@@ -374,9 +374,9 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 77 agents.
-  Every critical, high and medium finding, 29 in all, was reviewed by hand: all true positives.
-  Recall on real repositories is not measured, because no ground truth exists for them.
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 153 agents.
+  Every critical, high and medium finding, 40 in all, was reviewed by hand: 39 true positives
+  and 1 false positive (a low-confidence text rule), precision 97.5%.
 
 ## How it decides
 

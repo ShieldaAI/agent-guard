@@ -68,8 +68,12 @@ if (args.includes('--real')) {
     expectedTotal += Object.values(entry.expected).reduce((a, b) => a + b, 0);
   }
   out.push('', '## Public repositories', '');
+  const falsePositives = manifest.repos.reduce(
+    (sum, entry) => sum + Object.values(entry.falsePositives ?? {}).reduce((a, b) => a + b, 0),
+    0,
+  );
   out.push(
-    `${manifest.repos.length} repositories at pinned commits, ${agents} agents, ${expectedTotal} reviewed critical/high/medium findings (all true positives when reviewed ${manifest.reviewed}).`,
+    `${manifest.repos.length} repositories at pinned commits, ${agents} agents, ${expectedTotal} reviewed critical/high/medium findings: ${expectedTotal - falsePositives} true positives, ${falsePositives} false positive(s), precision ${pct((expectedTotal - falsePositives) / expectedTotal)} (reviewed ${manifest.reviewed}).`,
   );
   out.push(
     diffs.length
