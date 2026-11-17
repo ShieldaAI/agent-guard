@@ -149,3 +149,37 @@ test('a session in dontAsk does not hide what a bypassPermissions or auto subage
     );
   }
 });
+
+test('disableAllHooks turns every hook off as a runtime check', () => {
+  const hooks = { PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: './g.sh' }] }] };
+  const on = scanFiles({ '.claude/settings.json': settings({ allow: ['Bash'] }, { hooks }) });
+  const off = scanFiles({
+    '.claude/settings.json': settings({ allow: ['Bash'] }, { hooks }),
+    '.claude/settings.local.json': settings({}, { disableAllHooks: true }),
+  });
+  assert.equal(findingsFor(on, 'AGC-COV-001').length, 0);
+  assert.equal(findingsFor(off, 'AGC-COV-001').length, 1);
+});
+
+test('a sandbox with autoAllowBashIfSandboxed runs Bash without asking, with network reach unknown', () => {
+  const sandboxed = scanFiles({ '.claude/settings.json': settings({}, { sandbox: { enabled: true } }) });
+  assert.equal(level(main(sandboxed), 'exec'), 'yes/auto');
+  assert.ok(
+    authority(main(sandboxed)).egress.grants.every(grant => grant.tool !== 'Bash'),
+    'Bash egress is no longer a yes',
+  );
+  assert.ok(
+    main(sandboxed).grants.some(g => g.tool === 'Bash' && g.capability === 'egress' && g.certainty === 'unknown'),
+  );
+  const asking = scanFiles({
+    '.claude/settings.json': settings({}, { sandbox: { enabled: true, autoAllowBashIfSandboxed: false } }),
+  });
+  assert.equal(level(main(asking), 'exec'), 'yes/ask');
+});
+
+test('Codex: a sandbox_mode or approval_policy of the wrong type is reported', () => {
+  const result = scanFiles({ '.codex/config.toml': 'sandbox_mode = 3\napproval_policy = true\n' });
+  const notes = findingsFor(result, 'AGC-CFG-001').map(finding => finding.message);
+  assert.ok(notes.some(text => text.includes('sandbox_mode = "3"')));
+  assert.ok(notes.some(text => text.includes('approval_policy = "true"')));
+});

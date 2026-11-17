@@ -137,3 +137,44 @@ test('--include-user reads the home folder; it is refused in CI and with --fix',
   const fix = await run(['--include-user', '--fix']);
   assert.equal(fix.code, 2);
 });
+
+test('--include-user refuses --write-baseline and warns about a file it cannot read', async t => {
+  const home = fakeHome({ '.claude.json': `{"x":"${'a'.repeat(1_100_000)}"}` });
+  const repo = mkdtempSync(join(tmpdir(), 'agc-repo-'));
+  t.after(() => {
+    rmSync(home, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  });
+  let stderr = '';
+  const io = { stdout: () => {}, stderr: text => (stderr += text), cwd: repo, env: {}, home };
+  assert.equal(await runCli(['--include-user', '--write-baseline', 'b.json'], io), 2);
+  stderr = '';
+  await runCli(['--include-user'], io);
+  assert.match(stderr, /~\/\.claude\.json was not read/);
+});
+
+test('user-scope servers are judged by the server rules, and managed servers apply', () => {
+  const result = scanFiles(
+    {},
+    {
+      userFiles: [
+        { path: '~/.claude.json', text: mcp({ k: { command: 'npx', args: ['-y', 'mcp-server-kubernetes'] } }) },
+        {
+          path: '<managed>/managed-mcp.json',
+          text: mcp({ f: { command: 'uvx', args: ['mcp-server-fetch==2025.4.7'] } }),
+        },
+      ],
+    },
+  );
+  assert.ok(findingsFor(result, 'AGC-SUP-001').some(finding => finding.location.file === '~/.claude.json'));
+  assert.ok(claude(result).grants.some(grant => grant.tool === 'mcp__f'));
+});
+
+test('a bypass mode from user settings points at the user file', () => {
+  const result = scanFiles(
+    { '.claude/settings.json': settings({}) },
+    { userFiles: [{ path: '~/.claude/settings.json', text: settings({ defaultMode: 'bypassPermissions' }) }] },
+  );
+  const found = findingsFor(result, 'AGC-COV-001');
+  assert.equal(found[0].location.file, '~/.claude/settings.json');
+});

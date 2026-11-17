@@ -228,7 +228,8 @@ const CATALOG: readonly (CatalogEntry & {
     id: 'terraform',
     label: 'Terraform registry',
     images: ['hashicorp/terraform-mcp-server'],
-    capabilities: { untrustedInput: 'yes' },
+    // With a Terraform Cloud token it can also read workspaces and start runs.
+    capabilities: { untrustedInput: 'yes', privateData: 'unknown', write: 'unknown', exec: 'unknown' },
   },
   // Web search and browsing: outside text comes in, and queries or page requests go to any host.
   {
@@ -296,7 +297,8 @@ const CATALOG: readonly (CatalogEntry & {
     id: 'kubernetes',
     label: 'Kubernetes',
     packages: ['mcp-server-kubernetes'],
-    capabilities: { privateData: 'yes', write: 'yes', exec: 'yes' },
+    // `kubectl exec` runs commands in pods, which can reach any host the cluster can.
+    capabilities: { privateData: 'yes', write: 'yes', exec: 'yes', egress: 'unknown' },
   },
   {
     id: 'mcp-atlassian',

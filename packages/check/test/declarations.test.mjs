@@ -219,7 +219,7 @@ test('the catalog knows common servers, so they are not unknown', () => {
     ],
     [
       { command: 'npx', args: ['-y', 'mcp-server-kubernetes@2.0.0'] },
-      { privateData: 'yes/auto', exec: 'yes/auto', write: 'yes/auto' },
+      { privateData: 'yes/auto', exec: 'yes/auto', write: 'yes/auto', egress: 'unknown/auto' },
     ],
   ];
   for (const [server, expected] of cases) {

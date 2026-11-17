@@ -62,6 +62,7 @@ export function isCandidate(path: string): boolean {
   if (name === 'GEMINI.md') return true;
   // OpenCode, the Cursor CLI, Copilot custom agents and instructions, Kiro, Windsurf and Cursor rules.
   if (name === 'opencode.json' || name === 'opencode.jsonc') return true;
+  if (parts.at(-3) === '.opencode' && (parent === 'agent' || parent === 'agents') && name.endsWith('.md')) return true;
   if (parent === '.cursor' && name === 'cli.json') return true;
   if (parts.length >= 3 && parts.at(-3) === '.kiro' && parent === 'settings' && name === 'mcp.json') return true;
   if (parts.length >= 3 && parts.at(-3) === '.kiro' && parent === 'steering' && name.endsWith('.md')) return true;

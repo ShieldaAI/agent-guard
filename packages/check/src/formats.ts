@@ -66,7 +66,11 @@ export function parseCodex(path: string, text: string, declared: readonly Declar
   const at = (key: string): Location => ({ file: path, line: lineOfKey(text, key) || 1 });
   const policy = data['approval_policy'];
   const policyName = typeof policy === 'string' ? policy : isRecord(policy) ? 'granular' : 'on-request';
-  const sandbox = asString(data['sandbox_mode']) ?? 'workspace-write';
+  // A value of the wrong type is not a sandbox Codex knows: keep it, so it is judged as unknown.
+  const sandbox =
+    data['sandbox_mode'] === undefined
+      ? 'workspace-write'
+      : (asString(data['sandbox_mode']) ?? JSON.stringify(data['sandbox_mode']));
   const workspace = isRecord(data['sandbox_workspace_write']) ? data['sandbox_workspace_write'] : {};
   const network = workspace['network_access'] === true;
   // `untrusted` asks before anything outside a small trusted set; the others run inside the sandbox.
@@ -76,11 +80,11 @@ export function parseCodex(path: string, text: string, declared: readonly Declar
   const grants: Grant[] = [];
   const unrecognized: Unrecognized[] = [];
   const via = (detail: string) => `Codex ${detail}`;
-  if (typeof policy === 'string' && !CODEX_POLICIES.has(policy))
+  if (policy !== undefined && !isRecord(policy) && (typeof policy !== 'string' || !CODEX_POLICIES.has(policy)))
     unrecognized.push({
       agent: 'Codex',
       setting: 'approval_policy',
-      value: policy,
+      value: String(policy),
       assumed: 'commands run without asking',
       location: policyAt,
     });

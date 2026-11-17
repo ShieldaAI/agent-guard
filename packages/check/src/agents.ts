@@ -64,10 +64,16 @@ function openCodeRule(base: string, pattern: string): string {
  * `permission` object whose unset tools are allowed; V2 has a `permissions` list whose unmatched
  * calls ask. Throws on invalid JSON.
  */
-export function parseOpenCode(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
+export function parseOpenCode(
+  path: string,
+  text: string,
+  declared: readonly DeclaredServer[] = [],
+  agentFiles: readonly { readonly path: string; readonly text: string }[] = [],
+  dirOverride?: string,
+): OtherAgent {
   const data = parseJsonc(text);
   if (!isRecord(data)) throw new Error('config must be an object');
-  const dir = path.split('/').at(-2) === '.opencode' ? dirOf(path, 2) : dirOf(path, 1);
+  const dir = dirOverride ?? (path.split('/').at(-2) === '.opencode' ? dirOf(path, 2) : dirOf(path, 1));
   const name = dir ? `OpenCode (${dir})` : 'OpenCode (project)';
   const at = (key: string): Location => ({ file: path, line: lineOf(text, JSON.stringify(key)) || 1 });
   const anchor = { file: path, line: 1 };
@@ -115,21 +121,25 @@ export function parseOpenCode(path: string, text: string, declared: readonly Dec
     return 'unknown';
   };
 
-  if (isRecord(v1) || typeof v1 === 'string') {
-    // V1: a shorthand string applies to every tool; "*" is the default for tools not listed.
-    const permission: Record<string, unknown> = typeof v1 === 'string' ? { '*': v1 } : v1;
+  /** Grants for one V1 permission object, as one OpenCode agent sees it. */
+  const judgeV1 = (permission: Record<string, unknown>, off: ReadonlySet<string>, who: string): void => {
     const fallback = action(permission['*'], 'permission.*', at('permission')) ?? 'allow';
     if (fallback === 'allow' && permission['*'] !== undefined)
-      bypasses.push({ agent: name, what: 'permission "*" = "allow"', location: at('permission') });
+      bypasses.push({ agent: `${name}${who}`, what: 'permission "*" = "allow"', location: at('permission') });
     for (const tool of OPENCODE_TOOLS) {
-      if (tool.disable.some(key => disabled.has(key))) continue;
+      if (tool.disable.some(key => off.has(key))) continue;
       const value = permission[tool.v1];
       const location = value === undefined ? at('permission') : at(tool.v1);
       if (isRecord(value)) {
         // Patterns, the last match winning; "*" is the default for commands no pattern names.
-        const base = action(value['*'], `permission.${tool.v1}.*`, location) ?? fallback;
-        if (base !== 'deny')
-          add(tool.rule, base === 'ask' ? 'ask' : 'auto', location, base === 'unknown' ? 'unknown' : 'yes');
+        const fromPattern = action(value['*'], `permission.${tool.v1}.*`, location) ?? fallback;
+        if (fromPattern !== 'deny')
+          add(
+            tool.rule,
+            fromPattern === 'ask' ? 'ask' : 'auto',
+            location,
+            fromPattern === 'unknown' ? 'unknown' : 'yes',
+          );
         for (const [pattern, raw] of Object.entries(value)) {
           if (pattern === '*') continue;
           const verdict = action(raw, `permission.${tool.v1}.${pattern}`, at(pattern));
@@ -149,16 +159,67 @@ export function parseOpenCode(path: string, text: string, declared: readonly Dec
       grants.push(
         grantOf('privateData', 'external_directory = "allow"', 'auto', at('external_directory'), 'yes', 'Read'),
       );
-    const mcpVerdict = fallback === 'unknown' ? 'allow' : fallback;
-    if (mcpVerdict !== 'deny')
-      for (const server of servers)
+    // MCP tools are named <server>_<tool>: "<server>_*" sets a whole server, "<server>_<tool>" one tool.
+    for (const server of servers) {
+      const own = action(permission[`${server.name}_*`], `permission.${server.name}_*`, at(`${server.name}_*`));
+      const verdict = own ?? (fallback === 'unknown' ? 'allow' : fallback);
+      if (verdict !== 'deny')
         grants.push(
           ...grantsForRule(
             parseRule(`mcp__${server.name}`, server.location),
-            mcpVerdict === 'ask' ? 'ask' : 'auto',
+            verdict === 'ask' ? 'ask' : 'auto',
             servers,
           ),
         );
+      for (const [key, raw] of Object.entries(permission)) {
+        if (!key.startsWith(`${server.name}_`) || key === `${server.name}_*`) continue;
+        if (action(raw, `permission.${key}`, at(key)) !== 'allow') continue;
+        const rule = parseRule(`mcp__${server.name}__${key.slice(server.name.length + 1)}`, at(key));
+        allow.push(rule);
+        grants.push(...grantsForRule(rule, 'auto', servers));
+      }
+    }
+  };
+
+  // Agents can override the permissions and tools: in `agent.<name>` or in `.opencode/agent/*.md`.
+  // Each one is judged, and the OpenCode agent can do whatever any of them can.
+  const overrides: {
+    label: string;
+    permission?: Record<string, unknown>;
+    tools?: Record<string, unknown>;
+    at: Location;
+  }[] = [];
+  if (isRecord(data['agent']))
+    for (const [label, raw] of Object.entries(data['agent']))
+      if (isRecord(raw))
+        overrides.push({
+          label,
+          ...(isRecord(raw['permission']) ? { permission: raw['permission'] } : {}),
+          ...(isRecord(raw['tools']) ? { tools: raw['tools'] } : {}),
+          at: at(label),
+        });
+  for (const file of agentFiles) {
+    const { data: front } = frontmatter(file.text);
+    overrides.push({
+      label: file.path.split('/').at(-1)!.replace(/\.md$/, ''),
+      ...(isRecord(front['permission']) ? { permission: front['permission'] } : {}),
+      ...(isRecord(front['tools']) ? { tools: front['tools'] } : {}),
+      at: { file: file.path, line: 1 },
+    });
+  }
+  const v1Overrides = overrides.some(item => item.permission !== undefined);
+
+  if (isRecord(v1) || typeof v1 === 'string' || (v1Overrides && !v2)) {
+    // V1: a shorthand string applies to every tool; "*" is the default for tools not listed.
+    const base: Record<string, unknown> = typeof v1 === 'string' ? { '*': v1 } : isRecord(v1) ? v1 : {};
+    judgeV1(base, disabled, '');
+    for (const item of overrides) {
+      const off = new Set(disabled);
+      for (const [key, value] of Object.entries(item.tools ?? {}))
+        if (value === false) off.add(key);
+        else if (value === true) off.delete(key);
+      judgeV1({ ...base, ...(item.permission ?? {}) }, off, ` (agent ${item.label})`);
+    }
   } else if (v2) {
     // V2: ordered rules of action, resource and effect; a call no rule matches asks.
     const rules = v2.flatMap(item => {
@@ -319,17 +380,72 @@ export function parseCursorCli(path: string, text: string, servers: readonly Mcp
 // ---------------------------------------------------------------------------------------------
 // GitHub Copilot custom agents
 
-const COPILOT_ALIASES: Readonly<Record<string, readonly string[]>> = {
-  execute: ['execute', 'shell', 'bash', 'powershell', 'terminal', 'run_in_terminal'],
-  edit: ['edit', 'write', 'multiedit', 'str_replace', 'str_replace_editor', 'create'],
-  web: ['web', 'websearch', 'webfetch', 'fetch'],
+/** What a Copilot tool name (GitHub's aliases and VS Code's tool names, lower-cased) does. */
+const COPILOT_TOOLS: Readonly<Record<string, 'execute' | 'edit' | 'web' | 'read' | 'vscode'>> = {
+  execute: 'execute',
+  shell: 'execute',
+  bash: 'execute',
+  powershell: 'execute',
+  terminal: 'execute',
+  runcommands: 'execute',
+  runinterminal: 'execute',
+  run_in_terminal: 'execute',
+  runtasks: 'execute',
+  runtests: 'execute',
+  runnotebooks: 'execute',
+  edit: 'edit',
+  write: 'edit',
+  multiedit: 'edit',
+  notebookedit: 'edit',
+  editnotebook: 'edit',
+  str_replace: 'edit',
+  str_replace_editor: 'edit',
+  create: 'edit',
+  editfiles: 'edit',
+  createfile: 'edit',
+  createdirectory: 'edit',
+  new: 'edit',
+  web: 'web',
+  websearch: 'web',
+  webfetch: 'web',
+  fetch: 'web',
+  githubrepo: 'web',
+  opensimplebrowser: 'web',
+  read: 'read',
+  notebookread: 'read',
+  view: 'read',
+  search: 'read',
+  grep: 'read',
+  glob: 'read',
+  codebase: 'read',
+  usages: 'read',
+  problems: 'read',
+  changes: 'read',
+  findtestfiles: 'read',
+  testfailure: 'read',
+  terminallastcommand: 'read',
+  terminalselection: 'read',
+  getterminaloutput: 'read',
+  vscodeapi: 'read',
+  extensions: 'read',
+  todo: 'read',
+  todos: 'read',
+  todowrite: 'read',
+  think: 'read',
+  agent: 'read',
+  'custom-agent': 'read',
+  task: 'read',
+  runsubagent: 'read',
+  vscode: 'vscode',
 };
 
 /**
  * `.github/agents/<name>.agent.md` (or `<name>.md`): a Copilot custom agent. On the cloud agent
- * nobody approves its calls, so every tool runs without asking; its network is limited by the
- * Copilot firewall, so outbound reach through the shell or the web is unknown rather than yes.
- * The GitHub MCP server (read-only for the repository by default) is on unless `tools` leaves it out.
+ * (no `target`, or `target: github-copilot`) nobody approves its calls, and its network is limited
+ * by the Copilot firewall, so outbound reach through the shell or the web is unknown rather than
+ * yes. It has the GitHub MCP server (read-only for the repository by default) unless `tools`
+ * leaves it out. With `target: vscode` it runs in VS Code, which asks before terminal commands,
+ * fetches and MCP tools. A tool name it does not know is reported, and counted as unknown reach.
  */
 export function parseCopilotAgent(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
   const { data } = frontmatter(text);
@@ -338,54 +454,96 @@ export function parseCopilotAgent(path: string, text: string, declared: readonly
   const name = `Copilot agent ${label}`;
   const toolsLine = { file: path, line: lineOf(text, 'tools:') || 1 };
   const anchor = { file: path, line: 1 };
-  const tools = data['tools'] === undefined ? ['*'] : asStringArray(data['tools']).map(tool => tool.trim());
-  const lower = tools.map(tool => tool.toLowerCase());
-  const all = lower.includes('*');
-  const has = (alias: string) => all || COPILOT_ALIASES[alias]!.some(item => lower.includes(item));
-  const serverTools = (server: string) => tools.filter(tool => tool.startsWith(`${server}/`));
-  const grants: Grant[] = [];
   const at = toolsLine.line > 1 ? toolsLine : anchor;
-  if (has('execute')) {
-    grants.push(grantOf('exec', 'execute', 'auto', at, 'yes', 'shell'));
-    grants.push(grantOf('write', 'execute', 'auto', at, 'yes', 'shell'));
-    grants.push(grantOf('egress', 'execute (behind the Copilot firewall)', 'auto', at, 'unknown', 'shell'));
+  const ide = asString(data['target'])?.toLowerCase() === 'vscode';
+  const prompt: Approval = ide ? 'ask' : 'auto';
+  const tools = data['tools'] === undefined ? ['*'] : asStringArray(data['tools']).map(tool => tool.trim());
+  const all = tools.includes('*');
+  const ownBlock = isRecord(data['mcp-servers']) ? data['mcp-servers'] : {};
+  const servers = serversFromObject({ mcpServers: ownBlock }, path, text, 'copilot', 0, declared);
+  const grants: Grant[] = [];
+  const unrecognized: Unrecognized[] = [];
+  const kinds = new Set<string>(all ? ['execute', 'edit', 'web'] : []);
+  const serverTools = new Map<string, string[]>();
+  for (const tool of tools) {
+    if (tool === '*') continue;
+    const slash = tool.indexOf('/');
+    if (slash > 0) {
+      const server = tool.slice(0, slash);
+      serverTools.set(server, [...(serverTools.get(server) ?? []), tool.slice(slash + 1)]);
+      continue;
+    }
+    // `shell(git:*)` and `#editFiles` name the same tools as `shell` and `editFiles`.
+    const base = tool
+      .replace(/^#/, '')
+      .replace(/\(.*\)$/s, '')
+      .toLowerCase();
+    const kind = COPILOT_TOOLS[base];
+    if (kind) kinds.add(kind);
+    else
+      unrecognized.push({
+        agent: name,
+        setting: 'tools',
+        value: tool,
+        assumed: 'it may run code, write and reach the network without asking',
+        location: at,
+      });
   }
-  if (has('edit')) grants.push(grantOf('write', 'edit', 'auto', at, 'yes', 'edit'));
-  if (has('web')) {
-    grants.push(grantOf('untrustedInput', 'web', 'auto', at, 'yes', 'web'));
-    grants.push(grantOf('egress', 'web (behind the Copilot firewall)', 'auto', at, 'unknown', 'web'));
+  if (kinds.has('execute')) {
+    grants.push(grantOf('exec', 'execute', prompt, at, 'yes', 'shell'));
+    grants.push(grantOf('write', 'execute', prompt, at, 'yes', 'shell'));
+    grants.push(
+      ide
+        ? grantOf('egress', 'execute', prompt, at, 'yes', 'shell')
+        : grantOf('egress', 'execute (behind the Copilot firewall)', prompt, at, 'unknown', 'shell'),
+    );
   }
-  if (all || serverTools('github').length) {
+  if (kinds.has('edit')) grants.push(grantOf('write', 'edit', 'auto', at, 'yes', 'edit'));
+  if (kinds.has('web')) {
+    grants.push(grantOf('untrustedInput', 'web', prompt, at, 'yes', 'web'));
+    grants.push(
+      ide
+        ? grantOf('egress', 'web', prompt, at, 'yes', 'web')
+        : grantOf('egress', 'web (behind the Copilot firewall)', prompt, at, 'unknown', 'web'),
+    );
+  }
+  if (kinds.has('vscode')) grants.push(grantOf('exec', 'vscode (editor commands)', prompt, at, 'unknown', 'vscode'));
+  for (const item of unrecognized)
+    for (const capability of ['exec', 'write', 'egress'] as const)
+      grants.push(grantOf(capability, item.value, prompt, item.location, 'unknown', 'copilot-unknown'));
+  if (!ide && (all || serverTools.has('github'))) {
     grants.push(grantOf('privateData', 'github MCP server (repository)', 'auto', at, 'yes', 'mcp__github'));
     grants.push(
       grantOf('untrustedInput', 'github MCP server (issues and pull requests)', 'auto', at, 'yes', 'mcp__github'),
     );
   }
-  const ownBlock = isRecord(data['mcp-servers']) ? data['mcp-servers'] : {};
-  const servers = serversFromObject({ mcpServers: ownBlock }, path, text, 'copilot', 0, declared);
   for (const server of servers) {
-    const chosen = serverTools(server.name);
-    if (all || chosen.includes(`${server.name}/*`))
-      grants.push(...grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'auto', servers));
+    const chosen = serverTools.get(server.name) ?? [];
+    if (all || chosen.includes('*'))
+      grants.push(...grantsForRule(parseRule(`mcp__${server.name}`, server.location), prompt, servers));
     else
       for (const tool of chosen)
-        grants.push(
-          ...grantsForRule(
-            parseRule(`mcp__${server.name}__${tool.slice(server.name.length + 1)}`, server.location),
-            'auto',
-            servers,
-          ),
-        );
+        grants.push(...grantsForRule(parseRule(`mcp__${server.name}__${tool}`, server.location), prompt, servers));
+  }
+  // Servers configured outside this file (repository settings on GitHub, VS Code's mcp.json):
+  // what they can do is not in the repository, so it is unknown.
+  for (const [server, chosen] of serverTools) {
+    if (servers.some(item => item.name === server) || (server === 'github' && !ide) || server === 'playwright')
+      continue;
+    grants.push(
+      ...grantsForRule(parseRule(`mcp__${server}${chosen.includes('*') ? '' : `__${chosen[0]}`}`, at), prompt, []),
+    );
   }
   const models: ModelChoice[] = [];
   const model = asString(data['model']);
   if (model) models.push({ agent: name, model, location: { file: path, line: lineOf(text, 'model:') || 1 } });
   return {
     ...empty(
-      { id: `copilot:${path}`, kind: 'copilot', name, location: anchor, grants, mediators: [], headless: true },
+      { id: `copilot:${path}`, kind: 'copilot', name, location: anchor, grants, mediators: [], headless: !ide },
       servers,
     ),
     models,
+    unrecognized,
   };
 }
 

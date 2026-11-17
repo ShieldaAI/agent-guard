@@ -225,6 +225,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   if (values.fix && values['fix-dry-run']) return usage('Use --fix or --fix-dry-run, not both.');
   if (values['include-user'] && (values.fix || values['fix-dry-run']))
     return usage('--fix changes repository files only; run it without --include-user.');
+  if (values['include-user'] && values['write-baseline'])
+    return usage('--write-baseline records repository findings; run it without --include-user.');
   const env = io.env ?? process.env;
   if (values['include-user'] && env['CI'] && env['CI'] !== 'false' && env['CI'] !== '0')
     return usage('--include-user reads your own settings; it is for local runs, not CI.');
@@ -302,7 +304,15 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       agentGuardFiles,
       imported,
       ...(live ? { live } : {}),
-      ...(values['include-user'] ? { userFiles: readUserConfig(io.home ?? homedir()) } : {}),
+      ...(values['include-user']
+        ? {
+            userFiles: readUserConfig(io.home ?? homedir(), process.platform, path =>
+              io.stderr(
+                `${TOOL_NAME}: ${path} was not read (larger than 1 MiB, or not a readable file); settings in it are not in this report.\n`,
+              ),
+            ),
+          }
+        : {}),
     };
     let head = scan({ root, ...options });
 

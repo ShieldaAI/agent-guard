@@ -135,12 +135,28 @@ export interface HiddenCharacter {
   readonly codePoint: string;
 }
 
-/** The first hidden character in a text, ignoring a leading byte-order mark. */
+const HIDDEN_ALL = new RegExp(HIDDEN.source, 'gu');
+/** Before a joiner: a pictograph, optionally with a variation selector or skin-tone modifier. */
+const EMOJI_BEFORE = /\p{Extended_Pictographic}(?:\u{FE0F}|\p{Emoji_Modifier})?$/u;
+const EMOJI_AFTER = /^\p{Extended_Pictographic}/u;
+
+/**
+ * The first hidden character in a text, ignoring a leading byte-order mark. A zero-width joiner
+ * between two pictographs is part of an emoji (🧑‍💻), not hidden text.
+ */
 export function findHiddenCharacter(text: string): HiddenCharacter | undefined {
-  const match = HIDDEN.exec(text);
-  if (!match) return undefined;
-  const codePoint = match[0].codePointAt(0)!;
-  return { line: lineAt(text, match.index), codePoint: `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}` };
+  for (const match of text.matchAll(HIDDEN_ALL)) {
+    const index = match.index;
+    if (
+      match[0] === '\u200D' &&
+      EMOJI_BEFORE.test(text.slice(Math.max(0, index - 4), index)) &&
+      EMOJI_AFTER.test(text.slice(index + 1, index + 3))
+    )
+      continue;
+    const codePoint = match[0].codePointAt(0)!;
+    return { line: lineAt(text, index), codePoint: `U+${codePoint.toString(16).toUpperCase().padStart(4, '0')}` };
+  }
+  return undefined;
 }
 
 /** Shows only the first and last characters of a secret. */

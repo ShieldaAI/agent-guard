@@ -92,15 +92,15 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Agent | Files |
 | --- | --- |
 | Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md`, skills and hook scripts, `CLAUDE.md`, `AGENTS.md`, at any depth, so monorepo packages are separate agents |
-| Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, inline `mcpServers` and `hooks/hooks.json` |
+| Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, `mcpServers` and `hooks` (inline or a file in the plugin) and `hooks/hooks.json`. A `.mcp.json` there still counts for Claude Code in that folder too |
 | Agent Plugins | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/` |
 | OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
 | Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
 | GitHub workflows | Steps that use `anthropics/claude-code-action`, `openai/codex-action`, or run `claude -p` or `codex exec` |
 | VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
 | Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
-| OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects and bash patterns, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model` |
-| GitHub Copilot | Custom agents in `.github/agents/*.md` (`tools`, `mcp-servers`, `model`); `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `.github/prompts/*.prompt.md` for the text rules |
+| OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md` |
+| GitHub Copilot | Custom agents in `.github/agents/*.md` (`tools` with GitHub's and VS Code's tool names, `mcp-servers`, `target`, `model`); `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `.github/prompts/*.prompt.md` for the text rules |
 | Kiro | `.kiro/settings/mcp.json` (`autoApprove`, `disabled`); `.kiro/steering/*.md` for the text rules |
 | Windsurf | `.windsurfrules` and `.windsurf/rules/*.md`, for the text rules (its MCP and permission settings live outside the repository) |
 | Agent Guard | `agent-guard*.json` records, or files named in `.agc.yaml` or on the command line |
@@ -111,8 +111,9 @@ URL. The URL must use `https` (plain `http` only for localhost).
 the repository. Files over 1 MiB are skipped and counted.
 
 Amp and Goose keep their permissions outside the repository, so they are not read. A setting
-the scanner does not model, such as a permission mode it does not know or Claude Code's Bash
-sandbox, is reported as AGC-CFG-001 with what the scan assumed instead. It is never ignored.
+the scanner does not model, such as a permission mode or Copilot tool name it does not know, or
+the domains Claude Code's Bash sandbox allows, is reported as AGC-CFG-001 with what the scan
+assumed instead. It is never ignored.
 
 ### Your own settings
 
@@ -125,7 +126,10 @@ only. Your Codex and Gemini CLI settings are listed as their own agents, `Codex 
 `Gemini CLI (~)`. Findings point at `~/...` paths.
 
 It is for local runs only: in CI these files belong to the runner, so the flag is refused when
-`CI` is set, and it cannot be combined with `--fix`, which edits repository files only.
+`CI` is set. It cannot be combined with `--fix`, which edits repository files only, or with
+`--write-baseline`, which would record your own settings as accepted repository findings. A file
+it cannot read (over 1 MiB, or not a regular file) is named on stderr. Managed MCP servers
+(`managed-mcp.json`) count for every project.
 
 ## Pull requests: report only what got worse
 
@@ -278,7 +282,7 @@ agent_map:
   token_env: AGENT_MAP_TOKEN
 policy: {}                # see Policy as code
 mcp_servers:              # what servers the catalog does not know can do
-  internal-docs:          # a config name, catalog ID, package, image or remote host
+  mcp.docs.example.com:   # a package, image, remote host or catalog ID
     capabilities: [untrustedInput]
   "@acme/crm-mcp":
     capabilities: [privateData, write]
@@ -290,10 +294,12 @@ ignore needs a reason.
 
 `mcp_servers` declares what an MCP server can do: the capabilities it has, and the ones it may
 have (`unknown`). Anything not listed is `no`, and `[]` means it can do none of the seven. A
-declaration replaces the built-in catalog entry for that server, and one keyed by the config
-name wins over one keyed by package, image or host. With `--base`, declarations are read from
-the base commit like the rest of `.agc.yaml`, so a change cannot declare its own new server
-harmless.
+declaration is keyed by what runs: the package (`npx`, `uvx` and similar), the container image,
+the remote host, or a catalog ID, and it replaces the built-in catalog entry. It never matches a
+server's name in the config, because a change chooses names: a server called `docs` that runs
+another package is not the declared one. A package run with another command beside it
+(`npx -p pkg node -e ...`) or an image with a replaced entrypoint is not that package or image.
+With `--base`, declarations are read from the base commit like the rest of `.agc.yaml`.
 
 In Markdown, YAML and scripts, a comment on the same line or the line above suppresses one
 rule: `<!-- agc-ignore AGC-SUP-004: installer pinned by checksum -->`. Settings files are
@@ -400,9 +406,12 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   sandbox needs approval unless the policy is `never`. `never` with `danger-full-access` is
   AGC-PERM-001. **Gemini CLI** asks before built-in tools unless they are in `tools.allowed`
   or the approval mode is `yolo`; a trusted MCP server skips confirmation for all its tools.
-- **MCP servers.** A catalog of about 50 well-known servers (GitHub, Slack, Postgres, Fetch,
+- **MCP servers.** A catalog of 44 well-known servers (GitHub, Slack, Postgres, Fetch,
   Playwright, Exa, Zapier, Kubernetes and others) records what each can do, by package, image
   or remote host. Any other server is unknown until `mcp_servers` in `.agc.yaml` declares it.
+- **Sandbox.** With Claude Code's `sandbox.enabled`, sandboxed Bash runs without asking unless
+  `autoAllowBashIfSandboxed` is false, so it counts as "no approval"; its network reach depends
+  on the sandbox's allowed domains, which are not modelled, so it is unknown.
 - **Workflow triggers.** `issues`, `issue_comment`, `pull_request_target`, discussions and
   `workflow_run` carry text anyone can write and run with the repository's secrets.
   `pull_request` from forks gets no secrets and a read-only token, so it is not treated as
@@ -411,15 +420,21 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   `ANTHROPIC_*`, `CLAUDE_CODE_*`) are not counted as data given to the agent.
 - **Runtime checks.** A runtime check counts only for the calls it sees. A `PreToolUse` hook
   sees the tools its matcher names (case-sensitive, whole name; `""`, `*` and `.*` mean every
-  tool); for an MCP server it must match every tool of that server (`mcp__db__.*`). Agent Guard
-  or an MCP gateway reached as an MCP server sees only the calls made through that server, not
-  Bash and not servers configured beside it.
+  tool). For an MCP server one alternative must be `mcp__.*` or `mcp__<server>__.*`: naming one
+  tool of a server does not cover the server. A matcher that is not a valid regular expression
+  on its own, or longer than 512 characters, is not credited, and no hook counts when
+  `disableAllHooks` is set (or only managed hooks, under managed `allowManagedHooksOnly`). Agent
+  Guard or an MCP gateway reached as an MCP server sees only the calls made through that server,
+  not Bash and not servers configured beside it.
 - **Other agents.** Codex runs commands inside its sandbox without asking unless
   `approval_policy` is `untrusted`, and an unknown `sandbox_mode` is judged as no sandbox.
   OpenCode V1 allows tools its `permission` object leaves out, V2 asks for calls no rule
-  matches, and a file with neither is reported as unknown. A Copilot custom agent runs without
-  anyone approving it; its network is behind the Copilot firewall, so outbound reach is
-  unknown, and it has the read-only GitHub MCP server unless `tools` leaves it out. Kiro's
+  matches, and a file with neither is reported as unknown. Every OpenCode agent override is
+  judged, and the OpenCode agent can do what any of its agents can. A Copilot custom agent on the cloud
+  agent runs without anyone approving it; its network is behind the Copilot firewall, so
+  outbound reach is unknown, and it has the read-only GitHub MCP server unless `tools` leaves it
+  out. With `target: vscode` it runs in VS Code, which asks before terminal commands, fetches
+  and MCP tools. A tool name the scanner does not know counts as unknown reach. Kiro's
   `autoApprove` runs the listed tools without a prompt. A plugin's servers ask before their
   tools run, as Claude Code does by default.
 

@@ -1,6 +1,6 @@
 import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
 import { EMPTY_EVIDENCE, readAgentGuardFiles, type AgentGuardEvidence } from './agent-guard.js';
-import type { FileSource } from './source.js';
+import { safeRelative, type FileSource } from './source.js';
 import {
   bashScope,
   deniesWholeTool,
@@ -194,10 +194,15 @@ const AGENT_GUARD_SERVER = /agent-guard(?!-check)/;
 function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly McpServer[]): Mediator[] {
   const out: Mediator[] = [];
   // Each mediator keeps what it sees: a hook its matcher, a guard or gateway only its own server's calls.
+  // Hooks that never run see nothing: disableAllHooks anywhere turns them all off, and managed
+  // allowManagedHooksOnly leaves only the managed ones.
+  const hooksOff = settings.some(file => file.disableAllHooks);
+  const managedOnly = settings.some(file => file.allowManagedHooksOnly && file.path.startsWith(`${MANAGED_DIR}/`));
   for (const file of settings)
-    for (const hook of file.hooks)
-      if (hook.event === 'PreToolUse')
-        out.push({ kind: 'pre-tool-hook', location: hook.location, matcher: hook.matcher });
+    if (!hooksOff && (!managedOnly || file.path.startsWith(`${MANAGED_DIR}/`)))
+      for (const hook of file.hooks)
+        if (hook.event === 'PreToolUse')
+          out.push({ kind: 'pre-tool-hook', location: hook.location, matcher: hook.matcher });
   for (const server of servers) {
     const text = [server.command ?? '', ...server.args, server.url ?? ''].join(' ');
     if (AGENT_GUARD_SERVER.test(text))
@@ -247,7 +252,12 @@ export function buildProject(
   const unrecognized: Unrecognized[] = [];
   const pluginHooks: Hook[] = [];
   const plugins = new Map<string, { name: string; location: Location }>();
+  /** Plugins whose server file could not be read: their reach is unknown. */
+  const pluginUnknown = new Map<string, Location>();
+  const pluginServerFiles = new Map<string, string>();
   const cursorCli: TextFile[] = [];
+  const openCode: TextFile[] = [];
+  const openCodeAgents: TextFile[] = [];
   const fail = (file: string, error: unknown) =>
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
@@ -283,6 +293,11 @@ export function buildProject(
         }
         continue;
       }
+      if (path === `${MANAGED_DIR}/managed-mcp.json`) {
+        const data = parseJsonc(text);
+        if (isRecord(data)) userServers.push(...serversFromObject(data, path, text, 'claude-code', 0, declaredServers));
+        continue;
+      }
       if (path === `${MANAGED_DIR}/managed-settings.json`) {
         settings.push(parseSettings(path, text));
         const data = parseJsonc(text);
@@ -302,6 +317,34 @@ export function buildProject(
         if (isRecord(manifest['mcpServers']))
           servers.push(...serversFromObject(manifest, path, text, 'plugin', 0, declaredServers));
         if (isRecord(manifest['hooks'])) pluginHooks.push(...parseSettings(path, text).hooks);
+        // Either may instead name a file in the plugin: read it from the same source.
+        for (const key of ['mcpServers', 'hooks'] as const) {
+          const named = manifest[key];
+          if (typeof named !== 'string') continue;
+          const relative = safeRelative(
+            [root, named.replace(/^\$\{CLAUDE_PLUGIN_ROOT\}\/?/, '').replace(/^\.\//, '')].filter(Boolean).join('/'),
+          );
+          const content = relative === undefined ? undefined : source.readNamed(relative);
+          if (content === undefined || relative === undefined) {
+            unrecognized.push({
+              agent: `Plugin ${plugins.get(root)!.name}`,
+              setting: key,
+              value: named,
+              assumed:
+                key === 'mcpServers'
+                  ? 'the file was not read, so its servers may read private data, take in untrusted input and send data out'
+                  : 'the file was not read, so its hooks were not judged',
+              location: { file: path, line: lineOf(text, JSON.stringify(key)) || 1 },
+            });
+            if (key === 'mcpServers')
+              pluginUnknown.set(root, { file: path, line: lineOf(text, JSON.stringify(key)) || 1 });
+            continue;
+          }
+          if (key === 'mcpServers') {
+            servers.push(...parseMcpConfig(relative, content, 'plugin', declaredServers));
+            pluginServerFiles.set(root, relative);
+          } else pluginHooks.push(...parseSettings(relative, content).hooks);
+        }
         continue;
       }
       if (name === 'plugin.json' && roots.has(rootOf(path, 1))) {
@@ -331,7 +374,16 @@ export function buildProject(
         continue;
       }
       if (name === 'opencode.json' || name === 'opencode.jsonc') {
-        others.push(parseOpenCode(path, text, declaredServers));
+        openCode.push({ path, text });
+        continue;
+      }
+      if (
+        path.split('/').at(-3) === '.opencode' &&
+        (parent === 'agent' || parent === 'agents') &&
+        name.endsWith('.md')
+      ) {
+        openCodeAgents.push({ path, text });
+        prompts.push({ path, text });
         continue;
       }
       if (parent === '.cursor' && name === 'cli.json') {
@@ -434,6 +486,8 @@ export function buildProject(
     }
   }
 
+  // User-scope and managed servers are judged by the server rules (pinning, secrets, policy) too.
+  servers.push(...userServers, ...localScopeServers);
   const agents: Agent[] = [];
   // User and managed settings apply to every project; Claude Code runs at the root with them alone.
   const userLevel = [
@@ -485,15 +539,35 @@ export function buildProject(
         assumed: 'every tool runs without asking',
         location: modeSetting.location,
       });
-    for (const file of [...local, ...userLevel])
-      if (file.sandbox)
-        unrecognized.push({
-          agent: name,
-          setting: 'sandbox.enabled',
-          value: 'true',
-          assumed: 'Bash is judged as if it ran outside the sandbox, so its reach may be narrower than shown',
-          location: file.sandbox,
-        });
+    // Claude Code's Bash sandbox: sandboxed commands run without asking unless
+    // autoAllowBashIfSandboxed is false, and their network reach is the sandbox's allowed domains,
+    // which the scan does not model.
+    const sandboxed = [...local, ...userLevel].find(file => file.sandbox);
+    const sandboxAuto = sandboxed !== undefined && [...local, ...userLevel].every(file => file.autoAllowSandboxedBash);
+    if (sandboxed)
+      unrecognized.push({
+        agent: name,
+        setting: 'sandbox.enabled',
+        value: 'true',
+        assumed: sandboxAuto
+          ? 'Bash runs without asking inside the sandbox, and its network reach (the sandbox allowed domains) is unknown'
+          : 'Bash asks before it runs; its network reach (the sandbox allowed domains) is unknown',
+        location: sandboxed.sandbox!,
+      });
+    const inSandbox = (list: readonly Grant[]): Grant[] =>
+      !sandboxed
+        ? [...list]
+        : list.map(grant =>
+            grant.tool !== 'Bash'
+              ? grant
+              : {
+                  ...grant,
+                  ...(sandboxAuto && grant.approval === 'ask'
+                    ? { approval: 'auto' as const, via: `${grant.via} (sandboxed, autoAllowBashIfSandboxed)` }
+                    : {}),
+                  ...(grant.capability === 'egress' ? { certainty: 'unknown' as const } : {}),
+                },
+          );
     // What the session could do before its own mode: a subagent with its own mode starts from this.
     const unmoded = withoutDenied(
       [
@@ -520,7 +594,7 @@ export function buildProject(
       kind: 'claude-code',
       name,
       location: anchor,
-      grants: withoutDenied(grants, deny),
+      grants: inSandbox(withoutDenied(grants, deny)),
       mediators,
       headless: false,
     };
@@ -566,7 +640,7 @@ export function buildProject(
           ),
         );
       const deny = sub.disallowedTools.map(tool => parseRule(tool, sub.location));
-      grants = withoutDenied(grants, deny);
+      grants = inSandbox(withoutDenied(grants, deny));
       agents.push({
         id: `subagent:${sub.path}`,
         kind: 'subagent',
@@ -692,6 +766,26 @@ export function buildProject(
     });
   }
 
+  // OpenCode: one agent per folder, with the agents in its .opencode/agent(s)/ folder.
+  const openCodeDir = (path: string) =>
+    path.split('/').at(-2) === '.opencode'
+      ? rootOf(path, 2)
+      : path.includes('/.opencode/') || path.startsWith('.opencode/')
+        ? rootOf(path, 3)
+        : rootOf(path, 1);
+  const openCodeDirs = new Set([...openCode, ...openCodeAgents].map(file => openCodeDir(file.path)));
+  for (const dir of [...openCodeDirs].sort()) {
+    const configs = openCode.filter(file => openCodeDir(file.path) === dir);
+    const mine = openCodeAgents.filter(file => openCodeDir(file.path) === dir);
+    try {
+      if (configs.length)
+        for (const config of configs) others.push(parseOpenCode(config.path, config.text, declaredServers, mine, dir));
+      else others.push(parseOpenCode(mine[0]!.path, '{}', declaredServers, mine, dir));
+    } catch (error) {
+      fail(configs[0]?.path ?? mine[0]!.path, error);
+    }
+  }
+
   for (const file of cursorCli) {
     const dir = file.path.split('/').slice(0, -2).join('/');
     const own = servers.filter(server => server.client === 'cursor' && rootOf(server.location.file, 2) === dir);
@@ -704,7 +798,13 @@ export function buildProject(
 
   for (const [root, plugin] of [...plugins].sort(([a], [b]) => a.localeCompare(b))) {
     const prefix = root ? `${root}/` : '';
-    const files = new Set([`${prefix}.mcp.json`, `${prefix}mcp.json`, `${prefix}.claude-plugin/plugin.json`]);
+    const files = new Set([
+      `${prefix}.mcp.json`,
+      `${prefix}mcp.json`,
+      `${prefix}.claude-plugin/plugin.json`,
+      ...(pluginServerFiles.has(root) ? [pluginServerFiles.get(root)!] : []),
+    ]);
+    const unknownAt = pluginUnknown.get(root);
     const own = servers.filter(
       server => (server.client === 'plugin' || server.client === 'claude-code') && files.has(server.location.file),
     );
@@ -714,7 +814,18 @@ export function buildProject(
       kind: 'plugin',
       name: `Plugin ${plugin.name}`,
       location: plugin.location,
-      grants: own.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', own)),
+      grants: [
+        ...own.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', own)),
+        ...(unknownAt
+          ? (['privateData', 'untrustedInput', 'egress'] as const).map(capability => ({
+              capability,
+              via: 'mcpServers (file not read)',
+              approval: 'ask' as const,
+              certainty: 'unknown' as const,
+              location: unknownAt,
+            }))
+          : []),
+      ],
       mediators: [],
       headless: false,
     });
