@@ -66,7 +66,9 @@ export function scan(options: ScanOptions): ScanResult {
       });
     else named.push({ path: clean, text });
   }
-  const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])]);
+  const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])], {
+    declaredServers: config.mcpServers,
+  });
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
     [...runRules(project, errors, { config, live: options.live }), ...(options.imported ?? [])],

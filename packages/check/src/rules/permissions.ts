@@ -174,7 +174,7 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.tools, ASI.trust],
-      help: 'A subagent’s permissionMode replaces the session’s for its own calls. bypassPermissions skips every prompt; acceptEdits and auto write files without asking. Claude Code ignores permissionMode for plugin subagents, not for project ones.',
+      help: 'A subagent’s permissionMode replaces the session’s for its own calls. bypassPermissions skips every prompt; auto lets a classifier, not a person, approve most calls; acceptEdits writes files without asking. Claude Code ignores permissionMode for plugin subagents, not for project ones.',
     },
     (project, report) => {
       for (const sub of project.subagents) {
@@ -185,16 +185,23 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           // The session's own settings: the same project directory, settings.local.json first.
           .find(file => file.defaultMode && projectDir(file.path) === sub.projectDir)?.defaultMode?.value;
         const agent = project.agents.find(item => item.id === `subagent:${sub.path}`);
-        if (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions')
+        if (
+          (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions') ||
+          (mode.value === 'auto' && parentMode !== 'bypassPermissions' && parentMode !== 'auto')
+        )
           report({
-            message: `Subagent ${sub.name} sets permissionMode: bypassPermissions, so ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'} run without asking.`,
+            message:
+              mode.value === 'auto'
+                ? `Subagent ${sub.name} sets permissionMode: auto, so a classifier, not a person, approves ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'}.`
+                : `Subagent ${sub.name} sets permissionMode: bypassPermissions, so ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'} run without asking.`,
             location: mode.location,
             subject: `mode:${sub.path}`,
             agent,
+            ...(mode.value === 'auto' ? { severity: 'medium' as const } : {}),
             fix: 'Remove permissionMode, or use plan or default and allow the specific tools it needs.',
           });
         else if (
-          (mode.value === 'acceptEdits' || mode.value === 'auto') &&
+          mode.value === 'acceptEdits' &&
           parentMode !== 'acceptEdits' &&
           parentMode !== 'bypassPermissions' &&
           parentMode !== 'auto'

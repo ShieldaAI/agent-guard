@@ -1,7 +1,7 @@
 import { LineCounter, parseDocument, isMap, type Node } from 'yaml';
 import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type McpServer } from './mcp.js';
+import { serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
 import { asString, isRecord, lineOf } from './text.js';
 
 export type AgentAction = 'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli';
@@ -175,7 +175,7 @@ const HARNESS_ENV = /^(OTEL_|CLAUDE_CODE_|ANTHROPIC_|CLAUDE_|DISABLE_|MCP_TIMEOU
 const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 
 /** Reads a workflow file and returns its agent steps. Throws on invalid YAML. */
-export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
+export function parseWorkflow(path: string, text: string, declared: readonly DeclaredServer[] = []): WorkflowAgent[] {
   const counter = new LineCounter();
   const doc = parseDocument(text, { lineCounter: counter, uniqueKeys: false });
   if (doc.errors.length) throw new Error(doc.errors[0]!.message);
@@ -300,7 +300,7 @@ export function parseWorkflow(path: string, text: string): WorkflowAgent[] {
       if (mcpText && mcpText.trim().startsWith('{')) {
         try {
           const mcpKey = input('mcp_config') !== undefined ? 'mcp_config' : 'claude_args';
-          servers = serversFromObject(JSON.parse(mcpText), path, mcpText, 'workflow', inputLine(mcpKey) - 1);
+          servers = serversFromObject(JSON.parse(mcpText), path, mcpText, 'workflow', inputLine(mcpKey) - 1, declared);
         } catch {
           servers = [];
         }

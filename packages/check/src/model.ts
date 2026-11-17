@@ -1,4 +1,4 @@
-import type { Agent, Grant, Location, Mediator } from './types.js';
+import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
 import { EMPTY_EVIDENCE, readAgentGuardFiles, type AgentGuardEvidence } from './agent-guard.js';
 import type { FileSource } from './source.js';
 import {
@@ -10,7 +10,7 @@ import {
   type ClaudeSettings,
   type PermissionRule,
 } from './claude.js';
-import { actionBuiltinServers, parseMcpConfig, serversFromObject, type McpServer } from './mcp.js';
+import { actionBuiltinServers, parseMcpConfig, serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf } from './text.js';
 import {
   parseCodex,
@@ -73,6 +73,8 @@ export interface Project {
   readonly models: readonly ModelChoice[];
   /** Where plugins and plugin marketplaces are fetched from. */
   readonly pluginSources: readonly PluginSource[];
+  /** Settings the scanner does not model, and what it assumed instead. */
+  readonly unrecognized: readonly Unrecognized[];
 }
 
 /** The directory a `.claude/...` or `.mcp.json` path belongs to ('' for the repo root). */
@@ -121,16 +123,41 @@ function withoutDenied(grants: readonly Grant[], deny: readonly PermissionRule[]
   });
 }
 
-/** Whether a PreToolUse matcher (a tool name or a regular expression over names) covers Bash. */
-function coversBash(matcher: string): boolean {
-  const value = matcher.trim();
-  if (value === '' || value === '*') return true;
-  if (/^[A-Za-z0-9_|]+$/.test(value)) return value.split('|').includes('Bash');
-  try {
-    return new RegExp(`^(?:${value})$`).test('Bash');
-  } catch {
-    return false;
-  }
+/** Claude Code permission modes (`manual` is an alias for `default`). */
+const CLAUDE_MODES = new Set(['default', 'manual', 'plan', 'acceptEdits', 'auto', 'dontAsk', 'bypassPermissions']);
+
+/** File commands acceptEdits runs without asking, besides file edits. */
+const ACCEPT_EDITS_COMMANDS = 'Bash(mkdir, touch, mv, cp)';
+
+/**
+ * Applies a permission mode to grants that would otherwise prompt. `bypassPermissions` and `auto`
+ * (a classifier, not a person, approves) run them without asking; `dontAsk` denies them; an unknown
+ * mode is assumed to run them without asking, with the capability marked unknown.
+ */
+function applyMode(grants: readonly Grant[], mode: string | undefined, at: Location, setting: string): Grant[] {
+  if (mode === undefined || mode === 'default' || mode === 'manual' || mode === 'plan' || mode === 'acceptEdits')
+    return [...grants];
+  if (mode === 'dontAsk') return grants.filter(grant => grant.approval !== 'ask');
+  const known = mode === 'bypassPermissions' || mode === 'auto';
+  return grants.map(grant =>
+    grant.approval === 'ask'
+      ? {
+          ...grant,
+          approval: 'auto' as const,
+          via: `${grant.via} (${setting}: ${mode})`,
+          location: at,
+          ...(known ? {} : { certainty: 'unknown' as const }),
+        }
+      : grant,
+  );
+}
+
+/** What acceptEdits adds: file edits and common file commands without asking. */
+function acceptEditsGrants(at: Location): Grant[] {
+  return [
+    ...grantsForRule(parseRule('Edit', at), 'auto', []),
+    { capability: 'write', via: ACCEPT_EDITS_COMMANDS, tool: 'Bash', approval: 'auto', certainty: 'yes', location: at },
+  ];
 }
 
 /** An MCP server that names Agent Guard; not this scanner's own read-only MCP server, which guards nothing. */
@@ -138,16 +165,17 @@ const AGENT_GUARD_SERVER = /agent-guard(?!-check)/;
 
 function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly McpServer[]): Mediator[] {
   const out: Mediator[] = [];
-  // Only a hook that sees shell commands mediates the risky calls this check is about.
+  // Each mediator keeps what it sees: a hook its matcher, a guard or gateway only its own server's calls.
   for (const file of settings)
     for (const hook of file.hooks)
-      if (hook.event === 'PreToolUse' && coversBash(hook.matcher))
-        out.push({ kind: 'pre-tool-hook', location: hook.location });
+      if (hook.event === 'PreToolUse')
+        out.push({ kind: 'pre-tool-hook', location: hook.location, matcher: hook.matcher });
   for (const server of servers) {
     const text = [server.command ?? '', ...server.args, server.url ?? ''].join(' ');
-    if (AGENT_GUARD_SERVER.test(text)) out.push({ kind: 'agent-guard', location: server.location });
+    if (AGENT_GUARD_SERVER.test(text))
+      out.push({ kind: 'agent-guard', location: server.location, server: server.name });
     else if (/\bmcp[- ]gateway\b|docker mcp gateway/.test(text))
-      out.push({ kind: 'mcp-gateway', location: server.location });
+      out.push({ kind: 'mcp-gateway', location: server.location, server: server.name });
   }
   return out;
 }
@@ -156,7 +184,17 @@ function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly Mcp
  * Reads every candidate file in a source and builds the project model. Never throws on bad input.
  * `extraFiles` are read as well (Agent Guard records given on the command line, for example).
  */
-export function buildProject(source: FileSource, extraFiles: readonly TextFile[] = []): Project {
+export interface BuildOptions {
+  /** What MCP servers can do, as the team declared in `.agc.yaml`. */
+  readonly declaredServers?: readonly DeclaredServer[];
+}
+
+export function buildProject(
+  source: FileSource,
+  extraFiles: readonly TextFile[] = [],
+  options: BuildOptions = {},
+): Project {
+  const declaredServers = options.declaredServers ?? [];
   const errors: { file: string; message: string }[] = [];
   const settings: ClaudeSettings[] = [];
   const servers: McpServer[] = [];
@@ -171,6 +209,7 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
   const guardFiles: { path: string; text: string; data: unknown }[] = [];
   const others: OtherAgent[] = [];
   const pluginSources: PluginSource[] = [];
+  const unrecognized: Unrecognized[] = [];
   const fail = (file: string, error: unknown) =>
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
@@ -193,15 +232,17 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
       else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) {
         settings.push(parseSettings(path, text));
         pluginSources.push(...parsePluginSettings(path, text));
-      } else if (parent === '.codex' && name === 'config.toml') others.push(parseCodex(path, text));
-      else if (parent === '.gemini' && name === 'settings.json') others.push(parseGemini(path, text));
+      } else if (parent === '.codex' && name === 'config.toml') others.push(parseCodex(path, text, declaredServers));
+      else if (parent === '.gemini' && name === 'settings.json') others.push(parseGemini(path, text, declaredServers));
       else if (parent === '.claude-plugin' && name === 'marketplace.json')
         pluginSources.push(...parseMarketplace(path, text));
-      else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code'));
-      else if (path.endsWith('.vscode/mcp.json')) servers.push(...parseMcpConfig(path, text, 'vscode'));
-      else if (path.endsWith('.cursor/mcp.json')) servers.push(...parseMcpConfig(path, text, 'cursor'));
+      else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code', declaredServers));
+      else if (path.endsWith('.vscode/mcp.json'))
+        servers.push(...parseMcpConfig(path, text, 'vscode', declaredServers));
+      else if (path.endsWith('.cursor/mcp.json'))
+        servers.push(...parseMcpConfig(path, text, 'cursor', declaredServers));
       else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name))
-        workflows.push(...parseWorkflow(path, text));
+        workflows.push(...parseWorkflow(path, text, declaredServers));
       else if (name === 'CODEOWNERS') codeowners ??= { path, text };
       else if (path === 'package.json') {
         const data = JSON.parse(text) as unknown;
@@ -247,7 +288,7 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
               }
             }
           } else if (isRecord(declared)) Object.assign(inline, declared);
-          const subServers = serversFromObject({ mcpServers: inline }, path, text, 'subagent');
+          const subServers = serversFromObject({ mcpServers: inline }, path, text, 'subagent', 0, declaredServers);
           subagents.push({
             path,
             name: asString(data['name']) ?? name.replace(/\.md$/, ''),
@@ -286,25 +327,49 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     );
     const allow = local.flatMap(file => file.allow);
     const deny = local.flatMap(file => file.deny);
-    const mode = [...local].reverse().find(file => file.defaultMode)?.defaultMode?.value;
+    const modeSetting = [...local].reverse().find(file => file.defaultMode)?.defaultMode;
+    const mode = modeSetting?.value;
     const skip = mode === 'bypassPermissions';
     const anchor: Location = local[0]
       ? { file: local[0].path, line: 1 }
       : localServers[0]
         ? { file: localServers[0].location.file, line: 1 }
         : { file: within(dir, '.claude'), line: 1 };
+    const name = dir ? `Claude Code (${dir})` : 'Claude Code (project)';
+    if (modeSetting && !CLAUDE_MODES.has(modeSetting.value))
+      unrecognized.push({
+        agent: name,
+        setting: 'defaultMode',
+        value: modeSetting.value,
+        assumed: 'every tool runs without asking',
+        location: modeSetting.location,
+      });
+    for (const file of local)
+      if (file.sandbox)
+        unrecognized.push({
+          agent: name,
+          setting: 'sandbox.enabled',
+          value: 'true',
+          assumed: 'Bash is judged as if it ran outside the sandbox, so its reach may be narrower than shown',
+          location: file.sandbox,
+        });
     const grants = [
-      ...baselineGrants(skip ? 'auto' : 'ask', anchor, localServers, allow, deny, skip),
+      ...(skip
+        ? baselineGrants('auto', anchor, localServers, allow, deny, true)
+        : applyMode(
+            baselineGrants('ask', anchor, localServers, allow, deny, false),
+            mode,
+            modeSetting?.location ?? anchor,
+            'defaultMode',
+          )),
       ...allow.flatMap(rule => grantsForRule(rule, 'auto', localServers)),
-      ...(mode === 'acceptEdits'
-        ? grantsForRule(parseRule('Edit', local.find(f => f.defaultMode)!.defaultMode!.location), 'auto', [])
-        : []),
+      ...(mode === 'acceptEdits' ? acceptEditsGrants(modeSetting!.location) : []),
     ];
     const mediators = mediatorsFor(local, localServers);
     const main: Agent = {
       id: `claude-code:${dir || '.'}`,
       kind: 'claude-code',
-      name: dir ? `Claude Code (${dir})` : 'Claude Code (project)',
+      name,
       location: anchor,
       grants: withoutDenied(grants, deny),
       mediators,
@@ -313,10 +378,18 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     agents.push(main);
     for (const sub of subagents.filter(item => item.projectDir === dir)) {
       const mode = sub.permissionMode?.value;
-      const bypass = mode === 'bypassPermissions';
-      const edits = mode === 'acceptEdits' || mode === 'auto';
+      const edits = mode === 'acceptEdits';
+      const ownMode = mode !== undefined && mode !== 'default' && mode !== 'manual' && mode !== 'plan';
+      if (sub.permissionMode && !CLAUDE_MODES.has(sub.permissionMode.value))
+        unrecognized.push({
+          agent: `Subagent ${sub.name}`,
+          setting: 'permissionMode',
+          value: sub.permissionMode.value,
+          assumed: 'every tool it has runs without asking',
+          location: sub.permissionMode.location,
+        });
       // A subagent with no tools list, no own mode and no own servers is the main agent again.
-      if (!sub.tools && !bypass && !edits && !sub.servers.length) continue;
+      if (!sub.tools && !ownMode && !sub.servers.length) continue;
       const tools = sub.tools;
       const keeps = (grant: Grant) =>
         tools === undefined ||
@@ -329,20 +402,18 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
           ));
       const modeAt = sub.permissionMode?.location ?? sub.location;
       const own = sub.servers.flatMap(server =>
-        grantsForRule(parseRule(`mcp__${server.name}`, server.location), bypass ? 'auto' : 'ask', sub.servers),
+        grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', sub.servers),
       );
-      let grants = [...main.grants.filter(keeps), ...own].map(item =>
-        bypass && item.approval === 'ask'
-          ? {
-              ...item,
-              approval: 'auto' as const,
-              via: `${item.via} (permissionMode: bypassPermissions)`,
-              location: modeAt,
-            }
-          : item,
-      );
+      // The subagent's own mode replaces the session's for its calls.
+      let grants = ownMode
+        ? applyMode([...main.grants.filter(keeps), ...own], mode, modeAt, 'permissionMode')
+        : [...main.grants.filter(keeps), ...own];
       if (edits && (tools === undefined || tools.some(tool => ['Edit', 'Write', 'MultiEdit'].includes(tool))))
-        grants.push(...grantsForRule(parseRule('Edit', modeAt), 'auto', []));
+        grants.push(
+          ...acceptEditsGrants(modeAt).filter(
+            grant => tools === undefined || grant.tool !== 'Bash' || tools.includes('Bash'),
+          ),
+        );
       const deny = sub.disallowedTools.map(tool => parseRule(tool, sub.location));
       grants = withoutDenied(grants, deny);
       agents.push({
@@ -508,5 +579,6 @@ export function buildProject(source: FileSource, extraFiles: readonly TextFile[]
     bypasses: others.flatMap(other => other.bypasses),
     models,
     pluginSources,
+    unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
   };
 }

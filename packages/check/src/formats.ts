@@ -1,7 +1,7 @@
 import { parse as parseToml } from 'smol-toml';
-import type { Agent, Approval, Capability, Grant, Location } from './types.js';
+import type { Agent, Approval, Capability, Grant, Location, Unrecognized } from './types.js';
 import { grantsForRule, parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type McpServer } from './mcp.js';
+import { serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
 
 /**
@@ -30,7 +30,12 @@ export interface OtherAgent {
   readonly allow: readonly PermissionRule[];
   readonly bypasses: readonly Bypass[];
   readonly models: readonly ModelChoice[];
+  readonly unrecognized: readonly Unrecognized[];
 }
+
+const CODEX_POLICIES = new Set(['untrusted', 'on-failure', 'on-request', 'never']);
+const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access']);
+const GEMINI_MODES = new Set(['default', 'auto_edit', 'yolo', 'plan']);
 
 function lineOfKey(text: string, key: string, from = 0): number {
   const lines = text.split('\n');
@@ -56,7 +61,7 @@ const grant = (
 ): Grant => ({ capability, via, approval, certainty, location, ...(tool ? { tool } : {}) });
 
 /** `.codex/config.toml`. Throws on invalid TOML so the caller can report it. */
-export function parseCodex(path: string, text: string): OtherAgent {
+export function parseCodex(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
   const data = parseToml(text) as Record<string, unknown>;
   const at = (key: string): Location => ({ file: path, line: lineOfKey(text, key) || 1 });
   const policy = data['approval_policy'];
@@ -69,8 +74,28 @@ export function parseCodex(path: string, text: string): OtherAgent {
   const policyAt = policy === undefined ? { file: path, line: 1 } : at('approval_policy');
   const sandboxAt = data['sandbox_mode'] === undefined ? { file: path, line: 1 } : at('sandbox_mode');
   const grants: Grant[] = [];
+  const unrecognized: Unrecognized[] = [];
   const via = (detail: string) => `Codex ${detail}`;
-  if (sandbox === 'danger-full-access') {
+  if (typeof policy === 'string' && !CODEX_POLICIES.has(policy))
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'approval_policy',
+      value: policy,
+      assumed: 'commands run without asking',
+      location: policyAt,
+    });
+  if (!CODEX_SANDBOXES.has(sandbox)) {
+    // Never assume a sandbox the scanner cannot name: judge it as no sandbox, with the reach unknown.
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'sandbox_mode',
+      value: sandbox,
+      assumed: 'no sandbox: commands may write, run code and reach the network',
+      location: sandboxAt,
+    });
+    for (const capability of ['exec', 'write', 'egress'] as const)
+      grants.push(grant(capability, via(`sandbox_mode = "${sandbox}"`), approval, sandboxAt, 'unknown', 'shell'));
+  } else if (sandbox === 'danger-full-access') {
     for (const capability of ['exec', 'write', 'egress'] as const)
       grants.push(grant(capability, via('sandbox_mode = "danger-full-access"'), approval, sandboxAt, 'yes', 'shell'));
   } else if (sandbox === 'workspace-write') {
@@ -103,7 +128,7 @@ export function parseCodex(path: string, text: string): OtherAgent {
   for (const [name, raw] of Object.entries(mcp)) {
     if (!isRecord(raw) || raw['enabled'] === false) continue;
     const line = lineOfTable(text, `mcp_servers.${name}`) || lineOfTable(text, `mcp_servers."${name}"`) || 1;
-    const [server] = serversFromObject({ mcpServers: { [name]: raw } }, path, '', 'codex');
+    const [server] = serversFromObject({ mcpServers: { [name]: raw } }, path, '', 'codex', 0, declared);
     if (!server) continue;
     const located: McpServer = { ...server, location: { file: path, line } };
     servers.push(located);
@@ -149,6 +174,7 @@ export function parseCodex(path: string, text: string): OtherAgent {
     allow: [],
     bypasses,
     models,
+    unrecognized,
   };
 }
 
@@ -179,7 +205,7 @@ function geminiRule(name: string): string | undefined {
 }
 
 /** `.gemini/settings.json` (both the nested v2 layout and the flat v1 one). Throws on invalid JSON. */
-export function parseGemini(path: string, text: string): OtherAgent {
+export function parseGemini(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
   const data = parseJsonc(text);
   if (!isRecord(data)) throw new Error('settings must be an object');
   const tools = isRecord(data['tools']) ? data['tools'] : {};
@@ -192,8 +218,18 @@ export function parseGemini(path: string, text: string): OtherAgent {
     Array.isArray(tools['core']) || Array.isArray(data['coreTools']) ? list(tools['core'], data['coreTools']) : null;
   const excluded = list(tools['exclude'], data['excludeTools']);
   const mode = asString(general['defaultApprovalMode']) ?? asString(data['defaultApprovalMode']);
+  const unrecognized: Unrecognized[] = [];
+  const unknownMode = mode !== undefined && !GEMINI_MODES.has(mode);
+  if (unknownMode)
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'defaultApprovalMode',
+      value: mode,
+      assumed: 'every tool runs without asking',
+      location: at('defaultApprovalMode'),
+    });
   const yolo = mode === 'yolo' && security['disableYoloMode'] !== true;
-  const servers = serversFromObject(data, path, text, 'gemini');
+  const servers = serversFromObject(data, path, text, 'gemini', 0, declared);
   const available = (rule: string) => {
     const base = rule.split('(')[0]!;
     if (excluded.some(item => item === rule || geminiRule(item) === rule || geminiRule(item)?.split('(')[0] === base))
@@ -204,7 +240,12 @@ export function parseGemini(path: string, text: string): OtherAgent {
   const grants: Grant[] = [];
   // Built-in tools are available with confirmation unless excluded or left out of tools.core.
   for (const base of ['Bash', 'Edit', 'WebFetch', 'WebSearch'])
-    if (available(base)) grants.push(...grantsForRule(parseRule(base, anchor), yolo ? 'auto' : 'ask', []));
+    if (available(base))
+      grants.push(
+        ...grantsForRule(parseRule(base, anchor), yolo || unknownMode ? 'auto' : 'ask', []).map(item =>
+          unknownMode ? { ...item, certainty: 'unknown' as const } : item,
+        ),
+      );
   if (mode === 'auto_edit' && available('Edit'))
     grants.push(...grantsForRule(parseRule('Edit', at('defaultApprovalMode')), 'auto', []));
   const allow: PermissionRule[] = [];
@@ -251,6 +292,7 @@ export function parseGemini(path: string, text: string): OtherAgent {
     allow,
     bypasses,
     models,
+    unrecognized,
   };
 }
 

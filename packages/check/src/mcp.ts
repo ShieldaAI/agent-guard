@@ -166,6 +166,164 @@ const CATALOG: readonly (CatalogEntry & {
     hosts: ['mcp.stripe.com'],
     capabilities: { privateData: 'yes', write: 'yes', spend: 'yes' },
   },
+  // Servers that only think or read the clock: nothing to reach.
+  {
+    id: 'sequential-thinking',
+    label: 'Sequential Thinking',
+    packages: ['@modelcontextprotocol/server-sequential-thinking'],
+    images: ['mcp/sequentialthinking'],
+    capabilities: {},
+  },
+  {
+    id: 'time',
+    label: 'Time',
+    packages: ['mcp-server-time'],
+    images: ['mcp/time'],
+    capabilities: {},
+  },
+  // Documentation servers: they return text written by others, and send only the query to one vendor.
+  {
+    id: 'microsoft-learn',
+    label: 'Microsoft Learn docs',
+    hosts: ['learn.microsoft.com'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'aws-documentation',
+    label: 'AWS documentation',
+    packages: ['awslabs.aws-documentation-mcp-server'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'cloudflare-docs',
+    label: 'Cloudflare docs',
+    hosts: ['docs.mcp.cloudflare.com'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'shopify-dev',
+    label: 'Shopify dev docs',
+    packages: ['@shopify/dev-mcp'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    hosts: ['huggingface.co', 'hf.co'],
+    // Spaces added as tools run on other people's servers with the arguments they are given.
+    capabilities: { untrustedInput: 'yes', egress: 'unknown' },
+  },
+  {
+    id: 'terraform',
+    label: 'Terraform registry',
+    images: ['hashicorp/terraform-mcp-server'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  // Web search and browsing: outside text comes in, and queries or page requests go to any host.
+  {
+    id: 'exa',
+    label: 'Exa search',
+    packages: ['exa-mcp-server'],
+    hosts: ['mcp.exa.ai'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'tavily',
+    label: 'Tavily search',
+    packages: ['tavily-mcp'],
+    hosts: ['mcp.tavily.com'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'firecrawl',
+    label: 'Firecrawl',
+    packages: ['firecrawl-mcp'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'google-maps',
+    label: 'Google Maps',
+    packages: ['@modelcontextprotocol/server-google-maps'],
+    images: ['mcp/google-maps'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'chrome-devtools',
+    label: 'Chrome DevTools browser',
+    packages: ['chrome-devtools-mcp'],
+    // It drives a Chrome profile, which may hold the user's sign-ins.
+    capabilities: { untrustedInput: 'yes', egress: 'yes', privateData: 'unknown' },
+  },
+  {
+    id: 'browsermcp',
+    label: 'Browser MCP (your own browser)',
+    packages: ['@browsermcp/mcp'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes', privateData: 'yes' },
+  },
+  // Data stores and SaaS accounts: the account's data, and changes to it.
+  {
+    id: 'redis',
+    label: 'Redis',
+    packages: ['@modelcontextprotocol/server-redis'],
+    images: ['mcp/redis'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'mongodb',
+    label: 'MongoDB',
+    packages: ['mongodb-mcp-server'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'neon',
+    label: 'Neon',
+    packages: ['@neondatabase/mcp-server-neon'],
+    hosts: ['mcp.neon.tech'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'kubernetes',
+    label: 'Kubernetes',
+    packages: ['mcp-server-kubernetes'],
+    capabilities: { privateData: 'yes', write: 'yes', exec: 'yes' },
+  },
+  {
+    id: 'mcp-atlassian',
+    label: 'Atlassian (community server)',
+    packages: ['mcp-atlassian'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'figma',
+    label: 'Figma',
+    hosts: ['mcp.figma.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes' },
+  },
+  {
+    id: 'vercel',
+    label: 'Vercel',
+    hosts: ['mcp.vercel.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'unknown' },
+  },
+  {
+    id: 'posthog',
+    label: 'PostHog',
+    hosts: ['mcp.posthog.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'asana',
+    label: 'Asana',
+    hosts: ['mcp.asana.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'zapier',
+    label: 'Zapier',
+    hosts: ['mcp.zapier.com'],
+    // Its tools are whatever actions the account set up: anything, including sending and paying.
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes', egress: 'yes', spend: 'unknown' },
+  },
 ];
 
 /** Commands that fetch and run a package named in their arguments. */
@@ -272,7 +430,23 @@ export function dockerImage(command: string | undefined, args: readonly string[]
   return undefined;
 }
 
-function identify(command: string | undefined, args: readonly string[], url: string | undefined) {
+/**
+ * A team's own statement of what an MCP server can do, from `.agc.yaml` (`mcp_servers`). `match` is a
+ * server's config name, a catalog ID, a package, an image or a remote host. It takes precedence over
+ * the built-in catalog.
+ */
+export interface DeclaredServer {
+  readonly match: string;
+  readonly capabilities: Readonly<Partial<Record<Capability, 'yes' | 'unknown'>>>;
+}
+
+function identify(
+  name: string,
+  command: string | undefined,
+  args: readonly string[],
+  url: string | undefined,
+  declared: readonly DeclaredServer[],
+): CatalogEntry | undefined {
   const runner = runnerPackage(command, args);
   const pkg = runner ? splitSpec(runner.spec).name : undefined;
   const image = dockerImage(command, args)
@@ -286,13 +460,26 @@ function identify(command: string | undefined, args: readonly string[], url: str
       host = undefined;
     }
   }
-  return CATALOG.find(
+  const known = CATALOG.find(
     entry =>
       (pkg !== undefined && entry.packages?.includes(pkg)) ||
       (image !== undefined && entry.images?.includes(image)) ||
       (host !== undefined && entry.hosts?.includes(host)),
   );
+  // A declaration by config name wins over one by package, image, host or catalog ID.
+  const keys = [name, pkg, image, host, known?.id].filter((key): key is string => key !== undefined);
+  const own = keys.map(key => declared.find(item => item.match === key)).find(item => item !== undefined);
+  if (own)
+    return {
+      id: `declared:${own.match}`,
+      label: `declared in .agc.yaml as "${own.match}"`,
+      capabilities: own.capabilities,
+    };
+  return known ? { id: known.id, label: known.label, capabilities: known.capabilities } : undefined;
 }
+
+/** Built-in catalog IDs, for validating declarations and for documentation. */
+export const CATALOG_IDS: readonly string[] = CATALOG.map(entry => entry.id);
 
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
@@ -305,9 +492,14 @@ function stringRecord(value: unknown): Record<string, string> {
  * Reads the servers in an MCP config. `.mcp.json` and Cursor use `mcpServers`; VS Code uses `servers`.
  * Throws on invalid JSON so the caller can report it.
  */
-export function parseMcpConfig(path: string, text: string, client: McpServer['client']): McpServer[] {
+export function parseMcpConfig(
+  path: string,
+  text: string,
+  client: McpServer['client'],
+  declared: readonly DeclaredServer[] = [],
+): McpServer[] {
   const parsed = parseJsonc(text);
-  return serversFromObject(parsed, path, text, client);
+  return serversFromObject(parsed, path, text, client, 0, declared);
 }
 
 export function serversFromObject(
@@ -316,6 +508,7 @@ export function serversFromObject(
   text: string,
   client: McpServer['client'],
   lineOffset = 0,
+  declared: readonly DeclaredServer[] = [],
 ): McpServer[] {
   if (!isRecord(parsed)) return [];
   const block = isRecord(parsed['mcpServers'])
@@ -329,7 +522,7 @@ export function serversFromObject(
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    const catalog = identify(command, args, url);
+    const catalog = identify(name, command, args, url, declared);
     servers.push({
       name,
       client,
@@ -339,7 +532,7 @@ export function serversFromObject(
       env: stringRecord(raw['env']),
       headers: stringRecord(raw['headers']),
       location: { file: path, line: lineOf(text, JSON.stringify(name)) + lineOffset },
-      ...(catalog ? { catalog: { id: catalog.id, label: catalog.label, capabilities: catalog.capabilities } } : {}),
+      ...(catalog ? { catalog } : {}),
     });
   }
   return servers;

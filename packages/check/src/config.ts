@@ -2,6 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import type { Capability, Confidence, Finding, Severity, Suppressed } from './types.js';
 import { CAPABILITIES, SEVERITY_ORDER } from './types.js';
 import { isRecord } from './text.js';
+import type { DeclaredServer } from './mcp.js';
 
 export type FailOn = Severity | 'none';
 
@@ -51,6 +52,8 @@ export interface CheckConfig {
   readonly agentGuard: AgentGuardLimits;
   readonly agentMap: AgentMapConfig | null;
   readonly policy: PolicyConfig;
+  /** What MCP servers the catalog does not know (or knows differently) can do, as the team declares. */
+  readonly mcpServers: readonly DeclaredServer[];
 }
 
 export const DEFAULT_CONFIG: CheckConfig = Object.freeze({
@@ -61,10 +64,20 @@ export const DEFAULT_CONFIG: CheckConfig = Object.freeze({
   agentGuard: Object.freeze({ files: Object.freeze([]), maxDeadlineHours: 24, maxCalls: 1000, maxCost: null }),
   agentMap: null,
   policy: Object.freeze({ allowedMcpServers: null, allowedMcpHosts: null, forbid: Object.freeze([]) }),
+  mcpServers: Object.freeze([]),
 });
 
 const SEVERITIES = new Set<string>(SEVERITY_ORDER);
-const TOP_KEYS = ['fail_on', 'min_confidence', 'severity', 'ignore', 'agent_guard', 'agent_map', 'policy'];
+const TOP_KEYS = [
+  'fail_on',
+  'min_confidence',
+  'severity',
+  'ignore',
+  'agent_guard',
+  'agent_map',
+  'policy',
+  'mcp_servers',
+];
 
 function onlyKeys(value: Record<string, unknown>, allowed: readonly string[], where: string): void {
   for (const key of Object.keys(value))
@@ -173,6 +186,43 @@ function parsePolicy(value: unknown): PolicyConfig {
   };
 }
 
+function capabilityList(value: unknown, where: string): Capability[] {
+  if (value === undefined) return [];
+  const list = Array.isArray(value) ? value : null;
+  if (!list || !list.every(item => typeof item === 'string'))
+    throw new Error(`.agc.yaml: ${where} must be a list of capabilities (${CAPABILITIES.join(', ')})`);
+  for (const item of list)
+    if (!(CAPABILITIES as readonly string[]).includes(item))
+      throw new Error(`.agc.yaml: ${where}: unknown capability "${item}" (use ${CAPABILITIES.join(', ')})`);
+  return list as Capability[];
+}
+
+/**
+ * `mcp_servers`: what a server can do, keyed by its config name, catalog ID, package, image or host.
+ * `capabilities` lists what it can do; `unknown` lists what it may do. Anything not listed is no.
+ */
+function parseMcpServers(value: unknown): DeclaredServer[] {
+  if (value === undefined) return [];
+  if (!isRecord(value)) throw new Error('.agc.yaml: mcp_servers must map a server to its capabilities');
+  const out: DeclaredServer[] = [];
+  for (const [match, entry] of Object.entries(value)) {
+    const where = `mcp_servers.${match}`;
+    if (!match.trim()) throw new Error('.agc.yaml: mcp_servers keys must not be empty');
+    if (!isRecord(entry) || entry['capabilities'] === undefined)
+      throw new Error(`.agc.yaml: ${where} needs a capabilities list ([] for none)`);
+    onlyKeys(entry, ['capabilities', 'unknown'], `${where}.`);
+    const yes = capabilityList(entry['capabilities'], `${where}.capabilities`);
+    const maybe = capabilityList(entry['unknown'], `${where}.unknown`);
+    const both = yes.find(item => maybe.includes(item));
+    if (both) throw new Error(`.agc.yaml: ${where}: ${both} is listed as both a capability and unknown`);
+    const capabilities: Partial<Record<Capability, 'yes' | 'unknown'>> = {};
+    for (const item of yes) capabilities[item] = 'yes';
+    for (const item of maybe) capabilities[item] = 'unknown';
+    out.push({ match: match.trim(), capabilities });
+  }
+  return out;
+}
+
 /** Parses `.agc.yaml`. Unknown keys and invalid values are errors, so a typo never silently disables a check. */
 export function parseConfig(text: string): CheckConfig {
   const data = parseYaml(text, { maxAliasCount: 20 }) as unknown;
@@ -217,6 +267,7 @@ export function parseConfig(text: string): CheckConfig {
     agentGuard: parseAgentGuard(data['agent_guard']),
     agentMap: parseAgentMap(data['agent_map']),
     policy: parsePolicy(data['policy']),
+    mcpServers: parseMcpServers(data['mcp_servers']),
   };
 }
 

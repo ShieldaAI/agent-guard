@@ -2,7 +2,7 @@ import { ASI, rule } from './common.js';
 import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
 import { bashScope, parseRule } from '../claude.js';
-import { authority } from '../authority.js';
+import { authority, isMediated } from '../authority.js';
 
 export const GOVERNANCE_RULES: readonly Rule[] = [
   rule(
@@ -64,11 +64,11 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       severity: 'medium',
       confidence: 'high',
       owasp: [ASI.tools],
-      help: 'Static config is a promise; a runtime check (Agent Guard, a pre-tool hook, an MCP gateway) is what stops a steered agent at call time.',
+      help: 'Static config is a promise; a runtime check (Agent Guard, a pre-tool hook, an MCP gateway) is what stops a steered agent at call time. A check counts only for the calls it sees: a hook for the tools its matcher names, a guard or gateway for the calls made through it.',
     },
     (project, report) => {
       for (const agent of project.agents) {
-        if (agent.kind === 'subagent' || agent.mediators.length) continue;
+        if (agent.kind === 'subagent') continue;
         const a = authority(agent);
         // Only paths that reach an arbitrary host or run arbitrary code count. Running the project's own
         // commands is expected, and posting to the repository through its token is judged by AGC-TRG-001.
@@ -79,7 +79,9 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           grant.certainty === 'yes' &&
           !/^(GITHUB_TOKEN|Claude GitHub App token|default GITHUB_TOKEN)/.test(grant.via) &&
           !(grant.tool ?? '').startsWith('mcp__github_') &&
-          (grant.tool !== 'Bash' || ['any', 'network'].includes(scopeOf(grant) ?? ''));
+          (grant.tool !== 'Bash' || ['any', 'network'].includes(scopeOf(grant) ?? '')) &&
+          // A runtime check counts only for the calls it sees: a Bash hook does not see WebFetch.
+          !isMediated(agent, grant);
         const egress = a.egress.grants.filter(arbitrary);
         const exec = a.exec.grants.filter(arbitrary);
         const risky = [
@@ -87,12 +89,15 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           ...(exec.length ? [{ label: 'run code', grant: exec[0]! }] : []),
         ];
         if (!risky.length) continue;
+        const vias = [...new Set(risky.map(item => item.grant.via))].join(', ');
         report({
-          message: `${agent.name} can ${risky.map(item => item.label).join(' and ')} without approval (${[...new Set(risky.map(item => item.grant.via))].join(', ')}), and nothing checks those calls at runtime.`,
+          message: agent.mediators.length
+            ? `${agent.name} can ${risky.map(item => item.label).join(' and ')} without approval (${vias}), and its runtime checks do not see those calls.`
+            : `${agent.name} can ${risky.map(item => item.label).join(' and ')} without approval (${vias}), and nothing checks those calls at runtime.`,
           location: risky[0]!.grant.location,
           subject: 'coverage',
           agent,
-          fix: 'Add a runtime check: Agent Guard, a PreToolUse hook, or an MCP gateway.',
+          fix: 'Add a runtime check that sees these calls: a PreToolUse hook whose matcher names these tools, or route them through Agent Guard or an MCP gateway.',
         });
       }
     },
@@ -117,6 +122,25 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           fix: 'Use a full, dated model ID.',
         });
       }
+    },
+  ),
+  rule(
+    {
+      id: 'AGC-CFG-001',
+      title: 'Agent setting the scanner does not model',
+      severity: 'info',
+      confidence: 'low',
+      owasp: [ASI.tools],
+      help: 'Agent tools add settings and values faster than any scanner. When this one meets a value it does not know, it assumes the widest reading and says so here, rather than ignoring the setting. Report it so the scanner can learn the value.',
+    },
+    (project, report) => {
+      for (const item of project.unrecognized)
+        report({
+          message: `${item.agent}: ${item.setting} = "${item.value}" is not modelled; the scan assumed ${item.assumed}.`,
+          location: item.location,
+          subject: `${item.setting}:${item.value}`,
+          fix: 'Check this capability by hand. If the value is valid, report it so the scanner can model it.',
+        });
     },
   ),
 ];

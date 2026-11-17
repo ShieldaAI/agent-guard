@@ -2,7 +2,7 @@ export { scan, diffScans } from './scan.js';
 export type { ScanOptions, ScanDiff, CapabilityChange } from './scan.js';
 export { DirectorySource, GitSource, MemorySource, isCandidate, safeRelative } from './source.js';
 export type { FileSource } from './source.js';
-export { authority, capabilityState } from './authority.js';
+export { authority, capabilityState, mediates } from './authority.js';
 export { RULES, RULES_BY_ID } from './rules/index.js';
 export { fetchLiveEvidence, AgentMapError } from './agent-map.js';
 export type { LiveEvidence, LiveOptions, LiveSource } from './agent-map.js';

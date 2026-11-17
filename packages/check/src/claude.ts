@@ -30,6 +30,8 @@ export interface ClaudeSettings {
   readonly hooks: readonly Hook[];
   readonly env: readonly { readonly name: string; readonly value: string; readonly location: Location }[];
   readonly enableAllProjectMcpServers: boolean;
+  /** Where `sandbox.enabled: true` is set: Bash runs in a sandbox the scanner does not model. */
+  readonly sandbox?: Location;
 }
 
 export function parseRule(raw: string, location: Location): PermissionRule {
@@ -116,6 +118,7 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
     hooks,
     env,
     enableAllProjectMcpServers: data['enableAllProjectMcpServers'] === true,
+    ...(isRecord(data['sandbox']) && data['sandbox']['enabled'] === true ? { sandbox: at('"sandbox"') } : {}),
   };
 }
 

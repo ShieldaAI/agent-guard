@@ -402,7 +402,8 @@ test('Bash commands that run code, fetch or write are not treated as local reads
 
 test('only a hook that sees Bash, and not this scanner, counts as a runtime check', () => {
   const covered = hooks =>
-    scanFiles({ '.claude/settings.json': settings({ allow: ['Bash(*)'] }, { hooks }) }).agents[0].mediators.length > 0;
+    findingsFor(scanFiles({ '.claude/settings.json': settings({ allow: ['Bash(*)'] }, { hooks }) }), 'AGC-COV-001')
+      .length === 0;
   const hook = matcher => ({ PreToolUse: [{ matcher, hooks: [{ type: 'command', command: 'guard.sh' }] }] });
   assert.equal(covered(hook('Write|Edit')), false);
   assert.equal(covered(hook('Bash')), true);

@@ -47,10 +47,30 @@ export interface Grant {
 
 export type AgentKind = 'claude-code' | 'subagent' | 'workflow' | 'mcp-client' | 'codex' | 'gemini';
 
-/** Something that mediates tool calls at runtime. */
+/**
+ * A setting the scanner does not model: an unknown value, or a feature it does not evaluate. The
+ * result says what was assumed, which is never safer than the worst case it could stand for.
+ */
+export interface Unrecognized {
+  readonly agent: string;
+  readonly setting: string;
+  readonly value: string;
+  readonly assumed: string;
+  readonly location: Location;
+}
+
+/**
+ * Something that mediates tool calls at runtime, and which calls it sees. A pre-tool hook sees the
+ * tools its `matcher` names; Agent Guard or a gateway reached as an MCP server sees only the calls
+ * made through that `server`. Every other call bypasses it.
+ */
 export interface Mediator {
   readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway';
   readonly location: Location;
+  /** For a hook: its matcher (`''` or `*` means every tool). */
+  readonly matcher?: string;
+  /** For Agent Guard or a gateway reached over MCP: the server's name in the agent's config. */
+  readonly server?: string;
 }
 
 export interface Agent {

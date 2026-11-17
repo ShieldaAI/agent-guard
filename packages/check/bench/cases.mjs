@@ -782,6 +782,42 @@ export const CASES = [
       ),
     },
   },
+  {
+    id: 'cov1-hook-misses-webfetch',
+    rule: 'AGC-COV-001',
+    expect: true,
+    files: {
+      '.claude/settings.json': settings(
+        { allow: ['Bash', 'WebFetch'] },
+        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './check.sh' }] }] } },
+      ),
+    },
+  },
+  {
+    id: 'cov1-server-beside-gateway',
+    rule: 'AGC-COV-001',
+    expect: true,
+    files: {
+      '.claude/settings.json': settings({ allow: ['mcp__fetch'] }),
+      '.mcp.json': mcp({
+        gateway: { command: 'docker', args: ['mcp', 'gateway', 'run'] },
+        fetch: { command: 'uvx', args: ['mcp-server-fetch==2025.4.7'] },
+      }),
+    },
+  },
+
+  {
+    id: 'cfg1-unknown-mode',
+    rule: 'AGC-CFG-001',
+    expect: true,
+    files: { '.claude/settings.json': settings({ defaultMode: 'turbo' }) },
+  },
+  {
+    id: 'cfg1-known-mode',
+    rule: 'AGC-CFG-001',
+    expect: false,
+    files: { '.claude/settings.json': settings({ defaultMode: 'dontAsk' }) },
+  },
 
   // ---- policy as code ----
   {
