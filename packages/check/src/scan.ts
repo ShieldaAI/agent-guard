@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import type { Finding, ScanResult } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
 import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
@@ -24,6 +25,8 @@ export interface ScanOptions {
   readonly live?: LiveEvidence;
   /** Findings from other tools (see `importSarif`), reported and suppressed like this tool's own. */
   readonly imported?: readonly Finding[];
+  /** Settings outside the repository that apply to the person running the scan (`readUserConfig`). */
+  readonly userFiles?: readonly TextFile[];
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -68,6 +71,7 @@ export function scan(options: ScanOptions): ScanResult {
   }
   const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])], {
     declaredServers: config.mcpServers,
+    ...(options.userFiles ? { userFiles: options.userFiles, root: resolve(options.root) } : {}),
   });
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(

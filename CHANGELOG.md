@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased
+
+### Check
+
+- Fix: AGC-COV-001 counts a runtime check only for the calls it sees. A `PreToolUse` hook on
+  `Bash` no longer hides an unchecked `WebFetch` or MCP server, and Agent Guard or an MCP gateway
+  reached as an MCP server covers only the calls made through that server. The text report says
+  what each check sees, for example `pre-tool-hook (Bash)`.
+- Fix: Claude Code permission modes `auto`, `dontAsk` and `manual` are modelled; `acceptEdits`
+  also runs `mkdir`, `touch`, `mv` and `cp` without asking; a subagent in `auto` mode is reported
+  by AGC-PERM-006 (medium). An unknown mode, Codex `sandbox_mode` or `approval_policy`, or Gemini
+  approval mode is judged at its widest instead of being ignored.
+- Add: AGC-CFG-001 (info, low confidence) reports a setting the scanner does not model, with
+  what it assumed: unknown modes, Cursor CLI tokens, OpenCode actions, OpenCode files with no
+  permission settings, and Claude Code's Bash sandbox.
+- Add: `mcp_servers` in `.agc.yaml` declares what an MCP server can do, by config name, catalog
+  ID, package, image or host. With `--base` it is read from the base commit.
+- Add: the MCP catalog knows 26 more servers (search, browsers, documentation, databases,
+  Kubernetes and SaaS accounts such as Zapier, Asana, Figma and PostHog).
+- Add: OpenCode (`opencode.json`), the Cursor CLI (`.cursor/cli.json`), GitHub Copilot custom
+  agents (`.github/agents/*.md`), Kiro (`.kiro/settings/mcp.json`), Claude Code plugin folders
+  and Agent Plugins are read as agents. Copilot, Cursor, Windsurf and Kiro instruction files
+  feed the text rules.
+- Add: `--include-user` merges your own settings (`~/.claude`, `~/.claude.json`, `~/.codex`,
+  `~/.gemini`, managed settings) in Claude Code's order. Local runs only: refused when `CI` is
+  set and with `--fix`.
+- Add: `schemas/agent-guard-check-inventory-v1.schema.json` publishes the `--format inventory`
+  output, and a test keeps them in step.
+
 ## 1.3.0 — 2026-11-16
 
 ### Core

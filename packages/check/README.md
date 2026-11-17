@@ -40,7 +40,7 @@ Findings:
            Fix: Require approval for "WebFetch", or remove one of the three legs.
   MEDIUM   AGC-COV-001  .claude/settings.json:1
            Claude Code (project) can send data out without approval (WebFetch), and nothing checks those calls at runtime.
-           Fix: Add a runtime check: Agent Guard, a PreToolUse hook, or an MCP gateway.
+           Fix: Add a runtime check that sees these calls: a PreToolUse hook whose matcher names these tools, or route them through Agent Guard or an MCP gateway.
 ```
 
 That is the whole result for this `.claude/settings.json` and `.mcp.json`:
@@ -62,7 +62,7 @@ grants it. An unknown capability is never treated as safe.
 
 | Evidence | When it runs | What it adds |
 | --- | --- | --- |
-| Repository files | Always | Agents, their capabilities and 34 rules on configuration |
+| Repository files | Always | Agents, their capabilities and 35 rules on configuration |
 | Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
 | Live Agent Map | Only with `--live` or `--agent-map-url` and a read-only token | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory |
 
@@ -92,16 +92,40 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Agent | Files |
 | --- | --- |
 | Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md`, skills and hook scripts, `CLAUDE.md`, `AGENTS.md`, at any depth, so monorepo packages are separate agents |
-| Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json` |
+| Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, inline `mcpServers` and `hooks/hooks.json` |
+| Agent Plugins | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/` |
 | OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
 | Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
 | GitHub workflows | Steps that use `anthropics/claude-code-action`, `openai/codex-action`, or run `claude -p` or `codex exec` |
-| VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed) |
+| VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
+| Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
+| OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects and bash patterns, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model` |
+| GitHub Copilot | Custom agents in `.github/agents/*.md` (`tools`, `mcp-servers`, `model`); `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `.github/prompts/*.prompt.md` for the text rules |
+| Kiro | `.kiro/settings/mcp.json` (`autoApprove`, `disabled`); `.kiro/steering/*.md` for the text rules |
+| Windsurf | `.windsurfrules` and `.windsurf/rules/*.md`, for the text rules (its MCP and permission settings live outside the repository) |
 | Agent Guard | `agent-guard*.json` records, or files named in `.agc.yaml` or on the command line |
 | Repository | `CODEOWNERS`, root `package.json` (dependencies only), `.agc.yaml` |
+| Your own settings | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings |
 
-`node_modules`, build output and `.git` are skipped. Symbolic links are never followed.
-Files over 1 MiB are skipped and counted.
+`node_modules`, build output and `.git` are skipped. Symbolic links are never followed inside
+the repository. Files over 1 MiB are skipped and counted.
+
+Amp and Goose keep their permissions outside the repository, so they are not read. A setting
+the scanner does not model, such as a permission mode it does not know or Claude Code's Bash
+sandbox, is reported as AGC-CFG-001 with what the scan assumed instead. It is never ignored.
+
+### Your own settings
+
+What an agent can do on your machine also depends on settings outside the repository. With
+`--include-user` the scan merges them in Claude Code's order: managed settings first (their
+deny rules always apply, and `disableBypassPermissionsMode` turns bypass off), then the
+project's own settings, then yours. Allow and deny rules from every level add up. Servers in
+`~/.claude.json` count for every project, and its `projects` entry for this folder for this one
+only. Your Codex and Gemini CLI settings are listed as their own agents, `Codex (~)` and
+`Gemini CLI (~)`. Findings point at `~/...` paths.
+
+It is for local runs only: in CI these files belong to the runner, so the flag is refused when
+`CI` is set, and it cannot be combined with `--fix`, which edits repository files only.
 
 ## Pull requests: report only what got worse
 
@@ -226,6 +250,7 @@ Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref)
 | `--live`, `--agent-map-url <url>` | Add live evidence from Agent Map (read-only). |
 | `--import-sarif <file>` | Merge another tool's SARIF findings into the report, baseline and gate (repeatable). They keep their own tool name in SARIF output. |
 | `--fix`, `--fix-dry-run` | Apply or print verified safe fixes. |
+| `--include-user` | Also read your own settings outside the repository (local runs only). See [Your own settings](#your-own-settings). |
 | `--list-rules` | Print every rule. |
 
 Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage, read or live-evidence error.
@@ -252,10 +277,23 @@ agent_map:
   url: https://agent-map.internal.example
   token_env: AGENT_MAP_TOKEN
 policy: {}                # see Policy as code
+mcp_servers:              # what servers the catalog does not know can do
+  internal-docs:          # a config name, catalog ID, package, image or remote host
+    capabilities: [untrustedInput]
+  "@acme/crm-mcp":
+    capabilities: [privateData, write]
+    unknown: [egress]
 ```
 
 Unknown keys and invalid values are errors, so a typo never silently turns a check off. Every
 ignore needs a reason.
+
+`mcp_servers` declares what an MCP server can do: the capabilities it has, and the ones it may
+have (`unknown`). Anything not listed is `no`, and `[]` means it can do none of the seven. A
+declaration replaces the built-in catalog entry for that server, and one keyed by the config
+name wins over one keyed by package, image or host. With `--base`, declarations are read from
+the base commit like the rest of `.agc.yaml`, so a change cannot declare its own new server
+harmless.
 
 In Markdown, YAML and scripts, a comment on the same line or the line above suppresses one
 rule: `<!-- agc-ignore AGC-SUP-004: installer pinned by checksum -->`. Settings files are
@@ -300,6 +338,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-GOV-002 | Low | Subagent has no stated purpose | ASI10 |
 | AGC-COV-001 | Medium | Risky actions with no runtime check | ASI02 |
 | AGC-GOV-003 | Info | Agent model is a moving alias | ASI04 |
+| AGC-CFG-001 | Info (low confidence) | Agent setting the scanner does not model | ASI02 |
 | AGC-POL-001 | High | MCP server not on the approved list | ASI04 |
 | AGC-POL-002 | High | Remote MCP server on a host not on the approved list | ASI04, ASI02 |
 | AGC-POL-003 | High | Agent holds a forbidden capability combination | ASI02, ASI01 |
@@ -325,7 +364,7 @@ agent, and critical when anyone can start it with broad tools or when a
 
 Two measurements, both reproducible with `npm run bench:check` (and `--real` for the second):
 
-- **Labeled cases.** 123 configurations, at least one that each of the 46 rules must flag and
+- **Labeled cases.** 127 configurations, at least one that each of the 47 rules must flag and
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
@@ -339,6 +378,13 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   tool calls unless an allow rule or a permission mode says otherwise. Those paths count as
   "with approval". A headless agent (a workflow step) has nobody to answer a prompt, so only
   its allowed tools count. A subagent's `permissionMode` replaces the session's for its calls.
+- **Permission modes.** `bypassPermissions` runs every tool without asking. `auto` lets a
+  classifier, not a person, approve most calls, so they count as "no approval"; the classifier
+  is not counted as a runtime check, because it reads the same text the agent does. `dontAsk`
+  denies whatever would prompt, so only allowed tools remain. `acceptEdits` also runs `mkdir`,
+  `touch`, `mv` and `cp` without asking. `plan` and `manual` read like `default`. Newer Claude
+  Code ignores `auto` and `bypassPermissions` in project settings; the scan still reports them,
+  because older versions apply them.
 - **The trifecta.** Critical when the agent reads private data and untrusted input and can
   send data out without approval. Medium when only the prompt on sending data out stands
   in the way while untrusted input arrives unasked, or when one leg is unknown. When a
@@ -354,16 +400,28 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   sandbox needs approval unless the policy is `never`. `never` with `danger-full-access` is
   AGC-PERM-001. **Gemini CLI** asks before built-in tools unless they are in `tools.allowed`
   or the approval mode is `yolo`; a trusted MCP server skips confirmation for all its tools.
-- **MCP servers.** A short catalog of well-known servers (GitHub, Slack, Postgres, Fetch,
-  Playwright and others) records what each can do. Any other server is unknown.
+- **MCP servers.** A catalog of about 50 well-known servers (GitHub, Slack, Postgres, Fetch,
+  Playwright, Exa, Zapier, Kubernetes and others) records what each can do, by package, image
+  or remote host. Any other server is unknown until `mcp_servers` in `.agc.yaml` declares it.
 - **Workflow triggers.** `issues`, `issue_comment`, `pull_request_target`, discussions and
   `workflow_run` carry text anyone can write and run with the repository's secrets.
   `pull_request` from forks gets no secrets and a read-only token, so it is not treated as
   outsider input. Commands that post to the repository count only when the job's token can
   write. Secrets in environment variables the harness itself reads (`OTEL_*`,
   `ANTHROPIC_*`, `CLAUDE_CODE_*`) are not counted as data given to the agent.
-- **Runtime checks.** AGC-COV-001 credits Agent Guard, any `PreToolUse` hook and MCP
-  gateways equally.
+- **Runtime checks.** A runtime check counts only for the calls it sees. A `PreToolUse` hook
+  sees the tools its matcher names (case-sensitive, whole name; `""`, `*` and `.*` mean every
+  tool); for an MCP server it must match every tool of that server (`mcp__db__.*`). Agent Guard
+  or an MCP gateway reached as an MCP server sees only the calls made through that server, not
+  Bash and not servers configured beside it.
+- **Other agents.** Codex runs commands inside its sandbox without asking unless
+  `approval_policy` is `untrusted`, and an unknown `sandbox_mode` is judged as no sandbox.
+  OpenCode V1 allows tools its `permission` object leaves out, V2 asks for calls no rule
+  matches, and a file with neither is reported as unknown. A Copilot custom agent runs without
+  anyone approving it; its network is behind the Copilot firewall, so outbound reach is
+  unknown, and it has the read-only GitHub MCP server unless `tools` leaves it out. Kiro's
+  `autoApprove` runs the listed tools without a prompt. A plugin's servers ask before their
+  tools run, as Claude Code does by default.
 
 ## What it does not do
 
@@ -371,10 +429,20 @@ Two measurements, both reproducible with `npm run bench:check` (and `--real` for
   such as Cisco MCP Scanner and Snyk Agent Scan cover that; `--import-sarif` merges their
   findings into one report.
 - Without Agent Guard records or live evidence it cannot see permissions held outside the
-  repository: a token's real scopes, cloud IAM, or user-level settings in `~/.claude`,
-  `~/.codex` and `~/.gemini`.
+  repository: a token's real scopes or cloud IAM. User-level settings in `~/.claude`,
+  `~/.codex` and `~/.gemini` are read only with `--include-user`.
 - It does not block anything at runtime. Agent Guard does that.
 - Text rules are heuristics, labelled low confidence.
+
+## Inventory format
+
+`--format inventory` writes every agent, its seven capabilities with how each is reached and
+the settings behind it, its tools, runtime checks and finding counts, without finding text.
+The format is published as a JSON Schema,
+[`agent-guard-check-inventory-v1.schema.json`](../../schemas/agent-guard-check-inventory-v1.schema.json),
+so other tools can read it or write it. A capability that is not listed is `no`; `unknown` is
+never a promise of `no`. New agent kinds may be added in a minor release, so readers should
+accept kinds they do not know.
 
 ## Security
 

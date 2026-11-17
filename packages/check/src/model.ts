@@ -23,6 +23,7 @@ import {
   type OtherAgent,
   type PluginSource,
 } from './formats.js';
+import { MANAGED_DIR } from './user.js';
 import { parseCopilotAgent, parseCursorCli, parseKiroMcp, parseOpenCode } from './agents.js';
 import { parseWorkflow, PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS, type WorkflowAgent } from './workflows.js';
 
@@ -212,7 +213,14 @@ function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly Mcp
 export interface BuildOptions {
   /** What MCP servers can do, as the team declared in `.agc.yaml`. */
   readonly declaredServers?: readonly DeclaredServer[];
+  /** Settings outside the repository (`readUserConfig`), with `~/...` and `<managed>/...` paths. */
+  readonly userFiles?: readonly TextFile[];
+  /** The scanned folder's absolute path, to find its local-scope servers in `~/.claude.json`. */
+  readonly root?: string;
 }
+
+/** Folders that hold settings for every project rather than one: the user's and the managed ones. */
+const USER_DIRS = new Set(['~', MANAGED_DIR]);
 
 export function buildProject(
   source: FileSource,
@@ -248,8 +256,13 @@ export function buildProject(
       .filter(path => !extraPaths.has(path))
       .map(path => ({ path, text: source.read(path) })),
     ...extraFiles,
+    ...(options.userFiles ?? []),
   ];
-  const roots = pluginRoots(inputs.map(input => input.path));
+  // Servers in ~/.claude.json: user scope (every project) and local scope (this folder only).
+  const userServers: McpServer[] = [];
+  const localScopeServers: McpServer[] = [];
+  let managedDisablesBypass = false;
+  const roots = pluginRoots(inputs.filter(input => !USER_DIRS.has(projectDir(input.path))).map(input => input.path));
   const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
   for (const { path, text } of inputs) {
     if (text === undefined) continue;
@@ -257,6 +270,24 @@ export function buildProject(
     const name = path.split('/').at(-1)!;
     const parent = path.split('/').at(-2);
     try {
+      if (path === '~/.claude.json') {
+        const data = parseJsonc(text);
+        if (isRecord(data)) {
+          userServers.push(...serversFromObject(data, path, text, 'claude-code', 0, declaredServers));
+          const projects = isRecord(data['projects']) ? data['projects'] : {};
+          const own = options.root === undefined ? undefined : projects[options.root];
+          if (isRecord(own))
+            localScopeServers.push(...serversFromObject(own, path, text, 'claude-code', 0, declaredServers));
+        }
+        continue;
+      }
+      if (path === `${MANAGED_DIR}/managed-settings.json`) {
+        settings.push(parseSettings(path, text));
+        const data = parseJsonc(text);
+        const permissions = isRecord(data) && isRecord(data['permissions']) ? data['permissions'] : {};
+        managedDisablesBypass = permissions['disableBypassPermissionsMode'] === 'disable';
+        continue;
+      }
       if (parent === '.claude-plugin' && name === 'plugin.json' && roots.has(rootOf(path, 2))) {
         // A Claude Code plugin manifest: its name, and servers or hooks it declares inline.
         const data = parseJsonc(text);
@@ -396,11 +427,20 @@ export function buildProject(
   }
 
   const agents: Agent[] = [];
-  const dirs = new Set<string>([
-    ...settings.map(file => projectDir(file.path)),
-    ...servers.filter(server => server.client === 'claude-code').map(server => projectDir(server.location.file)),
-    ...subagents.map(item => item.projectDir),
-  ]);
+  // User and managed settings apply to every project; Claude Code runs at the root with them alone.
+  const userLevel = [
+    ...settings.filter(file => projectDir(file.path) === '~'),
+    ...settings.filter(file => projectDir(file.path) === MANAGED_DIR),
+  ];
+  const managed = settings.filter(file => projectDir(file.path) === MANAGED_DIR);
+  const dirs = new Set<string>(
+    [
+      ...settings.map(file => projectDir(file.path)),
+      ...servers.filter(server => server.client === 'claude-code').map(server => projectDir(server.location.file)),
+      ...subagents.map(item => item.projectDir),
+      ...(userLevel.length || userServers.length || localScopeServers.length ? [''] : []),
+    ].filter(dir => !USER_DIRS.has(dir)),
+  );
   const rootSettings = settings.filter(file => projectDir(file.path) === '');
   const rootServers = servers.filter(
     server => server.client === 'claude-code' && projectDir(server.location.file) === '',
@@ -408,12 +448,19 @@ export function buildProject(
 
   for (const dir of [...dirs].sort()) {
     const local = settings.filter(file => projectDir(file.path) === dir);
-    const localServers = servers.filter(
-      server => server.client === 'claude-code' && projectDir(server.location.file) === dir,
-    );
-    const allow = local.flatMap(file => file.allow);
-    const deny = local.flatMap(file => file.deny);
-    const modeSetting = [...local].reverse().find(file => file.defaultMode)?.defaultMode;
+    const localServers = [
+      ...servers.filter(server => server.client === 'claude-code' && projectDir(server.location.file) === dir),
+      ...userServers,
+      ...(dir === '' ? localScopeServers : []),
+    ];
+    const allow = [...local, ...userLevel].flatMap(file => file.allow);
+    const deny = [...local, ...userLevel].flatMap(file => file.deny);
+    // Managed settings win, then the project's own (local before shared), then the user's.
+    const chosen =
+      [...managed].reverse().find(file => file.defaultMode)?.defaultMode ??
+      [...local].reverse().find(file => file.defaultMode)?.defaultMode ??
+      userLevel.find(file => file.defaultMode)?.defaultMode;
+    const modeSetting = chosen?.value === 'bypassPermissions' && managedDisablesBypass ? undefined : chosen;
     const mode = modeSetting?.value;
     const skip = mode === 'bypassPermissions';
     const anchor: Location = local[0]
@@ -430,7 +477,7 @@ export function buildProject(
         assumed: 'every tool runs without asking',
         location: modeSetting.location,
       });
-    for (const file of local)
+    for (const file of [...local, ...userLevel])
       if (file.sandbox)
         unrecognized.push({
           agent: name,
@@ -451,7 +498,7 @@ export function buildProject(
       ...allow.flatMap(rule => grantsForRule(rule, 'auto', localServers)),
       ...(mode === 'acceptEdits' ? acceptEditsGrants(modeSetting!.location) : []),
     ];
-    const mediators = mediatorsFor(local, localServers);
+    const mediators = mediatorsFor([...local, ...userLevel], localServers);
     const main: Agent = {
       id: `claude-code:${dir || '.'}`,
       kind: 'claude-code',

@@ -32,5 +32,6 @@ export { importSarif } from './sarif-import.js';
 export { planFixes, formatDiff, OverlaySource } from './fix.js';
 export type { FileEdit, FixPlan } from './fix.js';
 export { runCli } from './cli.js';
+export { readUserConfig, managedSettingsPath } from './user.js';
 export type { CliIo } from './cli.js';
 export * from './types.js';
