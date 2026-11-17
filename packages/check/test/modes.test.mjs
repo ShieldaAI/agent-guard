@@ -129,3 +129,23 @@ test('a Bash sandbox is noted as not modelled', () => {
   const off = scanFiles({ '.claude/settings.json': settings({ allow: ['Bash'] }, { sandbox: { enabled: false } }) });
   assert.equal(findingsFor(off, 'AGC-CFG-001').length, 0);
 });
+
+test('a session in dontAsk does not hide what a bypassPermissions or auto subagent can do', () => {
+  for (const sub of ['bypassPermissions', 'auto']) {
+    const files = mode => ({
+      '.claude/settings.json': settings({ defaultMode: mode }),
+      '.mcp.json': JSON.stringify({
+        mcpServers: { k8s: { command: 'npx', args: ['-y', 'mcp-server-kubernetes@2.0.0'] } },
+      }),
+      '.claude/agents/worker.md': `---\nname: worker\ndescription: w\npermissionMode: ${sub}\n---\nGo.\n`,
+    });
+    const worker = result => result.agents.find(agent => agent.kind === 'subagent');
+    assert.equal(level(worker(scanFiles(files('dontAsk'))), 'exec'), 'yes/auto', sub);
+    assert.equal(level(worker(scanFiles(files('dontAsk'))), 'egress'), 'yes/auto', sub);
+    assert.equal(
+      worker(scanFiles(files('dontAsk'))).grants.length,
+      worker(scanFiles(files('default'))).grants.length,
+      `${sub}: the session mode does not change it`,
+    );
+  }
+});

@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { authority } from '@shieldaai/agent-guard-check';
-import { findingsFor, json, mcp, ruleIds, scanFiles } from './helpers.mjs';
+import { findingsFor, json, mcp, ruleIds, scanFiles, settings } from './helpers.mjs';
 
 const level = (agent, capability) => {
   const state = authority(agent)[capability];
@@ -197,7 +197,10 @@ test('a Claude Code plugin is an agent with its servers, and its hooks are judge
   const plugin = agentOf(result, 'plugin');
   assert.equal(plugin.name, 'Plugin db-tools');
   assert.equal(level(plugin, 'privateData'), 'yes/ask');
-  assert.ok(!result.agents.some(agent => agent.kind === 'claude-code'), 'a plugin folder is not a project');
+  assert.ok(
+    result.agents.some(agent => agent.id === 'claude-code:plugins/db' && agent.grants.some(g => g.tool === 'mcp__pg')),
+    'a .mcp.json stays Claude Code project config; the plugin reads the same servers',
+  );
   assert.ok(ruleIds(result).includes('AGC-SUP-001'), 'its unpinned server is judged');
   assert.ok(ruleIds(result).includes('AGC-SUP-004'), 'its hook is judged');
 });
@@ -227,4 +230,48 @@ test('a plugin manifest can declare servers and hooks inline', () => {
   });
   assert.equal(level(agentOf(result, 'plugin'), 'egress'), 'yes/ask');
   assert.ok(ruleIds(result).includes('AGC-PER-001'));
+});
+
+test('a plugin manifest cannot take the project .mcp.json away from Claude Code or workflows', () => {
+  const base = {
+    '.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }),
+    '.mcp.json': mcp({ k8s: { command: 'npx', args: ['-y', 'mcp-server-kubernetes@2.0.0'] } }),
+  };
+  const before = scanFiles(base);
+  const after = scanFiles({ ...base, '.claude-plugin/plugin.json': json({ name: 'p' }) });
+  const main = result => result.agents.find(agent => agent.id === 'claude-code:.');
+  assert.equal(level(main(after), 'exec'), level(main(before), 'exec'));
+  assert.deepEqual(
+    ruleIds(after)
+      .filter(id => id !== 'AGC-GOV-001')
+      .sort(),
+    ruleIds(before)
+      .filter(id => id !== 'AGC-GOV-001')
+      .sort(),
+  );
+  const nested = scanFiles({
+    'foo/.claude/settings.json': settings({ allow: ['mcp__k8s'] }),
+    'foo/.mcp.json': mcp({ k8s: { command: 'npx', args: ['-y', 'mcp-server-kubernetes@2.0.0'] } }),
+    'foo/.claude-plugin/plugin.json': json({ name: 'foo' }),
+  });
+  assert.equal(
+    level(
+      nested.agents.find(agent => agent.id === 'claude-code:foo'),
+      'exec',
+    ),
+    'yes/auto',
+  );
+});
+
+test('a plugin.json in a tool folder cannot take that tool’s config', () => {
+  const kiro = {
+    '.kiro/settings/mcp.json': mcp({
+      k8s: { command: 'npx', args: ['-y', 'mcp-server-kubernetes@2.0.0'], autoApprove: ['*'] },
+    }),
+  };
+  const before = scanFiles(kiro);
+  const after = scanFiles({ ...kiro, '.kiro/settings/plugin.json': json({ name: 'x' }) });
+  assert.equal(level(agentOf(after, 'kiro'), 'exec'), 'yes/auto');
+  assert.deepEqual(ruleIds(after).sort(), ruleIds(before).sort());
+  assert.equal(agentOf(after, 'plugin'), undefined);
 });

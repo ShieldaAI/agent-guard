@@ -108,3 +108,51 @@ test('a hostile matcher stays on one line in the text report', () => {
   assert.ok(line && !line.includes('\n'));
   assert.doesNotMatch(formatText(result), /^::error::/m);
 });
+
+test('an invalid matcher is never credited, even when wrapping it would match everything', () => {
+  // Claude Code cannot compile `Bash)|(?:.*`, so the hook never runs.
+  for (const matcher of ['Bash)|(?:.*', '.*)|(', '(Bash'])
+    assert.equal(
+      cov({ '.claude/settings.json': settings({ allow: ['Bash', 'WebFetch'] }, { hooks: hook(matcher) }) }).length,
+      1,
+      matcher,
+    );
+});
+
+test('a hostile matcher against a hostile server name cannot hang the scan', () => {
+  const name = 'a'.repeat(60);
+  const started = Date.now();
+  const found = cov({
+    '.claude/settings.json': settings({ allow: [`mcp__${name}`] }, { hooks: hook('mcp__(a+)+b') }),
+    '.mcp.json': mcp({ [name]: { command: 'uvx', args: ['mcp-server-fetch==2025.4.7'] } }),
+  });
+  assert.ok(Date.now() - started < 2000, 'finishes quickly');
+  assert.equal(found.length, 1, 'and the hook does not cover the server');
+  const long = cov({
+    '.claude/settings.json': settings({ allow: ['Bash'] }, { hooks: hook(`Bash|${'x'.repeat(600)}`) }),
+  });
+  assert.equal(long.length, 1, 'an overlong matcher is not credited');
+});
+
+test('a matcher naming one probe-like tool does not cover a whole server or every tool', () => {
+  const fetch = { command: 'uvx', args: ['mcp-server-fetch==2025.4.7'] };
+  for (const matcher of ['mcp__fetch__agcprobe', 'mcp__fetch__a.*', 'mcp__fetch__(fetch|agcprobe)'])
+    assert.equal(
+      cov({
+        '.claude/settings.json': settings({ allow: ['mcp__fetch'] }, { hooks: hook(matcher) }),
+        '.mcp.json': mcp({ fetch }),
+      }).length,
+      1,
+      matcher,
+    );
+  for (const matcher of ['AgcProbeTool|Bash|WebFetch|WebSearch|Edit|Write|mcp__agcprobe__agcprobe'])
+    assert.equal(cov({ '.claude/settings.json': settings({ allow: ['*'] }, { hooks: hook(matcher) }) }).length, 1);
+  assert.equal(
+    cov({
+      '.claude/settings.json': settings({ allow: ['mcp__fetch'] }, { hooks: hook('(Bash|mcp__fetch__.*)') }),
+      '.mcp.json': mcp({ fetch }),
+    }).length,
+    0,
+    'a group of alternatives is read as alternatives',
+  );
+});

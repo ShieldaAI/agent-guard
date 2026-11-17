@@ -344,7 +344,15 @@ const RUNNERS = new Set(['npx', 'bunx', 'uvx', 'pipx', 'pnpx']);
 export function runnerPackage(
   command: string | undefined,
   args: readonly string[],
-): { readonly runner: string; readonly spec: string; readonly localOnly: boolean } | undefined {
+):
+  | {
+      readonly runner: string;
+      readonly spec: string;
+      readonly localOnly: boolean;
+      /** `-p pkg node -e ...`: the package is installed, but something else runs. */
+      readonly runsOther?: boolean;
+    }
+  | undefined {
   if (!command) return undefined;
   const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
   // Launchers that run a command line: `cmd /c npx -y pkg` (the documented Windows form) and `sh -c "npx -y pkg"`.
@@ -375,13 +383,44 @@ export function runnerPackage(
     if (arg === '--') continue;
     if (arg === '-p' || arg === '--package' || arg === '--from') {
       const next = rest[i + 1];
-      return next ? found(next) : undefined;
+      return next ? { ...found(next), ...(runsOther(rest.slice(i + 2)) ? { runsOther: true } : {}) } : undefined;
     }
-    if (arg.startsWith('--package=') || arg.startsWith('--from=')) return found(arg.split('=', 2)[1]!);
+    if (arg.startsWith('--package=') || arg.startsWith('--from='))
+      return { ...found(arg.split('=', 2)[1]!), ...(runsOther(rest.slice(i + 1)) ? { runsOther: true } : {}) };
     if (arg.startsWith('-')) continue;
     return found(arg);
   }
   return undefined;
+}
+
+/** Interpreters and shells: after `-p pkg`, running one of these runs code the package did not ship. */
+const INTERPRETERS = new Set([
+  'node',
+  'nodejs',
+  'python',
+  'python3',
+  'sh',
+  'bash',
+  'zsh',
+  'dash',
+  'deno',
+  'bun',
+  'ruby',
+  'perl',
+  'pwsh',
+  'env',
+  'npx',
+  'npm',
+  'uv',
+  'pip',
+]);
+
+/** Whether the words after `-p pkg` run an interpreter or inline code rather than the package's own command. */
+function runsOther(after: readonly string[]): boolean {
+  const command = after.find(word => !word.startsWith('-') && word !== '--');
+  if (command === undefined) return false;
+  const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe)$/i, '').toLowerCase();
+  return INTERPRETERS.has(base) || after.some(word => ['-e', '-c', '--eval', '-p', '--print'].includes(word));
 }
 
 /** Splits a shell command line into words, honouring quotes. */
@@ -428,6 +467,8 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
 /** The image a `docker run` command starts, or undefined. */
 export function dockerImage(command: string | undefined, args: readonly string[]): string | undefined {
   if (!command || !/(^|[\\/])(docker|podman)$/.test(command) || args[0] !== 'run') return undefined;
+  // A replaced entrypoint runs something else inside the image: it is not that image's server.
+  if (args.some(arg => arg === '--entrypoint' || arg.startsWith('--entrypoint='))) return undefined;
   const valued = new Set(['-e', '--env', '-v', '--volume', '--name', '-p', '--publish', '--network', '-w', '--user']);
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i]!;
@@ -452,14 +493,13 @@ export interface DeclaredServer {
 }
 
 function identify(
-  name: string,
   command: string | undefined,
   args: readonly string[],
   url: string | undefined,
   declared: readonly DeclaredServer[],
 ): CatalogEntry | undefined {
   const runner = runnerPackage(command, args);
-  const pkg = runner ? splitSpec(runner.spec).name : undefined;
+  const pkg = runner && !runner.runsOther ? splitSpec(runner.spec).name : undefined;
   const image = dockerImage(command, args)
     ?.split('@')[0]
     ?.replace(/:[^/:]+$/, '');
@@ -477,8 +517,9 @@ function identify(
       (image !== undefined && entry.images?.includes(image)) ||
       (host !== undefined && entry.hosts?.includes(host)),
   );
-  // A declaration by config name wins over one by package, image, host or catalog ID.
-  const keys = [name, pkg, image, host, known?.id].filter((key): key is string => key !== undefined);
+  // A declaration matches what runs (package, image, host, or the catalog entry they identify), never
+  // the config name: a change under review chooses names, so a name could claim another server's entry.
+  const keys = [pkg, image, host, known?.id].filter((key): key is string => key !== undefined);
   const own = keys.map(key => declared.find(item => item.match === key)).find(item => item !== undefined);
   if (own)
     return {
@@ -533,7 +574,7 @@ export function serversFromObject(
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    const catalog = identify(name, command, args, url, declared);
+    const catalog = identify(command, args, url, declared);
     servers.push({
       name,
       client,

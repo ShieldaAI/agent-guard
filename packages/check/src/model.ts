@@ -96,6 +96,8 @@ function pluginRoots(paths: readonly string[]): Set<string> {
     if (parts.at(-2) === '.claude-plugin') roots.add(dirOf(path, 2));
     else {
       const root = dirOf(path, 1);
+      // Tool folders (.kiro, .vscode, .cursor, ...) hold their own config, never an Agent Plugin.
+      if (root.split('/').some(segment => segment.startsWith('.'))) continue;
       const prefix = root ? `${root}/` : '';
       if (files.has(`${prefix}mcp.json`) || paths.some(item => item.startsWith(`${prefix}skills/`))) roots.add(root);
     }
@@ -311,9 +313,15 @@ export function buildProject(
         });
         continue;
       }
+      // An Agent Plugin's mcp.json. A `.mcp.json` stays Claude Code's project file even inside a
+      // plugin folder: the plugin agent reads the same servers, it never takes them away.
       if (
-        (name === 'mcp.json' && roots.has(rootOf(path, 1)) && parent !== '.vscode' && parent !== '.cursor') ||
-        (name === '.mcp.json' && roots.has(rootOf(path, 1)))
+        name === 'mcp.json' &&
+        roots.has(rootOf(path, 1)) &&
+        !path
+          .split('/')
+          .slice(0, -1)
+          .some(s => s.startsWith('.'))
       ) {
         servers.push(...parseMcpConfig(path, text, 'plugin', declaredServers));
         continue;
@@ -486,9 +494,17 @@ export function buildProject(
           assumed: 'Bash is judged as if it ran outside the sandbox, so its reach may be narrower than shown',
           location: file.sandbox,
         });
+    // What the session could do before its own mode: a subagent with its own mode starts from this.
+    const unmoded = withoutDenied(
+      [
+        ...baselineGrants('ask', anchor, localServers, allow, deny, false),
+        ...allow.flatMap(rule => grantsForRule(rule, 'auto', localServers)),
+      ],
+      deny,
+    );
     const grants = [
       ...(skip
-        ? baselineGrants('auto', anchor, localServers, allow, deny, true)
+        ? baselineGrants('auto', modeSetting!.location, localServers, allow, deny, true)
         : applyMode(
             baselineGrants('ask', anchor, localServers, allow, deny, false),
             mode,
@@ -538,8 +554,10 @@ export function buildProject(
         grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', sub.servers),
       );
       // The subagent's own mode replaces the session's for its calls.
+      // Its own mode replaces the session's, so it starts from the grants before the session's mode:
+      // a session in dontAsk must not hide what a bypassPermissions subagent can do.
       let grants = ownMode
-        ? applyMode([...main.grants.filter(keeps), ...own], mode, modeAt, 'permissionMode')
+        ? applyMode([...unmoded.filter(keeps), ...own], mode, modeAt, 'permissionMode')
         : [...main.grants.filter(keeps), ...own];
       if (edits && (tools === undefined || tools.some(tool => ['Edit', 'Write', 'MultiEdit'].includes(tool))))
         grants.push(
@@ -685,10 +703,10 @@ export function buildProject(
   }
 
   for (const [root, plugin] of [...plugins].sort(([a], [b]) => a.localeCompare(b))) {
+    const prefix = root ? `${root}/` : '';
+    const files = new Set([`${prefix}.mcp.json`, `${prefix}mcp.json`, `${prefix}.claude-plugin/plugin.json`]);
     const own = servers.filter(
-      server =>
-        server.client === 'plugin' &&
-        (rootOf(server.location.file, 1) === root || rootOf(server.location.file, 2) === root),
+      server => (server.client === 'plugin' || server.client === 'claude-code') && files.has(server.location.file),
     );
     // Whoever enables the plugin gets its servers; Claude Code asks before their tools run by default.
     agents.push({

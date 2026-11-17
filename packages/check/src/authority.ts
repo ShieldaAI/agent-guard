@@ -1,32 +1,96 @@
 import { CAPABILITIES, type Agent, type Capability, type CapabilityState, type Grant, type Mediator } from './types.js';
 
-/** Tool names a matcher must accept to count as seeing every call (an allow rule of `*`). */
-const EVERY_TOOL_PROBES = ['Bash', 'WebFetch', 'WebSearch', 'Edit', 'Write', 'AgcProbeTool', 'mcp__agcprobe__agcprobe'];
+/** Longer matchers are not credited: real ones are short, and a long one is not worth evaluating. */
+const MAX_MATCHER_LENGTH = 512;
+/** Alternatives that accept every tool name. */
+const EVERY_TOOL = new Set(['', '*', '.*', '.+', '(.*)', '(.+)', '(?:.*)', '(?:.+)']);
 
-/** Whether a Claude Code hook matcher accepts a tool name. Matchers are case-sensitive and match the whole name. */
-function matcherAccepts(matcher: string, name: string): boolean {
+/**
+ * A matcher Claude Code would run, or undefined. It must be a valid regular expression on its own:
+ * `Bash)|(?:.*` is invalid, so Claude Code never fires that hook, even though wrapping it would
+ * make it match everything.
+ */
+function validMatcher(matcher: string): string | undefined {
   const value = matcher.trim();
-  if (value === '' || value === '*') return true;
+  if (value === '' || value === '*') return value;
+  if (value.length > MAX_MATCHER_LENGTH) return undefined;
   try {
-    return new RegExp(`^(?:${value})$`).test(name);
+    new RegExp(value);
+    return value;
   } catch {
-    return false;
+    return undefined;
   }
+}
+
+/** Splits a valid pattern at its top-level `|`, unwrapping groups that span a whole alternative. */
+function alternatives(pattern: string): string[] {
+  const parts: string[] = [];
+  let depth = 0;
+  let inClass = false;
+  let start = 0;
+  for (let i = 0; i < pattern.length; i += 1) {
+    const char = pattern[i]!;
+    if (char === '\\') {
+      i += 1;
+      continue;
+    }
+    if (inClass) {
+      if (char === ']') inClass = false;
+      continue;
+    }
+    if (char === '[') inClass = true;
+    else if (char === '(') depth += 1;
+    else if (char === ')') depth -= 1;
+    else if (char === '|' && depth === 0) {
+      parts.push(pattern.slice(start, i));
+      start = i + 1;
+    }
+  }
+  parts.push(pattern.slice(start));
+  return parts.flatMap(part => {
+    const trimmed = part.trim();
+    const group = /^\((?:\?:)?([\s\S]*)\)$/.exec(trimmed);
+    // Unwrap only when the parentheses enclose the whole alternative: `(a)|(b)` is not one group.
+    if (group && balanced(group[1]!)) return alternatives(group[1]!);
+    return [trimmed];
+  });
+}
+
+function balanced(pattern: string): boolean {
+  let depth = 0;
+  for (let i = 0; i < pattern.length; i += 1) {
+    if (pattern[i] === '\\') i += 1;
+    else if (pattern[i] === '(') depth += 1;
+    else if (pattern[i] === ')' && (depth -= 1) < 0) return false;
+  }
+  return depth === 0;
 }
 
 /**
  * Whether a runtime check sees calls of one tool, as grants name tools (`Bash`, `WebFetch`,
- * `mcp__server`, `*`). A hook must accept every tool of an MCP server (`mcp__server__.*`), not
- * just one of them; a guard or gateway reached over MCP sees only the calls made through it.
+ * `mcp__server`, `*`). A guard or gateway reached over MCP sees only the calls made through it.
  * A grant with no tool (a workflow token, a sandbox setting) is never seen.
+ *
+ * A hook matcher is a regular expression from the repository. It is only ever run against the
+ * scanner's own short tool names (`Bash`, `WebFetch`), never against a name the repository chose,
+ * so it cannot make the scan hang. For an MCP server and for `*`, coverage is decided from the
+ * matcher's shape instead: an alternative must accept every tool (`.*`), every MCP tool
+ * (`mcp__.*`) or every tool of that server (`mcp__server__.*`). One named tool is not the server.
  */
 export function mediates(mediator: Mediator, tool: string | undefined): boolean {
   if (tool === undefined) return false;
   if (mediator.kind !== 'pre-tool-hook') return mediator.server !== undefined && tool === `mcp__${mediator.server}`;
-  const matcher = mediator.matcher ?? '';
-  if (tool === '*') return EVERY_TOOL_PROBES.every(name => matcherAccepts(matcher, name));
-  if (tool.startsWith('mcp__')) return matcherAccepts(matcher, `${tool}__agcprobe`);
-  return matcherAccepts(matcher, tool);
+  const matcher = validMatcher(mediator.matcher ?? '');
+  if (matcher === undefined) return false;
+  if (matcher === '' || matcher === '*') return true;
+  const alts = alternatives(matcher);
+  if (alts.some(alt => EVERY_TOOL.has(alt))) return true;
+  if (tool === '*') return false;
+  if (tool.startsWith('mcp__')) {
+    const server = tool.slice('mcp__'.length);
+    return alts.some(alt => ['mcp__.*', 'mcp__.+', `${tool}__.*`, `${tool}__.+`].includes(alt) && server !== '');
+  }
+  return new RegExp(`^(?:${matcher})$`).test(tool);
 }
 
 /** Whether any of an agent's runtime checks sees this grant's calls. */
