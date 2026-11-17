@@ -161,20 +161,55 @@ test('disableAllHooks turns every hook off as a runtime check', () => {
   assert.equal(findingsFor(off, 'AGC-COV-001').length, 1);
 });
 
-test('a sandbox with autoAllowBashIfSandboxed runs Bash without asking, with network reach unknown', () => {
+test('a sandbox with autoAllowBashIfSandboxed runs Bash without asking, and never lowers egress', () => {
   const sandboxed = scanFiles({ '.claude/settings.json': settings({}, { sandbox: { enabled: true } }) });
   assert.equal(level(main(sandboxed), 'exec'), 'yes/auto');
-  assert.ok(
-    authority(main(sandboxed)).egress.grants.every(grant => grant.tool !== 'Bash'),
-    'Bash egress is no longer a yes',
-  );
-  assert.ok(
-    main(sandboxed).grants.some(g => g.tool === 'Bash' && g.capability === 'egress' && g.certainty === 'unknown'),
-  );
+  assert.equal(level(main(sandboxed), 'egress'), 'yes/ask', 'leaving the sandbox goes through the permission flow');
+  // An allowed network command still runs without asking, sandbox or not: the gate must not change.
+  const allow = ['mcp__db', 'WebSearch', 'Bash(git push:*)'];
+  const mcpFile = JSON.stringify({
+    mcpServers: { db: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@0.6.2'] } },
+  });
+  const plain = scanFiles({ '.claude/settings.json': settings({ allow }), '.mcp.json': mcpFile });
+  const boxed = scanFiles({
+    '.claude/settings.json': settings({ allow }, { sandbox: { enabled: true } }),
+    '.mcp.json': mcpFile,
+  });
+  assert.equal(findingsFor(plain, 'AGC-TRI-001').length, 1);
+  assert.equal(findingsFor(boxed, 'AGC-TRI-001').length, 1);
   const asking = scanFiles({
     '.claude/settings.json': settings({}, { sandbox: { enabled: true, autoAllowBashIfSandboxed: false } }),
   });
   assert.equal(level(main(asking), 'exec'), 'yes/ask');
+});
+
+test('a repository folder named ~ or <managed> is never read as your own or managed settings', () => {
+  const risky = {
+    '.claude/settings.json': settings({ allow: ['WebFetch', 'mcp__db'] }),
+    '.mcp.json': JSON.stringify({
+      mcpServers: { db: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@0.6.2'] } },
+    }),
+  };
+  const before = scanFiles(risky);
+  const after = scanFiles({
+    ...risky,
+    '~/.claude/settings.json': settings({ deny: ['Bash', 'WebSearch', 'WebFetch'] }),
+    '<managed>/.claude/settings.json': settings({ defaultMode: 'plan' }),
+    '<managed>/managed-settings.json': settings({ deny: ['WebFetch'] }),
+  });
+  assert.deepEqual(
+    after.findings.map(finding => finding.fingerprint).sort(),
+    before.findings.map(finding => finding.fingerprint).sort(),
+  );
+});
+
+test('a settings file padded past 1 MiB fails the gate instead of hiding', () => {
+  const result = scanFiles({
+    '.claude/settings.json': `${settings({ defaultMode: 'bypassPermissions' })}\n${' '.repeat(1_100_000)}\n`,
+  });
+  const [finding] = findingsFor(result, 'AGC-CFG-002');
+  assert.equal(finding.severity, 'high');
+  assert.equal(shouldFail(result.findings, 'high', 'high'), true);
 });
 
 test('Codex: a sandbox_mode or approval_policy of the wrong type is reported', () => {
@@ -182,4 +217,16 @@ test('Codex: a sandbox_mode or approval_policy of the wrong type is reported', (
   const notes = findingsFor(result, 'AGC-CFG-001').map(finding => finding.message);
   assert.ok(notes.some(text => text.includes('sandbox_mode = "3"')));
   assert.ok(notes.some(text => text.includes('approval_policy = "true"')));
+});
+
+test('under a bypassPermissions or auto session, a subagent cannot narrow its own mode', () => {
+  for (const session of ['bypassPermissions', 'auto'])
+    for (const own of ['dontAsk', 'plan', 'default']) {
+      const result = scanFiles({
+        '.claude/settings.json': settings({ defaultMode: session }),
+        '.claude/agents/w.md': `---\nname: w\ndescription: w\ntools: Bash\npermissionMode: ${own}\n---\nGo.\n`,
+      });
+      const sub = result.agents.find(agent => agent.kind === 'subagent');
+      assert.equal(level(sub, 'exec'), 'yes/auto', `${session} session, ${own} subagent`);
+    }
 });

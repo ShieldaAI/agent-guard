@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -167,4 +168,15 @@ test('named files are read only inside the root, never through a link', async t 
   }
   assert.equal(source.readNamed('build/link.json'), undefined);
   assert.equal(source.readNamed('out/secret.json'), undefined);
+});
+
+test('a FIFO named by a plugin manifest does not block the scan', { skip: process.platform === 'win32' }, t => {
+  const dir = repo({ 'p/.claude-plugin/plugin.json': JSON.stringify({ name: 'p', hooks: './pipe' }) });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const made = spawnSync('mkfifo', [join(dir, 'p', 'pipe')]);
+  if (made.status !== 0) return t.skip('mkfifo is not available');
+  const started = Date.now();
+  const result = scan({ root: dir });
+  assert.ok(Date.now() - started < 2000);
+  assert.ok(result.findings.some(finding => finding.ruleId === 'AGC-CFG-001'));
 });

@@ -35,7 +35,8 @@ function example(item) {
       /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u2066-\u2069\ufeff]/g,
       ch => `\\u${ch.charCodeAt(0).toString(16).padStart(4, '0')}`,
     );
-    const body = visible.split('\n');
+    // Long lines (a padded file) are cut, so an example stays readable.
+    const body = visible.split('\n').map(line => (line.length > 120 ? `${line.slice(0, 120)}…` : line));
     const shown = body.length > 16 ? [...body.slice(0, 16), '…'] : body;
     const fence = path.endsWith('.json')
       ? 'json'

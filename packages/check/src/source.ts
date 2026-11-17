@@ -34,6 +34,8 @@ export interface FileSource {
    */
   readNamed(path: string): string | undefined;
   readonly skipped: number;
+  /** Candidate files left out because they are larger than MAX_FILE_BYTES. */
+  readonly skippedFiles?: readonly string[];
 }
 
 /** A repo-relative path with no `..`, no absolute prefix and no empty segment; undefined otherwise. */
@@ -50,6 +52,9 @@ const SKILL_SCRIPT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|ps1)$/;
 /** Whether a path can hold agent configuration that the scanner reads. */
 export function isCandidate(path: string): boolean {
   const parts = path.split('/');
+  // `~` and `<managed>` stand for settings outside the repository in reports; a repository folder
+  // with that name is never read, so it cannot pose as someone's own or managed settings.
+  if (parts[0] === '~' || parts[0] === '<managed>') return false;
   const name = parts.at(-1) ?? '';
   const parent = parts.at(-2);
   if (name === 'CLAUDE.md' || name === 'CLAUDE.local.md' || name === 'AGENTS.md') return true;
@@ -103,6 +108,7 @@ export function isCandidate(path: string): boolean {
 export class DirectorySource implements FileSource {
   readonly label: string;
   skipped = 0;
+  readonly skippedFiles: string[] = [];
   readonly #root: string;
   #paths: string[] | undefined;
 
@@ -146,6 +152,7 @@ export class DirectorySource implements FileSource {
         if (!isCandidate(path)) continue;
         if (info.size > MAX_FILE_BYTES) {
           this.skipped += 1;
+          this.skippedFiles.push(path);
           continue;
         }
         found.push(path);
@@ -180,7 +187,9 @@ export class DirectorySource implements FileSource {
         if (lstatSync(current).isSymbolicLink()) return undefined;
       }
       const target = join(current, parts.at(-1)!);
-      fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+      // Check the type before opening: opening a FIFO would block. O_NONBLOCK covers a swap after the check.
+      if (!lstatSync(target).isFile()) return undefined;
+      fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
       const info = fstatSync(fd);
       if (!info.isFile() || info.size > MAX_FILE_BYTES) return undefined;
       // Windows has no O_NOFOLLOW: confirm the opened file is the entry itself, not a link's target.
@@ -201,6 +210,7 @@ const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/@~^{}-]*$/;
 export class GitSource implements FileSource {
   readonly label: string;
   skipped = 0;
+  readonly skippedFiles: string[] = [];
   readonly #root: string;
   readonly #ref: string;
   #paths: string[] | undefined;
@@ -248,8 +258,10 @@ export class GitSource implements FileSource {
       : [];
     const found: string[] = [];
     candidates.forEach((item, index) => {
-      if (Number(sizes[index]) > MAX_FILE_BYTES) this.skipped += 1;
-      else found.push(item.path);
+      if (Number(sizes[index]) > MAX_FILE_BYTES) {
+        this.skipped += 1;
+        this.skippedFiles.push(item.path);
+      } else found.push(item.path);
     });
     found.sort();
     this.#paths = found;
@@ -286,13 +298,21 @@ export class GitSource implements FileSource {
 /** An in-memory source, for tests and for callers that already hold the files. */
 export class MemorySource implements FileSource {
   readonly label: string;
-  readonly skipped = 0;
+  readonly skippedFiles: readonly string[];
+  get skipped(): number {
+    return this.skippedFiles.length;
+  }
   readonly #files: ReadonlyMap<string, string>;
   readonly #all: ReadonlyMap<string, string>;
 
   constructor(files: Readonly<Record<string, string>>, label = 'memory') {
     this.#all = new Map(Object.entries(files));
-    this.#files = new Map(Object.entries(files).filter(([path]) => isCandidate(path)));
+    this.#files = new Map(
+      Object.entries(files).filter(([path, text]) => isCandidate(path) && Buffer.byteLength(text) <= MAX_FILE_BYTES),
+    );
+    this.skippedFiles = Object.entries(files)
+      .filter(([path, text]) => isCandidate(path) && Buffer.byteLength(text) > MAX_FILE_BYTES)
+      .map(([path]) => path);
     this.label = label;
   }
 

@@ -351,8 +351,6 @@ export function runnerPackage(
       readonly runner: string;
       readonly spec: string;
       readonly localOnly: boolean;
-      /** `-p pkg node -e ...`: the package is installed, but something else runs. */
-      readonly runsOther?: boolean;
     }
   | undefined {
   if (!command) return undefined;
@@ -385,44 +383,13 @@ export function runnerPackage(
     if (arg === '--') continue;
     if (arg === '-p' || arg === '--package' || arg === '--from') {
       const next = rest[i + 1];
-      return next ? { ...found(next), ...(runsOther(rest.slice(i + 2)) ? { runsOther: true } : {}) } : undefined;
+      return next ? found(next) : undefined;
     }
-    if (arg.startsWith('--package=') || arg.startsWith('--from='))
-      return { ...found(arg.split('=', 2)[1]!), ...(runsOther(rest.slice(i + 1)) ? { runsOther: true } : {}) };
+    if (arg.startsWith('--package=') || arg.startsWith('--from=')) return found(arg.split('=', 2)[1]!);
     if (arg.startsWith('-')) continue;
     return found(arg);
   }
   return undefined;
-}
-
-/** Interpreters and shells: after `-p pkg`, running one of these runs code the package did not ship. */
-const INTERPRETERS = new Set([
-  'node',
-  'nodejs',
-  'python',
-  'python3',
-  'sh',
-  'bash',
-  'zsh',
-  'dash',
-  'deno',
-  'bun',
-  'ruby',
-  'perl',
-  'pwsh',
-  'env',
-  'npx',
-  'npm',
-  'uv',
-  'pip',
-]);
-
-/** Whether the words after `-p pkg` run an interpreter or inline code rather than the package's own command. */
-function runsOther(after: readonly string[]): boolean {
-  const command = after.find(word => !word.startsWith('-') && word !== '--');
-  if (command === undefined) return false;
-  const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe)$/i, '').toLowerCase();
-  return INTERPRETERS.has(base) || after.some(word => ['-e', '-c', '--eval', '-p', '--print'].includes(word));
 }
 
 /** Splits a shell command line into words, honouring quotes. */
@@ -484,6 +451,145 @@ export function dockerImage(command: string | undefined, args: readonly string[]
   return undefined;
 }
 
+/** Runner flags that change neither what is fetched nor what runs. Any other flag ends identification. */
+const SAFE_RUNNER_FLAGS = new Set([
+  '-y',
+  '--yes',
+  '-q',
+  '--quiet',
+  '--silent',
+  '--no',
+  '--no-install',
+  '--offline',
+  '--prefer-offline',
+  '--isolated',
+  '--no-cache',
+  '--refresh',
+]);
+/** Environment variables that change what a runner fetches, or what code an interpreter loads. */
+const LOADER_ENV =
+  /^(NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|npm_config_.*|YARN_.*|PNPM_.*|BUN_.*|DENO_.*|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|PYTHONUSERBASE|PIP_.*|PIPX_.*|UV_.*|LD_.*|DYLD_.*|PATH|JAVA_TOOL_OPTIONS|RUBYOPT|PERL5OPT)$/i;
+/** Shell syntax that runs more than one command, or substitutes one. */
+const SHELL_SYNTAX = /[;&|`$<>(){}\n\r]/;
+
+function baseName(command: string): string {
+  return (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+}
+
+/**
+ * The package a server runs, for the catalog, only when the command has exactly the shape of
+ * "runner, harmless flags, package, the package's own arguments". `-p pkg other-command`,
+ * `--call`, a registry or other flag, a shell line with a second command, or an environment
+ * variable that changes what is loaded all mean the package name says nothing about what runs.
+ */
+function catalogPackage(
+  command: string | undefined,
+  args: readonly string[],
+  env: Readonly<Record<string, string>>,
+): string | undefined {
+  if (!command || Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
+  const base = baseName(command);
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
+    if (SHELL_SYNTAX.test(words)) return undefined;
+    const line = splitShell(words);
+    return catalogPackage(line[0], line.slice(1), {});
+  }
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base)) {
+    if (args.length !== 2 || args[0] !== '-c' || SHELL_SYNTAX.test(args[1]!)) return undefined;
+    const line = splitShell(args[1]!);
+    return catalogPackage(line[0], line.slice(1), {});
+  }
+  let rest = [...args];
+  if ((base === 'pnpm' || base === 'yarn') && rest[0] === 'dlx') rest = rest.slice(1);
+  else if (base === 'pipx' && rest[0] === 'run') rest = rest.slice(1);
+  else if (base === 'npm' && rest[0] === 'exec') rest = rest.slice(1);
+  else if (!RUNNERS.has(base)) return undefined;
+  for (const arg of rest) {
+    if (arg === '--') continue;
+    if (arg.startsWith('-')) {
+      if (SAFE_RUNNER_FLAGS.has(arg)) continue;
+      return undefined;
+    }
+    return splitSpec(arg).name;
+  }
+  return undefined;
+}
+
+/** `docker run` flags that take a value and change neither the image nor what it runs. */
+const DOCKER_VALUED = new Set([
+  '-e',
+  '--env',
+  '-v',
+  '--volume',
+  '--mount',
+  '--name',
+  '--network',
+  '--net',
+  '-w',
+  '--workdir',
+  '-u',
+  '--user',
+  '--add-host',
+  '-m',
+  '--memory',
+  '--cpus',
+  '-l',
+  '--label',
+  '--platform',
+  '--pull',
+  '-h',
+  '--hostname',
+  '--tmpfs',
+  '--ulimit',
+  '--dns',
+  '--expose',
+  '-p',
+  '--publish',
+  '--log-driver',
+  '--stop-signal',
+  '--restart',
+]);
+const DOCKER_FLAGS = new Set([
+  '-i',
+  '--interactive',
+  '-t',
+  '--tty',
+  '-it',
+  '-ti',
+  '--rm',
+  '-d',
+  '--detach',
+  '--init',
+  '--read-only',
+  '-q',
+  '--quiet',
+  '-P',
+  '--publish-all',
+]);
+
+/**
+ * The image a server runs, for the catalog, only when every `docker run` flag before it is known:
+ * an unknown flag might take the next word as its value, and `--entrypoint`, `--env-file` or an
+ * environment variable that changes what is loaded means the image name says nothing about what runs.
+ */
+function catalogImage(command: string | undefined, args: readonly string[]): string | undefined {
+  if (!command || !['docker', 'podman'].includes(baseName(command)) || args[0] !== 'run') return undefined;
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (!arg.startsWith('-')) return arg.split('@')[0]!.replace(/:[^/:]+$/, '');
+    const [flag, inline] = arg.includes('=')
+      ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
+      : [arg, undefined];
+    if (DOCKER_FLAGS.has(flag) && inline === undefined) continue;
+    if (!DOCKER_VALUED.has(flag)) return undefined;
+    const value = inline ?? args[(i += 1)];
+    if (value === undefined) return undefined;
+    if ((flag === '-e' || flag === '--env') && LOADER_ENV.test(value.split('=')[0]!)) return undefined;
+  }
+  return undefined;
+}
+
 /**
  * A team's own statement of what an MCP server can do, from `.agc.yaml` (`mcp_servers`). `match` is a
  * server's config name, a catalog ID, a package, an image or a remote host. It takes precedence over
@@ -498,13 +604,13 @@ function identify(
   command: string | undefined,
   args: readonly string[],
   url: string | undefined,
+  env: Readonly<Record<string, string>>,
   declared: readonly DeclaredServer[],
 ): CatalogEntry | undefined {
-  const runner = runnerPackage(command, args);
-  const pkg = runner && !runner.runsOther ? splitSpec(runner.spec).name : undefined;
-  const image = dockerImage(command, args)
-    ?.split('@')[0]
-    ?.replace(/:[^/:]+$/, '');
+  // A server with both a command and a URL is ambiguous: which one runs depends on the client.
+  if (command !== undefined && url !== undefined) return undefined;
+  const pkg = catalogPackage(command, args, env);
+  const image = catalogImage(command, args);
   let host: string | undefined;
   if (url) {
     try {
@@ -576,7 +682,7 @@ export function serversFromObject(
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    const catalog = identify(command, args, url, declared);
+    const catalog = identify(command, args, url, stringRecord(raw['env']), declared);
     servers.push({
       name,
       client,

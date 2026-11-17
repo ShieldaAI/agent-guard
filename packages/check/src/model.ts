@@ -80,6 +80,8 @@ export interface Project {
   readonly unrecognized: readonly Unrecognized[];
   /** Hooks that plugins in the repository install into every session that enables them. */
   readonly pluginHooks: readonly Hook[];
+  /** Candidate files that were not read because they are too large. */
+  readonly skippedFiles: readonly string[];
 }
 
 /**
@@ -254,7 +256,9 @@ export function buildProject(
   const plugins = new Map<string, { name: string; location: Location }>();
   /** Plugins whose server file could not be read: their reach is unknown. */
   const pluginUnknown = new Map<string, Location>();
-  const pluginServerFiles = new Map<string, string>();
+  const pluginServerFiles = new Map<string, string[]>();
+  /** Plugins whose hook file could not be read: they may run any command. */
+  const pluginUnknownHooks = new Map<string, Location>();
   const cursorCli: TextFile[] = [];
   const openCode: TextFile[] = [];
   const openCodeAgents: TextFile[] = [];
@@ -262,12 +266,16 @@ export function buildProject(
     errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
 
   const extraPaths = new Set(extraFiles.map(file => file.path));
+  // `~/...` and `<managed>/...` paths are settings outside the repository only when they come from
+  // userFiles; from any other source they are dropped, so a repository cannot pose as them.
+  const fromUser = new Set((options.userFiles ?? []).map(file => file.path));
+  const posesAsUser = (path: string) => USER_DIRS.has(path.split('/')[0]!) && !fromUser.has(path);
   const inputs = [
     ...source
       .list()
-      .filter(path => !extraPaths.has(path))
+      .filter(path => !extraPaths.has(path) && !posesAsUser(path))
       .map(path => ({ path, text: source.read(path) })),
-    ...extraFiles,
+    ...extraFiles.filter(file => !posesAsUser(file.path)),
     ...(options.userFiles ?? []),
   ];
   // Servers in ~/.claude.json: user scope (every project) and local scope (this folder only).
@@ -318,32 +326,50 @@ export function buildProject(
           servers.push(...serversFromObject(manifest, path, text, 'plugin', 0, declaredServers));
         if (isRecord(manifest['hooks'])) pluginHooks.push(...parseSettings(path, text).hooks);
         // Either may instead name a file in the plugin: read it from the same source.
+        // Either may instead name a file, or a list of files, in the plugin: read them from the same
+        // source. Anything else, or a file that cannot be read, is unknown and reported.
         for (const key of ['mcpServers', 'hooks'] as const) {
-          const named = manifest[key];
-          if (typeof named !== 'string') continue;
-          const relative = safeRelative(
-            [root, named.replace(/^\$\{CLAUDE_PLUGIN_ROOT\}\/?/, '').replace(/^\.\//, '')].filter(Boolean).join('/'),
-          );
-          const content = relative === undefined ? undefined : source.readNamed(relative);
-          if (content === undefined || relative === undefined) {
+          const value = manifest[key];
+          if (value === undefined || isRecord(value)) continue;
+          const at: Location = { file: path, line: lineOf(text, JSON.stringify(key)) || 1 };
+          const unread = (shown: string) => {
             unrecognized.push({
               agent: `Plugin ${plugins.get(root)!.name}`,
               setting: key,
-              value: named,
+              value: shown,
               assumed:
                 key === 'mcpServers'
-                  ? 'the file was not read, so its servers may read private data, take in untrusted input and send data out'
-                  : 'the file was not read, so its hooks were not judged',
-              location: { file: path, line: lineOf(text, JSON.stringify(key)) || 1 },
+                  ? 'not read, so its servers may read private data, take in untrusted input and send data out'
+                  : 'not read, so its hooks may run any command without asking',
+              location: at,
             });
-            if (key === 'mcpServers')
-              pluginUnknown.set(root, { file: path, line: lineOf(text, JSON.stringify(key)) || 1 });
-            continue;
+            (key === 'mcpServers' ? pluginUnknown : pluginUnknownHooks).set(root, at);
+          };
+          const entries = typeof value === 'string' ? [value] : Array.isArray(value) ? value : [value];
+          for (const entry of entries) {
+            if (isRecord(entry)) {
+              if (key === 'mcpServers')
+                servers.push(...serversFromObject({ mcpServers: entry }, path, text, 'plugin', 0, declaredServers));
+              else pluginHooks.push(...parseSettings(path, JSON.stringify({ hooks: entry })).hooks);
+              continue;
+            }
+            if (typeof entry !== 'string') {
+              unread(JSON.stringify(entry) ?? String(entry));
+              continue;
+            }
+            const relative = safeRelative(
+              [root, entry.replace(/^\$\{CLAUDE_PLUGIN_ROOT\}\/?/, '').replace(/^\.\//, '')].filter(Boolean).join('/'),
+            );
+            const content = relative === undefined ? undefined : source.readNamed(relative);
+            if (content === undefined || relative === undefined) {
+              unread(entry);
+              continue;
+            }
+            if (key === 'mcpServers') {
+              servers.push(...parseMcpConfig(relative, content, 'plugin', declaredServers));
+              pluginServerFiles.set(root, [...(pluginServerFiles.get(root) ?? []), relative]);
+            } else pluginHooks.push(...parseSettings(relative, content).hooks);
           }
-          if (key === 'mcpServers') {
-            servers.push(...parseMcpConfig(relative, content, 'plugin', declaredServers));
-            pluginServerFiles.set(root, relative);
-          } else pluginHooks.push(...parseSettings(relative, content).hooks);
         }
         continue;
       }
@@ -539,9 +565,11 @@ export function buildProject(
         assumed: 'every tool runs without asking',
         location: modeSetting.location,
       });
-    // Claude Code's Bash sandbox: sandboxed commands run without asking unless
-    // autoAllowBashIfSandboxed is false, and their network reach is the sandbox's allowed domains,
-    // which the scan does not model.
+    // Claude Code's Bash sandbox: sandboxed commands run and write without asking unless
+    // autoAllowBashIfSandboxed is false. Network reach is left as the rules give it: a command can
+    // leave the sandbox (allowUnsandboxedCommands, excludedCommands) through the normal permission
+    // flow, where an allowed command still runs without asking, and the allowed domains are not
+    // modelled, so the sandbox never lowers egress.
     const sandboxed = [...local, ...userLevel].find(file => file.sandbox);
     const sandboxAuto = sandboxed !== undefined && [...local, ...userLevel].every(file => file.autoAllowSandboxedBash);
     if (sandboxed)
@@ -550,8 +578,8 @@ export function buildProject(
         setting: 'sandbox.enabled',
         value: 'true',
         assumed: sandboxAuto
-          ? 'Bash runs without asking inside the sandbox, and its network reach (the sandbox allowed domains) is unknown'
-          : 'Bash asks before it runs; its network reach (the sandbox allowed domains) is unknown',
+          ? 'sandboxed Bash runs and writes without asking; its network reach is judged as if unsandboxed'
+          : 'Bash asks before it runs; its network reach is judged as if unsandboxed',
         location: sandboxed.sandbox!,
       });
     const inSandbox = (list: readonly Grant[]): Grant[] =>
@@ -562,10 +590,9 @@ export function buildProject(
               ? grant
               : {
                   ...grant,
-                  ...(sandboxAuto && grant.approval === 'ask'
+                  ...(sandboxAuto && grant.approval === 'ask' && grant.capability !== 'egress'
                     ? { approval: 'auto' as const, via: `${grant.via} (sandboxed, autoAllowBashIfSandboxed)` }
                     : {}),
-                  ...(grant.capability === 'egress' ? { certainty: 'unknown' as const } : {}),
                 },
           );
     // What the session could do before its own mode: a subagent with its own mode starts from this.
@@ -599,10 +626,17 @@ export function buildProject(
       headless: false,
     };
     agents.push(main);
+    // Under a bypassPermissions or auto session, the session's mode wins: a subagent cannot narrow it.
+    const sessionWins = mode === 'bypassPermissions' || mode === 'auto';
     for (const sub of subagents.filter(item => item.projectDir === dir)) {
       const mode = sub.permissionMode?.value;
-      const edits = mode === 'acceptEdits';
-      const ownMode = mode !== undefined && mode !== 'default' && mode !== 'manual' && mode !== 'plan';
+      const edits = mode === 'acceptEdits' && !sessionWins;
+      const ownMode =
+        mode !== undefined &&
+        mode !== 'default' &&
+        mode !== 'manual' &&
+        mode !== 'plan' &&
+        (!sessionWins || mode === 'bypassPermissions');
       if (sub.permissionMode && !CLAUDE_MODES.has(sub.permissionMode.value))
         unrecognized.push({
           agent: `Subagent ${sub.name}`,
@@ -802,9 +836,10 @@ export function buildProject(
       `${prefix}.mcp.json`,
       `${prefix}mcp.json`,
       `${prefix}.claude-plugin/plugin.json`,
-      ...(pluginServerFiles.has(root) ? [pluginServerFiles.get(root)!] : []),
+      ...(pluginServerFiles.get(root) ?? []),
     ]);
     const unknownAt = pluginUnknown.get(root);
+    const hooksAt = pluginUnknownHooks.get(root);
     const own = servers.filter(
       server => (server.client === 'plugin' || server.client === 'claude-code') && files.has(server.location.file),
     );
@@ -824,6 +859,17 @@ export function buildProject(
               certainty: 'unknown' as const,
               location: unknownAt,
             }))
+          : []),
+        ...(hooksAt
+          ? [
+              {
+                capability: 'exec' as const,
+                via: 'hooks (file not read)',
+                approval: 'auto' as const,
+                certainty: 'unknown' as const,
+                location: hooksAt,
+              },
+            ]
           : []),
       ],
       mediators: [],
@@ -871,5 +917,6 @@ export function buildProject(
     pluginSources,
     unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
     pluginHooks,
+    skippedFiles: [...(source.skippedFiles ?? [])],
   };
 }

@@ -819,6 +819,21 @@ export const CASES = [
     files: { '.claude/settings.json': settings({ defaultMode: 'dontAsk' }) },
   },
 
+  {
+    id: 'cfg2-padded-settings',
+    rule: 'AGC-CFG-002',
+    expect: true,
+    files: {
+      '.claude/settings.json': `${settings({ defaultMode: 'bypassPermissions' })}\n${' '.repeat(1_100_000)}\n`,
+    },
+  },
+  {
+    id: 'cfg2-small-settings',
+    rule: 'AGC-CFG-002',
+    expect: false,
+    files: { '.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }) },
+  },
+
   // ---- policy as code ----
   {
     id: 'pol1-off-list',

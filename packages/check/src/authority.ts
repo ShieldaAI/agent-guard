@@ -66,16 +66,29 @@ function balanced(pattern: string): boolean {
   return depth === 0;
 }
 
+/** An alternative the scanner can read without running it: a tool name, or a name prefix with `.*` / `.+`. */
+const SHAPE = /^([A-Za-z0-9_-]*)(\.\*|\.\+)?$/;
+
+/** Whether one alternative accepts this tool name, read from its shape. Anything else is not credited. */
+function shapeAccepts(alt: string, tool: string): boolean {
+  const shape = SHAPE.exec(alt);
+  if (!shape) return false;
+  const [, literal = '', rest] = shape;
+  if (rest === undefined) return literal === tool;
+  return tool.startsWith(literal) && (rest === '.*' || tool.length > literal.length);
+}
+
 /**
  * Whether a runtime check sees calls of one tool, as grants name tools (`Bash`, `WebFetch`,
  * `mcp__server`, `*`). A guard or gateway reached over MCP sees only the calls made through it.
  * A grant with no tool (a workflow token, a sandbox setting) is never seen.
  *
- * A hook matcher is a regular expression from the repository. It is only ever run against the
- * scanner's own short tool names (`Bash`, `WebFetch`), never against a name the repository chose,
- * so it cannot make the scan hang. For an MCP server and for `*`, coverage is decided from the
- * matcher's shape instead: an alternative must accept every tool (`.*`), every MCP tool
- * (`mcp__.*`) or every tool of that server (`mcp__server__.*`). One named tool is not the server.
+ * A hook matcher is a regular expression from the repository, so the scanner never runs it: a
+ * short pattern can backtrack for hours even on a short name. It only checks that the matcher
+ * compiles (Claude Code skips one that does not), then reads its alternatives: an exact tool name
+ * (`Bash`), a name prefix (`Notebook.*`, `mcp__db__.*`), or every tool (`.*`). An MCP server is
+ * covered only by a prefix that takes in all of its tools, never by one named tool. Any other
+ * shape, such as a character class, is not credited: under-crediting a check only adds a finding.
  */
 export function mediates(mediator: Mediator, tool: string | undefined): boolean {
   if (tool === undefined) return false;
@@ -86,11 +99,10 @@ export function mediates(mediator: Mediator, tool: string | undefined): boolean 
   const alts = alternatives(matcher);
   if (alts.some(alt => EVERY_TOOL.has(alt))) return true;
   if (tool === '*') return false;
-  if (tool.startsWith('mcp__')) {
-    const server = tool.slice('mcp__'.length);
-    return alts.some(alt => ['mcp__.*', 'mcp__.+', `${tool}__.*`, `${tool}__.+`].includes(alt) && server !== '');
-  }
-  return new RegExp(`^(?:${matcher})$`).test(tool);
+  // Every tool of a server is `mcp__<server>__<tool>`: a prefix must hold for all of them.
+  if (tool.startsWith('mcp__'))
+    return alts.some(alt => /\.[*+]$/.test(alt) && shapeAccepts(alt.replace(/\.[*+]$/, '.*'), `${tool}__`));
+  return alts.some(alt => shapeAccepts(alt, tool));
 }
 
 /** Whether any of an agent's runtime checks sees this grant's calls. */

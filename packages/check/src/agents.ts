@@ -127,7 +127,7 @@ export function parseOpenCode(
     if (fallback === 'allow' && permission['*'] !== undefined)
       bypasses.push({ agent: `${name}${who}`, what: 'permission "*" = "allow"', location: at('permission') });
     for (const tool of OPENCODE_TOOLS) {
-      if (tool.disable.some(key => off.has(key))) continue;
+      if (tool.disable.every(key => off.has(key))) continue;
       const value = permission[tool.v1];
       const location = value === undefined ? at('permission') : at(tool.v1);
       if (isRecord(value)) {
@@ -208,18 +208,21 @@ export function parseOpenCode(
     });
   }
   const v1Overrides = overrides.some(item => item.permission !== undefined);
+  /** The tools an override turns off, starting from the file's own `tools`. */
+  const offFor = (item: (typeof overrides)[number]): Set<string> => {
+    const off = new Set(disabled);
+    for (const [key, value] of Object.entries(item.tools ?? {}))
+      if (value === false) off.add(key);
+      else if (value === true) off.delete(key);
+    return off;
+  };
 
   if (isRecord(v1) || typeof v1 === 'string' || (v1Overrides && !v2)) {
     // V1: a shorthand string applies to every tool; "*" is the default for tools not listed.
     const base: Record<string, unknown> = typeof v1 === 'string' ? { '*': v1 } : isRecord(v1) ? v1 : {};
     judgeV1(base, disabled, '');
-    for (const item of overrides) {
-      const off = new Set(disabled);
-      for (const [key, value] of Object.entries(item.tools ?? {}))
-        if (value === false) off.add(key);
-        else if (value === true) off.delete(key);
-      judgeV1({ ...base, ...(item.permission ?? {}) }, off, ` (agent ${item.label})`);
-    }
+    for (const item of overrides)
+      judgeV1({ ...base, ...(item.permission ?? {}) }, offFor(item), ` (agent ${item.label})`);
   } else if (v2) {
     // V2: ordered rules of action, resource and effect; a call no rule matches asks.
     const rules = v2.flatMap(item => {
@@ -231,7 +234,7 @@ export function parseOpenCode(
       return [{ action: act, resource, effect: action(effect, `permissions[${act}].effect`, location), location }];
     });
     for (const tool of OPENCODE_TOOLS) {
-      if (tool.disable.some(key => disabled.has(key))) continue;
+      if (tool.disable.every(key => disabled.has(key))) continue;
       const mine = rules.filter(rule => rule.action === tool.v2 || rule.action === '*');
       const allowed = mine.filter(rule => rule.effect === 'allow' || rule.effect === 'unknown');
       const deniedAll = mine.some(rule => rule.effect === 'deny' && rule.resource === '*');
@@ -250,6 +253,9 @@ export function parseOpenCode(
       grants.push(
         ...grantsForRule(parseRule(`mcp__${server.name}`, server.location), everything ? 'auto' : 'ask', servers),
       );
+    // An agent override is written like V1; what it does not set asks, as unmatched V2 calls do.
+    for (const item of overrides)
+      judgeV1({ '*': 'ask', ...(item.permission ?? {}) }, offFor(item), ` (agent ${item.label})`);
   } else {
     // No permission settings: V1 would run everything without asking, V2 would ask. Say so.
     unrecognized.push({
@@ -259,8 +265,10 @@ export function parseOpenCode(
       assumed: 'tools run without asking, as in OpenCode V1 (V2 asks); set permissions explicitly',
       location: anchor,
     });
+    // A tool any agent override turns back on is there too.
     for (const tool of OPENCODE_TOOLS)
-      if (!tool.disable.some(key => disabled.has(key))) add(tool.rule, 'auto', anchor, 'unknown');
+      if ([disabled, ...overrides.map(offFor)].some(off => !tool.disable.every(key => off.has(key))))
+        add(tool.rule, 'auto', anchor, 'unknown');
     for (const server of servers)
       grants.push(
         ...grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'auto', servers).map(item => ({
@@ -457,17 +465,35 @@ export function parseCopilotAgent(path: string, text: string, declared: readonly
   const at = toolsLine.line > 1 ? toolsLine : anchor;
   const ide = asString(data['target'])?.toLowerCase() === 'vscode';
   const prompt: Approval = ide ? 'ask' : 'auto';
-  const tools = data['tools'] === undefined ? ['*'] : asStringArray(data['tools']).map(tool => tool.trim());
+  const rawTools = data['tools'];
+  // Left out means every tool. A value that is not a list (`tools:` with nothing after it is null)
+  // says nothing about which tools: judge it as every tool, and report it.
+  const oddTools = rawTools !== undefined && !Array.isArray(rawTools) && typeof rawTools !== 'string';
+  const tools = rawTools === undefined || oddTools ? ['*'] : asStringArray(rawTools).map(tool => tool.trim());
   const all = tools.includes('*');
   const ownBlock = isRecord(data['mcp-servers']) ? data['mcp-servers'] : {};
   const servers = serversFromObject({ mcpServers: ownBlock }, path, text, 'copilot', 0, declared);
   const grants: Grant[] = [];
   const unrecognized: Unrecognized[] = [];
+  if (oddTools)
+    unrecognized.push({
+      agent: name,
+      setting: 'tools',
+      value: JSON.stringify(rawTools) ?? String(rawTools),
+      assumed: 'every tool, as when tools is left out',
+      location: at,
+    });
   const kinds = new Set<string>(all ? ['execute', 'edit', 'web'] : []);
   const serverTools = new Map<string, string[]>();
   for (const tool of tools) {
     if (tool === '*') continue;
     const slash = tool.indexOf('/');
+    // `execute/runInTerminal`, `edit/editFiles`: a tool set and one of its tools, not an MCP server.
+    const toolSet = slash > 0 ? COPILOT_TOOLS[tool.slice(0, slash).toLowerCase()] : undefined;
+    if (toolSet && !servers.some(server => server.name === tool.slice(0, slash))) {
+      kinds.add(toolSet);
+      continue;
+    }
     if (slash > 0) {
       const server = tool.slice(0, slash);
       serverTools.set(server, [...(serverTools.get(server) ?? []), tool.slice(slash + 1)]);
@@ -528,7 +554,8 @@ export function parseCopilotAgent(path: string, text: string, declared: readonly
   // Servers configured outside this file (repository settings on GitHub, VS Code's mcp.json):
   // what they can do is not in the repository, so it is unknown.
   for (const [server, chosen] of serverTools) {
-    if (servers.some(item => item.name === server) || (server === 'github' && !ide) || server === 'playwright')
+    // On the cloud agent, github is the read-only GitHub server and playwright is limited to localhost.
+    if (servers.some(item => item.name === server) || (!ide && (server === 'github' || server === 'playwright')))
       continue;
     grants.push(
       ...grantsForRule(parseRule(`mcp__${server}${chosen.includes('*') ? '' : `__${chosen[0]}`}`, at), prompt, []),

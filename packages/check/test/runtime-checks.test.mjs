@@ -156,3 +156,24 @@ test('a matcher naming one probe-like tool does not cover a whole server or ever
     'a group of alternatives is read as alternatives',
   );
 });
+
+test('a matcher is never run: one that backtracks on a short name cannot hang the scan', () => {
+  const started = Date.now();
+  for (const matcher of ['(?:.{0,8}){60}X', '(a|a)*b', '(?:Web.*)*Z'])
+    assert.equal(
+      cov({ '.claude/settings.json': settings({ allow: ['WebFetch', 'Bash'] }, { hooks: hook(matcher) }) }).length,
+      1,
+      matcher,
+    );
+  assert.ok(Date.now() - started < 2000);
+});
+
+test('matcher shapes the scanner can read: names, name prefixes and every tool', () => {
+  const files = matcher => ({
+    '.claude/settings.json': settings({ allow: ['Bash', 'WebFetch'] }, { hooks: hook(matcher) }),
+  });
+  assert.equal(cov(files('Bash|Web.*')).length, 0, 'Web.* takes in WebFetch');
+  assert.equal(cov(files('Bash|Web.+')).length, 0);
+  assert.equal(cov(files('Bash|WebFetch.+')).length, 1, 'WebFetch.+ needs one more character');
+  assert.equal(cov(files('Bash|[W]ebFetch')).length, 1, 'a character class is not read, so not credited');
+});

@@ -120,7 +120,7 @@ class UsageError extends Error {}
 function readInput(path: string): string {
   let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const info = fstatSync(fd);
     if (!info.isFile()) throw new UsageError(`${path} is not a regular file`);
     if (info.size > MAX_INPUT_BYTES) throw new UsageError(`${path} is larger than ${MAX_INPUT_BYTES} bytes`);

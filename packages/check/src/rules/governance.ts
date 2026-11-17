@@ -143,6 +143,31 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
         });
     },
   ),
+  rule(
+    {
+      id: 'AGC-CFG-002',
+      title: 'Agent configuration file too large to read',
+      severity: 'high',
+      confidence: 'high',
+      owasp: [ASI.tools, ASI.supply],
+      help: 'Files over 1 MiB are not read, so nothing in them is judged. Agent settings are small; padding a settings file past the limit would otherwise hide what it grants.',
+    },
+    (project, report) => {
+      for (const path of project.skippedFiles) {
+        const name = path.split('/').at(-1) ?? path;
+        // Instructions and repository metadata hide less than settings that grant tools.
+        const severity =
+          name === 'package.json' || name === 'CODEOWNERS' ? 'low' : /\.mdc?$/.test(name) ? 'medium' : 'high';
+        report({
+          message: `${path} is larger than 1 MiB, so it was not read and nothing in it was judged.`,
+          location: { file: path, line: 1 },
+          subject: path,
+          severity,
+          fix: 'Keep agent configuration small, or split it; check this file by hand.',
+        });
+      }
+    },
+  ),
 ];
 
 const MODEL_ALIAS = /^(sonnet|opus|haiku|opusplan|default|best|sonnet\[1m\])$|(^|[-_])latest$/;

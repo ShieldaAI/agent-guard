@@ -18,17 +18,20 @@
 - Add: `mcp_servers` in `.agc.yaml` declares what an MCP server can do, keyed by what runs
   (package, image, host or catalog ID), never by the config name a change chooses. With `--base`
   it is read from the base commit.
-- Fix: a package started with another command beside it (`npx -p pkg node -e ...`,
-  `uvx --from pkg python -c ...`) or an image with a replaced entrypoint is no longer identified
-  as that package or image.
+- Fix: a package or image is identified only when the command has exactly the expected shape
+  (runner, harmless flags, package and its arguments; or `docker run` with known flags and the
+  image). `-p`, `--call`, other runner flags, shell lines with a second command,
+  `--entrypoint`, `--env-file`, unknown docker flags, loader environment variables
+  (`NODE_OPTIONS`, `npm_config_*`, `LD_PRELOAD`, ...) and command-plus-URL servers stay unknown.
+- Add: AGC-CFG-002 (high) reports an agent configuration file too large to read, so padding a
+  settings file past 1 MiB fails the gate instead of hiding it.
 - Add: the MCP catalog knows 24 more servers, 44 in all (search, browsers, documentation,
   databases, Kubernetes and SaaS accounts such as Zapier, Asana, Figma and PostHog).
-- Fix: hook matchers must be valid regular expressions on their own and at most 512 characters;
-  MCP coverage is read from the matcher's alternatives, so a repository's regex never runs
-  against a name the repository chose. `disableAllHooks` and managed `allowManagedHooksOnly` are
-  honoured.
-- Fix: Claude Code's Bash sandbox: sandboxed Bash runs without asking unless
-  `autoAllowBashIfSandboxed` is false, with its network reach unknown.
+- Fix: hook matchers are never run. Coverage is read from the matcher's alternatives (exact tool
+  names, name prefixes, every tool); a matcher must compile and be at most 512 characters.
+  `disableAllHooks` and managed `allowManagedHooksOnly` are honoured.
+- Fix: Claude Code's Bash sandbox: sandboxed Bash runs and writes without asking unless
+  `autoAllowBashIfSandboxed` is false; the sandbox never lowers network reach.
 - Fix: AGC-TXT-001 no longer reports the zero-width joiner inside an emoji, and AGC-TXT-002 no
   longer reports a phrase quoted as an example of an attack, or "do not tell the user to ...".
 - Note: the inventory's `runtimeChecks` now lists every `PreToolUse` hook, not only those that
@@ -37,7 +40,9 @@
 - Add: OpenCode (`opencode.json`, agent overrides and `.opencode/agent/*.md`), the Cursor CLI
   (`.cursor/cli.json`), GitHub Copilot custom agents (`.github/agents/*.md`, cloud or
   `target: vscode`), Kiro (`.kiro/settings/mcp.json`), Claude Code plugin folders and Agent
-  Plugins are read as agents. A plugin never takes a project's `.mcp.json` away from Claude Code. Copilot, Cursor, Windsurf and Kiro instruction files
+  Plugins are read as agents. A plugin never takes a project's `.mcp.json` away from Claude Code.
+  Repository folders named `~` or `<managed>` are never read as user or managed settings, and a
+  FIFO named by a plugin manifest cannot block the scan. Copilot, Cursor, Windsurf and Kiro instruction files
   feed the text rules.
 - Add: `--include-user` merges your own settings (`~/.claude`, `~/.claude.json`, `~/.codex`,
   `~/.gemini`, managed settings and servers) in Claude Code's order. Local runs only: refused
