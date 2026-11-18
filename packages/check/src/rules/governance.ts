@@ -155,9 +155,13 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
     (project, report) => {
       for (const path of project.skippedFiles) {
         const name = path.split('/').at(-1) ?? path;
-        // Instructions and repository metadata hide less than settings that grant tools.
-        const severity =
-          name === 'package.json' || name === 'CODEOWNERS' ? 'low' : /\.mdc?$/.test(name) ? 'medium' : 'high';
+        // Instructions and repository metadata hide less than settings that grant tools. Agent
+        // definitions written in Markdown (subagents, Copilot, OpenCode and gh-aw agents) grant tools.
+        const instructions =
+          /(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL|copilot-instructions)\.md$|\.(instructions|prompt)\.md$|\.mdc$|(^|\/)\.(cursorrules|windsurfrules)$|(^|\/)(\.claude\/commands|\.kiro\/steering|\.windsurf\/rules|\.cursor\/rules)\//.test(
+            path,
+          );
+        const severity = name === 'package.json' || name === 'CODEOWNERS' ? 'low' : instructions ? 'medium' : 'high';
         report({
           message: `${path} is larger than 1 MiB, so it was not read and nothing in it was judged.`,
           location: { file: path, line: 1 },

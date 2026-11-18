@@ -1,8 +1,8 @@
 import { LineCounter, parseDocument, isMap, type Node } from 'yaml';
 import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
-import { asString, isRecord, lineOf } from './text.js';
+import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
+import { asString, asStringArray, isRecord, lineOf } from './text.js';
 
 export type AgentAction = 'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli';
 
@@ -49,6 +49,8 @@ export interface WorkflowAgent {
   readonly codex?: { readonly sandbox?: string; readonly profile?: string; readonly location: Location };
   /** A GitHub token reaches the agent (`github_token`, GH_TOKEN or GITHUB_TOKEN, or claude-code-action's own). */
   readonly githubToken: boolean;
+  /** Where auto mode is set: tools run when Claude Code's safety review passes them, not a person. */
+  readonly autoMode?: Location;
 }
 
 /**
@@ -65,7 +67,7 @@ export const UNTRUSTED_TRIGGERS = new Set([
 ]);
 /** Scopes whose write access lets an agent publish text: comments, issues, commits, discussions. */
 export const PUBLISHING_SCOPES = new Set(['issues', 'pull-requests', 'contents', 'discussions']);
-const MODEL_SECRETS =
+export const MODEL_SECRETS =
   /^(GITHUB_TOKEN|ANTHROPIC_API_KEY|CLAUDE_CODE_OAUTH_TOKEN|OPENAI_API_KEY|CODEX_API_KEY|ANTHROPIC_BASE_URL|AWS_ROLE_TO_ASSUME|GCP_WORKLOAD_IDENTITY_PROVIDER|GCP_SERVICE_ACCOUNT|ANTHROPIC_VERTEX_PROJECT_ID|AZURE_OPENAI_API_KEY)$/;
 
 function grantsIdToken(value: unknown): boolean {
@@ -111,6 +113,8 @@ interface Flags {
   model?: string;
   /** Codex sandbox from `--sandbox`, `-s`, `-c sandbox_mode=...` or `--full-auto`. */
   sandbox?: string;
+  /** `--permission-mode auto`: Claude Code's safety review, not a person, approves each call. */
+  autoMode?: boolean;
 }
 
 function toolList(value: string): string[] {
@@ -118,6 +122,19 @@ function toolList(value: string): string[] {
     .split(/,(?![^(]*\))|\s+(?![^(]*\))/)
     .map(item => item.trim())
     .filter(Boolean);
+}
+
+/** Codex sandboxes from narrowest to widest; a value Codex does not name is wider than all of them. */
+const SANDBOX_ORDER = ['read-only', 'workspace-write', 'danger-full-access'];
+
+/** The wider of two sandbox settings: when flags and inputs disagree, judge the one that allows more. */
+export function widerSandbox(a: string | undefined, b: string): string;
+export function widerSandbox(a: string | undefined, b: string | undefined): string | undefined;
+export function widerSandbox(a: string | undefined, b: string | undefined): string | undefined {
+  if (a === undefined) return b;
+  if (b === undefined) return a;
+  const rank = (value: string) => (SANDBOX_ORDER.includes(value) ? SANDBOX_ORDER.indexOf(value) : SANDBOX_ORDER.length);
+  return rank(b) > rank(a) ? b : a;
 }
 
 function readFlags(text: string): Flags {
@@ -139,12 +156,16 @@ function readFlags(text: string): Flags {
     ) {
       flags.skip = true;
     } else if (name === '--permission-mode') {
-      if (value() === 'bypassPermissions') flags.skip = true;
+      // auto: a classifier, not a person, approves; acceptEdits: file edits run without asking.
+      const mode = value();
+      if (mode === 'bypassPermissions') flags.skip = true;
+      else if (mode === 'auto') flags.autoMode = true;
+      else if (mode === 'acceptEdits') flags.allowedTools.push('Edit');
     } else if (name === '--sandbox' || name === '-s') {
-      flags.sandbox = value();
+      flags.sandbox = widerSandbox(flags.sandbox, value());
       if (flags.sandbox === 'danger-full-access') flags.skip = true;
     } else if (name === '--full-auto') {
-      flags.sandbox ??= 'workspace-write';
+      flags.sandbox = widerSandbox(flags.sandbox, 'workspace-write');
     } else if (name === '-c' || name === '--config') {
       // Codex config overrides (-c sandbox_mode="danger-full-access"). For Claude, -c is --continue and
       // takes no value, so only a key=value argument is consumed.
@@ -153,7 +174,7 @@ function readFlags(text: string): Flags {
         if (inline === undefined) i += 1;
         const [key, setting] = next.split(/=(.*)/s, 2);
         if (key?.trim() === 'sandbox_mode') {
-          flags.sandbox = (setting ?? '').trim().replace(/^["']|["']$/g, '');
+          flags.sandbox = widerSandbox(flags.sandbox, (setting ?? '').trim().replace(/^["']|["']$/g, ''));
           if (flags.sandbox === 'danger-full-access') flags.skip = true;
         }
       }
@@ -186,10 +207,10 @@ function joinLines(text: string): string {
   return text.replace(/\\\r?\n\s*/g, ' ');
 }
 const HARNESS_ENV = /^(OTEL_|CLAUDE_CODE_|ANTHROPIC_|CLAUDE_|DISABLE_|MCP_TIMEOUT|BASH_DEFAULT_TIMEOUT)/;
-const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
+export const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 
 /** Reads a workflow file and returns its agent steps. Throws on invalid YAML. */
-export function parseWorkflow(path: string, text: string, declared: readonly DeclaredServer[] = []): WorkflowAgent[] {
+export function parseWorkflow(path: string, text: string, declared: CatalogContext = NO_CONTEXT): WorkflowAgent[] {
   const counter = new LineCounter();
   const doc = parseDocument(text, { lineCounter: counter, uniqueKeys: false });
   if (doc.errors.length) throw new Error(doc.errors[0]!.message);
@@ -253,8 +274,19 @@ export function parseWorkflow(path: string, text: string, declared: readonly Dec
       const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
       const line = nodeLine(stepNode, 1);
       const inputs = isRecord(step['with']) ? step['with'] : {};
+      // Arguments may be given as a YAML list or a JSON array as well as one string.
+      const quote = (word: string) => `"${word.replace(/["\\]/g, '\\$&')}"`;
       const input = (key: string): string | undefined => {
         const value = inputs[key];
+        if (Array.isArray(value)) return resolveEnv(value.map(item => quote(String(item))).join(' '));
+        if (typeof value === 'string' && /^\s*\[/.test(value)) {
+          try {
+            const list = JSON.parse(value) as unknown;
+            if (Array.isArray(list)) return resolveEnv(list.map(item => quote(String(item))).join(' '));
+          } catch {
+            // Not JSON: read it as one string below.
+          }
+        }
         return typeof value === 'string' ? resolveEnv(value) : typeof value === 'number' ? String(value) : undefined;
       };
       const inputLine = (key: string): number =>
@@ -278,15 +310,35 @@ export function parseWorkflow(path: string, text: string, declared: readonly Dec
           : input('allowed_tools') !== undefined
             ? inputLine('allowed_tools')
             : line;
-      const allowedTools = [...flags.allowedTools, ...legacyTools].map(raw =>
-        parseRule(raw, { file: path, line: toolsLine }),
-      );
+      // claude-code-action's `settings` input, given inline as JSON: its permissions apply to the step.
+      const inlineSettings = (() => {
+        const text = input('settings');
+        if (!text || !/^\s*\{/.test(text)) return undefined;
+        try {
+          const data = JSON.parse(text) as unknown;
+          return isRecord(data) && isRecord(data['permissions']) ? data['permissions'] : undefined;
+        } catch {
+          return undefined;
+        }
+      })();
+      const settingsAllow = inlineSettings ? asStringArray(inlineSettings['allow'] ?? []) : [];
+      const settingsDeny = inlineSettings ? asStringArray(inlineSettings['deny'] ?? []) : [];
+      const settingsMode = inlineSettings ? asString(inlineSettings['defaultMode']) : undefined;
+      if (settingsMode === 'acceptEdits') settingsAllow.push('Edit');
+      const settingsLine = input('settings') !== undefined ? inputLine('settings') : toolsLine;
+      const allowedTools = [
+        ...[...flags.allowedTools, ...legacyTools].map(raw => parseRule(raw, { file: path, line: toolsLine })),
+        ...settingsAllow.map(raw => parseRule(raw, { file: path, line: settingsLine })),
+      ];
       const disallowedTools = [
-        ...flags.disallowedTools,
-        ...toolList((input('disallowed_tools') ?? '').replace(/\n/g, ',')),
-      ].map(raw => parseRule(raw, { file: path, line: toolsLine }));
+        ...[...flags.disallowedTools, ...toolList((input('disallowed_tools') ?? '').replace(/\n/g, ','))].map(raw =>
+          parseRule(raw, { file: path, line: toolsLine }),
+        ),
+        ...settingsDeny.map(raw => parseRule(raw, { file: path, line: settingsLine })),
+      ];
       const sandbox = input('sandbox') ?? input('safety-strategy') ?? '';
-      const skip = flags.skip || sandbox === 'danger-full-access' || sandbox === 'unsafe';
+      const skip =
+        flags.skip || sandbox === 'danger-full-access' || sandbox === 'unsafe' || settingsMode === 'bypassPermissions';
       const skipLine =
         sandbox === 'danger-full-access' || sandbox === 'unsafe'
           ? inputLine(input('sandbox') !== undefined ? 'sandbox' : 'safety-strategy')
@@ -360,6 +412,19 @@ export function parseWorkflow(path: string, text: string, declared: readonly Dec
         allowedTools,
         disallowedTools,
         ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),
+        ...(!skip && (flags.autoMode || settingsMode === 'auto')
+          ? {
+              autoMode: {
+                file: path,
+                line:
+                  settingsMode === 'auto'
+                    ? settingsLine
+                    : input('claude_args') !== undefined
+                      ? inputLine('claude_args')
+                      : line,
+              },
+            }
+          : {}),
         githubToken:
           action === 'claude-code-action' ||
           tokenInput !== undefined ||
@@ -367,8 +432,8 @@ export function parseWorkflow(path: string, text: string, declared: readonly Dec
         ...(action.startsWith('codex')
           ? {
               codex: {
-                ...((input('sandbox') ?? flags.sandbox) !== undefined
-                  ? { sandbox: (input('sandbox') ?? flags.sandbox)! }
+                ...(widerSandbox(input('sandbox'), flags.sandbox) !== undefined
+                  ? { sandbox: widerSandbox(input('sandbox'), flags.sandbox)! }
                   : {}),
                 ...(input('permission-profile') !== undefined ? { profile: input('permission-profile')! } : {}),
                 location: {

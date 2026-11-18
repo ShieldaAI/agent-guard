@@ -77,7 +77,7 @@ export interface Unrecognized {
  * call bypasses it.
  */
 export interface Mediator {
-  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway' | 'safe-outputs';
+  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway' | 'safe-outputs' | 'auto-mode';
   readonly location: Location;
   /** For a hook: its matcher (`''` or `*` means every tool). */
   readonly matcher?: string;

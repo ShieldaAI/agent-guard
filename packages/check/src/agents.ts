@@ -1,9 +1,9 @@
 import type { Approval, Grant, Location, Unrecognized } from './types.js';
 import { deniesWholeTool, grantsForRule, parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
+import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import type { Bypass, ModelChoice, OtherAgent } from './formats.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
-import { PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS } from './workflows.js';
+import { MODEL_SECRETS, PUBLISHING_SCOPES, SECRET_REF, UNTRUSTED_TRIGGERS } from './workflows.js';
 
 /**
  * More agents, each reduced to the grants the rules use: OpenCode (`opencode.json`), the Cursor
@@ -68,7 +68,7 @@ function openCodeRule(base: string, pattern: string): string {
 export function parseOpenCode(
   path: string,
   text: string,
-  declared: readonly DeclaredServer[] = [],
+  declared: CatalogContext = NO_CONTEXT,
   agentFiles: readonly { readonly path: string; readonly text: string }[] = [],
   dirOverride?: string,
 ): OtherAgent {
@@ -456,7 +456,7 @@ const COPILOT_TOOLS: Readonly<Record<string, 'execute' | 'edit' | 'web' | 'read'
  * leaves it out. With `target: vscode` it runs in VS Code, which asks before terminal commands,
  * fetches and MCP tools. A tool name it does not know is reported, and counted as unknown reach.
  */
-export function parseCopilotAgent(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
+export function parseCopilotAgent(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
   const { data } = frontmatter(text);
   const file = path.split('/').at(-1)!;
   const label = asString(data['name']) ?? file.replace(/(\.agent)?\.md$/, '');
@@ -582,7 +582,7 @@ export function parseCopilotAgent(path: string, text: string, declared: readonly
  * `.kiro/settings/mcp.json`: Kiro's workspace MCP servers. `autoApprove` lists tools that run
  * without a prompt ("*" for all); `disabled: true` turns a server off. Throws on invalid JSON.
  */
-export function parseKiroMcp(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
+export function parseKiroMcp(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
   const data = parseJsonc(text);
   if (!isRecord(data)) throw new Error('config must be an object');
   const raw = isRecord(data['mcpServers']) ? data['mcpServers'] : {};
@@ -636,58 +636,87 @@ const AGENTIC_UNTRUSTED = new Set([...UNTRUSTED_TRIGGERS, 'command', 'slash_comm
 /** Safe-output kinds (`add-comment`, `create-pull-request`, ...), not the keys that configure the job. */
 const AGENTIC_OUTPUT =
   /^(create|add|update|push|close|submit|upload|assign|dispatch|link|hide|remove|mark|reply|resolve|unassign|set|merge|autofix)-/;
+/** gh-aw's built-in engines, whose tools are the ones `tools` lists. */
+const AGENTIC_ENGINES = new Set(['copilot', 'claude', 'codex', 'gemini']);
+/** Tools whose reach the scanner models. Any other tool is reported, and counted as unknown reach. */
+const AGENTIC_TOOLS = new Set(['github', 'bash', 'edit', 'web-fetch', 'web-search', 'playwright']);
+/** Settings imports add to the workflow. */
+const AGENTIC_MERGED = ['engine', 'tools', 'safe-outputs', 'mcp-servers', 'env', 'github-token'] as const;
+/** How deep imports of imports are read; anything deeper is unknown reach. */
+const MAX_IMPORT_DEPTH = 3;
 
 /**
- * Whether a Markdown file in `.github/workflows/` is a gh-aw workflow: `on:` plus an engine, tools,
- * safe outputs, imports, permissions or network settings. Plain notes there stay instructions.
+ * Whether a Markdown file in `.github/workflows/` is a gh-aw workflow. gh-aw needs only `on:` (the
+ * engine defaults to Copilot), so any frontmatter with `on:` is one; other notes stay instructions.
  */
 export function isAgenticWorkflow(text: string): boolean {
-  const { data } = frontmatter(text);
-  return (
-    data['on'] !== undefined &&
-    ['engine', 'tools', 'safe-outputs', 'imports', 'permissions', 'network'].some(key => data[key] !== undefined)
-  );
+  return frontmatter(text).data['on'] !== undefined;
 }
 
 /**
- * `.github/workflows/<name>.md`: a GitHub Agentic Workflow. It runs unattended. Its `tools` say
- * what the agent can use (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github`, MCP
- * servers); `safe-outputs` are posted for it by a later job (issues, comments, pull requests),
- * which is sending text out; its network sits behind gh-aw's firewall, so fetches are unknown reach.
+ * Two settings for one tool from a workflow and its imports, merged the way gh-aw widens them: lists
+ * are joined, and an enabled tool (true, null or a mapping) is wider than a list of commands.
  */
-/** gh-aw's built-in engines, whose tools are the ones `tools` lists. */
-const AGENTIC_ENGINES = new Set(['copilot', 'claude', 'codex', 'gemini']);
-const AGENTIC_MERGED = ['engine', 'tools', 'safe-outputs', 'mcp-servers'] as const;
+function widen(a: unknown, b: unknown): unknown {
+  if (a === undefined || a === false) return b;
+  if (b === undefined || b === false) return a;
+  if (Array.isArray(a) && Array.isArray(b)) return [...new Set([...a, ...b])];
+  if (isRecord(a) && isRecord(b)) {
+    const out: Record<string, unknown> = { ...a };
+    for (const [key, value] of Object.entries(b)) out[key] = widen(out[key], value);
+    return out;
+  }
+  if (Array.isArray(a)) return b;
+  if (Array.isArray(b)) return a;
+  return a === null || a === true ? a : b;
+}
 
+/**
+ * `.github/workflows/<name>.md`: a GitHub Agentic Workflow. It runs unattended. Its `tools` say what
+ * the agent can use; `safe-outputs` are posted for it by a separate job that checks them first (a
+ * runtime check, unless `threat-detection` is off); its network sits behind gh-aw's firewall, so
+ * fetches are unknown reach. Imports from the repository are read; an import that cannot be read,
+ * an engine gh-aw does not build in, or a tool the scanner does not model is unknown reach.
+ */
 export function parseAgenticWorkflow(
   path: string,
   text: string,
-  declared: readonly DeclaredServer[] = [],
+  declared: CatalogContext = NO_CONTEXT,
   readImport: (path: string) => string | undefined = () => undefined,
 ): OtherAgent {
   const own = frontmatter(text).data;
-  // `imports` add engines, tools and safe outputs from shared files in the repository (read one
-  // level deep, and their imports once more). An import from another repository cannot be read.
   const data: Record<string, unknown> = { ...own };
   const unreadImports: string[] = [];
   const merge = (imported: Record<string, unknown>) => {
     for (const key of AGENTIC_MERGED) {
-      const value = imported[key];
-      if (value === undefined) continue;
-      if (key === 'engine') data['engine'] ??= value;
-      else if (isRecord(value)) data[key] = { ...value, ...(isRecord(data[key]) ? data[key] : {}) };
+      if (imported[key] === undefined) continue;
+      data[key] = key === 'engine' ? (data[key] ?? imported[key]) : widen(data[key], imported[key]);
     }
   };
   const visit = (list: unknown, depth: number) => {
-    for (const item of asStringArray(Array.isArray(list) ? list : [])) {
-      const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(item) ? undefined : readImport(item);
+    const items = Array.isArray(list) ? list : list === undefined ? [] : [list];
+    for (const item of items) {
+      const target =
+        typeof item === 'string'
+          ? item
+          : isRecord(item)
+            ? (asString(item['path']) ?? asString(item['uses']))
+            : undefined;
+      if (target === undefined) {
+        unreadImports.push(JSON.stringify(item) ?? String(item));
+        continue;
+      }
+      // An import from another repository (owner/repo/path@ref) is not in this one.
+      const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(target) ? undefined : readImport(target.split('#')[0]!);
       if (content === undefined) {
-        unreadImports.push(item);
+        unreadImports.push(target);
         continue;
       }
       const imported = frontmatter(content).data;
       merge(imported);
-      if (depth < 2) visit(imported['imports'], depth + 1);
+      if (imported['imports'] === undefined) continue;
+      if (depth < MAX_IMPORT_DEPTH) visit(imported['imports'], depth + 1);
+      else unreadImports.push(`imports of ${target}`);
     }
   };
   visit(own['imports'], 1);
@@ -696,6 +725,7 @@ export function parseAgenticWorkflow(
   const anchor = { file: path, line: 1 };
   const at = (key: string): Location => ({ file: path, line: lineOf(text, `${key}:`) || 1 });
   const grants: Grant[] = [];
+  const unrecognized: Unrecognized[] = [];
   const add = (
     capability: Grant['capability'],
     via: string,
@@ -703,14 +733,32 @@ export function parseAgenticWorkflow(
     certainty: Grant['certainty'],
     tool: string,
   ) => grants.push(grantOf(capability, via, 'auto', location, certainty, tool));
+  const unknownReach = (setting: string, value: string, location: Location) => {
+    unrecognized.push({
+      agent: name,
+      setting,
+      value,
+      assumed: 'it may run code, write and send data out without asking',
+      location,
+    });
+    for (const capability of ['exec', 'write', 'egress'] as const)
+      add(capability, `${setting} ${value}`, location, 'unknown', 'engine');
+  };
   for (const trigger of triggerNamesOf(data['on']))
     if (AGENTIC_UNTRUSTED.has(trigger)) add('untrustedInput', `trigger ${trigger}`, at('on'), 'yes', 'trigger');
   const tools = isRecord(data['tools']) ? data['tools'] : {};
   const allow: PermissionRule[] = [];
   // The GitHub tool is on unless set to false: issue and pull-request text from anyone. Reading the
-  // repository it runs in is not counted as private data, as for other workflow agents.
-  if (tools['github'] !== false)
+  // repository it runs in is not counted as private data, as for other workflow agents. With
+  // read-only off it can also write and post.
+  const github = tools['github'];
+  if (github !== false) {
     add('untrustedInput', 'github tool (issues and pull requests)', at('tools'), 'yes', 'mcp__github');
+    if (isRecord(github) && github['read-only'] === false) {
+      add('write', 'github tool (read-only: false)', at('read-only'), 'yes', 'mcp__github');
+      add('egress', 'github tool (read-only: false)', at('read-only'), 'yes', 'mcp__github');
+    }
+  }
   const bash = tools['bash'];
   if (bash !== undefined && bash !== false) {
     const commands = Array.isArray(bash) ? asStringArray(bash) : [];
@@ -735,31 +783,68 @@ export function parseAgenticWorkflow(
       add('untrustedInput', `${key} tool`, at(key), 'yes', key);
       add('egress', `${key} tool (behind the gh-aw firewall)`, at(key), 'unknown', key);
     }
-  // Safe outputs are posted for the agent by a separate job that checks them first: text sent out,
-  // and a change to issues, labels or code, both seen by that check. Other keys configure the job.
-  const outputs = isRecord(data['safe-outputs']) ? Object.keys(data['safe-outputs']) : [];
+  for (const [key, value] of Object.entries(tools))
+    if (!AGENTIC_TOOLS.has(key) && value !== false) unknownReach('tools', key, at(key));
+  // Safe outputs are posted for the agent by a separate job: text sent out, and a change to issues,
+  // labels or code. Other keys configure that job; custom `jobs` run steps of their own on the output.
+  const safeOutputs = isRecord(data['safe-outputs']) ? data['safe-outputs'] : {};
+  const outputs = Object.keys(safeOutputs).filter(
+    output => AGENTIC_OUTPUT.test(output) && safeOutputs[output] !== false,
+  );
   for (const output of outputs) {
-    if (!AGENTIC_OUTPUT.test(output) || ['missing-tool', 'missing-data', 'noop'].includes(output)) continue;
     add('egress', `safe-outputs ${output}`, at('safe-outputs'), 'yes', 'safe-outputs');
     add('write', `safe-outputs ${output}`, at('safe-outputs'), 'yes', 'safe-outputs');
   }
-  const unrecognized: Unrecognized[] = [];
-  // An engine gh-aw does not build in (or one in an import that cannot be read) brings its own
-  // tools, which are not in this file: what it can run, write and reach is unknown.
-  const engine = isRecord(data['engine']) ? asString(data['engine']['id']) : asString(data['engine']);
-  if ((engine !== undefined && !AGENTIC_ENGINES.has(engine)) || (engine === undefined && unreadImports.length)) {
-    const value = engine ?? `imports ${unreadImports.join(', ')}`;
-    const where = at(engine !== undefined ? 'engine' : 'imports');
-    unrecognized.push({
-      agent: name,
-      setting: 'engine',
-      value,
-      assumed: 'its own tools may run code, write and send data out without asking',
-      location: where,
-    });
-    for (const capability of ['exec', 'write', 'egress'] as const)
-      add(capability, `engine ${value}`, where, 'unknown', 'engine');
+  if (isRecord(safeOutputs['jobs']) && Object.keys(safeOutputs['jobs']).length)
+    unknownReach('safe-outputs.jobs', Object.keys(safeOutputs['jobs']).join(', '), at('jobs'));
+  // Secrets given to the agent's environment, its MCP servers or its tools are data it holds. The
+  // engine's own environment (model keys, telemetry) and the safe-output jobs run apart from it.
+  const agentData = [data['env'], data['mcp-servers'], data['tools']];
+  const secrets = new Set<string>();
+  for (const match of JSON.stringify(agentData).matchAll(SECRET_REF)) {
+    const secret = match[1]!;
+    if (!MODEL_SECRETS.test(secret)) secrets.add(secret);
   }
+  for (const secret of secrets)
+    add(
+      'privateData',
+      `secret ${secret}`,
+      { file: path, line: lineOf(text, `secrets.${secret}`) || 1 },
+      'yes',
+      'secret',
+    );
+  // A token other than the workflow's own: its scopes are not in the repository.
+  const token = JSON.stringify([
+    data['github-token'],
+    isRecord(github) ? github['github-token'] : undefined,
+    safeOutputs['github-token'],
+  ]);
+  for (const match of token.matchAll(SECRET_REF))
+    if (match[1] !== 'GITHUB_TOKEN')
+      for (const capability of ['write', 'egress'] as const)
+        add(
+          capability,
+          `github-token secrets.${match[1]}`,
+          { file: path, line: lineOf(text, `secrets.${match[1]}`) || 1 },
+          'unknown',
+          'token',
+        );
+  // An engine gh-aw does not build in, or an import that cannot be read, brings settings that are
+  // not in this file.
+  const engine = isRecord(data['engine']) ? asString(data['engine']['id']) : asString(data['engine']);
+  if (engine !== undefined && !AGENTIC_ENGINES.has(engine)) unknownReach('engine', engine, at('engine'));
+  if (unreadImports.length) unknownReach('imports', unreadImports.join(', '), at('imports'));
+  const engineEnv = isRecord(data['engine']) && isRecord(data['engine']['env']) ? data['engine']['env'] : {};
+  for (const [variable, value] of Object.entries(engineEnv))
+    if (/^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL)$/.test(variable))
+      unrecognized.push({
+        agent: name,
+        setting: `engine.env.${variable}`,
+        value: String(value),
+        assumed:
+          'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
+        location: at(variable),
+      });
   const permissions = data['permissions'];
   const writes =
     permissions === 'write-all'
@@ -769,34 +854,28 @@ export function parseAgenticWorkflow(
         : [];
   for (const scope of writes)
     if (scope === '*' || PUBLISHING_SCOPES.has(scope)) {
-      add(
-        'egress',
-        `GITHUB_TOKEN ${scope === '*' ? 'write-all' : `${scope}: write`}`,
-        at('permissions'),
-        'yes',
-        'token',
-      );
-      add(
-        'write',
-        `GITHUB_TOKEN ${scope === '*' ? 'write-all' : `${scope}: write`}`,
-        at('permissions'),
-        'yes',
-        'token',
-      );
+      const via = `GITHUB_TOKEN ${scope === '*' ? 'write-all' : `${scope}: write`}`;
+      add('egress', via, at('permissions'), 'yes', 'token');
+      add('write', via, at('permissions'), 'yes', 'token');
     }
-  const servers = serversFromObject(
-    { mcpServers: isRecord(data['mcp-servers']) ? data['mcp-servers'] : {} },
-    path,
-    text,
-    'workflow',
-    0,
-    declared,
-  );
+  // MCP servers: a `container` is a docker image, so the pinning and policy rules judge it.
+  const block: Record<string, unknown> = {};
+  if (isRecord(data['mcp-servers']))
+    for (const [server, raw] of Object.entries(data['mcp-servers'])) {
+      if (!isRecord(raw)) continue;
+      const container = asString(raw['container']);
+      block[server] =
+        container && raw['command'] === undefined
+          ? { ...raw, command: 'docker', args: ['run', '-i', '--rm', container, ...asStringArray(raw['args'] ?? [])] }
+          : raw;
+    }
+  const servers = serversFromObject({ mcpServers: block }, path, text, 'workflow', 0, declared);
   for (const server of servers)
     grants.push(...grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'auto', servers));
   const models: ModelChoice[] = [];
   const model = isRecord(own['engine']) ? asString(own['engine']['model']) : undefined;
   if (model) models.push({ agent: name, model, location: at('model') });
+  const checked = outputs.length > 0 && safeOutputs['threat-detection'] !== false;
   return {
     agent: {
       id: `agentic-workflow:${path}`,
@@ -804,9 +883,7 @@ export function parseAgenticWorkflow(
       name,
       location: anchor,
       grants,
-      mediators: outputs.some(output => AGENTIC_OUTPUT.test(output))
-        ? [{ kind: 'safe-outputs', location: at('safe-outputs') }]
-        : [],
+      mediators: checked ? [{ kind: 'safe-outputs', location: at('safe-outputs') }] : [],
       headless: true,
     },
     servers,

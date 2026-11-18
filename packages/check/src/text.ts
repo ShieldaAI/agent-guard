@@ -101,7 +101,8 @@ export function frontmatter(text: string): Frontmatter {
   if (!match) return { data: {}, body: source, bodyLine: 1 };
   let data: Record<string, unknown> = {};
   try {
-    const parsed = parseYaml(match[1]!, { maxAliasCount: 50 });
+    // Merge keys (`<<: *defaults`) are read, so settings they bring in are seen.
+    const parsed = parseYaml(match[1]!, { maxAliasCount: 50, merge: true });
     if (isRecord(parsed)) data = parsed;
   } catch {
     data = {};

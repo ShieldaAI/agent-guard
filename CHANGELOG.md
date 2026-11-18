@@ -8,7 +8,8 @@
   `Bash` no longer hides an unchecked `WebFetch` or MCP server, and Agent Guard or an MCP gateway
   reached as an MCP server covers only the calls made through that server. The text report says
   what each check sees, for example `pre-tool-hook (Bash)`.
-- Fix: Claude Code permission modes `auto`, `dontAsk` and `manual` are modelled; `acceptEdits`
+- Fix: Claude Code permission modes `auto` (no person approves; its safety review counts as a
+  runtime check), `dontAsk` and `manual` are modelled; `acceptEdits`
   also runs `mkdir`, `touch`, `mv` and `cp` without asking; a subagent in `auto` mode is reported
   by AGC-PERM-006 (medium). An unknown mode, Codex `sandbox_mode` or `approval_policy`, or Gemini
   approval mode is judged at its widest instead of being ignored.
@@ -23,8 +24,13 @@
   image). `-p`, `--call`, other runner flags, shell lines with a second command,
   `--entrypoint`, `--env-file`, unknown docker flags, loader environment variables
   (`NODE_OPTIONS`, `npm_config_*`, `LD_PRELOAD`, ...) and command-plus-URL servers stay unknown.
-- Add: AGC-CFG-002 (high) reports an agent configuration file too large to read, so padding a
-  settings file past 1 MiB fails the gate instead of hiding it.
+- Add: AGC-CFG-002 reports an agent configuration file too large to read: high for settings and
+  agent definitions (subagents, Copilot, OpenCode and gh-aw agents in Markdown), so padding one
+  past 1 MiB fails the gate instead of hiding it; medium for instruction files.
+- Fix: identification also gives up for project dependencies, repository package sources
+  (`.npmrc`, `uv.toml`, ...), `envFile`, docker mounts, and package specs that fetch from outside
+  the registry. AGC-POL-001 matches on the same identity and never on the config name;
+  AGC-SUP-001 checks every package a command fetches and reports shell lines it cannot read.
 - Add: the MCP catalog knows 24 more servers, 44 in all (search, browsers, documentation,
   databases, Kubernetes and SaaS accounts such as Zapier, Asana, Figma and PostHog).
 - Fix: hook matchers are never run. Coverage is read from the matcher's alternatives (exact tool
@@ -34,9 +40,16 @@
   `autoAllowBashIfSandboxed` is false; the sandbox never lowers network reach.
 - Fix: AGC-TXT-001 no longer reports the zero-width joiner inside an emoji, and AGC-TXT-002 no
   longer reports a phrase quoted as an example of an attack, or "do not tell the user to ...".
-- Add: GitHub Agentic Workflows (`.github/workflows/*.md`) are read as unattended agents, with
-  their triggers, tools, safe outputs (a runtime check for what they post), permissions, MCP
-  servers and repository imports; a custom engine or a remote import is unknown reach.
+- Add: GitHub Agentic Workflows (`.github/workflows/*.md` with `on:`) are read as unattended
+  agents, with their triggers, tools (imported lists joined), safe outputs (a runtime check for
+  what they post unless threat detection is off), secrets, tokens, permissions, MCP servers
+  (including containers) and repository imports three levels deep. A custom engine, an import
+  that cannot be read, an unmodelled tool or custom safe-output jobs are unknown reach.
+- Fix: `codex-args` given as a JSON array or YAML list is read, and the wider Codex sandbox wins
+  when flags and inputs disagree. `claude-code-action`'s inline `settings` and
+  `claude -p --permission-mode acceptEdits|auto` are read. Wide edit patterns (`Edit(**/*.md)`,
+  `Edit(/**)`) and an allow-all rule count as changing the agent itself. YAML merge keys in
+  frontmatter are read. A model endpoint override (`ANTHROPIC_BASE_URL`) is reported.
 - Fix: `openai/codex-action` steps and `codex exec` run commands without asking inside their
   sandbox; they were reported with no capabilities. A workflow agent with a GitHub token and a
   shell has unknown untrusted input. VS Code and Cursor agents have their built-in terminal,

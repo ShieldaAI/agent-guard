@@ -1,7 +1,7 @@
 import { parse as parseToml } from 'smol-toml';
 import type { Agent, Approval, Capability, Grant, Location, Unrecognized } from './types.js';
 import { grantsForRule, parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
+import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
 
 /**
@@ -61,7 +61,7 @@ const grant = (
 ): Grant => ({ capability, via, approval, certainty, location, ...(tool ? { tool } : {}) });
 
 /** `.codex/config.toml`. Throws on invalid TOML so the caller can report it. */
-export function parseCodex(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
+export function parseCodex(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
   const data = parseToml(text) as Record<string, unknown>;
   const at = (key: string): Location => ({ file: path, line: lineOfKey(text, key) || 1 });
   const policy = data['approval_policy'];
@@ -211,7 +211,7 @@ function geminiRule(name: string): string | undefined {
 }
 
 /** `.gemini/settings.json` (both the nested v2 layout and the flat v1 one). Throws on invalid JSON. */
-export function parseGemini(path: string, text: string, declared: readonly DeclaredServer[] = []): OtherAgent {
+export function parseGemini(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
   const data = parseJsonc(text);
   if (!isRecord(data)) throw new Error('settings must be an object');
   const tools = isRecord(data['tools']) ? data['tools'] : {};

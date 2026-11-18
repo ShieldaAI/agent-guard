@@ -227,7 +227,8 @@
               "agent-guard",
               "pre-tool-hook",
               "mcp-gateway",
-              "safe-outputs"
+              "safe-outputs",
+              "auto-mode"
             ]
           }
         },

@@ -1,6 +1,6 @@
 import { ASI, LOCAL_HOST, PIPE_TO_SHELL, REMOTE_FETCH, agentServers, hooks, rule, serverLabel } from './common.js';
 import type { Rule } from './common.js';
-import { dockerImage, isPinnedSpec, runnerPackage, splitSpec } from '../mcp.js';
+import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
 
 export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
@@ -15,8 +15,17 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
     },
     (project, report) => {
       for (const server of agentServers(project)) {
-        const runner = runnerPackage(server.command, server.args);
-        if (runner) {
+        const { specs, unverifiable } = runnerSpecs(server.command, server.args);
+        if (unverifiable) {
+          report({
+            message: `${serverLabel(server)} starts a shell line with more than one command, so what it fetches and runs cannot be checked.`,
+            location: server.location,
+            subject: `server:${server.name}:shell`,
+            fix: 'Start the server with one command, with its package pinned to an exact version.',
+          });
+          continue;
+        }
+        for (const runner of specs) {
           const { name } = splitSpec(runner.spec);
           // A project dependency or a local path resolves inside the repo, not from the registry.
           if (
@@ -29,11 +38,12 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
             report({
               message: `${serverLabel(server)} starts "${runner.spec}" with ${runner.runner} and no pinned version, so every new release runs automatically.`,
               location: server.location,
-              subject: `server:${server.name}`,
+              subject:
+                specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
               fix: `Pin an exact version, for example "${name}${runner.runner === 'uvx' || runner.runner === 'pipx' ? '==' : '@'}<version>".`,
             });
-          continue;
         }
+        if (specs.length) continue;
         const image = dockerImage(server.command, server.args);
         if (image && !image.includes('@sha256:') && (!/:[^/:]+$/.test(image) || image.endsWith(':latest')))
           report({

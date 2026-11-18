@@ -23,6 +23,11 @@ export interface McpServer {
   readonly headers: Readonly<Record<string, string>>;
   readonly location: Location;
   readonly catalog?: CatalogEntry;
+  /**
+   * What the server runs, when the command has exactly the expected shape: the package, image or
+   * remote host. Policy and declarations match on this, never on the config name.
+   */
+  readonly identity?: { readonly package?: string; readonly image?: string; readonly host?: string };
 }
 
 export interface CatalogEntry {
@@ -396,6 +401,47 @@ export function runnerPackage(
   return undefined;
 }
 
+/**
+ * Every package a runner command fetches: the one it runs and any `-p`/`--package`/`--from`/`--with`
+ * extras, each with its runner. `unverifiable` when a shell line runs more than one command, so what
+ * it fetches cannot be read from the config.
+ */
+export function runnerSpecs(
+  command: string | undefined,
+  args: readonly string[],
+): {
+  readonly specs: readonly { readonly runner: string; readonly spec: string; readonly localOnly: boolean }[];
+  readonly unverifiable: boolean;
+} {
+  if (!command) return { specs: [], unverifiable: false };
+  const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
+    if (/[;&|`$<>(){}\n\r^]/.test(words)) return { specs: [], unverifiable: true };
+    const line = splitShell(words);
+    return runnerSpecs(line[0], line.slice(1));
+  }
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args.includes('-c')) {
+    const script = args[args.indexOf('-c') + 1] ?? '';
+    if (/[;&|`$<>(){}\n\r]/.test(script)) return { specs: [], unverifiable: true };
+    const line = splitShell(script);
+    return runnerSpecs(line[0], line.slice(1));
+  }
+  const first = runnerPackage(command, args);
+  if (!first) return { specs: [], unverifiable: false };
+  const specs = [first];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    const value = ['-p', '--package', '--from', '--with'].includes(arg)
+      ? args[i + 1]
+      : /^--(package|from|with)=/.test(arg)
+        ? arg.split('=', 2)[1]
+        : undefined;
+    if (value !== undefined && value !== first.spec) specs.push({ ...first, spec: value });
+  }
+  return { specs, unverifiable: false };
+}
+
 /** Splits a shell command line into words, honouring quotes. */
 function splitShell(text: string): string[] {
   const out: string[] = [];
@@ -515,23 +561,34 @@ function catalogPackage(
       if (SAFE_RUNNER_FLAGS.has(arg)) continue;
       return undefined;
     }
-    return splitSpec(arg).name;
+    return registryName(arg);
   }
   return undefined;
 }
 
-/** `docker run` flags that take a value and change neither the image nor what it runs. */
+/**
+ * The registry package a spec names, or undefined when the spec fetches from somewhere else: an npm
+ * alias (`name@npm:other`), a URL, git or a local path (`name@github:x`, `name@file:./x`), or a
+ * Python direct reference (`name @ git+https://...`).
+ */
+function registryName(spec: string): string | undefined {
+  const { name, version, operator } = splitSpec(spec);
+  if (!/^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/.test(name)) return undefined;
+  if (version !== undefined && (/[:/\\\s]/.test(version) || (operator === '@' && /^[a-z]+\+/.test(version))))
+    return undefined;
+  return name;
+}
+
+/**
+ * `docker run` flags that take a value and change neither the image nor what it runs. Mounts and
+ * the working folder are not listed: a mount can replace the image's own code.
+ */
 const DOCKER_VALUED = new Set([
   '-e',
   '--env',
-  '-v',
-  '--volume',
-  '--mount',
   '--name',
   '--network',
   '--net',
-  '-w',
-  '--workdir',
   '-u',
   '--user',
   '--add-host',
@@ -604,19 +661,39 @@ export interface DeclaredServer {
   readonly capabilities: Readonly<Partial<Record<Capability, 'yes' | 'unknown'>>>;
 }
 
-function identify(
+/**
+ * What identification needs besides the server itself: the team's declarations, the packages the
+ * repository itself depends on (a runner resolves those locally, from whatever the dependency spec
+ * says), and whether the repository configures where packages come from (`.npmrc`, `uv.toml`, ...).
+ */
+export interface CatalogContext {
+  readonly declared: readonly DeclaredServer[];
+  readonly localPackages: ReadonlySet<string>;
+  readonly packageSources: boolean;
+}
+
+export const NO_CONTEXT: CatalogContext = Object.freeze({
+  declared: Object.freeze([]),
+  localPackages: new Set<string>(),
+  packageSources: false,
+});
+
+/** What a server runs: its package, image or host, each only for an exact command shape. */
+function identityOf(
   command: string | undefined,
   args: readonly string[],
   url: string | undefined,
   env: Readonly<Record<string, string>>,
-  declared: readonly DeclaredServer[],
-): CatalogEntry | undefined {
+  context: CatalogContext,
+): { package?: string; image?: string; host?: string; installed?: readonly [string, string] } {
   // A server with both a command and a URL is ambiguous: which one runs depends on the client.
-  if (command !== undefined && url !== undefined) return undefined;
-  const pkg = catalogPackage(command, args, env);
+  if (command !== undefined && url !== undefined) return {};
+  const found = catalogPackage(command, args, env);
+  // The repository decides what a dependency or a configured registry resolves to.
+  const pkg = found !== undefined && !context.packageSources && !context.localPackages.has(found) ? found : undefined;
   const image = catalogImage(command, args);
   // A bare command name (no path, so not a file in the repository) and its first argument.
-  const installed =
+  const installed: readonly [string, string] | undefined =
     command !== undefined && /^[A-Za-z0-9_-]+$/.test(command) && !Object.keys(env).some(name => LOADER_ENV.test(name))
       ? [command, args[0] ?? '']
       : undefined;
@@ -628,6 +705,16 @@ function identify(
       host = undefined;
     }
   }
+  return {
+    ...(pkg !== undefined ? { package: pkg } : {}),
+    ...(image !== undefined ? { image } : {}),
+    ...(host !== undefined ? { host } : {}),
+    ...(installed !== undefined ? { installed } : {}),
+  };
+}
+
+function identify(identity: ReturnType<typeof identityOf>, declared: CatalogContext): CatalogEntry | undefined {
+  const { package: pkg, image, host, installed } = identity;
   const known = CATALOG.find(
     entry =>
       (pkg !== undefined && entry.packages?.includes(pkg)) ||
@@ -639,7 +726,7 @@ function identify(
   // A declaration matches what runs (package, image, host, or the catalog entry they identify), never
   // the config name: a change under review chooses names, so a name could claim another server's entry.
   const keys = [pkg, image, host, known?.id].filter((key): key is string => key !== undefined);
-  const own = keys.map(key => declared.find(item => item.match === key)).find(item => item !== undefined);
+  const own = keys.map(key => declared.declared.find(item => item.match === key)).find(item => item !== undefined);
   if (own)
     return {
       id: `declared:${own.match}`,
@@ -667,7 +754,7 @@ export function parseMcpConfig(
   path: string,
   text: string,
   client: McpServer['client'],
-  declared: readonly DeclaredServer[] = [],
+  declared: CatalogContext = NO_CONTEXT,
 ): McpServer[] {
   const parsed = parseJsonc(text);
   return serversFromObject(parsed, path, text, client, 0, declared);
@@ -679,7 +766,7 @@ export function serversFromObject(
   text: string,
   client: McpServer['client'],
   lineOffset = 0,
-  declared: readonly DeclaredServer[] = [],
+  declared: CatalogContext = NO_CONTEXT,
 ): McpServer[] {
   if (!isRecord(parsed)) return [];
   const block = isRecord(parsed['mcpServers'])
@@ -693,7 +780,11 @@ export function serversFromObject(
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    const catalog = identify(command, args, url, stringRecord(raw['env']), declared);
+    // `envFile` loads variables the scanner cannot see, which may change what is loaded.
+    const env =
+      'envFile' in raw ? { ...stringRecord(raw['env']), NODE_OPTIONS: '(from envFile)' } : stringRecord(raw['env']);
+    const identity = identityOf(command, args, url, env, declared);
+    const catalog = identify(identity, declared);
     servers.push({
       name,
       client,
@@ -704,6 +795,11 @@ export function serversFromObject(
       headers: stringRecord(raw['headers']),
       location: { file: path, line: lineOf(text, JSON.stringify(name)) + lineOffset },
       ...(catalog ? { catalog } : {}),
+      identity: {
+        ...(identity.package !== undefined ? { package: identity.package } : {}),
+        ...(identity.image !== undefined ? { image: identity.image } : {}),
+        ...(identity.host !== undefined ? { host: identity.host } : {}),
+      },
     });
   }
   return servers;

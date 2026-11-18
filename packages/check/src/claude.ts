@@ -196,7 +196,7 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
   });
   switch (rule.tool) {
     case '*':
-      return (['exec', 'egress', 'write', 'untrustedInput'] as const).map(c => make(c, 'yes', '*'));
+      return (['exec', 'egress', 'write', 'untrustedInput', 'selfModify'] as const).map(c => make(c, 'yes', '*'));
     case 'Bash': {
       const scope = bashScope(rule.specifier);
       // A shell that can write any file can rewrite the agent's own settings and instructions.
@@ -225,7 +225,10 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
     case 'NotebookEdit': {
       const out = [make('write', 'yes', rule.tool)];
       // Unrestricted (or every-file) edits reach the agent's own files too.
-      const everyFile = !rule.specifier || /^(\.\/)?(\*\*?|\*\*\/\*)?$/.test(rule.specifier.replace(/^\/\//, ''));
+      // A pattern that starts with a wildcard (`**/*.md`, `/**`, `.*/**`) or climbs out (`src/../**`)
+      // can match the agent's own settings or instructions.
+      const spec = rule.specifier?.trim();
+      const everyFile = !spec || /^(\.\/)?\/{0,2}(\*|\.\*|\.\w*\*)/.test(spec) || spec.includes('..');
       if (everyFile || (rule.specifier && IDENTITY_PATH.test(rule.specifier.replace(/\/\*\*$/, '/'))))
         out.push(make('selfModify', 'yes', rule.tool));
       return out;

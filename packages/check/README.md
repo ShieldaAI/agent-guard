@@ -97,7 +97,7 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
 | Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
 | GitHub workflows | Steps that use `anthropics/claude-code-action`, `openai/codex-action` (with its `sandbox` and `permission-profile`), or run `claude -p` or `codex exec` |
-| GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` and gh-aw settings: triggers, `engine`, `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github`), `safe-outputs`, `permissions`, `mcp-servers`, and `imports` from the repository |
+| GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` in the frontmatter: triggers, `engine` (and its `env`), `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github` with `read-only` and `github-token`), `safe-outputs` (with `threat-detection` and `jobs`), `permissions`, `env` and `github-token` secrets, `mcp-servers` (including `container`), and `imports` from the repository, three levels deep. The `.lock.yml` it compiles to is not modelled |
 | VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
 | Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
 | OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md` |
@@ -109,8 +109,11 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Your own settings | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings |
 
 `node_modules`, build output and `.git` are skipped. Symbolic links are never followed inside
-the repository. A configuration file over 1 MiB is not read, and is reported as AGC-CFG-002,
-which fails the default gate, so padding a settings file cannot hide what it grants. Folders
+the repository. A configuration file over 1 MiB is not read, and is reported as AGC-CFG-002.
+For settings and agent definitions (including subagents, Copilot, OpenCode and gh-aw agents
+written in Markdown) it is high and fails the default gate, so padding one cannot hide what it
+grants; for instruction files it is medium. A file a configuration names (a gh-aw import, a
+plugin's server or hook file) that is too large or cannot be read counts as unknown reach. Folders
 named `~` or `<managed>` in the repository are never read.
 
 Amp and Goose keep their permissions outside the repository, so they are not read. A setting
@@ -222,7 +225,7 @@ re-derive them for each change:
 
 ```yaml
 policy:
-  allowed_mcp_servers: [github, postgres, mcp/fetch]   # config name, catalog ID, package or image
+  allowed_mcp_servers: [github, postgres, mcp/fetch]   # catalog ID, package or image (never the config name)
   allowed_mcp_hosts: [mcp.example.com, githubcopilot.com]
   forbid:
     - name: untrusted input with unasked network access
@@ -310,8 +313,16 @@ the package and its own arguments; or `docker run` / `podman run` with known fla
 image. `-p`/`--package`/`--from`, `--call`, a registry or any other runner flag, a shell line
 with a second command (`sh -c "npx pkg; curl ..."`), `--entrypoint`, `--env-file`, an unknown
 docker flag, an environment variable that changes what is loaded (`NODE_OPTIONS`,
-`npm_config_*`, `PYTHONPATH`, `LD_PRELOAD`, ...), or a server with both a command and a URL all
-leave it unidentified, so its reach stays unknown.
+`npm_config_*`, `PYTHONPATH`, `LD_PRELOAD`, ...) or an `envFile`, a docker mount or working folder
+(`-v`, `--mount`, `-w`, which can replace the image's code), or a server with both a command and a
+URL all leave it unidentified, so its reach stays unknown. So do a package spec that fetches from
+somewhere other than the registry (`name@npm:other`, `name@github:...`, `name@file:...`, a URL,
+`name @ git+https://...`), a package the repository's own `package.json` depends on (a runner
+resolves that from the dependency spec), and any package when the repository has a package
+source file at its root (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`,
+`pip.conf`, or a `pyproject.toml` with a uv index). The policy rule (AGC-POL-001) matches servers
+the same way, and AGC-SUP-001 checks every package a command fetches, reporting a shell line it
+cannot read.
 
 In Markdown, YAML and scripts, a comment on the same line or the line above suppresses one
 rule: `<!-- agc-ignore AGC-SUP-004: installer pinned by checksum -->`. Settings files are
@@ -393,17 +404,17 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
   configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
-  (97%). Of the 300 capabilities labelled yes it reports 80% (as yes or unknown), and 62% at the
+  (97%). Of the 300 capabilities labelled yes it reports 82% (as yes or unknown), and 63% at the
   labelled approval level or wider:
 
   | Capability | Labelled yes | Reported | At level |
   | --- | --- | --- | --- |
-  | untrustedInput | 64 | 88% | 77% |
-  | write | 58 | 85% | 60% |
+  | untrustedInput | 64 | 89% | 78% |
+  | write | 58 | 86% | 62% |
   | egress | 56 | 96% | 71% |
-  | exec | 48 | 94% | 75% |
+  | exec | 48 | 98% | 79% |
   | privateData | 29 | 55% | 21% |
-  | selfModify | 23 | 87% | 83% |
+  | selfModify | 23 | 91% | 87% |
   | spend | 22 | 0% | 0% |
 
   Most of the gap is a difference in definitions, not a missed setting. The labels count money
@@ -421,8 +432,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   "with approval". A headless agent (a workflow step) has nobody to answer a prompt, so only
   its allowed tools count. A subagent's `permissionMode` replaces the session's for its calls.
 - **Permission modes.** `bypassPermissions` runs every tool without asking. `auto` lets a
-  classifier, not a person, approve most calls, so they count as "no approval"; the classifier
-  is not counted as a runtime check, because it reads the same text the agent does. `dontAsk`
+  classifier, not a person, approve most calls, so they count as "no approval"; that safety
+  review checks every call before it runs, so it counts as a runtime check (AGC-COV-001), in
+  sessions and in workflows (`--permission-mode auto`) alike. `dontAsk`
   denies whatever would prompt, so only allowed tools remain. `acceptEdits` also runs `mkdir`,
   `touch`, `mv` and `cp` without asking. `plan` and `manual` read like `default`. Newer Claude
   Code ignores `auto` and `bypassPermissions` in project settings; the scan still reports them,
@@ -454,10 +466,18 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
   unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
   leaves writes unknown. A workflow agent with a GitHub token and a shell can read issue and
-  pull-request text whatever started it, so that input is unknown. A GitHub Agentic Workflow is
-  unattended; its `safe-outputs` are posted by a separate job that checks them, which counts as
-  a runtime check for them; an engine gh-aw does not build in, or an import from another
-  repository, is unknown reach. The repository a workflow runs in is not counted as private data.
+  pull-request text whatever started it, so that input is unknown. When flags and inputs set
+  different Codex sandboxes (`--sandbox read-only --full-auto`), the wider one is judged.
+  `claude-code-action`'s inline `settings` and `claude -p --permission-mode` are read. A GitHub
+  Agentic Workflow is unattended; its `safe-outputs` are posted by a separate job that checks
+  them, which counts as a runtime check for them unless `threat-detection` is off. Imported tool
+  lists are joined. An engine gh-aw does not build in, an import that cannot be read (from
+  another repository, missing, too large or nested too deep), a tool the scanner does not model,
+  or custom safe-output `jobs` are unknown reach. Secrets given to the agent are private data.
+  The repository a workflow runs in is not counted as private data.
+- **Model endpoints.** `ANTHROPIC_BASE_URL` and similar variables send model traffic, with
+  everything the agent reads, to another endpoint. That is reported (AGC-CFG-001) but not counted
+  as sending data out, since it is the model's own channel.
 - **IDE agents.** The VS Code and Cursor agents behind `.vscode/mcp.json` and `.cursor/mcp.json`
   ask before terminal commands and fetches, apply edits without asking, and ask before MCP tools.
 - **Changing itself.** An agent that can edit any file, or run any shell command, can rewrite its

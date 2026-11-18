@@ -1331,7 +1331,7 @@ Not flagged:
 
 Severity: high. Confidence: high. Evidence: repository files. OWASP Agentic Top 10: ASI04.
 
-policy.allowed_mcp_servers in .agc.yaml lists the MCP servers agents may use, by config name, catalog ID, npm/PyPI package or container image.
+policy.allowed_mcp_servers in .agc.yaml lists the MCP servers agents may use, by catalog ID, npm/PyPI package or container image. A server matches only when its command has exactly the expected shape; the config name never counts.
 
 Flagged:
 

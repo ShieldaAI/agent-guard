@@ -11,7 +11,15 @@ import {
   type Hook,
   type PermissionRule,
 } from './claude.js';
-import { actionBuiltinServers, parseMcpConfig, serversFromObject, type DeclaredServer, type McpServer } from './mcp.js';
+import {
+  actionBuiltinServers,
+  parseMcpConfig,
+  serversFromObject,
+  type CatalogContext,
+  type DeclaredServer,
+  type McpServer,
+} from './mcp.js';
+import { isPackageSource } from './source.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
 import {
   parseCodex,
@@ -235,6 +243,10 @@ export interface BuildOptions {
   readonly root?: string;
 }
 
+/** Variables that send an agent's model traffic to another endpoint. */
+export const MODEL_ENDPOINT =
+  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL)$/;
+
 /** Folders that hold settings for every project rather than one: the user's and the managed ones. */
 const USER_DIRS = new Set(['~', MANAGED_DIR]);
 
@@ -243,7 +255,6 @@ export function buildProject(
   extraFiles: readonly TextFile[] = [],
   options: BuildOptions = {},
 ): Project {
-  const declaredServers = options.declaredServers ?? [];
   const errors: { file: string; message: string }[] = [];
   const settings: ClaudeSettings[] = [];
   const servers: McpServer[] = [];
@@ -291,6 +302,29 @@ export function buildProject(
   const userServers: McpServer[] = [];
   const localScopeServers: McpServer[] = [];
   let managedDisablesBypass = false;
+  // First pass: what identification needs. The root package.json's dependencies resolve locally, and
+  // package-source files change where npm, yarn, bun, uv or pip fetch from.
+  const localPackages = new Set<string>();
+  let packageSources = false;
+  for (const { path, text } of inputs) {
+    if (text === undefined) continue;
+    if (path === 'package.json') {
+      try {
+        const data = JSON.parse(text) as unknown;
+        if (isRecord(data))
+          for (const key of ['dependencies', 'devDependencies', 'optionalDependencies'])
+            if (isRecord(data[key])) for (const dep of Object.keys(data[key])) localPackages.add(dep);
+      } catch {
+        // Reported when the file is parsed below.
+      }
+    }
+    if (isPackageSource(path, text)) packageSources = true;
+  }
+  const declaredServers: CatalogContext = {
+    declared: options.declaredServers ?? [],
+    localPackages,
+    packageSources,
+  };
   const roots = pluginRoots(inputs.filter(input => !USER_DIRS.has(projectDir(input.path))).map(input => input.path));
   const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
   for (const { path, text } of inputs) {
@@ -299,6 +333,12 @@ export function buildProject(
     const name = path.split('/').at(-1)!;
     const parent = path.split('/').at(-2);
     try {
+      // Package-source files only feed identification (first pass); they hold no agent settings.
+      if (
+        isPackageSource(path, text) ||
+        ['.npmrc', '.yarnrc', '.yarnrc.yml', 'bunfig.toml', 'uv.toml', 'pip.conf', 'pyproject.toml'].includes(path)
+      )
+        continue;
       if (path === '~/.claude.json') {
         const data = parseJsonc(text);
         if (isRecord(data)) {
@@ -584,6 +624,19 @@ export function buildProject(
         assumed: 'every tool runs without asking',
         location: modeSetting.location,
       });
+    // Model traffic sent somewhere else carries everything the agent reads. The scan does not count
+    // that as sending data out (it is the model's own channel), but says so.
+    for (const file of [...local, ...userLevel])
+      for (const entry of file.env)
+        if (MODEL_ENDPOINT.test(entry.name))
+          unrecognized.push({
+            agent: name,
+            setting: `env.${entry.name}`,
+            value: entry.value,
+            assumed:
+              'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
+            location: entry.location,
+          });
     // Claude Code's Bash sandbox: sandboxed commands run and write without asking unless
     // autoAllowBashIfSandboxed is false. Network reach is left as the rules give it: a command can
     // leave the sandbox (allowUnsandboxedCommands, excludedCommands) through the normal permission
@@ -634,7 +687,11 @@ export function buildProject(
       ...allow.flatMap(rule => grantsForRule(rule, 'auto', localServers)),
       ...(mode === 'acceptEdits' ? acceptEditsGrants(modeSetting!.location) : []),
     ];
-    const mediators = mediatorsFor([...local, ...userLevel], localServers);
+    // In auto mode Claude Code's safety review checks each call before it runs: a runtime check.
+    const mediators = [
+      ...mediatorsFor([...local, ...userLevel], localServers),
+      ...(mode === 'auto' ? [{ kind: 'auto-mode' as const, location: modeSetting!.location }] : []),
+    ];
     const main: Agent = {
       id: `claude-code:${dir || '.'}`,
       kind: 'claude-code',
@@ -789,6 +846,13 @@ export function buildProject(
       else if (!step.permissions.known) grants.push({ ...grant, certainty: 'unknown' });
     }
     if (step.skipPermissions) grants.push(...baselineGrants('auto', step.skipPermissions, reachable, [], [], true));
+    else if (step.autoMode)
+      grants.push(
+        ...baselineGrants('auto', step.autoMode, reachable, [], [], true).map(grant => ({
+          ...grant,
+          via: `${grant.via} (permission-mode auto)`,
+        })),
+      );
     else if (step.codex) {
       // Codex in a workflow runs commands without asking, inside its sandbox. What the commands can
       // write and reach is the sandbox's: read-only writes nothing; workspace-write writes the
@@ -829,7 +893,10 @@ export function buildProject(
       name: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
       location: at,
       grants: withoutDenied(grants, deny),
-      mediators: step.action.startsWith('claude') ? mediatorsFor(rootSettings, []) : [],
+      mediators: [
+        ...(step.action.startsWith('claude') ? mediatorsFor(rootSettings, []) : []),
+        ...(step.autoMode ? [{ kind: 'auto-mode' as const, location: step.autoMode }] : []),
+      ],
       headless: true,
     });
   }

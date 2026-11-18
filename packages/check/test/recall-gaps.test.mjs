@@ -81,7 +81,7 @@ test('an agentic workflow reads its imports; a custom or unreadable engine is un
   const remote = agentic('on: workflow_dispatch\nimports:\n  - acme/shared/engine.md@0123abc');
   assert.equal(level(remote.agents[0], 'exec'), 'unknown/auto');
   const escape = agentic('on: workflow_dispatch\nengine: claude\nimports:\n  - ../../.ssh/config');
-  assert.equal(level(escape.agents[0], 'exec'), 'no', 'a path outside the repository is not read');
+  assert.equal(level(escape.agents[0], 'exec'), 'unknown/auto', 'a path outside the repository is not read: unknown');
 });
 
 test('Markdown in .github/workflows without on: and an engine stays instructions', () => {

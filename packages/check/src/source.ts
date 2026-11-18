@@ -49,6 +49,27 @@ export function safeRelative(path: string): string | undefined {
 
 const SKILL_SCRIPT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|ps1)$/;
 
+/** Files at the repository root that change where package runners fetch from. */
+const PACKAGE_SOURCE_FILES = new Set([
+  '.npmrc',
+  '.yarnrc',
+  '.yarnrc.yml',
+  'bunfig.toml',
+  'uv.toml',
+  'pip.conf',
+  'pyproject.toml',
+]);
+
+/**
+ * Whether a root file points package runners at another source: any `.npmrc`, `.yarnrc`,
+ * `bunfig.toml`, `uv.toml` or `pip.conf`, or a `pyproject.toml` with a uv index or source.
+ */
+export function isPackageSource(path: string, text: string): boolean {
+  if (path.includes('/') || !PACKAGE_SOURCE_FILES.has(path)) return false;
+  if (path === 'pyproject.toml') return /\[\[?tool\.uv\.(index|sources)|index-url/.test(text);
+  return true;
+}
+
 /** Whether a path can hold agent configuration that the scanner reads. */
 export function isCandidate(path: string): boolean {
   const parts = path.split('/');
@@ -100,6 +121,7 @@ export function isCandidate(path: string): boolean {
   )
     return true;
   if (path === 'package.json' || path === '.agc.yaml') return true;
+  if (PACKAGE_SOURCE_FILES.has(path)) return true;
   // Agent Guard records: describe() output, inventory snapshots, host manifests.
   if (/^agent-guard[\w.-]*\.json$/.test(name) && parts.length <= 6) return true;
   return false;
