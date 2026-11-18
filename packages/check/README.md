@@ -446,7 +446,7 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
   Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 187 agents.
-  Every critical, high and medium finding, 146 in all, was reviewed by hand: 145 true positives
+  Every critical, high and medium finding, 148 in all, was reviewed by hand: 147 true positives
   and 1 false positive (a low-confidence text rule), precision 99.3%. "True" follows the
   fail-closed reading above: `Bash(git *)` or `Bash(rg:*)` is reported because an option can run
   any program, and a local MCP server the scanner cannot identify is reported when its tools run
@@ -506,7 +506,10 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   (`c*`, `*url`) and a prefix rule for a command whose options run programs (`git:*`, `find:*`,
   `rg:*`, `sort:*`, `sed:*`, `awk:*`, `git rebase:*`, `git grep:*`) all count as running code;
   so do prefix rules that choose what to install or run (`npm install:*`, `npm exec:*`,
-  `uv run:*`). Variable assignments before a command are dropped unless they load code
+  `uv run:*`), and prefix rules for build tools whose options run any program (`make:*`,
+  `go test:*`, `cargo:*`, `just:*`). A rule for a repository script is read: a script that runs
+  its arguments as a command (`exec "$@"`, `eval "$*"`, `sys.argv` handed to a process) allows
+  any command. Variable assignments before a command are dropped unless they load code
   (`BASH_ENV`, `PATH`, `GIT_SSH_COMMAND`, ...). `PowerShell` and `Monitor` rules are judged as Bash
   rules are; `WebFetch(domain:*)` sends data out.
 - **Codex** runs commands inside its sandbox without asking unless `approval_policy` is
@@ -551,7 +554,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   (`--allowedTools Read Bash`). Action inputs are matched in any letter case, as GitHub matches
   them. `path_to_claude_code_executable`, `plugins`, `plugin_marketplaces`,
   `--permission-prompt-tool` and inline `--agents` that set a permission mode make the step
-  unknown reach; `allowed_bots: "*"` lets any bot start it.
+  unknown reach; `allowed_bots: "*"` lets any bot start it. `CLAUDE_CONFIG_DIR` or `HOME` set
+  for a Claude step moves its settings: the file it points to in the repository is read, and one
+  outside the repository makes the step unknown reach.
 - **Workflow agents.** A Codex step runs commands without asking, inside its sandbox:
   `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
   unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
@@ -582,7 +587,8 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   does not ask for in `engine.args` or `engine.permission-mode` (`--dangerously-skip-permissions`,
   `--permission-mode bypassPermissions` in either form, `--allow-all-tools` without
   `bash: "*"`), Claude allowed tools its tools do not give (every Bash command, web fetches,
-  edits), or an agent gh-aw does not compile mean the lock was edited by hand: it is unknown
+  edits; the list read the way Claude Code reads it), an agent CLI other than the source's
+  engine, or an agent gh-aw does not compile mean the lock was edited by hand: it is unknown
   reach, reported at high. A `frontmatter_hash` that differs from the
   source's (gh-aw's own algorithm, recomputed) means the lock is out of date or edited: medium.
   Other hand edits to compiled steps are not detected; recompiling in CI (`gh aw compile` and a

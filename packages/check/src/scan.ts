@@ -8,6 +8,7 @@ import { createHash } from 'node:crypto';
 import { fingerprint, runRules } from './rules/index.js';
 import { applySuppressions, DEFAULT_CONFIG, parseConfig, type CheckConfig } from './config.js';
 import { authority, level } from './authority.js';
+import { withScriptReader } from './claude.js';
 import { CAPABILITIES, type Agent, type Capability, type CapabilityState } from './types.js';
 
 export interface ScanOptions {
@@ -46,6 +47,17 @@ function bySeverity(a: Finding, b: Finding): number {
 export function scan(options: ScanOptions): ScanResult {
   const source =
     options.source ?? (options.ref ? new GitSource(options.root, options.ref) : new DirectorySource(options.root));
+  // Bash rules for a repository script are judged by what the script does with its arguments.
+  return withScriptReader(
+    path => {
+      const clean = safeRelative(path.replace(/^\.\//, ''));
+      return clean === undefined ? undefined : source.readNamed(clean);
+    },
+    () => scanSource(options, source),
+  );
+}
+
+function scanSource(options: ScanOptions, source: FileSource): ScanResult {
   const errors: { file: string; message: string }[] = [];
   let config = options.config ?? DEFAULT_CONFIG;
   if (!options.config) {

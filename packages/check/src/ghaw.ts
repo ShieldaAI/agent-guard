@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { parse as parseYaml } from 'yaml';
-import { isRecord } from './text.js';
+import { isRecord, toolNames } from './text.js';
 import { agentCalls } from './shell.js';
 import { UNTRUSTED_TRIGGERS } from './workflows.js';
 
@@ -238,6 +238,8 @@ export interface SourceAsks {
   readonly bashAll: boolean;
   readonly edit: boolean;
   readonly webFetch: boolean;
+  /** `engine` (or `engine.id`): the agent gh-aw compiles in; `copilot` when not set. */
+  readonly engine: string;
 }
 
 /** Reads what the source and its imports ask for, from front matter only: prose explains nothing. */
@@ -247,6 +249,7 @@ export function sourceAsks(path: string, text: string, readFile: ReadFile): Sour
   let bashAll = false;
   let edit = false;
   let webFetch = false;
+  let engineId: string | undefined;
   const visited = new Set<string>();
   const read = (front: string) => {
     let data: unknown;
@@ -257,6 +260,9 @@ export function sourceAsks(path: string, text: string, readFile: ReadFile): Sour
     }
     if (!isRecord(data)) return;
     const engine = isRecord(data['engine']) ? data['engine'] : {};
+    // The workflow's own engine wins over an imported one.
+    engineId ??=
+      typeof data['engine'] === 'string' ? data['engine'] : typeof engine['id'] === 'string' ? engine['id'] : undefined;
     const list = Array.isArray(engine['args'])
       ? engine['args']
       : typeof engine['args'] === 'string'
@@ -289,7 +295,7 @@ export function sourceAsks(path: string, text: string, readFile: ReadFile): Sour
     }
   };
   walk(split(text)?.front ?? '', dirOf(path), 0);
-  return { args, modes, bashAll, edit, webFetch };
+  return { args, modes, bashAll, edit, webFetch, engine: engineId ?? 'copilot' };
 }
 
 /** The `# gh-aw-metadata:` header of a lock file. */
@@ -343,6 +349,8 @@ function triggersOf(value: unknown): string[] {
 /** Permission flags gh-aw never writes for an engine unless the source asks (engine.args, permission-mode, bash: "*"). */
 const CLAUDE_UNLIMITED = /^(--dangerously-skip-permissions|--allow-dangerously-skip-permissions)$/;
 const COPILOT_UNLIMITED = /^--(allow-all-tools|allow-all|yolo)(=.*)?$/;
+/** gh-aw engines that are agent CLIs the scan recognises. */
+const AGENTIC_CLIS = new Set(['claude', 'codex', 'copilot', 'gemini']);
 /** Claude permission modes gh-aw writes by default. */
 const DEFAULT_MODES = new Set(['dontAsk', 'default']);
 
@@ -371,6 +379,9 @@ export function lockMismatches(lockText: string, sourceFront: Record<string, unk
       if (!isRecord(step) || typeof step['run'] !== 'string') continue;
       for (const call of agentCalls(step['run'])) {
         const args = call.args.flatMap(arg => (/^--[\w-]+=/.test(arg) ? arg.split(/=(.*)/s, 2) : [arg]));
+        // gh-aw compiles in the source's engine only: another agent CLI was put there by hand.
+        if (call.cli !== 'other' && !call.unknown && call.cli !== asks.engine && AGENTIC_CLIS.has(asks.engine))
+          flags.add(`${call.program} (the source's engine is ${asks.engine})`);
         const asked = (word: string) => asks.args.has(word);
         if (call.cli === 'claude') {
           for (const [i, arg] of args.entries()) {
@@ -382,7 +393,10 @@ export function lockMismatches(lockText: string, sourceFront: Record<string, unk
             }
             // Allowed tools the source's tools do not give: every Bash command, web fetches, edits.
             if (arg === '--allowed-tools' || arg === '--allowedTools') {
-              const tools = (args[i + 1] ?? '').split(',').map(item => item.trim());
+              // Variadic, split on commas and on spaces outside parentheses, as Claude Code reads it.
+              const values: string[] = [];
+              for (let k = i + 1; k < args.length && !args[k]!.startsWith('-'); k += 1) values.push(args[k]!);
+              const tools = values.flatMap(value => toolNames(value));
               if (!asks.bashAll && tools.some(tool => /^Bash(\((\*|:\*)?\))?$/.test(tool)))
                 flags.add('--allowed-tools Bash');
               if (!asks.webFetch && tools.includes('WebFetch')) flags.add('--allowed-tools WebFetch');

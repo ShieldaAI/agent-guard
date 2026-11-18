@@ -791,9 +791,32 @@ export function parseWorkflow(
           if (isRecord(data['env'])) settingsEnv.push(data['env']);
           return isRecord(data['permissions']) ? data['permissions'] : {};
         };
-        const settingsSources = [readSettings(inputs['settings']), readSettings(flags.settings, true)].filter(
-          (item): item is Record<string, unknown> => item !== undefined,
-        );
+        // `CLAUDE_CONFIG_DIR` or `HOME` moves Claude Code's own settings: read the file it points to,
+        // or count the step as unknown when it is outside the repository.
+        const redirected: string[] = [];
+        if (action.startsWith('claude')) {
+          for (const [name, file] of [
+            ['CLAUDE_CONFIG_DIR', 'settings.json'],
+            ['HOME', '.claude/settings.json'],
+          ] as const) {
+            const value = envValue(name) ?? new RegExp(`\\b${name}=("?)([^\\s";]+)\\1`).exec(rawRun)?.[2] ?? undefined;
+            if (value === undefined) continue;
+            const inRepo = value
+              .trim()
+              .replace(
+                /^(\$\{\{\s*github\.workspace\s*\}\}|\$\{?GITHUB_WORKSPACE\}?|\$\{?PWD\}?|\$\(pwd\)|\.)(\/|$)/,
+                '',
+              )
+              .replace(/\/+$/, '');
+            if (/^\/|\$|~/.test(inRepo) || inRepo.includes('..')) settingsUnreadable ??= `${name} ${value}`;
+            else redirected.push(inRepo ? `${inRepo}/${file}` : file);
+          }
+        }
+        const settingsSources = [
+          readSettings(inputs['settings']),
+          readSettings(flags.settings, true),
+          ...redirected.map(path => readSettings(path)),
+        ].filter((item): item is Record<string, unknown> => item !== undefined);
         const inlineSettings = settingsSources.length
           ? {
               allow: settingsSources.flatMap(item => asStringArray(item['allow'] ?? [])),

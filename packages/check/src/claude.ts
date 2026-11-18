@@ -201,6 +201,36 @@ const PUBLISH_COMMANDS =
 const WRAPPERS =
   /^(sudo|doas|su|runuser|chroot|timeout|xargs|env|nice|ionice|nohup|time|exec|command|builtin|stdbuf|unbuffer|watch|strace|ltrace|setsid|flock|parallel|script|busybox|toybox|eval|source|\.)(?=\s|$)/;
 
+/** Reads a repository file while a scan runs, so Bash rules for scripts can be judged by the script. */
+let scriptReader: ((path: string) => string | undefined) | undefined;
+export function withScriptReader<T>(reader: (path: string) => string | undefined, run: () => T): T {
+  const previous = scriptReader;
+  scriptReader = reader;
+  try {
+    return run();
+  } finally {
+    scriptReader = previous;
+  }
+}
+
+/**
+ * A script that runs its arguments as a command (`exec "$@"`, `eval "$*"`, `"$1" ...`, or
+ * `sys.argv` / `process.argv` handed to a process call): a rule for it allows any command.
+ */
+const PASSES_ARGUMENTS =
+  /(^[ \t]*|(?:;|&&|\|\||\||\bthen|\bdo|\belse)[ \t]+|\b(?:exec|eval|command|xargs|sudo|nohup|env)[ \t]+|\b(?:ba)?sh[ \t]+-c[ \t]+)"?\$(?:\{?[@*1]\}?)"?(?=[ \t;]|$)|(subprocess\.\w+|os\.system|os\.exec\w*|Popen|spawnSync|execSync|execFileSync|spawn|exec)\s*\([^\n]*(sys\.argv|process\.argv)/m;
+
+function scriptPassesArguments(command: string): boolean {
+  if (!scriptReader) return false;
+  const words = command.split(/\s+/);
+  const file = /^\.{0,2}\/|\//.test(words[0] ?? '')
+    ? words[0]
+    : words.slice(1).find(word => !word.startsWith('-') && /\.(sh|bash|py|js|mjs|cjs|ts|rb|pl)$/.test(word));
+  if (!file) return false;
+  const text = scriptReader(file.replace(/^"|"$/g, '').replace(/^\$\{?CLAUDE_PROJECT_DIR\}?\//, ''));
+  return text !== undefined && PASSES_ARGUMENTS.test(text);
+}
+
 export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'fetch' | 'edit' | 'local' | 'project' | 'other';
 
 /**
@@ -258,7 +288,13 @@ export function bashScope(specifier: string | undefined): BashScope {
     )
   )
     return 'project';
-  if (PROJECT_COMMANDS.test(command) || (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))) return 'project';
+  // Build tools whose options run any program: `make --eval`, `go test -exec`, `cargo --config`
+  // (a runner), `just --shell`. As a prefix rule they allow any command.
+  if (prefix && /^(make|gmake|just|go (test|build|vet|run|generate|tool)|cargo)(?=\s|$)/.test(command))
+    return 'network';
+  if (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))
+    return scriptPassesArguments(command) ? 'network' : 'project';
+  if (PROJECT_COMMANDS.test(command)) return 'project';
   if (FETCH_COMMANDS.test(command)) return 'fetch';
   if (EDIT_COMMANDS.test(command)) return 'edit';
   if (LOCAL_COMMANDS.test(command)) return 'local';

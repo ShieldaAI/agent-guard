@@ -4,6 +4,11 @@
 
 ### Check
 
+- Fix (tenth review): gh-aw lock tool lists are read as Claude Code reads them (spaces,
+  several arguments), and an agent CLI other than the source's engine is a hand edit. A Bash
+  rule for a repository script that runs its arguments as a command, and prefix rules for
+  `make`, `go`, `cargo` and `just`, allow any command. `CLAUDE_CONFIG_DIR` and `HOME` redirects
+  in workflows are followed.
 - Fix (ninth review): files run by an interpreter (`python3 ci/x.py`, `node`, `ruby`, `uv run
   python`) are read for a process that starts an agent; `"${ARGS[@]}"` counts as unresolved
   flags; `find -exec` commands are read; a `./` path that climbs out of the project is not a
