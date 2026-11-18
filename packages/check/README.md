@@ -108,7 +108,10 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Repository | `CODEOWNERS`, `package.json` files (names and dependencies) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml` |
 | Your own settings | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings |
 
-`node_modules`, build output and `.git` are skipped. Links are resolved the way the operating
+`node_modules`, `.git` and virtual environments are skipped. Build output and vendored code
+(`dist`, `build`, `out`, `vendor`, `target`, ...) are skipped too, but only outside configuration
+folders: a skill called `build` is read. Agent configuration found inside a skipped folder
+(`vendor/.claude/settings.json`) is reported as AGC-CFG-002 (high for settings). Links are resolved the way the operating
 system resolves them (a `..` after a linked folder included), and followed only when they stay
 inside the repository: a linked file is read through its target, and a linked folder is walked
 at the link's own path, so `.claude -> tools/agentcfg` is read as `.claude`. In a git tree, a link
@@ -130,14 +133,33 @@ repository) is reported at high, so moving the risky part out of view fails the 
 import pinned to a commit of another repository is a note. Folders named `~` or `<managed>` in
 the repository are never read.
 
-Amp and Goose keep their permissions outside the repository, so they are not read. A setting
+Amp and Goose keep their permissions outside the repository, so they are not read. Configuration
+of agents the scanner does not model (Cursor hooks, Kiro hooks and agents, Gemini CLI commands and
+extensions, OpenCode plugins, Roo Code, Continue, Junie, Amazon Q, Crush, Qwen Code) is reported
+as AGC-CFG-001: high when it can run code (servers, hooks, plugins), medium otherwise. VS Code's
+`chat.tools.autoApprove`, Zed's `always_allow_tool_actions` and Aider's `yes-always` are read as
+bypasses (AGC-PERM-001); VS Code terminal auto-approve patterns beyond fixed project commands,
+Zed context servers and Aider test and lint commands are high. A setting
 the scanner does not model, such as a permission mode or Copilot tool name it does not know, a
 gh-aw engine key or tool it does not know, or the domains Claude Code's Bash sandbox allows, is
 reported as AGC-CFG-001 with what the scan assumed instead, and the reach it could give is
-counted as unknown. Commands Claude Code runs on its own from settings (hooks, `apiKeyHelper`,
-`otelHeadersHelper`, `awsAuthRefresh`, `awsCredentialExport`, `statusLine`) and hooks in skill,
-command and subagent front matter are judged by the hook rules, not as agent capabilities, and a
-`PreToolUse` hook is credited as a runtime check whatever its command does.
+counted as unknown. An allow rule for a tool the scanner does not know is unknown reach, reported
+at medium.
+
+Hooks run without asking, on every matching event, so each one is judged like a command:
+hooks in settings, plugin `hooks.json` and skill, command and subagent front matter, and the
+commands Claude Code runs on its own (`apiKeyHelper`, `otelHeadersHelper`, `awsAuthRefresh`,
+`awsCredentialExport`, `statusLine`, `fileSuggestion`). A hook's command is split into commands
+and each is sorted as a Bash rule is (see shell commands below); a script from the repository or
+the plugin (`"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`, `python3 scripts/x.py`) is project code,
+read for the scripts it runs, unless it pipes a download into a shell. A hook that can reach the
+network or run arbitrary code, an HTTP hook, or one that runs a program outside the repository
+is AGC-PERM-003. A `PreToolUse` or `PermissionRequest` hook that answers "allow" approves calls
+instead of a person: the tools it matches run without asking, it is AGC-PERM-001 (critical), and
+it is not a runtime check. One whose decisions cannot be read (a script that is missing or
+outside the repository, an HTTP or prompt hook) may approve: high, and not a runtime check
+either. Settings `env` values that run code with every command (`BASH_ENV`,
+`CLAUDE_CODE_SHELL_PREFIX`, `PATH`, `LD_PRELOAD`, `PYTHONPATH`, ...) are high.
 
 ### Your own settings
 
@@ -424,22 +446,25 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
   Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 187 agents.
-  Every critical, high and medium finding, 80 in all, was reviewed by hand: 79 true positives
-  and 1 false positive (a low-confidence text rule), precision 98.8%.
+  Every critical, high and medium finding, 146 in all, was reviewed by hand: 145 true positives
+  and 1 false positive (a low-confidence text rule), precision 99.3%. "True" follows the
+  fail-closed reading above: `Bash(git *)` or `Bash(rg:*)` is reported because an option can run
+  any program, and a local MCP server the scanner cannot identify is reported when its tools run
+  without asking.
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
   configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
-  (97%). Of the 300 capabilities labelled yes it reports 82% (as yes or unknown), and 63% at the
+  (97%). Of the 300 capabilities labelled yes it reports 83% (as yes or unknown), and 66% at the
   labelled approval level or wider:
 
   | Capability | Labelled yes | Reported | At level |
   | --- | --- | --- | --- |
   | untrustedInput | 64 | 89% | 78% |
-  | write | 58 | 86% | 62% |
-  | egress | 56 | 96% | 71% |
+  | write | 58 | 93% | 71% |
+  | egress | 56 | 96% | 73% |
   | exec | 48 | 98% | 79% |
   | privateData | 29 | 55% | 21% |
-  | selfModify | 23 | 91% | 87% |
+  | selfModify | 23 | 96% | 96% |
   | spend | 22 | 0% | 0% |
 
   Most of the gap is a difference in definitions, not a missed setting. The labels count money
@@ -471,11 +496,19 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   in the way while untrusted input arrives unasked, or when one leg is unknown. When a
   person approves both untrusted input and sending out, it is not reported.
 - **Shell commands** are sorted by what they can reach: the project's own test, lint, build
-  and install commands; read-only commands; commands that bring in remote text (`git clone`,
-  `git pull`); commands that change files (`cp`, `mv`, `tee`); commands that publish to the
-  repository itself (`gh pr comment`, `git push`); and commands that can reach any host or run
-  arbitrary code (`curl`, `ssh`, `node`, `python`, `npx`). Only the last group is AGC-PERM-003.
-  `find`, `awk`, `sed` and `xargs` can run other commands, so they count as running code.
+  and install commands and package scripts (`npm test`, `pnpm lint`, `./scripts/check.sh`);
+  read-only commands; commands that bring in remote text (`git clone`, `git pull`); commands that
+  change files (`cp`, `mv`, `tee`, `git reset`); commands that publish to the repository itself
+  (`gh pr comment`, `git push`); and everything else, counted as commands that can reach any host
+  or run arbitrary code (AGC-PERM-003). The sort fails closed: a rule is narrower only when it
+  matches a known command shape. An unknown program, an absolute path to one, a wrapper that runs
+  another command (`sudo`, `timeout`, `xargs`, `env`, `eval`), a wildcard inside the command
+  (`c*`, `*url`) and a prefix rule for a command whose options run programs (`git:*`, `find:*`,
+  `rg:*`, `sort:*`, `sed:*`, `awk:*`, `git rebase:*`, `git grep:*`) all count as running code;
+  so do prefix rules that choose what to install or run (`npm install:*`, `npm exec:*`,
+  `uv run:*`). Variable assignments before a command are dropped unless they load code
+  (`BASH_ENV`, `PATH`, `GIT_SSH_COMMAND`, ...). `PowerShell` and `Monitor` rules are judged as Bash
+  rules are; `WebFetch(domain:*)` sends data out.
 - **Codex** runs commands inside its sandbox without asking unless `approval_policy` is
   `untrusted`; `workspace-write` has no network unless `network_access = true`; leaving the
   sandbox needs approval unless the policy is `never`. `never` with `danger-full-access` is
@@ -496,13 +529,26 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   high. Every `--mcp-config` file and `mcp_config` given as a path is read, relative to the
   step's `working-directory` for a CLI; one that cannot be read makes the step unknown reach.
 - **Scripts.** A `run:` script is split into commands the way a shell would: quotes removed,
-  variable assignments, `env`, `time`, `sudo`, `timeout`, `xargs`, `npx` and other wrappers
-  skipped, and `bash -c "..."`, `$(...)` and back quotes read as commands of their own. Shell
-  variables set in the script or in `env` are expanded; an unquoted variable the scan cannot
-  resolve (`$FLAGS`, `"$@"`), or a GitHub expression where a flag could be
-  (`claude_args: ${{ inputs.args }}`), makes the step unknown reach. `claude --version`,
-  `npm i -g @anthropic-ai/claude-code`, `claude mcp add` or an `echo` that mentions an agent are
-  not agents. Claude Code's list flags are variadic (`--allowedTools Read Bash`).
+  shell keywords (`if`, `then`, `do`, `!`), variable assignments, `env`, `time`, `sudo`,
+  `timeout`, `xargs`, `npx` and other wrappers skipped, and `bash -c "..."`, `eval "..."`,
+  `$(...)` and back quotes read as commands of their own. The scan follows repository scripts the
+  step runs (`./ci/agent.sh`, `bash x.sh`, `source x.sh`), `npm run` / `pnpm` scripts from
+  `package.json`, `make` and `just` targets, a custom `shell:`, the agent CLI inside `docker run`,
+  and Claude Code started as `node .../cli.js` or by path (`"$(which claude)"`). Shell variables
+  set in the script or in `env` are expanded; an unquoted variable the scan cannot resolve
+  (`$FLAGS`, `"$@"`), a quoted one not named for a prompt (`"$MODE"`), or a GitHub expression
+  where a flag could be (`claude_args: ${{ inputs.args }}`, any argument holding text an outsider
+  chose, such as `--model ${{ github.event.comment.body }}`) makes the step unknown reach. An
+  agent named in text the scan cannot follow (piped into a shell, `python -c` code that starts a
+  process, a command taken from the job's matrix, a non-shell `shell:`, a `github-script` that
+  starts a process) is an agent of unknown reach. OpenCode, Cursor's CLI, Aider, Amp, Goose, Qwen
+  Code and Crush, and actions that run them, are agents of unknown reach too. `claude --version`,
+  `npm i -g @anthropic-ai/claude-code`, `claude mcp add`, `command -v claude` or an `echo` that
+  mentions an agent are not agents. Claude Code's list flags are variadic
+  (`--allowedTools Read Bash`). Action inputs are matched in any letter case, as GitHub matches
+  them. `path_to_claude_code_executable`, `plugins`, `plugin_marketplaces`,
+  `--permission-prompt-tool` and inline `--agents` that set a permission mode make the step
+  unknown reach; `allowed_bots: "*"` lets any bot start it.
 - **Workflow agents.** A Codex step runs commands without asking, inside its sandbox:
   `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
   unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
@@ -527,11 +573,14 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `steps` or `args` that lift the agent's limits, are unknown reach, reported at high. With
   `network: { allowed: ["*"] }` the firewall is open, so outbound reach is yes. The repository a
   workflow runs in is not counted as private data.
-- **gh-aw lock files.** The `.lock.yml` that runs is checked against its source. Untrusted
-  triggers the source does not have (after gh-aw's own expansion of `slash_command` and
-  `label_command`), or agent flags it does not ask for (`--allow-all-tools` without `bash: "*"`,
-  `--dangerously-skip-permissions`, a permission mode the source does not set), mean the lock was
-  edited by hand: it is unknown reach, reported at high. A `frontmatter_hash` that differs from the
+- **gh-aw lock files.** The `.lock.yml` that runs is checked against its source's front matter
+  (and the front matter it imports; prose explains nothing). Untrusted triggers the source does
+  not have (after gh-aw's own expansion of `slash_command` and `label_command`), agent flags it
+  does not ask for in `engine.args` or `engine.permission-mode` (`--dangerously-skip-permissions`,
+  `--permission-mode bypassPermissions` in either form, `--allow-all-tools` without
+  `bash: "*"`), Claude allowed tools its tools do not give (every Bash command, web fetches,
+  edits), or an agent gh-aw does not compile mean the lock was edited by hand: it is unknown
+  reach, reported at high. A `frontmatter_hash` that differs from the
   source's (gh-aw's own algorithm, recomputed) means the lock is out of date or edited: medium.
   Other hand edits to compiled steps are not detected; recompiling in CI (`gh aw compile` and a
   diff) is the complete check.
@@ -565,7 +614,8 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `mcp__db__.*`) and every tool (`""`, `*`, `.*`). For an MCP server an alternative must be a
   prefix of all its tools (`mcp__.*`, `mcp__<server>__.*`): naming one tool does not cover the
   server. Any other shape, a matcher that is not a valid regular expression on its own, or one
-  longer than 512 characters is not credited, and no hook counts when `disableAllHooks` is set
+  longer than 512 characters is not credited, nor is a hook that can approve calls or whose
+  decisions cannot be read (see hooks above), and no hook counts when `disableAllHooks` is set
   (or only managed hooks, under managed `allowManagedHooksOnly`). Agent
   Guard or an MCP gateway reached as an MCP server sees only the calls made through that server,
   not Bash and not servers configured beside it.

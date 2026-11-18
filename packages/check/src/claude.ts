@@ -160,16 +160,17 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
  * for `git status` is not a rule for `git statusx`.
  */
 const LOCAL_COMMANDS =
-  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|remote|checkout|switch|add|commit|stash|restore|tag|worktree list|config --get|describe|shortlog|reflog|cat-file|ls-tree|merge-base|check-ignore)|ls|cat|head|tail|wc|grep|egrep|fgrep|echo|printf|pwd|which|type|tree|uniq|diff|cmp|jq|yq|date|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|true|false|test|\[|ps|lsof|whoami|uname|hostname|id|nproc|sleep|cut|tr|column|nl|less|more|od|xxd|hexdump|md5sum|shasum|sha256sum|cksum|comm|paste|fold|rev|tac|seq|expr|bc)(?=\s|$)/;
+  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|remote|checkout|switch|add|commit|stash|restore|tag|worktree list|config --get|describe|shortlog|reflog|cat-file|ls-tree|merge-base|check-ignore)|ls|cat|head|tail|wc|grep|egrep|fgrep|echo|printf|pwd|which|type|tree|uniq|diff|cmp|jq|yq|date|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|true|false|test|\[|ps|lsof|kill|pkill|killall|whoami|uname|hostname|id|nproc|sleep|cut|tr|column|nl|less|more|od|xxd|hexdump|md5sum|shasum|sha256sum|cksum|comm|paste|fold|rev|tac|seq|expr|bc)(?=\s|$)/;
 /**
  * Commands that read local files only when the arguments are fixed: with a wildcard after them,
  * an option runs a program (`rg --pre`, `sort --compress-program`, `git grep -O`, `find -exec`,
  * `git rebase --exec`, `git -c alias...`).
  */
 const LOCAL_FIXED_ARGS =
-  /^(rg|sort|find|fd|git grep|git rebase|git merge|git cherry-pick|git bisect|git worktree|git submodule|git|kill|pkill|xargs kill|awk|sed|tar|unzip|zip|make -n)(?=\s|$)/;
+  /^(rg|sort|find|fd|git grep|git rebase|git merge|git cherry-pick|git bisect|git worktree|git submodule|git|awk|sed|tar|unzip|zip|make -n)(?=\s|$)/;
 /** Commands that change local files, including the agent's own settings, without running code. */
-const EDIT_COMMANDS = /^(mkdir|touch|cp|mv|chmod|ln|rm|rmdir|tee|truncate)(?=\s|$)/;
+const EDIT_COMMANDS =
+  /^(mkdir|mktemp|touch|cp|mv|chmod|ln|rm|rmdir|tee|truncate|git reset|git rm|git mv|git clean|git restore)(?=\s|$)/;
 /** Commands that bring in text from a remote repository: untrusted input, not egress. */
 const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)(?=\s|$)/;
 /**
@@ -177,7 +178,7 @@ const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)(?=\s|$)/;
  * by the agent. Matched as whole words, so `npx tsc-evil-pkg` is not `npx tsc`.
  */
 const PROJECT_COMMANDS =
-  /^((npm|pnpm|yarn|bun) (test|ci|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npm|pnpm|yarn|bun) (install|i|add)|(npx|bunx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx)|tsc|eslint|prettier|biome|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest)|uv (run (pytest|ruff|mypy|python -m pytest)|sync|lock)|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod tidy)|cargo (test|check|build|clippy|fmt|run|nextest run)|make|just|gradlew? (test|build|check)|\.\/gradlew (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))(?=\s|$)/;
+  /^((npm|pnpm|yarn|bun) (test|ci|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npm|pnpm|yarn|bun) (install|i|add)|(npx|bunx|pnpx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx|oxlint|knip|stylelint)|tsc|eslint|prettier|biome|oxlint|knip|stylelint|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest)|uv (run (pytest|ruff|mypy|pyright|basedpyright|ty|pre-commit|tox|nox|coverage|black|isort|flake8|pylint|python -m pytest)|sync|lock)|pre-commit run|pyright|basedpyright|tox|nox|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod tidy)|cargo (test|check|build|clippy|fmt|run|nextest run)|make|just|gradlew? (test|build|check)|\.\/gradlew (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))(?=\s|$)/;
 /**
  * Project commands whose arguments choose what is installed or run: as a prefix rule they fetch
  * and run any package (`npm install evil`), so they are judged as network commands.
@@ -189,7 +190,7 @@ const PROJECT_FIXED_ARGS = /^((npm|pnpm|yarn|bun) (install|i|add)|poetry install
  * project command. `-c`, `-e`, `-` or an absolute path would not be.
  */
 const SCRIPT_COMMAND =
-  /^((python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'\-/][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))|\.\/[^\s;&|`$]+)(?=\s|$)/;
+  /^((python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run( python3?)?|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'\-/][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))|\.\/[^\s;&|`$]+|[\w.-]+\/[\w./-]+\.(sh|bat|cmd|ps1|py|js|mjs|ts))(?=\s|$)/;
 /** Commands that read from the network (issue and pull-request text) without sending anything. */
 const READ_COMMANDS =
   /^gh (pr|issue|run|repo|release|search|workflow) (view|list|diff|checks|status|logs|watch|checkout)(?=\s|$)|^gh search(?=\s|$)|^gh api (-X GET |--method GET )?repos\/\S*\/(contents|commits|compare)\b/;
@@ -218,16 +219,43 @@ export function bashScope(specifier: string | undefined): BashScope {
     .trim();
   if (command === '' || command === '*') return 'any';
   const prefix = command !== raw;
-  // A wildcard left inside the command matches other commands too.
-  if (/[*?]/.test(command)) return command.startsWith('*') ? 'any' : 'network';
+  // Variable assignments before the command (`GIT_TERMINAL_PROMPT=0 git ...`) are dropped, unless
+  // they load code or change what runs.
+  while (/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/.test(command)) {
+    if (
+      /^(BASH_ENV|ENV|PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|EDITOR|GIT_EDITOR|GIT_CONFIG_\w+|SHELL)=/.test(
+        command,
+      )
+    )
+      return 'network';
+    command = command.replace(/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/, '');
+  }
+  // A package script named with a trailing wildcard (`pnpm app:cdp*`) runs one of the project's scripts.
+  if (/^(pnpm|yarn|bun|npm run) [a-z][\w:.-]*\*$/.test(command) && !/ (dlx|exec|x|add|install|i|create)/.test(command))
+    return 'project';
+  // A wildcard left inside the command matches other commands too; one inside a quoted argument
+  // (`-name "X-2*"`) is part of that argument.
+  if (/[*?]/.test(command.replace(/"[^"]*"|'[^']*'/g, '""'))) return command.startsWith('*') ? 'any' : 'network';
   // `/usr/bin/curl` is curl; a path elsewhere is an unknown program.
   command = command.replace(/^\/(usr\/(local\/)?)?s?bin\/(?=\S)/, '');
   if (/^xargs kill(?=\s|$)/.test(command)) return 'local';
+  // pnpm's workspace flags choose where a command runs, not what: `pnpm -w run lint` is `pnpm run lint`.
+  command = command.replace(/^pnpm( (-w|-r|--workspace-root|--recursive))+(?=\s)/, 'pnpm');
+  // Package managers' read-only commands.
+  if (/^(pnpm|npm|yarn|bun) (why|list|ls|outdated|view|info|explain|audit)(?=\s|$)/.test(command)) return 'local';
   if (WRAPPERS.test(command)) return 'network';
   // `gh api PATH` reads only as written: a prefix rule also allows `-X PUT`, `-f` or `--input`.
   if (READ_COMMANDS.test(command) && !(prefix && /^gh api(?=\s|$)/.test(command))) return 'read';
   if (PUBLISH_COMMANDS.test(command)) return 'publish';
   if (PROJECT_FIXED_ARGS.test(command) && prefix) return 'network';
+  // A package script by name (`pnpm fix`, `yarn lint`, `bun run dev`): project code. Arguments
+  // after the script name go to the script, so a prefix rule is still that script.
+  if (
+    /^(pnpm|yarn|bun)( run)? (?!(dlx|exec|x|add|install|i|create|link|global|publish|node|why)(\s|$))[a-z][\w:.-]*$/.test(
+      command,
+    )
+  )
+    return 'project';
   if (PROJECT_COMMANDS.test(command) || (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))) return 'project';
   if (FETCH_COMMANDS.test(command)) return 'fetch';
   if (EDIT_COMMANDS.test(command)) return 'edit';
@@ -372,6 +400,7 @@ export const HARMLESS_TOOLS = new Set([
   'TaskOutput',
   'TaskStop',
   'ToolSearch',
+  'Workflow',
 ]);
 
 /** True when a deny rule removes a whole tool (not just some uses of it). */

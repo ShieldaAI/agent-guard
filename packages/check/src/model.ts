@@ -350,9 +350,14 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
       if (data[key] === true) bypasses.push({ agent: 'VS Code agent', what: `${key}: true`, location: at(`"${key}"`) });
     for (const key of ['chat.tools.terminal.autoApprove', 'chat.agent.terminal.autoApprove']) {
       const rules = data[key];
+      // A command approved as written is judged like a Bash rule; a pattern (`/.../`) may match anything.
+      const wide = (command: string) =>
+        command.startsWith('/') || !['local', 'read', 'fetch', 'edit', 'project'].includes(bashScope(command));
       if (
         isRecord(rules) &&
-        Object.values(rules).some(value => value === true || (isRecord(value) && value['approve'] === true))
+        Object.entries(rules).some(
+          ([command, value]) => (value === true || (isRecord(value) && value['approve'] === true)) && wide(command),
+        )
       )
         unrecognized.push({
           agent: 'VS Code agent',
@@ -567,7 +572,8 @@ export function buildProject(
                 ? 'its servers, hooks or commands may run code and send data out without asking'
                 : 'what it lets an agent do is unknown',
             location: { file: path, line: 1 },
-            severity: unmodelled.runsCode || /!\{/.test(text) ? 'high' : 'medium',
+            // Gemini CLI asks before the shell commands of a custom command: medium.
+            severity: unmodelled.runsCode ? 'high' : 'medium',
           });
         continue;
       }

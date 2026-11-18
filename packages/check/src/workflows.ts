@@ -3,7 +3,7 @@ import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
-import { agentCalls, namesAgent, type AgentCli } from './shell.js';
+import { agentCalls, AGENT_MENTION, spawnsAgent, type AgentCli } from './shell.js';
 import { parse as parseYaml } from 'yaml';
 
 export type AgentAction =
@@ -184,18 +184,15 @@ const HARMLESS_VALUE_FLAGS = new Set([
  * or inside a longer quoted text (a prompt) is not counted.
  */
 export function expressionFlags(args: readonly string[]): string[] {
-  // Any argument with an expression in it, unless it is the value of a harmless flag and the
-  // expression is not text an outsider chose (`--model ${{ github.event.comment.body }}` is).
-  // splitArgs breaks `${{ inputs.args }}` at its spaces, so the words after `${{` are read together.
+  // An expression an outsider can fill (an issue title, a comment) can carry any flag, wherever it
+  // is. Any other expression can be a flag only as a word of its own (`claude_args: ${{ x }}`), not
+  // inside a longer word (`Bash(gh pr comment ${{ github.event.pull_request.number }}:*)`), and not
+  // as the value of a harmless flag (`--model ${{ vars.MODEL }}`). splitArgs breaks `${{ x }}` at
+  // its spaces, so the word that opens it is the one judged.
   return args.filter((arg, i) => {
     if (!arg.includes('${{')) return false;
-    let start = i;
-    while (start > 0 && !args[start]!.includes('${{')) start -= 1;
-    const flag = args[start - 1] ?? '';
-    const expression = args
-      .slice(start, args.findIndex((item, at) => at >= start && item.includes('}}')) + 1 || undefined)
-      .join(' ');
-    return !(HARMLESS_VALUE_FLAGS.has(flag) && !UNTRUSTED_EXPRESSION.test(expression) && /^\s*\$\{\{/.test(arg));
+    if (UNTRUSTED_EXPRESSION.test(args.slice(i, i + 4).join(' '))) return true;
+    return /^\s*\$\{\{/.test(arg) && !HARMLESS_VALUE_FLAGS.has(args[i - 1] ?? '');
   });
 }
 
@@ -282,12 +279,17 @@ const GEMINI_ACTION = /^[^/@\s]+\/run-gemini-cli(\/[^@]*)?@/i;
 /** Actions that run an agent the scanner does not model (OpenCode, Gemini's own action, Qwen, Goose, ...). */
 const OTHER_AGENT_ACTION =
   /^[^/@\s]+\/(opencode|gemini-cli-action|qwen-code-action|goose-action|aider-action|cursor-agent-action|amp-action|crush-action)(\/[^@]*)?@|^sst\/opencode\/github@/i;
+/** An agent CLI named anywhere in text that runs (echo lines included: piped into a shell, they run). */
+function namesAgentAnywhere(text: string): boolean {
+  return AGENT_MENTION.test(text);
+}
+
 /** Actions that leave cloud credentials for every later step of the job. */
 const CREDENTIAL_ACTION =
   /^(aws-actions\/configure-aws-credentials|google-github-actions\/auth|azure\/login|azure\/aks-set-context|docker\/login-action|hashicorp\/vault-action)@/i;
 /** Untrusted text in an expression: whoever opened the issue or pull request chose it. */
 const UNTRUSTED_EXPRESSION =
-  /github\.event\.|github\.head_ref|inputs\.|steps\.[^.]+\.outputs\.[^}]*(body|title|comment|message|text|prompt)/i;
+  /github\.event\.[\w.]*(title|body|message|name|ref|label|comment|description|text|login|email|head_commit|pages)|github\.head_ref|inputs\.|steps\.[^.]+\.outputs\.[^}]*(body|title|comment|message|text|prompt)/i;
 /** Shell variable names that hold a prompt: a quoted one is the prompt, not a flag. */
 const PROMPT_VARIABLE =
   /^"?\$\{?[A-Za-z_]*(PROMPT|MESSAGE|BODY|TEXT|INPUT|QUERY|TASK|INSTRUCTION|CONTEXT|COMMENT|TITLE|ISSUE|REQUEST|QUESTION)[A-Za-z_]*\}?"?$/i;
@@ -610,7 +612,8 @@ export function parseWorkflow(
       // a command chosen by an expression, a github-script that runs a process.
       // `run: ${{ matrix.cmd }}`: the command is in the job's matrix.
       const matrixText =
-        /\$\{\{\s*matrix\./.test(rawRun) && isRecord(job['strategy'])
+        // Only when the expression is the command itself (`run: ${{ matrix.cmd }} --flag`).
+        /(^|[;&|]\s*|\n\s*)\$\{\{\s*matrix\./.test(rawRun.trimStart()) && isRecord(job['strategy'])
           ? JSON.stringify(job['strategy']['matrix'] ?? '')
           : '';
       const scriptText = matrixText
@@ -620,15 +623,19 @@ export function parseWorkflow(
             ? (asString(step['with']['script']) ?? '')
             : ''
           : rawRun;
-      const hidden =
-        !calls.length &&
-        scriptText !== '' &&
-        namesAgent(scriptText) &&
-        (!posixShell ||
-          /^actions\/github-script@/i.test(uses) ||
-          /\beval\b|\|\s*(ba|z|da)?sh\b|\b(ba|z|da)?sh\s+(-s|<)|\bdocker\s+(run|exec)|\bpython3?\s+-c|\bnode\s+-e|\$\{\{\s*(matrix|inputs|github\.event|steps)\.|\bsource\b|^\s*\.\s|\$\(|`/m.test(
-            scriptText,
-          ));
+      // Text that runs where the scan cannot follow it: piped into a shell, `python -c` / `node -e`
+      // code, a command chosen by an expression (its matrix values), a non-shell `shell:`, or a
+      // github-script that starts a process. An agent named there is an agent of unknown reach.
+      const dynamicText = [
+        ...[...rawRun.matchAll(/^(.*)\|\s*(sudo\s+)?(ba|z|da)?sh\b(?!\s+-c)/gm)].map(match => match[1]!),
+        ...[...rawRun.matchAll(/\b(python3?\s+-c|node\s+-e|perl\s+-e|ruby\s+-e)\s+(.*)$/gm)]
+          .map(match => match[2]!)
+          .filter(code => spawnsAgent(code)),
+        ...(matrixText ? [matrixText] : []),
+        ...(!posixShell && spawnsAgent(rawRun) ? [rawRun] : []),
+        ...(/^actions\/github-script@/i.test(uses) && spawnsAgent(scriptText) ? [scriptText] : []),
+      ].join('\n');
+      const hidden = !calls.length && dynamicText !== '' && namesAgentAnywhere(dynamicText);
       const detections: {
         action: AgentAction;
         args: readonly string[];

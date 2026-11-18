@@ -1317,7 +1317,7 @@ Not flagged:
         "hooks": [
           {
             "type": "command",
-            "command": "./check.sh"
+            "command": "jq -e .tool_input"
           }
         ]
 …

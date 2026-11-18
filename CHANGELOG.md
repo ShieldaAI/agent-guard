@@ -4,6 +4,22 @@
 
 ### Check
 
+- Fix (eighth review): fail-closed defaults. A Bash rule is narrower than "any network command"
+  only when it matches a known command shape: unknown programs, wrappers (`sudo`, `timeout`,
+  `xargs`), wildcards inside the command and prefix rules for commands whose options run programs
+  (`git:*`, `find:*`, `rg:*`) are AGC-PERM-003, in every agent that uses Claude's rule syntax.
+  Hooks are judged like commands (scripts from the repository read); a hook that approves tool
+  calls is AGC-PERM-001 and never a runtime check; HTTP hooks and helper commands are covered.
+  Build-output folder names are skipped only outside configuration folders, and configuration in
+  a skipped folder is reported. Workflow scripts: shell keywords, `eval`, repository scripts,
+  `npm run` and `make` targets, `docker run`, other agent CLIs and actions, case-insensitive
+  inputs, expressions inside flags and agents named where the scan cannot follow. gh-aw locks are
+  checked against front matter only. Unknown MCP servers that run without asking, enabled
+  plugins from outside the repository, unmodelled agent files (Cursor hooks, Roo, Continue, ...),
+  VS Code, Zed and Aider auto-approve, Gemini hooks and discovery commands, Codex `notify`,
+  OpenCode plugins and settings `env` loaders are reported. Secrets passed through files,
+  `$GITHUB_OUTPUT`, cloud-credential actions and checkout tokens reach the agent. Front matter
+  with spaces after `---` and space-separated tool lists are read. Quadratic paths removed.
 - Fix (seventh review): configuration folders are walked first and a folder reached through
   links more than 4 times stops the walk, which is reported at high. Agent CLIs in `run:` scripts
   are found by splitting the script into commands (quotes, wrappers, `bash -c`, `$(...)`, shell

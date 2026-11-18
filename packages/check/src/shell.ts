@@ -417,7 +417,11 @@ function runsAgent(cli: AgentCli, args: readonly Word[], program = ''): boolean 
 
 /** An agent CLI named in text: a program name on its own, or the Claude Code package. */
 export const AGENT_MENTION =
-  /(^|[\s"'`;&|(/=])(claude|codex|copilot|gemini|opencode|cursor-agent|aider|amp|goose|qwen|crush)(?=[\s"'`;&|)]|$)|@anthropic-ai\/claude-code|@openai\/codex|@google\/gemini-cli/m;
+  /(^|[\s"'`;&|(/=[,])(claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen)(?=[\s"'`;&|),\]]|$)|@anthropic-ai\/claude-code|@openai\/codex|@google\/gemini-cli/m;
+/** A line that starts a process and names an agent CLI on that same line. */
+export function spawnsAgent(text: string): boolean {
+  return text.split('\n').some(line => SPAWNS.test(line) && AGENT_MENTION.test(line));
+}
 /** Commands that install or look up an agent CLI rather than run it. */
 const INSTALL_LINE =
   /^\s*(npm|pnpm|yarn|bun)\s+(i|install|add|ci)\b|^\s*(pip|pipx|uv)\s+(tool\s+)?install\b|^\s*brew\s+install\b|^\s*(which|command -v|type)\b|^\s*(echo|printf)\b|^\s*#/;
@@ -428,6 +432,10 @@ export function namesAgent(text: string): boolean {
     .split('\n')
     .some(line => (!INSTALL_LINE.test(line) || /\|\s*(ba|z|da)?sh\b/.test(line)) && AGENT_MENTION.test(line));
 }
+
+/** Code that starts a process: Python, Node, Ruby, PowerShell. */
+export const SPAWNS =
+  /\b(subprocess|os\.system|os\.popen|os\.exec\w*|Popen|child_process|execSync|execFileSync|spawnSync|execa|Bun\.spawn|Deno\.Command|Start-Process|Invoke-Expression)\b|(?<![.\w])(system|exec|spawn)\(/;
 
 /** Where agent calls can read files a script runs: package.json scripts, Makefile targets, shell scripts. */
 export interface ScriptContext {
@@ -485,9 +493,11 @@ export function agentCalls(
       if (namesAgent(text)) unknown('agent', why);
       return;
     }
+    // A shell script is read command by command: if no call is found, it runs no agent. Another
+    // language runs one only through a process call that names the agent.
     const found = shell ? agentCalls(text, vars, nesting + 1, context) : [];
     if (found.length) out.push(...found);
-    else if (namesAgent(text)) unknown('agent', why);
+    else if (!shell && spawnsAgent(text)) unknown('agent', why);
   };
   for (const words of commands(script, vars)) {
     const call = unwrap(words);
@@ -546,11 +556,21 @@ export function agentCalls(
     }
     // The CLI in a container, or Claude Code's own entry point run by node.
     if ((call.name === 'docker' || call.name === 'podman') && /^(run|exec|compose)$/.test(args[0] ?? '')) {
-      const at = args.findIndex(arg => CLI_NAMES[commandName(arg)] !== undefined);
-      if (at >= 0) {
+      // A shell script run in the container is read like `bash -c`; an agent CLI named as the
+      // command is that agent; an agent's image run with its own command is an agent of unknown reach.
+      const shellAt = args.findIndex(
+        (arg, i) => SHELLS.has(commandName(arg)) && /^-[a-zA-Z]*c[a-zA-Z]*$/.test(args[i + 1] ?? ''),
+      );
+      const at = args.findIndex(arg => CLI_NAMES[commandName(arg)] !== undefined && !arg.includes(':'));
+      if (shellAt >= 0 && args[shellAt + 2] !== undefined) follow(args[shellAt + 2]!, `${call.name} ${args[0]}`, true);
+      else if (at >= 0) {
         const cli = CLI_NAMES[commandName(args[at]!)]!;
         out.push({ cli, program: commandName(args[at]!), args: args.slice(at + 1), unresolved: [] });
-      } else if (namesAgent(args.join(' '))) unknown('agent', `${call.name} ${args[0]}`);
+      } else {
+        const image = args.filter(arg => !arg.startsWith('-') && !arg.includes('=')).at(-1) ?? '';
+        if (/(claude-code|codex|gemini-cli|copilot|opencode|aider|qwen-code)/.test(image) && /[/:]/.test(image))
+          unknown('agent', `${call.name} ${args[0]} ${image}`);
+      }
       continue;
     }
     if (call.name === 'node' && args[0] && /claude-code\/cli\.m?js$/.test(args[0])) {

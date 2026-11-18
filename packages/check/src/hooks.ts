@@ -1,5 +1,6 @@
 import { bashScope, type Hook } from './claude.js';
 import { commands, unwrap } from './shell.js';
+import { PIPE_TO_SHELL } from './rules/common.js';
 
 /**
  * What a hook does when it runs. Hooks run without asking, on every matching event, so a hook is
@@ -81,25 +82,35 @@ export function judgeHook(
       const call = unwrap(words);
       if (!call) continue;
       let found: HookJudgement['reach'];
-      let shown = [call.head, ...call.args.map(arg => arg.text)].join(' ');
+      // A pinned package (`npx prettier@3.5.3`) is the package; a path is kept as written.
+      let shown = [call.head.includes('/') ? call.head : call.name, ...call.args.map(arg => arg.text)].join(' ');
+      const projectPath = /^\$\{?CLAUDE_(PROJECT_DIR|PLUGIN_ROOT)\}?\//.test(call.head);
       // A script from the repository or the plugin: read it and judge what it runs.
+      // An interpreter's script is its first argument that names a file (`python -m tool` runs a module).
       const target = INTERPRETERS.has(call.name)
-        ? call.args.find(arg => !arg.text.startsWith('-'))?.text
+        ? call.args.some(arg => arg.text === '-m')
+          ? undefined
+          : call.args.find(arg => !arg.text.startsWith('-') && /[/.]/.test(arg.text))?.text
         : call.head.includes('/') || call.head.startsWith('$CLAUDE') || call.head.startsWith('${CLAUDE')
           ? call.head
           : undefined;
       const inline = INTERPRETERS.has(call.name) && call.args.some(arg => /^-[a-zA-Z]*[ce]$/.test(arg.text));
       const path = target && !inline ? repoPath(target, projectDir, pluginRoot) : undefined;
       const text = path === undefined ? undefined : readFile(path);
-      if (call.dynamic) {
+      if (call.dynamic && !projectPath) {
         found = 'network';
         readable = false;
       } else if (text !== undefined && depth < 2) {
         texts.push(text);
-        found = 'project';
+        // A script from the repository is project code, like `npm test`, unless it pipes a download
+        // into a shell. A shell script is read for the scripts it runs and for approvals.
+        found = PIPE_TO_SHELL.test(text) ? 'network' : 'project';
         shown = path!;
-        // A shell script is read command by command; another language is project code.
-        if (/\.(sh|bash|zsh)$/.test(path!) || /^#!.*\b(ba|z)?sh\b/.test(text)) visit(text, depth + 1);
+        if (/\.(sh|bash|zsh)$/.test(path!) || /^#!.*\b(ba|z)?sh\b/.test(text)) {
+          const before = reach;
+          visit(text, depth + 1);
+          if (reach === 'network' && before !== 'network' && !PIPE_TO_SHELL.test(text)) reach = before;
+        }
       } else if (target !== undefined && !inline && path === undefined) {
         // A program outside the repository (`~/bin/x`, `/opt/x`): unknown.
         found = 'network';

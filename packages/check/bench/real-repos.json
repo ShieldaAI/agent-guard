@@ -16,7 +16,7 @@
       "agents": 5,
       "expected": {
         "AGC-COV-001:medium": 2,
-        "AGC-PERM-003:high": 1,
+        "AGC-PERM-003:high": 2,
         "AGC-SUP-004:medium": 1,
         "AGC-TXT-002:medium": 1
       },
@@ -59,7 +59,8 @@
       "commit": "ce8b2629efe8b24048b127b4c79af1e9cbab93d4",
       "agents": 12,
       "expected": {
-        "AGC-COV-001:medium": 3
+        "AGC-COV-001:medium": 3,
+        "AGC-PERM-003:high": 1
       }
     },
     {
@@ -67,8 +68,9 @@
       "commit": "b5b01ac4f889fec0c4c6bb89f27ca7c8574473f6",
       "agents": 63,
       "expected": {
-        "AGC-COV-001:medium": 1,
-        "AGC-PERM-002:high": 1
+        "AGC-COV-001:medium": 2,
+        "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 3
       }
     },
     {
@@ -90,10 +92,12 @@
       "commit": "47fecddd8f3e6c80e92d7963bbffa28c40254820",
       "agents": 1,
       "expected": {
+        "AGC-COV-001:medium": 1,
         "AGC-LIM-001:medium": 1,
+        "AGC-PERM-003:high": 4,
         "AGC-PERM-005:medium": 1,
         "AGC-SUP-004:medium": 1,
-        "AGC-TRG-001:medium": 1
+        "AGC-TRG-001:high": 1
       }
     },
     {
@@ -124,15 +128,22 @@
       "repo": "denoland/deno",
       "commit": "e7b39ebd55c85aaf6a29290c1f5a99e2e21e09dd",
       "agents": 1,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 5,
+        "AGC-PERM-005:medium": 1
+      }
     },
     {
       "repo": "getsentry/sentry-mcp",
       "commit": "cfd76ae6cd79f8c0ad5f9aa32b4f8270ab386d3a",
       "agents": 7,
       "expected": {
+        "AGC-CFG-001:high": 6,
+        "AGC-CFG-001:medium": 1,
         "AGC-COV-001:medium": 2,
-        "AGC-PERM-003:high": 5,
+        "AGC-PERM-003:high": 21,
         "AGC-PERM-005:medium": 3,
         "AGC-SUP-004:medium": 1,
         "AGC-TRI-001:critical": 1,
@@ -153,9 +164,11 @@
       "commit": "4ed06ed0ddc523a6d356a4ad35ddfea331041888",
       "agents": 9,
       "expected": {
+        "AGC-CFG-001:medium": 5,
         "AGC-SUP-004:medium": 2,
         "AGC-TRG-001:high": 1,
-        "AGC-TRG-002:medium": 1
+        "AGC-TRG-002:medium": 1,
+        "AGC-TRI-002:medium": 1
       }
     },
     {
@@ -169,6 +182,7 @@
       "commit": "536faa650832fe08d5f3f9694faaeec2840a9a5b",
       "agents": 2,
       "expected": {
+        "AGC-CFG-001:medium": 1,
         "AGC-TXT-004:medium": 1
       }
     },
@@ -183,6 +197,7 @@
       "commit": "9893f280efbceb0dd54b0327120977223e49af93",
       "agents": 2,
       "expected": {
+        "AGC-CFG-001:high": 2,
         "AGC-COV-001:medium": 1,
         "AGC-SUP-004:medium": 1
       }
@@ -191,7 +206,9 @@
       "repo": "modelcontextprotocol/inspector",
       "commit": "488c30d9d16e4993bc548ad298eb7450f5125c93",
       "agents": 2,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:medium": 1
+      }
     },
     {
       "repo": "modelcontextprotocol/servers",
@@ -220,7 +237,7 @@
       "commit": "d85aed4f0987fde4192fbc4f448538fb022f8918",
       "agents": 1,
       "expected": {
-        "AGC-PERM-003:high": 2
+        "AGC-PERM-003:high": 4
       }
     },
     {
@@ -229,10 +246,12 @@
       "agents": 17,
       "expected": {
         "AGC-CFG-001:medium": 12,
-        "AGC-COV-001:medium": 2,
+        "AGC-COV-001:medium": 6,
         "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 7,
         "AGC-PERM-005:medium": 1,
-        "AGC-TRG-001:medium": 2
+        "AGC-TRG-001:high": 1,
+        "AGC-TRG-001:medium": 1
       }
     },
     {
@@ -251,7 +270,9 @@
       "repo": "vercel/ai",
       "commit": "8ba3940d3dd1f3cd3c4365bbaec505c6ef0eb1e3",
       "agents": 1,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:high": 1
+      }
     },
     {
       "repo": "zed-industries/zed",

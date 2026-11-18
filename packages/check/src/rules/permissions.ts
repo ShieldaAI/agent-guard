@@ -1,9 +1,15 @@
 import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule } from './common.js';
 import type { Rule } from './common.js';
-import { bashScope, isOutsideProject } from '../claude.js';
+import { bashScope, HARMLESS_TOOLS, isOutsideProject } from '../claude.js';
 import { lineAt } from '../text.js';
 import { projectDir } from '../model.js';
 import { UNTRUSTED_TRIGGERS } from '../workflows.js';
+
+/** A hook matcher that names only tools that run nothing (`AskUserQuestion`, `TodoWrite`). */
+function onlyHarmless(matcher: string): boolean {
+  const names = matcher.split('|').map(name => name.trim());
+  return matcher.trim() !== '' && names.every(name => HARMLESS_TOOLS.has(name));
+}
 
 export const PERMISSIONS_RULES: readonly Rule[] = [
   rule(
@@ -62,7 +68,7 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
         });
       // A hook that answers "allow" for tool calls approves them instead of a person.
       for (const { hook, judgement } of project.hookJudgements)
-        if (judgement.approves !== 'no')
+        if (judgement.approves !== 'no' && !onlyHarmless(hook.matcher))
           report({
             message:
               judgement.approves === 'yes'
