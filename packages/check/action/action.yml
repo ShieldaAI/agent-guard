@@ -29,7 +29,7 @@ inputs:
     default: 'false'
   version:
     description: Version of @shieldaai/agent-guard-check to run.
-    default: 1.3.0
+    default: 1.3.1
 
 outputs:
   exit-code:
@@ -58,7 +58,7 @@ runs:
       run: |
         set -uo pipefail
         if ! [[ "$AGC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
-          echo "::error::version must be an exact release, such as 1.3.0" >&2
+          echo "::error::version must be an exact release, such as 1.3.1" >&2
           exit 2
         fi
         out="${RUNNER_TEMP}/agent-guard-check"
