@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { formatText, mediates } from '@shieldaai/agent-guard-check';
 import { findingsFor, mcp, scanFiles, settings } from './helpers.mjs';
 
-const hook = matcher => ({ PreToolUse: [{ matcher, hooks: [{ type: 'command', command: './guard.sh' }] }] });
+const hook = matcher => ({ PreToolUse: [{ matcher, hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] });
 const cov = files => findingsFor(scanFiles(files), 'AGC-COV-001');
 
 test('a hook that sees only Bash does not cover WebFetch', () => {

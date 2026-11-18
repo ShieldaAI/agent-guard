@@ -16,7 +16,11 @@ export interface PermissionRule {
 export interface Hook {
   readonly event: string;
   readonly matcher: string;
+  /** The shell command; empty for a hook that is not a command (`http`, `prompt`, `agent`). */
   readonly command: string;
+  /** `command`, `http` (posts the event to `url`), `prompt` or `agent` (a model decides), or another type. */
+  readonly type: string;
+  readonly url?: string;
   readonly location: Location;
 }
 
@@ -89,15 +93,22 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
         if (!isRecord(group) || !Array.isArray(group['hooks'])) continue;
         const matcher = asString(group['matcher']) ?? '';
         for (const hook of group['hooks']) {
-          const command = isRecord(hook) ? asString(hook['command']) : undefined;
-          if (!command) continue;
-          const needle = JSON.stringify(command);
+          if (!isRecord(hook)) continue;
+          // Every hook type is kept: one that is not a command (an HTTP call, a model's decision) is
+          // judged as unknown, never dropped.
+          const type = asString(hook['type']) ?? 'command';
+          const command = asString(hook['command']) ?? '';
+          const url = asString(hook['url']);
+          if (!command && type === 'command') continue;
+          const needle = JSON.stringify(command || url || type);
           const index = text.indexOf(needle, from);
           if (index >= 0) from = index + needle.length;
           hooks.push({
             event,
             matcher,
             command,
+            type,
+            ...(url ? { url } : {}),
             location: { file: path, line: index >= 0 ? lineOf(text, needle, index) : 1 },
           });
         }
@@ -105,10 +116,17 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
     }
   }
   // Commands Claude Code runs on its own, outside the hook events: judged by the same rules.
-  for (const key of ['apiKeyHelper', 'otelHeadersHelper', 'awsAuthRefresh', 'awsCredentialExport', 'statusLine']) {
+  for (const key of [
+    'apiKeyHelper',
+    'otelHeadersHelper',
+    'awsAuthRefresh',
+    'awsCredentialExport',
+    'statusLine',
+    'fileSuggestion',
+  ]) {
     const value = data[key];
     const command = isRecord(value) ? asString(value['command']) : asString(value);
-    if (command) hooks.push({ event: key, matcher: '', command, location: at(`"${key}"`) });
+    if (command) hooks.push({ event: key, matcher: '', command, type: 'command', location: at(`"${key}"`) });
   }
   const env = isRecord(data['env'])
     ? Object.entries(data['env'])
@@ -137,66 +155,110 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
   };
 }
 
-/** Commands that read local files only. */
-const LOCAL_COMMANDS =
-  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|remote|checkout|switch|add|commit|stash|restore|merge|rebase|tag)|ls|cat|head|tail|wc|grep|rg|echo|pwd|which|tree|sort|uniq|diff|jq|date|kill|pkill|xargs kill|lsof|ps|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|git grep|git worktree|git config --get|true|test|\[)\b/;
-/** Commands that change local files, including the agent's own settings, without running code. */
-const EDIT_COMMANDS = /^(mkdir|touch|cp|mv|chmod|ln|rm|rmdir|tee|truncate)\b/;
-/** Commands that bring in text from a remote repository: untrusted input, not egress. */
-const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)\b/;
-// find -exec, awk system(), GNU sed's e command and xargs run arbitrary commands: they are not
-// listed above, so they fall through to 'other' (runs code, may send data out).
-/** The project's own test, lint, build and install commands: they run project code, nothing chosen by the agent. */
-const PROJECT_COMMANDS =
-  /^((npm|pnpm|yarn|bun) (test|install|ci|i|add|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npx|bunx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx)|tsc|eslint|prettier|biome|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest|pip install -r)|uv (run (pytest|ruff|mypy|python -m pytest)|sync|lock)|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod)|cargo (test|check|build|clippy|fmt|run)|make|just|gradlew? (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))\b/;
 /**
- * An interpreter running one named script file (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/x.py"`): the
- * script is code in the repository or plugin, like a project command; `-c`, `-e` or `-` would not be.
+ * Commands that read local files only, whatever arguments follow. Matched as whole words: a rule
+ * for `git status` is not a rule for `git statusx`.
+ */
+const LOCAL_COMMANDS =
+  /^(git (status|diff|log|show|branch|rev-parse|ls-files|blame|remote|checkout|switch|add|commit|stash|restore|tag|worktree list|config --get|describe|shortlog|reflog|cat-file|ls-tree|merge-base|check-ignore)|ls|cat|head|tail|wc|grep|egrep|fgrep|echo|printf|pwd|which|type|tree|uniq|diff|cmp|jq|yq|date|cd|pushd|popd|file|stat|du|df|basename|dirname|realpath|readlink|true|false|test|\[|ps|lsof|whoami|uname|hostname|id|nproc|sleep|cut|tr|column|nl|less|more|od|xxd|hexdump|md5sum|shasum|sha256sum|cksum|comm|paste|fold|rev|tac|seq|expr|bc)(?=\s|$)/;
+/**
+ * Commands that read local files only when the arguments are fixed: with a wildcard after them,
+ * an option runs a program (`rg --pre`, `sort --compress-program`, `git grep -O`, `find -exec`,
+ * `git rebase --exec`, `git -c alias...`).
+ */
+const LOCAL_FIXED_ARGS =
+  /^(rg|sort|find|fd|git grep|git rebase|git merge|git cherry-pick|git bisect|git worktree|git submodule|git|kill|pkill|xargs kill|awk|sed|tar|unzip|zip|make -n)(?=\s|$)/;
+/** Commands that change local files, including the agent's own settings, without running code. */
+const EDIT_COMMANDS = /^(mkdir|touch|cp|mv|chmod|ln|rm|rmdir|tee|truncate)(?=\s|$)/;
+/** Commands that bring in text from a remote repository: untrusted input, not egress. */
+const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)(?=\s|$)/;
+/**
+ * The project's own test, lint, build and install commands: they run project code, nothing chosen
+ * by the agent. Matched as whole words, so `npx tsc-evil-pkg` is not `npx tsc`.
+ */
+const PROJECT_COMMANDS =
+  /^((npm|pnpm|yarn|bun) (test|ci|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npm|pnpm|yarn|bun) (install|i|add)|(npx|bunx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx)|tsc|eslint|prettier|biome|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest)|uv (run (pytest|ruff|mypy|python -m pytest)|sync|lock)|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod tidy)|cargo (test|check|build|clippy|fmt|run|nextest run)|make|just|gradlew? (test|build|check)|\.\/gradlew (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))(?=\s|$)/;
+/**
+ * Project commands whose arguments choose what is installed or run: as a prefix rule they fetch
+ * and run any package (`npm install evil`), so they are judged as network commands.
+ */
+const PROJECT_FIXED_ARGS = /^((npm|pnpm|yarn|bun) (install|i|add)|poetry install|uv sync)(?=\s|$)/;
+/**
+ * An interpreter running one named script file (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/x.py"`), or
+ * a script run by its path (`./scripts/check.sh`): code in the repository or plugin, like a
+ * project command. `-c`, `-e`, `-` or an absolute path would not be.
  */
 const SCRIPT_COMMAND =
-  /^(python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'-][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))( |$)/;
+  /^((python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'\-/][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))|\.\/[^\s;&|`$]+)(?=\s|$)/;
 /** Commands that read from the network (issue and pull-request text) without sending anything. */
 const READ_COMMANDS =
-  /^gh (pr|issue|run|repo|release|search|workflow) (view|list|diff|checks|status|logs|watch|checkout)\b|^gh search\b|^gh api (-X GET |--method GET )?repos\/\S*\/(contents|commits|compare)\b/;
+  /^gh (pr|issue|run|repo|release|search|workflow) (view|list|diff|checks|status|logs|watch|checkout)(?=\s|$)|^gh search(?=\s|$)|^gh api (-X GET |--method GET )?repos\/\S*\/(contents|commits|compare)\b/;
 /** Commands that publish to the repository itself: comments, reviews, labels, pushes. */
 const PUBLISH_COMMANDS =
-  /^(gh (pr|issue) (comment|review|create|edit|close|reopen|merge|ready|lock|develop)\b|gh label\b|gh api (-X \w+ |--method \w+ )?repos\/|git push\b)/;
-/** Commands that can reach any host, publish, or run arbitrary code. */
-const NETWORK_COMMANDS =
-  /^(curl|wget|nc|ncat|netcat|ssh|scp|sftp|rsync|ftp|telnet|gh|git push|npm publish|pnpm publish|yarn publish|docker (push|login|run)|aws|gcloud|gsutil|az|kubectl|helm|terraform|python3?|node|deno|bun|ruby|perl|php|bash|sh|zsh|pwsh|powershell|npx|bunx|uvx|pipx|pip3? install|eval|env)\b/;
+  /^(gh (pr|issue) (comment|review|create|edit|close|reopen|merge|ready|lock|develop)(?=\s|$)|gh label(?=\s|$)|gh api (-X \w+ |--method \w+ )?repos\/|git push(?=\s|$))/;
+/** Commands that run whatever follows them: a rule for one is a rule for every command. */
+const WRAPPERS =
+  /^(sudo|doas|su|runuser|chroot|timeout|xargs|env|nice|ionice|nohup|time|exec|command|builtin|stdbuf|unbuffer|watch|strace|ltrace|setsid|flock|parallel|script|busybox|toybox|eval|source|\.)(?=\s|$)/;
 
 export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'fetch' | 'edit' | 'local' | 'project' | 'other';
 
-/** How much a `Bash(...)` rule lets the agent do. Narrower scopes are checked first. */
+/**
+ * How much a `Bash(...)` rule lets the agent do. Fail closed: a rule is narrower than "any network
+ * command" only when it matches a known command shape. An unknown command, a wrapper that runs
+ * another command (`sudo`, `timeout`, `xargs`), a wildcard inside the command (`c*`, `*url`) and a
+ * prefix rule for a command whose options run programs (`git:*`, `find:*`, `rg:*`) can run
+ * anything, so they count as running code that may reach the network.
+ */
 export function bashScope(specifier: string | undefined): BashScope {
   if (specifier === undefined) return 'any';
-  const command = specifier
+  const raw = specifier.trim();
+  let command = raw
     .replace(/:\*$/, '')
     .replace(/\s*\*$/, '')
     .trim();
   if (command === '' || command === '*') return 'any';
-  // `gh api PATH` reads only as written: a prefix rule also allows `-X PUT`, `-f` or `--input`
-  // after the path, which write.
-  const prefix = command !== specifier.trim();
-  if (READ_COMMANDS.test(command) && !(prefix && /^gh api\b/.test(command))) return 'read';
+  const prefix = command !== raw;
+  // A wildcard left inside the command matches other commands too.
+  if (/[*?]/.test(command)) return command.startsWith('*') ? 'any' : 'network';
+  // `/usr/bin/curl` is curl; a path elsewhere is an unknown program.
+  command = command.replace(/^\/(usr\/(local\/)?)?s?bin\/(?=\S)/, '');
+  if (/^xargs kill(?=\s|$)/.test(command)) return 'local';
+  if (WRAPPERS.test(command)) return 'network';
+  // `gh api PATH` reads only as written: a prefix rule also allows `-X PUT`, `-f` or `--input`.
+  if (READ_COMMANDS.test(command) && !(prefix && /^gh api(?=\s|$)/.test(command))) return 'read';
   if (PUBLISH_COMMANDS.test(command)) return 'publish';
+  if (PROJECT_FIXED_ARGS.test(command) && prefix) return 'network';
   if (PROJECT_COMMANDS.test(command) || (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))) return 'project';
   if (FETCH_COMMANDS.test(command)) return 'fetch';
   if (EDIT_COMMANDS.test(command)) return 'edit';
   if (LOCAL_COMMANDS.test(command)) return 'local';
-  if (NETWORK_COMMANDS.test(command)) return 'network';
-  return 'other';
+  if (LOCAL_FIXED_ARGS.test(command)) return prefix ? 'network' : 'local';
+  return 'network';
 }
 
 /** Paths an agent reads its own instructions or permissions from. */
 export const IDENTITY_PATH = /(^|[/*])(CLAUDE(\.local)?\.md|AGENTS\.md|SOUL\.md|MEMORY\.md)$|\.claude(\/|$|\*)/;
 
-function isOutsideProject(specifier: string | undefined): boolean {
+export function isOutsideProject(specifier: string | undefined): boolean {
   if (!specifier) return false;
-  return /^(~|\/\/|\$HOME|\/(etc|home|Users|root|var)\b)/.test(specifier.trim());
+  const spec = specifier.trim();
+  // `~/`, `//abs`, `$HOME`, system folders, and `..` that climbs out of the project.
+  return /^(~|\/\/|\$HOME|\/(etc|home|Users|root|var|private|opt|tmp)\b)/.test(spec) || /(^|\/)\.\.(\/|$)/.test(spec);
 }
 
 const READ_ONLY_TOOL = /^(get|list|search|read|query|describe|find|fetch_|view|show|lookup|resolve|count)/i;
+
+/** Servers by name, built once per list: a lookup per rule rather than a scan of every server. */
+const serverIndex = new WeakMap<readonly McpServer[], Map<string, McpServer>>();
+function serverByName(servers: readonly McpServer[]): Map<string, McpServer> {
+  let index = serverIndex.get(servers);
+  if (!index) {
+    index = new Map();
+    for (const server of servers) if (!index.has(server.name)) index.set(server.name, server);
+    serverIndex.set(servers, index);
+  }
+  return index;
+}
 
 /** The grants one tool reference gives an agent. `servers` resolves MCP rules to their catalog entries. */
 export function grantsForRule(rule: PermissionRule, approval: Approval, servers: readonly McpServer[]): Grant[] {
@@ -248,14 +310,22 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
         out.push(make('selfModify', 'yes', rule.tool));
       return out;
     }
-    case 'WebFetch':
-      return rule.specifier?.startsWith('domain:')
+    case 'WebFetch': {
+      // A request carries data in its URL: a wildcard domain can send it anywhere; one named
+      // domain sends it to that host only.
+      const domain = rule.specifier?.startsWith('domain:') ? rule.specifier.slice(7).trim() : undefined;
+      return domain !== undefined && domain && !domain.includes('*')
         ? [make('untrustedInput', 'yes', 'WebFetch')]
         : [make('untrustedInput', 'yes', 'WebFetch'), make('egress', 'yes', 'WebFetch')];
+    }
+    case 'PowerShell':
+    case 'Monitor':
+      // Both run shell commands; their command patterns are judged as Bash's are.
+      return grantsForRule({ ...rule, tool: 'Bash' }, approval, servers).map(grant => ({ ...grant, tool: rule.tool }));
     case 'WebSearch':
       return [make('untrustedInput', 'yes', 'WebSearch')];
     case 'mcp': {
-      const server = servers.find(item => item.name === rule.server);
+      const server = serverByName(servers).get(rule.server ?? '');
       const tool = `mcp__${rule.server ?? ''}`;
       // A server the scanner cannot identify may be anything, including code from the repository.
       if (!server?.catalog) {
@@ -275,9 +345,34 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
       return out;
     }
     default:
-      return [];
+      // Tools that only plan, ask, track or read what the agent already has run nothing. Any
+      // other tool name is one the scanner does not know: it may do anything (fail closed).
+      if (HARMLESS_TOOLS.has(rule.tool)) return [];
+      return (['exec', 'egress', 'write'] as const).map(c => make(c, 'unknown', rule.tool));
   }
 }
+
+/** Built-in tools that run nothing and reach nothing beyond what other rules already grant. */
+export const HARMLESS_TOOLS = new Set([
+  'Task',
+  'Agent',
+  'TodoWrite',
+  'TodoRead',
+  'ExitPlanMode',
+  'EnterPlanMode',
+  'NotebookRead',
+  'BashOutput',
+  'KillShell',
+  'KillBash',
+  'AskUserQuestion',
+  'ListMcpResourcesTool',
+  'ReadMcpResourceTool',
+  'SlashCommand',
+  'Skill',
+  'TaskOutput',
+  'TaskStop',
+  'ToolSearch',
+]);
 
 /** True when a deny rule removes a whole tool (not just some uses of it). */
 export function deniesWholeTool(deny: readonly PermissionRule[], tool: string, server?: string): boolean {

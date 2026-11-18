@@ -36,6 +36,31 @@ export const SKIPPED_DIRECTORIES = new Set([
   '.next',
   '.turbo',
 ]);
+/** Dependencies and version-control internals: always skipped, wherever they are. */
+const DEPENDENCY_DIRECTORIES = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__']);
+/** A path inside a folder where agent configuration lives: names there are never skipped. */
+const IN_CONFIG =
+  /(^|\/)(\.(claude|codex|gemini|cursor|kiro|opencode|windsurf|github|claude-plugin|vscode)|skills|commands|agents|hooks)(\/|$)/;
+
+/**
+ * Whether the walk skips folder `name` below `parent`. Build output and vendored code (`dist`,
+ * `build`, `vendor`, ...) are skipped only outside configuration folders: a skill called `build`
+ * is configuration, and is read.
+ */
+export function skipsFolder(parent: string, name: string): boolean {
+  if (DEPENDENCY_DIRECTORIES.has(name)) return true;
+  return SKIPPED_DIRECTORIES.has(name) && !IN_CONFIG.test(parent ? `${parent}/` : '');
+}
+/** Names that mark agent configuration one or two levels inside a skipped folder. */
+const CONFIG_ENTRIES = new Set([
+  '.claude',
+  '.mcp.json',
+  '.codex',
+  '.gemini',
+  '.cursor',
+  '.claude-plugin',
+  'opencode.json',
+]);
 
 /** A read-only view of the files at one commit or in one directory. Paths are POSIX and relative. */
 export interface FileSource {
@@ -52,6 +77,8 @@ export interface FileSource {
   readonly skippedFiles?: readonly string[];
   /** Links where configuration lives that were not followed (they leave the root or do not resolve). */
   readonly linkedFiles?: readonly string[];
+  /** Agent configuration inside a folder the walk skips (`vendor/.claude`): not read, reported. */
+  readonly skippedConfig?: readonly string[];
   /** Whether the walk stopped (MAX_ENTRIES, MAX_DEPTH), so some files were never looked at. */
   readonly truncated?: boolean;
   /** Paths that are configuration only on a case-insensitive file system (`.CLAUDE/settings.json`). */
@@ -178,9 +205,46 @@ export function packageSourceEcosystem(path: string, text: string): 'npm' | 'pyt
   return /index-url|index\b|find-links/.test(text) ? 'python' : undefined;
 }
 
+/**
+ * Configuration of agents the scanner does not model: found and reported (high when it can run
+ * code: MCP servers, hooks, plugins, commands), never judged. `.vscode/settings.json`,
+ * `.zed/settings.json` and `.aider.conf.yml` are read for their approval settings instead.
+ */
+export function unmodelledAgentFile(path: string): { readonly tool: string; readonly runsCode: boolean } | undefined {
+  const parts = path.split('/');
+  const name = parts.at(-1) ?? '';
+  const parent = parts.at(-2);
+  const grand = parts.at(-3);
+  if (parent === '.cursor' && name === 'hooks.json') return { tool: 'Cursor hooks', runsCode: true };
+  if (parts.includes('.kiro') && parent === 'hooks') return { tool: 'Kiro hooks', runsCode: true };
+  if (grand === '.kiro' && parent === 'agents' && name.endsWith('.json'))
+    return { tool: 'Kiro agents', runsCode: true };
+  if (parts.includes('.gemini') && parts.includes('commands') && name.endsWith('.toml'))
+    return { tool: 'Gemini CLI commands', runsCode: false };
+  if (parts.includes('.gemini') && parts.includes('extensions') && name === 'gemini-extension.json')
+    return { tool: 'Gemini CLI extensions', runsCode: true };
+  if (grand === '.opencode' && (parent === 'plugin' || parent === 'plugins') && /\.(js|mjs|ts)$/.test(name))
+    return { tool: 'OpenCode plugins', runsCode: true };
+  if (parent === '.roo' && name === 'mcp.json') return { tool: 'Roo Code', runsCode: true };
+  if (parent === '.continue' && /^config\.(ya?ml|json)$/.test(name)) return { tool: 'Continue', runsCode: true };
+  if (grand === '.continue' && parent === 'mcpServers') return { tool: 'Continue MCP servers', runsCode: true };
+  if (grand === '.junie' && parent === 'mcp' && name === 'mcp.json') return { tool: 'Junie', runsCode: true };
+  if (parts.includes('.amazonq') && name.endsWith('.json')) return { tool: 'Amazon Q', runsCode: true };
+  if (name === '.crush.json' || (name === 'crush.json' && parts.length === 1)) return { tool: 'Crush', runsCode: true };
+  if (parent === '.qwen' && name === 'settings.json') return { tool: 'Qwen Code', runsCode: true };
+  return undefined;
+}
+
 /** Whether a path can hold agent configuration that the scanner reads. */
 export function isCandidate(path: string): boolean {
   const parts = path.split('/');
+  if (unmodelledAgentFile(path) && parts[0] !== '~' && parts[0] !== '<managed>') return true;
+  {
+    const name = parts.at(-1);
+    const parent = parts.at(-2);
+    if ((parent === '.vscode' || parent === '.zed') && name === 'settings.json') return true;
+    if (name === '.aider.conf.yml') return true;
+  }
   // `~` and `<managed>` stand for settings outside the repository in reports; a repository folder
   // with that name is never read, so it cannot pose as someone's own or managed settings.
   if (parts[0] === '~' || parts[0] === '<managed>') return false;
@@ -247,6 +311,7 @@ export class DirectorySource implements FileSource {
   readonly linkedFiles: string[] = [];
   readonly caseVariants: string[] = [];
   readonly caseCollisions: [string, string][] = [];
+  readonly skippedConfig: string[] = [];
   truncated = false;
   /** Candidate links that point to a regular file inside the root: read through their target. */
   readonly #aliases = new Map<string, string>();
@@ -256,6 +321,28 @@ export class DirectorySource implements FileSource {
   constructor(root: string) {
     this.#root = root;
     this.label = root;
+  }
+
+  /** Looks two levels into a skipped folder for agent configuration, to report it. */
+  #probe(directory: string, path: string): void {
+    const look = (dir: string, at: string, depth: number) => {
+      let names: string[];
+      try {
+        names = readdirSync(dir).slice(0, 200);
+      } catch {
+        return;
+      }
+      for (const name of names) {
+        if (CONFIG_ENTRIES.has(name)) this.skippedConfig.push(`${at}/${name}`);
+        else if (depth < 2 && !DEPENDENCY_DIRECTORIES.has(name) && !name.startsWith('.'))
+          try {
+            if (lstatSync(join(dir, name)).isDirectory()) look(join(dir, name), `${at}/${name}`, depth + 1);
+          } catch {
+            // Unreadable: nothing to report.
+          }
+      }
+    };
+    if (this.skippedConfig.length < 100) look(directory, path, 1);
   }
 
   list(): readonly string[] {
@@ -317,7 +404,7 @@ export class DirectorySource implements FileSource {
           // link's path; anything else where configuration lives is reported, never followed.
           const target = this.#resolve(root, full);
           if (target?.kind === 'folder') {
-            if (SKIPPED_DIRECTORIES.has(name)) continue;
+            if (skipsFolder(prefix, name)) continue;
             const visits = (linkVisits.get(target.real) ?? 0) + 1;
             linkVisits.set(target.real, visits);
             if (visits > MAX_LINK_VISITS) {
@@ -339,7 +426,8 @@ export class DirectorySource implements FileSource {
           continue;
         }
         if (info.isDirectory()) {
-          if (!SKIPPED_DIRECTORIES.has(name)) walk(full, path, depth + 1, linked);
+          if (!skipsFolder(prefix, name)) walk(full, path, depth + 1, linked);
+          else if (!DEPENDENCY_DIRECTORIES.has(name)) this.#probe(full, path);
           continue;
         }
         if (info.isFile() && !isCandidate(path) && foldsToCandidate(path)) this.caseVariants.push(path);
@@ -436,6 +524,7 @@ export class GitSource implements FileSource {
   readonly skippedFiles: string[] = [];
   readonly linkedFiles: string[] = [];
   readonly caseVariants: string[] = [];
+  readonly skippedConfig: string[] = [];
   readonly caseCollisions: [string, string][] = [];
   /** Candidate links whose target is a regular file in the tree: read as that file. */
   readonly #aliases = new Map<string, string>();
@@ -478,7 +567,18 @@ export class GitSource implements FileSource {
       if (type !== 'blob' || !mode || !object) continue;
       tree.set(path, { mode, object });
       const parts = path.split('/');
-      if (parts.slice(0, -1).some(part => SKIPPED_DIRECTORIES.has(part))) continue;
+      const skippedAt = parts.slice(0, -1).findIndex((part, i) => skipsFolder(parts.slice(0, i).join('/'), part));
+      if (skippedAt >= 0) {
+        // Configuration inside skipped build output or vendored code is reported, not read.
+        if (
+          !DEPENDENCY_DIRECTORIES.has(parts[skippedAt]!) &&
+          !parts.slice(0, skippedAt).some(part => DEPENDENCY_DIRECTORIES.has(part)) &&
+          parts.slice(skippedAt + 1).some(part => CONFIG_ENTRIES.has(part)) &&
+          this.skippedConfig.length < 100
+        )
+          this.skippedConfig.push(path);
+        continue;
+      }
       if (mode === '120000') links.push({ path, object });
       else if (isCandidate(path)) candidates.push({ path, object });
     }

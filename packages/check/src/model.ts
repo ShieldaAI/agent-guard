@@ -1,6 +1,8 @@
 import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
+import { mediates } from './authority.js';
+import { DECIDING_EVENTS, judgeHook, type HookJudgement } from './hooks.js';
 import { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
-import { agenticFrontmatterHash, lockMetadata, lockMismatches, sourceWithImports } from './ghaw.js';
+import { agenticFrontmatterHash, lockMetadata, lockMismatches, sourceAsks } from './ghaw.js';
 import { EMPTY_EVIDENCE, readAgentGuardFiles, type AgentGuardEvidence } from './agent-guard.js';
 import { safeRelative, type FileSource } from './source.js';
 import {
@@ -21,8 +23,17 @@ import {
   type DeclaredServer,
   type McpServer,
 } from './mcp.js';
-import { PACKAGE_SOURCE_FILES, packageSourceEcosystem, SKIPPED_DIRECTORIES } from './source.js';
-import { asString, asStringArray, frontmatter, isRecord, lenientFrontmatter, lineOf, parseJsonc } from './text.js';
+import { PACKAGE_SOURCE_FILES, packageSourceEcosystem, SKIPPED_DIRECTORIES, unmodelledAgentFile } from './source.js';
+import {
+  asString,
+  asStringArray,
+  frontmatter,
+  isRecord,
+  lenientFrontmatter,
+  lineOf,
+  parseJsonc,
+  toolNames,
+} from './text.js';
 import {
   parseCodex,
   parseGemini,
@@ -107,11 +118,15 @@ export interface Project {
   readonly unrecognized: readonly Unrecognized[];
   /** Hooks that plugins in the repository install into every session that enables them. */
   readonly pluginHooks: readonly Hook[];
+  /** Every hook with what it can reach and whether it can approve tool calls. */
+  readonly hookJudgements: readonly { readonly hook: Hook; readonly judgement: HookJudgement }[];
   /** Candidate files that were not read because they are too large. */
   readonly skippedFiles: readonly string[];
   /** Candidate files that are symbolic links, which are never followed. */
   readonly linkedFiles: readonly string[];
   /** Whether the directory walk stopped early, so some files were never looked at. */
+  /** Agent configuration inside a folder the walk skips: not read. */
+  readonly skippedConfig: readonly string[];
   readonly truncated: boolean;
   /** Agent definitions whose settings could not be parsed (invalid front matter or YAML). */
   readonly unparsed: readonly { readonly path: string; readonly error: string }[];
@@ -233,18 +248,50 @@ function acceptEditsGrants(at: Location): Grant[] {
 /** An MCP server that names Agent Guard; not this scanner's own read-only MCP server, which guards nothing. */
 const AGENT_GUARD_SERVER = /agent-guard(?!-check)/;
 
-function mediatorsFor(settings: readonly ClaudeSettings[], servers: readonly McpServer[]): Mediator[] {
+/** The hooks that run for these settings: none with disableAllHooks, managed only with allowManagedHooksOnly. */
+function activeHooks(settings: readonly ClaudeSettings[]): Hook[] {
+  const hooksOff = settings.some(file => file.disableAllHooks);
+  const managedOnly = settings.some(file => file.allowManagedHooksOnly && file.path.startsWith(`${MANAGED_DIR}/`));
+  if (hooksOff) return [];
+  return settings.filter(file => !managedOnly || file.path.startsWith(`${MANAGED_DIR}/`)).flatMap(file => file.hooks);
+}
+
+/**
+ * Tool calls a PreToolUse or PermissionRequest hook can approve now run without asking. A hook
+ * that says "allow" approves for certain; one whose text cannot be read may (unknown).
+ */
+function approvedByHooks(grants: Grant[], approvers: readonly Hook[], judge: (hook: Hook) => HookJudgement): Grant[] {
+  const out = [...grants];
+  for (const grant of grants) {
+    if (grant.approval !== 'ask') continue;
+    const hook = approvers.find(item =>
+      mediates({ kind: 'pre-tool-hook', location: item.location, matcher: item.matcher }, grant.tool),
+    );
+    if (!hook) continue;
+    out.push({
+      ...grant,
+      approval: 'auto',
+      certainty: judge(hook).approves === 'yes' ? grant.certainty : 'unknown',
+      via: `${grant.via} (approved by a ${hook.event} hook)`,
+      location: hook.location,
+    });
+  }
+  return out;
+}
+
+function mediatorsFor(
+  settings: readonly ClaudeSettings[],
+  servers: readonly McpServer[],
+  judge: (hook: Hook) => HookJudgement,
+): Mediator[] {
   const out: Mediator[] = [];
   // Each mediator keeps what it sees: a hook its matcher, a guard or gateway only its own server's calls.
   // Hooks that never run see nothing: disableAllHooks anywhere turns them all off, and managed
   // allowManagedHooksOnly leaves only the managed ones.
-  const hooksOff = settings.some(file => file.disableAllHooks);
-  const managedOnly = settings.some(file => file.allowManagedHooksOnly && file.path.startsWith(`${MANAGED_DIR}/`));
-  for (const file of settings)
-    if (!hooksOff && (!managedOnly || file.path.startsWith(`${MANAGED_DIR}/`)))
-      for (const hook of file.hooks)
-        if (hook.event === 'PreToolUse')
-          out.push({ kind: 'pre-tool-hook', location: hook.location, matcher: hook.matcher });
+  // A hook that can approve calls (or whose text cannot be read) is not a check on them.
+  for (const hook of activeHooks(settings))
+    if (hook.event === 'PreToolUse' && judge(hook).approves === 'no')
+      out.push({ kind: 'pre-tool-hook', location: hook.location, matcher: hook.matcher });
   for (const server of servers) {
     const text = [server.command ?? '', ...server.args, server.url ?? ''].join(' ');
     if (AGENT_GUARD_SERVER.test(text))
@@ -270,6 +317,76 @@ export interface BuildOptions {
 
 /** Variables that send an agent's model traffic to another endpoint. */
 export { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
+
+/**
+ * Approval settings in editor and Aider config: VS Code's chat auto-approve, Zed's
+ * always_allow_tool_actions and context servers, Aider's yes-always and test or lint commands.
+ */
+function approvalSettings(path: string, text: string, unrecognized: Unrecognized[], bypasses: Bypass[]): void {
+  const at = (needle: string) => ({ file: path, line: lineOf(text, needle) || 1 });
+  if (path.endsWith('.aider.conf.yml')) {
+    if (/^\s*yes(-always)?\s*:\s*true\b/m.test(text))
+      bypasses.push({ agent: 'Aider', what: 'yes-always: true', location: at('yes') });
+    if (/^\s*(test|lint)-cmd\s*:/m.test(text))
+      unrecognized.push({
+        agent: 'Aider',
+        setting: 'test-cmd / lint-cmd',
+        value: path,
+        assumed: 'it runs these commands after edits without asking',
+        location: at('-cmd'),
+        severity: 'high',
+      });
+    return;
+  }
+  let data: unknown;
+  try {
+    data = parseJsonc(text);
+  } catch {
+    return;
+  }
+  if (!isRecord(data)) return;
+  if (path.endsWith('.vscode/settings.json')) {
+    for (const key of ['chat.tools.autoApprove', 'chat.tools.global.autoApprove'])
+      if (data[key] === true) bypasses.push({ agent: 'VS Code agent', what: `${key}: true`, location: at(`"${key}"`) });
+    for (const key of ['chat.tools.terminal.autoApprove', 'chat.agent.terminal.autoApprove']) {
+      const rules = data[key];
+      if (
+        isRecord(rules) &&
+        Object.values(rules).some(value => value === true || (isRecord(value) && value['approve'] === true))
+      )
+        unrecognized.push({
+          agent: 'VS Code agent',
+          setting: key,
+          value: JSON.stringify(rules).slice(0, 120),
+          assumed: 'the terminal commands these patterns match run without asking, and may reach the network',
+          location: at(`"${key}"`),
+          severity: 'high',
+        });
+    }
+    return;
+  }
+  // Zed: `agent.always_allow_tool_actions`, and context servers (MCP) it starts.
+  const agent = isRecord(data['agent']) ? data['agent'] : isRecord(data['assistant']) ? data['assistant'] : {};
+  if (agent['always_allow_tool_actions'] === true)
+    bypasses.push({
+      agent: 'Zed agent',
+      what: 'always_allow_tool_actions: true',
+      location: at('always_allow_tool_actions'),
+    });
+  if (isRecord(data['context_servers']) && Object.keys(data['context_servers']).length)
+    unrecognized.push({
+      agent: 'Zed agent',
+      setting: 'context_servers',
+      value: Object.keys(data['context_servers']).join(', '),
+      assumed: 'these MCP servers may run code and send data out',
+      location: at('context_servers'),
+      severity: 'high',
+    });
+}
+
+/** Environment variables that run code with every shell command or every program start. */
+const SHELL_LOADER =
+  /^(BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|CLAUDE_CODE_SHELL_PREFIX|CLAUDE_ENV_FILE|PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PYTHONSTARTUP|PYTHONPATH|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_CONFIG_GLOBAL|EDITOR|VISUAL|PAGER)$/;
 
 /**
  * Whether a file the scanner could not read is agent configuration. `mcp.json` and `plugin.json`
@@ -313,6 +430,7 @@ export function buildProject(
   const others: OtherAgent[] = [];
   const pluginSources: PluginSource[] = [];
   const unrecognized: Unrecognized[] = [];
+  const editorBypasses: Bypass[] = [];
   const pluginHooks: Hook[] = [];
   const plugins = new Map<string, { name: string; location: Location }>();
   /** Plugins whose server file could not be read: their reach is unknown. */
@@ -399,6 +517,32 @@ export function buildProject(
     return md !== undefined && isAgenticWorkflow(md);
   };
   const roots = pluginRoots(inputs.filter(input => !USER_DIRS.has(projectDir(input.path))).map(input => input.path));
+  // A repository file a hook or lock names, read even when it is not a candidate.
+  const readRepoFile = (named: string) => {
+    const relative = safeRelative(named);
+    return relative === undefined ? undefined : (inputText.get(relative) ?? source.readNamed(relative));
+  };
+  // Plugins whose code is in the repository (a plugin.json with a name): enabling one is judged here.
+  const pluginNamesInRepo = new Set<string>();
+  for (const input of inputs)
+    if (input.text !== undefined && /(^|\/)plugin\.json$/.test(input.path))
+      try {
+        const manifest = JSON.parse(input.text) as unknown;
+        if (isRecord(manifest) && typeof manifest['name'] === 'string') pluginNamesInRepo.add(manifest['name']);
+      } catch {
+        // Reported where the manifest is read.
+      }
+  const judged = new Map<Hook, HookJudgement>();
+  const judgeOf = (hook: Hook): HookJudgement => {
+    const known = judged.get(hook);
+    if (known) return known;
+    const file = hook.location.file;
+    const dir = USER_DIRS.has(projectDir(file)) ? '' : projectDir(file);
+    const root = [...roots].filter(item => !item || file.startsWith(`${item}/`)).sort((a, b) => b.length - a.length)[0];
+    const judgement = judgeHook(hook, readRepoFile, dir, root ?? dir);
+    judged.set(hook, judgement);
+    return judgement;
+  };
   const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
   for (const { path, text } of inputs) {
     if (text === undefined) continue;
@@ -409,6 +553,28 @@ export function buildProject(
       // Package-source files feed identification only (first pass), and a package.json below the root
       // only names local packages: neither holds agent settings.
       if (PACKAGE_SOURCE_FILES.has(name) || (name === 'package.json' && path !== 'package.json')) continue;
+      // Agents the scanner does not model: reported, never judged.
+      const unmodelled = unmodelledAgentFile(path);
+      if (unmodelled) {
+        // A Gemini command runs a shell command only with `!{...}`.
+        if (unmodelled.tool !== 'Gemini CLI commands' || /!\{/.test(text))
+          unrecognized.push({
+            agent: unmodelled.tool,
+            setting: 'file',
+            value: path,
+            assumed:
+              unmodelled.runsCode || /!\{/.test(text)
+                ? 'its servers, hooks or commands may run code and send data out without asking'
+                : 'what it lets an agent do is unknown',
+            location: { file: path, line: 1 },
+            severity: unmodelled.runsCode || /!\{/.test(text) ? 'high' : 'medium',
+          });
+        continue;
+      }
+      if (path.endsWith('.vscode/settings.json') || path.endsWith('.zed/settings.json') || name === '.aider.conf.yml') {
+        approvalSettings(path, text, unrecognized, editorBypasses);
+        continue;
+      }
       if (path === '~/.claude.json') {
         const data = parseJsonc(text);
         if (isRecord(data)) {
@@ -564,6 +730,25 @@ export function buildProject(
       else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) {
         settings.push(parseSettings(path, text));
         pluginSources.push(...parsePluginSettings(path, text));
+        // An enabled plugin whose code is not in the repository: its hooks, servers and commands run
+        // with the agent's access and are not judged. Anthropic's own marketplace is medium.
+        const enabledData = parseJsonc(text);
+        const enabled =
+          isRecord(enabledData) && isRecord(enabledData['enabledPlugins']) ? enabledData['enabledPlugins'] : {};
+        for (const [plugin, on] of Object.entries(enabled)) {
+          if (on !== true) continue;
+          const [pluginName, market] = plugin.split('@');
+          if (pluginNamesInRepo.has(pluginName ?? '')) continue;
+          unrecognized.push({
+            agent: `Plugin ${plugin}`,
+            setting: 'enabledPlugins',
+            value: plugin,
+            assumed:
+              'its hooks, MCP servers and commands are not in the repository, so they may run code and send data out',
+            location: { file: path, line: lineOf(text, JSON.stringify(plugin)) || 1 },
+            severity: market === 'claude-plugins-official' ? 'medium' : 'high',
+          });
+        }
         // A marketplace in a folder of the repository the scan skips (node_modules/, vendor/, ...),
         // or outside the repository, is never read: its plugins' hooks and servers are unknown.
         const settingsData = parseJsonc(text);
@@ -659,7 +844,7 @@ export function buildProject(
             ? (lenient ?? { permissionMode: '(front matter not readable)' })
             : parsed.data;
           // `tools: "*"` (or a list with `*`) is every tool, as if no list were given.
-          const listed = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
+          const listed = data['tools'] === undefined ? undefined : toolNames(data['tools']);
           const tools = listed?.some(tool => tool.trim() === '*') ? undefined : listed;
           const description = asString(data['description']);
           // The line of a top-level frontmatter key (never a match in the body or a description).
@@ -691,7 +876,7 @@ export function buildProject(
             name: asString(data['name']) ?? name.replace(/\.md$/, ''),
             ...(description ? { description } : {}),
             ...(tools ? { tools } : {}),
-            disallowedTools: data['disallowedTools'] === undefined ? [] : asStringArray(data['disallowedTools']),
+            disallowedTools: data['disallowedTools'] === undefined ? [] : toolNames(data['disallowedTools']),
             ...(permissionMode ? { permissionMode: { value: permissionMode, location: fm('permissionMode') } } : {}),
             ...(model ? { model: { value: model, location: fm('model') } } : {}),
             servers: subServers,
@@ -739,7 +924,7 @@ export function buildProject(
     const tools = data['allowed-tools'];
     if (tools === undefined || /(^|\/)agents\/[^/]+\.md$/.test(prompt.path)) continue;
     const line = lineOfKey('allowed-tools');
-    const rules = asStringArray(tools).map(raw => parseRule(raw, { file: prompt.path, line }));
+    const rules = toolNames(tools).map(raw => parseRule(raw, { file: prompt.path, line }));
     // A plugin's skill grants its tools to whoever installs the plugin: kept under the plugin's own
     // folder, not given to the project that only ships it (unless the repository is the plugin).
     const dir = own
@@ -803,6 +988,19 @@ export function buildProject(
       });
     // Model traffic sent somewhere else carries everything the agent reads. The scan does not count
     // that as sending data out (it is the model's own channel), but says so.
+    // Variables that run code with every shell command: a startup file, a command prefix, a
+    // search path that puts another program first, a loader.
+    for (const file of local)
+      for (const entry of file.env)
+        if (SHELL_LOADER.test(entry.name))
+          unrecognized.push({
+            agent: name,
+            setting: `env.${entry.name}`,
+            value: entry.value,
+            assumed: 'it runs its own code with every command the agent runs, without asking',
+            location: entry.location,
+            severity: 'high',
+          });
     for (const file of [...local, ...userLevel])
       for (const entry of file.env)
         if (MODEL_ENDPOINT.test(entry.name))
@@ -868,7 +1066,7 @@ export function buildProject(
     ];
     // In auto mode Claude Code's safety review checks each call before it runs: a runtime check.
     const mediators = [
-      ...mediatorsFor([...local, ...userLevel], localServers),
+      ...mediatorsFor([...local, ...userLevel], localServers, judgeOf),
       ...(mode === 'auto' ? [{ kind: 'auto-mode' as const, location: modeSetting!.location }] : []),
     ];
     const main: Agent = {
@@ -876,7 +1074,16 @@ export function buildProject(
       kind: 'claude-code',
       name,
       location: anchor,
-      grants: inSandbox(withoutDenied(grants, deny)),
+      grants: approvedByHooks(
+        inSandbox(withoutDenied(grants, deny)),
+        [
+          ...activeHooks([...local, ...userLevel]),
+          ...(local.concat(userLevel).some(file => file.disableAllHooks)
+            ? []
+            : pluginHooks.filter(hook => projectDir(hook.location.file) === dir)),
+        ].filter(hook => DECIDING_EVENTS.has(hook.event) && judgeOf(hook).approves !== 'no'),
+        judgeOf,
+      ),
       mediators,
       headless: false,
     };
@@ -955,6 +1162,11 @@ export function buildProject(
         triggers: [...new Set([...step.triggers, ...inheritedTriggers(step.path, calls)])],
       };
 
+  const stepNames = new Map<string, number>();
+  for (const step of workflows) {
+    const key = `${step.path}\0${step.job}\0${step.step}`;
+    stepNames.set(key, (stepNames.get(key) ?? 0) + 1);
+  }
   for (const step of workflows) {
     const at = step.location;
     const grants: Grant[] = [];
@@ -1070,12 +1282,12 @@ export function buildProject(
           via: `${grant.via} (permission-mode auto)`,
         })),
       );
-    else if (step.action === 'copilot-cli' || step.action === 'gemini-cli') {
+    else if (step.action === 'copilot-cli' || step.action === 'gemini-cli' || step.action === 'other-cli') {
       // Their tool settings are not read: what they may run, write and reach is unknown.
       for (const capability of ['exec', 'write', 'egress'] as const)
         add({
           capability,
-          via: `${step.action === 'copilot-cli' ? 'Copilot CLI' : 'Gemini CLI'} (tools not read)`,
+          via: `${step.action === 'copilot-cli' ? 'Copilot CLI' : step.action === 'gemini-cli' ? 'Gemini CLI' : 'Agent'} (tools not read)`,
           certainty: 'unknown',
           location: at,
         });
@@ -1116,17 +1328,14 @@ export function buildProject(
     agents.push({
       // Two steps with one name are two agents: the step's position tells them apart.
       id: `workflow:${step.path}#${step.job}/${step.step}${
-        workflows.filter(other => other.path === step.path && other.job === step.job && other.step === step.step)
-          .length > 1
-          ? `#${step.stepIndex}`
-          : ''
+        (stepNames.get(`${step.path}\0${step.job}\0${step.step}`) ?? 0) > 1 ? `#${step.stepIndex}` : ''
       }`,
       kind: 'workflow',
       name: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
       location: at,
       grants: withoutDenied(grants, deny),
       mediators: [
-        ...(step.action.startsWith('claude') ? mediatorsFor(rootSettings, []) : []),
+        ...(step.action.startsWith('claude') ? mediatorsFor(rootSettings, [], judgeOf) : []),
         ...(step.autoMode ? [{ kind: 'auto-mode' as const, location: step.autoMode }] : []),
       ],
       headless: true,
@@ -1149,7 +1358,7 @@ export function buildProject(
         ...grantsForRule(parseRule('Edit', { file, line: 1 }), 'auto', []),
         ...list.flatMap(server => grantsForRule(parseRule(`mcp__${server.name}`, server.location), 'ask', list)),
       ],
-      mediators: mediatorsFor([], list),
+      mediators: mediatorsFor([], list, judgeOf),
       headless: false,
     });
   }
@@ -1178,10 +1387,7 @@ export function buildProject(
   // A lock with triggers or agent flags its source does not explain was edited by hand: unknown
   // reach too. One whose source hash differs is out of date (or edited): reported.
   const inputPaths = new Set(inputs.map(input => input.path));
-  const readRepo = (named: string) => {
-    const relative = safeRelative(named);
-    return relative === undefined ? undefined : (inputText.get(relative) ?? source.readNamed(relative));
-  };
+  const readRepo = readRepoFile;
   for (const { path, text } of inputs) {
     if (text === undefined || !/^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) || !isAgenticLock(text)) continue;
     if (!compiledFromSource(path, text)) {
@@ -1190,7 +1396,7 @@ export function buildProject(
     }
     const mdPath = path.replace(/\.lock\.ya?ml$/, '.md');
     const md = sourceOf(path)!;
-    const mismatches = lockMismatches(text, frontmatter(md).data, sourceWithImports(mdPath, md, readRepo));
+    const mismatches = lockMismatches(text, frontmatter(md).data, sourceAsks(mdPath, md, readRepo));
     if (mismatches.length) others.push(parseAgenticLockAlone(path, text, mismatches.join('; ')));
     const meta = lockMetadata(text);
     const recorded = meta?.['frontmatter_hash'];
@@ -1301,13 +1507,18 @@ export function buildProject(
     filesRead,
     agentGuard: guardFiles.length ? readAgentGuardFiles(guardFiles, errors) : EMPTY_EVIDENCE,
     otherAllow: others.flatMap(other => other.allow),
-    bypasses: others.flatMap(other => other.bypasses),
+    bypasses: [...editorBypasses, ...others.flatMap(other => other.bypasses)],
     models,
     pluginSources,
     unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
     pluginHooks,
+    hookJudgements: [...settings.flatMap(file => file.hooks), ...pluginHooks].map(hook => ({
+      hook,
+      judgement: judgeOf(hook),
+    })),
     skippedFiles: (source.skippedFiles ?? []).filter(path => isConfigPath(path, inputs)),
     linkedFiles: (source.linkedFiles ?? []).filter(path => isConfigPath(path, inputs)),
+    skippedConfig: source.skippedConfig ?? [],
     truncated: source.truncated ?? false,
     unparsed: [...unparsed, ...others.flatMap(other => other.unparsed ?? [])],
     compiledLocks,

@@ -89,6 +89,28 @@ export function parseOpenCode(
     ? new Set(Object.entries(data['tools']).flatMap(([key, value]) => (value === false ? [key] : [])))
     : new Set<string>();
 
+  // Settings that run code of their own: plugins (npm packages or files loaded into OpenCode) and
+  // formatter commands run after every edit, without asking.
+  for (const key of ['plugin', 'formatter'])
+    if (data[key] !== undefined && data[key] !== false && !(Array.isArray(data[key]) && !data[key].length))
+      unrecognized.push({
+        agent: name,
+        setting: key,
+        value: JSON.stringify(data[key]).slice(0, 120),
+        assumed: 'it runs code of its own without asking, which may reach the network',
+        location: at(key),
+        severity: 'high',
+      });
+  // `share: "auto"` publishes every session (with what the agent read) to a public link.
+  if (data['share'] === 'auto')
+    unrecognized.push({
+      agent: name,
+      setting: 'share',
+      value: 'auto',
+      assumed: 'every session, with what the agent read, is shared at a public link',
+      location: at('share'),
+      severity: 'medium',
+    });
   // MCP servers: local ones give `command` as one array; remote ones a `url`.
   const block: Record<string, unknown> = {};
   if (isRecord(data['mcp']))

@@ -2,12 +2,19 @@ import { LineCounter, parseDocument, isMap, type Node } from 'yaml';
 import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
-import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
-import { agentCalls, type AgentCli } from './shell.js';
+import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
+import { agentCalls, namesAgent, type AgentCli } from './shell.js';
 import { parse as parseYaml } from 'yaml';
 
 export type AgentAction =
-  'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli' | 'copilot-cli' | 'gemini-cli';
+  | 'claude-code-action'
+  | 'claude-cli'
+  | 'codex-action'
+  | 'codex-cli'
+  | 'copilot-cli'
+  | 'gemini-cli'
+  /** An agent whose permissions the scanner does not model, or one it could not place: unknown reach. */
+  | 'other-cli';
 
 /** One step of a GitHub workflow that runs an AI agent. */
 export interface WorkflowAgent {
@@ -130,6 +137,8 @@ interface Flags {
   autoMode?: boolean;
   /** `--settings`: inline JSON or a path to a settings file. */
   settings?: string;
+  /** Flags whose effect is not modelled: `--permission-prompt-tool` (a tool decides approvals). */
+  unmodelled: string[];
 }
 
 function toolList(value: string): string[] {
@@ -175,14 +184,30 @@ const HARMLESS_VALUE_FLAGS = new Set([
  * or inside a longer quoted text (a prompt) is not counted.
  */
 export function expressionFlags(args: readonly string[]): string[] {
-  return args.filter(
-    // splitArgs breaks `${{ inputs.args }}` at its spaces: the word that opens it is the one counted.
-    (arg, i) => /^\s*\$\{\{/.test(arg) && !HARMLESS_VALUE_FLAGS.has(args[i - 1] ?? ''),
-  );
+  // Any argument with an expression in it, unless it is the value of a harmless flag and the
+  // expression is not text an outsider chose (`--model ${{ github.event.comment.body }}` is).
+  // splitArgs breaks `${{ inputs.args }}` at its spaces, so the words after `${{` are read together.
+  return args.filter((arg, i) => {
+    if (!arg.includes('${{')) return false;
+    let start = i;
+    while (start > 0 && !args[start]!.includes('${{')) start -= 1;
+    const flag = args[start - 1] ?? '';
+    const expression = args
+      .slice(start, args.findIndex((item, at) => at >= start && item.includes('}}')) + 1 || undefined)
+      .join(' ');
+    return !(HARMLESS_VALUE_FLAGS.has(flag) && !UNTRUSTED_EXPRESSION.test(expression) && /^\s*\$\{\{/.test(arg));
+  });
 }
 
 function readFlags(args: readonly string[]): Flags {
-  const flags: Flags = { allowedTools: [], disallowedTools: [], skip: false, maxTurns: false, mcpConfig: [] };
+  const flags: Flags = {
+    allowedTools: [],
+    disallowedTools: [],
+    skip: false,
+    maxTurns: false,
+    mcpConfig: [],
+    unmodelled: [],
+  };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     const [name, inline] =
@@ -233,6 +258,13 @@ function readFlags(args: readonly string[]): Flags {
       value();
     } else if (name === '--settings') {
       flags.settings = value();
+    } else if (name === '--agents') {
+      // Subagents defined inline: one in bypassPermissions runs every tool without asking.
+      const agents = value();
+      if (/bypassPermissions/.test(agents)) flags.skip = true;
+      else if (/permissionMode|"tools"/.test(agents)) flags.unmodelled.push('--agents');
+    } else if (name === '--permission-prompt-tool') {
+      flags.unmodelled.push(`--permission-prompt-tool ${value()}`);
     } else if (name === '--mcp-config') {
       flags.mcpConfig.push(...values());
     } else if (name === '--model' || name === '-m') {
@@ -247,15 +279,33 @@ function readFlags(args: readonly string[]): Flags {
 const CLAUDE_ACTION = /^[^/@\s]+\/claude-code(-base)?-action(\/[^@]*)?@/i;
 const CODEX_ACTION = /^[^/@\s]+\/codex-action(\/[^@]*)?@/i;
 const GEMINI_ACTION = /^[^/@\s]+\/run-gemini-cli(\/[^@]*)?@/i;
+/** Actions that run an agent the scanner does not model (OpenCode, Gemini's own action, Qwen, Goose, ...). */
+const OTHER_AGENT_ACTION =
+  /^[^/@\s]+\/(opencode|gemini-cli-action|qwen-code-action|goose-action|aider-action|cursor-agent-action|amp-action|crush-action)(\/[^@]*)?@|^sst\/opencode\/github@/i;
+/** Actions that leave cloud credentials for every later step of the job. */
+const CREDENTIAL_ACTION =
+  /^(aws-actions\/configure-aws-credentials|google-github-actions\/auth|azure\/login|azure\/aks-set-context|docker\/login-action|hashicorp\/vault-action)@/i;
+/** Untrusted text in an expression: whoever opened the issue or pull request chose it. */
+const UNTRUSTED_EXPRESSION =
+  /github\.event\.|github\.head_ref|inputs\.|steps\.[^.]+\.outputs\.[^}]*(body|title|comment|message|text|prompt)/i;
+/** Shell variable names that hold a prompt: a quoted one is the prompt, not a flag. */
+const PROMPT_VARIABLE =
+  /^"?\$\{?[A-Za-z_]*(PROMPT|MESSAGE|BODY|TEXT|INPUT|QUERY|TASK|INSTRUCTION|CONTEXT|COMMENT|TITLE|ISSUE|REQUEST|QUESTION)[A-Za-z_]*\}?"?$/i;
+
 const CLI_ACTION: Record<AgentCli, AgentAction> = {
   claude: 'claude-cli',
   codex: 'codex-cli',
   copilot: 'copilot-cli',
   gemini: 'gemini-cli',
+  other: 'other-cli',
 };
 
 /** The agent action a `uses:` names, if any. */
 function actionOf(uses: string): AgentAction | undefined {
+  // A container image of an agent action runs that action.
+  if (/^docker:\/\/.*(claude-code|codex|gemini-cli|opencode|aider|goose|qwen)/i.test(uses))
+    return /claude-code/i.test(uses) ? 'claude-code-action' : 'other-cli';
+  if (OTHER_AGENT_ACTION.test(uses)) return 'other-cli';
   return CLAUDE_ACTION.test(uses)
     ? 'claude-code-action'
     : GEMINI_ACTION.test(uses)
@@ -370,7 +420,6 @@ const TELEMETRY_SECRET =
 export const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 /** Stands for every secret of the repository: `toJSON(secrets)`, `secrets[inputs.name]`. */
 export const ALL_SECRETS = '*';
-const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
 
 /**
  * The secrets a text reads in its `${{ }}` expressions: `secrets.NAME`, `secrets['NAME']`, and
@@ -378,8 +427,16 @@ const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
  */
 export function secretNames(text: string): string[] {
   const out = new Set<string>();
-  for (const expression of text.matchAll(EXPRESSION)) {
-    const body = expression[1]!.replace(/\\(["'])/g, '$1');
+  // indexOf, not a lazy regex: a text full of unclosed `${{` is read once.
+  const bodies: string[] = [];
+  for (let at = text.indexOf('${{'); at >= 0;) {
+    const end = text.indexOf('}}', at + 3);
+    if (end < 0) break;
+    bodies.push(text.slice(at + 3, end));
+    at = text.indexOf('${{', end + 2);
+  }
+  for (const raw of bodies) {
+    const body = raw.replace(/\\(["'])/g, '$1');
     let rest = body;
     for (const match of body.matchAll(/\bsecrets\s*(?:\.\s*([A-Za-z0-9_-]+)|\[\s*(['"])([A-Za-z0-9_-]+)\2\s*\])/gi)) {
       out.add((match[1] ?? match[3]!).toUpperCase());
@@ -400,7 +457,8 @@ export const UNKNOWN_CALLER = 'workflow_call from outside this repository';
 /** A workflow's triggers and the reusable workflows in this repository its jobs call. */
 export function workflowCalls(text: string): { triggers: string[]; callees: string[] } {
   try {
-    const data = parseYaml(text, { maxAliasCount: 50 }) as unknown;
+    // Duplicate keys are not checked here (parseWorkflow reports the file): the check is quadratic.
+    const data = parseYaml(text, { maxAliasCount: 50, uniqueKeys: false }) as unknown;
     if (!isRecord(data)) return { triggers: [], callees: [] };
     const jobs = isRecord(data['jobs']) ? Object.values(data['jobs']) : [];
     const callees = jobs
@@ -465,14 +523,11 @@ export function parseWorkflow(
   const workflowDirectory = workingDirectoryOf(data['defaults']);
   // Line numbers of each secret, found once rather than per step.
   const secretLines = new Map<string, number>();
+  // Secrets appear in file order: a moving cursor finds each line without rescanning the file.
+  const locate = lineLocator(text);
   const secretLine = (name: string): number => {
     if (!secretLines.has(name))
-      secretLines.set(
-        name,
-        name === ALL_SECRETS
-          ? lineOf(text, 'secrets') || 1
-          : lineOf(text, `secrets.${name}`) || lineOf(text, name) || 1,
-      );
+      secretLines.set(name, name === ALL_SECRETS ? locate('secrets') : locate(`secrets.${name}`));
     return secretLines.get(name)!;
   };
   const agents: WorkflowAgent[] = [];
@@ -500,8 +555,22 @@ export function parseWorkflow(
       if (!isRecord(step)) return;
       const exportedBefore = [...exported];
       const rawRun = asString(step['run']) ?? '';
-      if (/GITHUB_ENV/.test(rawRun))
-        for (const name of secretNames(JSON.stringify([rawRun, step['env'] ?? {}]))) exported.add(name);
+      // Secrets an earlier step leaves for later ones: through $GITHUB_ENV or $GITHUB_OUTPUT, in a
+      // file in the workspace (`> .env`, `tee`), as cloud credentials, or as a token checkout keeps.
+      if (/GITHUB_ENV|GITHUB_OUTPUT|>|\btee\b/.test(rawRun))
+        for (const name of secretNames(JSON.stringify([rawRun, /GITHUB_ENV/.test(rawRun) ? (step['env'] ?? {}) : {}])))
+          exported.add(name);
+      const earlierUses = asString(step['uses']) ?? '';
+      if (CREDENTIAL_ACTION.test(earlierUses)) exported.add(`CLOUD_CREDENTIALS (${earlierUses.split('@')[0]})`);
+      if (/^actions\/checkout@/i.test(earlierUses) && isRecord(step['with'])) {
+        const token = secretNames(JSON.stringify(step['with']['token'] ?? '')).filter(name => name !== 'GITHUB_TOKEN');
+        if (
+          token.length &&
+          step['with']['persist-credentials'] !== false &&
+          step['with']['persist-credentials'] !== 'false'
+        )
+          for (const name of token) exported.add(name);
+      }
       const uses = asString(step['uses']) ?? '';
       // Workflow, job and step `env` values are static text: resolve ${{ env.X }} before reading flags.
       const stepEnv = isRecord(step['env']) ? step['env'] : {};
@@ -525,18 +594,96 @@ export function parseWorkflow(
       // A local composite action (`uses: ./.github/actions/x`) that wraps an agent is an agent
       // whose settings are in a file the scan does not model: unknown reach.
       const wrapped = /^\.\//.test(uses) ? compositeAgent(uses, readFile) : undefined;
-      const calls = uses ? [] : agentCalls(run, shellVars);
-      const detections: { action: AgentAction; args: readonly string[]; unresolved: readonly string[] }[] = wrapped
+      const stepDirectory = asString(step['working-directory']) ?? jobDirectory ?? '';
+      const context = { readFile, cwd: stepDirectory.includes('${{') ? '' : stepDirectory.replace(/^\.\/?/, '') };
+      // A custom `shell:` (`bash -c "...; {0}"`) runs its own text too; a non-shell language
+      // (`shell: python`) is not read as shell.
+      const shellText = asString(step['shell']) ?? '';
+      const posixShell = !shellText || /^(bash|sh|zsh)\b/.test(shellText.trim());
+      const calls = uses
+        ? []
+        : [
+            ...(posixShell ? agentCalls(run, shellVars, 0, context) : []),
+            ...(shellText && posixShell ? agentCalls(shellText.replace(/\{0\}/g, ''), shellVars, 0, context) : []),
+          ];
+      // An agent named where the scan cannot follow: a non-shell language, stdin piped into a shell,
+      // a command chosen by an expression, a github-script that runs a process.
+      // `run: ${{ matrix.cmd }}`: the command is in the job's matrix.
+      const matrixText =
+        /\$\{\{\s*matrix\./.test(rawRun) && isRecord(job['strategy'])
+          ? JSON.stringify(job['strategy']['matrix'] ?? '')
+          : '';
+      const scriptText = matrixText
+        ? `${rawRun}\n${matrixText.replace(/[{}[\],"]/g, '\n')}`
+        : uses
+          ? /^actions\/github-script@/i.test(uses) && isRecord(step['with'])
+            ? (asString(step['with']['script']) ?? '')
+            : ''
+          : rawRun;
+      const hidden =
+        !calls.length &&
+        scriptText !== '' &&
+        namesAgent(scriptText) &&
+        (!posixShell ||
+          /^actions\/github-script@/i.test(uses) ||
+          /\beval\b|\|\s*(ba|z|da)?sh\b|\b(ba|z|da)?sh\s+(-s|<)|\bdocker\s+(run|exec)|\bpython3?\s+-c|\bnode\s+-e|\$\{\{\s*(matrix|inputs|github\.event|steps)\.|\bsource\b|^\s*\.\s|\$\(|`/m.test(
+            scriptText,
+          ));
+      const detections: {
+        action: AgentAction;
+        args: readonly string[];
+        unresolved: readonly string[];
+        unknown?: string;
+      }[] = wrapped
         ? [{ action: wrapped === 'unknown' ? 'claude-cli' : wrapped, args: [], unresolved: [] }]
         : actionOf(uses)
-          ? [{ action: actionOf(uses)!, args: [], unresolved: [] }]
-          : calls.map(call => ({ action: CLI_ACTION[call.cli], args: call.args, unresolved: call.unresolved }));
+          ? [
+              {
+                action: actionOf(uses)!,
+                args: [],
+                unresolved: [],
+                ...(actionOf(uses) === 'other-cli' ? { unknown: `action ${uses}` } : {}),
+              },
+            ]
+          : hidden
+            ? [
+                {
+                  action: 'other-cli',
+                  args: [],
+                  unresolved: [],
+                  unknown: 'an agent named in a script the scan cannot follow',
+                },
+              ]
+            : calls.map(call => ({
+                action: CLI_ACTION[call.cli],
+                args: call.args,
+                // A quoted variable may still be one flag, unless it is named for a prompt.
+                unresolved: [
+                  ...call.unresolved,
+                  ...call.args.filter(
+                    arg =>
+                      /^\$|\$\{?[A-Za-z_]/.test(arg) &&
+                      !call.unresolved.includes(arg) &&
+                      !PROMPT_VARIABLE.test(arg) &&
+                      !/\s/.test(arg) &&
+                      arg.startsWith('$'),
+                  ),
+                ],
+                ...(call.unknown
+                  ? { unknown: `${call.unknown}` }
+                  : call.cli === 'other'
+                    ? { unknown: `agent CLI ${call.program}` }
+                    : {}),
+              }));
       detections.forEach((detected, callIndex) => {
         const action = detected.action;
         const wrapsAgent = wrapped !== undefined;
         const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
         const line = nodeLine(stepNode, 1);
-        const inputs = isRecord(step['with']) ? step['with'] : {};
+        // GitHub matches input names without regard to case: `CLAUDE_ARGS` is `claude_args`.
+        const inputs: Record<string, unknown> = isRecord(step['with'])
+          ? Object.fromEntries(Object.entries(step['with']).map(([key, value]) => [key.toLowerCase(), value]))
+          : {};
         // Arguments may be given as a YAML list or a JSON array as well as one string.
         const quote = (word: string) => `"${word.replace(/["\\]/g, '\\$&')}"`;
         const input = (key: string): string | undefined => {
@@ -591,11 +738,19 @@ export function parseWorkflow(
         // Settings for the step: claude-code-action's `settings` input (inline JSON, a YAML mapping or a
         // path to a file in the repository) and `--settings` (JSON or a path). One that cannot be read
         // is unknown: the step may then do anything.
+        // Inputs that replace the agent or add code to it: another binary, plugins and marketplaces.
+        const replaced = ['path_to_claude_code_executable', 'path_to_bun_executable', 'plugins', 'plugin_marketplaces']
+          .filter(key => typeof inputs[key] === 'string' && (inputs[key] as string).trim())
+          .map(key => `${key} ${String(inputs[key]).trim().slice(0, 60)}`);
         let settingsUnreadable: string | undefined = wrapsAgent
           ? `local action ${uses}`
-          : unknownArgs.length
-            ? `arguments ${unknownArgs.join(' ')}`
-            : undefined;
+          : detected.unknown !== undefined
+            ? detected.unknown
+            : replaced.length || flags.unmodelled.length
+              ? [...replaced, ...flags.unmodelled].join('; ')
+              : unknownArgs.length
+                ? `arguments ${unknownArgs.join(' ')}`
+                : undefined;
         const settingsEnv: Record<string, unknown>[] = [];
         const readSettings = (value: unknown, relative = false): Record<string, unknown> | undefined => {
           if (value === undefined) return undefined;
@@ -658,6 +813,12 @@ export function parseWorkflow(
         // Copilot CLI and Gemini CLI flags that run every tool without asking.
         const cliArgs = detected.args;
         const cliAllowAll =
+          (action === 'other-cli' &&
+            cliArgs.some(arg =>
+              /^(--yolo|--force|-f|--yes-always|--yes|-y|--dangerously-[\w-]+|--auto-approve|--approval-mode=yolo)$/.test(
+                arg,
+              ),
+            )) ||
           (action === 'copilot-cli' && cliArgs.some(arg => /^--(allow-all-tools|allow-all|yolo)(=|$)/.test(arg))) ||
           (action === 'gemini-cli' &&
             (cliArgs.some(
@@ -763,7 +924,8 @@ export function parseWorkflow(
               }
             : undefined;
         const modelValue = input('model') ?? flags.model;
-        const nonWrite = input('allowed_non_write_users');
+        // Any bot (`allowed_bots: "*"`) can start the agent too: an app anyone can install.
+        const nonWrite = input('allowed_non_write_users') ?? (input('allowed_bots')?.trim() === '*' ? '*' : undefined);
         const literalInputs = Object.entries(inputs)
           .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !entry[1].includes('${{'))
           .map(([key, value]) => ({ key, value, location: { file: path, line: inputLine(key) } }));

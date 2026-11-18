@@ -31,11 +31,32 @@ export function lineLocator(text: string): (needle: string) => number {
   };
 }
 
+/** Line starts of recently used texts: a lookup per call instead of a count from the start. */
+const lineStarts = new Map<string, number[]>();
+
 /** 1-based line of a character offset. */
 export function lineAt(text: string, index: number): number {
-  let line = 1;
-  for (let i = 0; i < index && i < text.length; i += 1) if (text.charCodeAt(i) === 10) line += 1;
-  return line;
+  // Short texts are counted directly; long ones once, then searched.
+  if (text.length < 4096) {
+    let line = 1;
+    for (let i = 0; i < index && i < text.length; i += 1) if (text.charCodeAt(i) === 10) line += 1;
+    return line;
+  }
+  let starts = lineStarts.get(text);
+  if (!starts) {
+    starts = [0];
+    for (let i = 0; i < text.length; i += 1) if (text.charCodeAt(i) === 10) starts.push(i + 1);
+    if (lineStarts.size >= 8) lineStarts.delete(lineStarts.keys().next().value!);
+    lineStarts.set(text, starts);
+  }
+  let low = 0;
+  let high = starts.length - 1;
+  while (low < high) {
+    const mid = (low + high + 1) >> 1;
+    if (starts[mid]! <= index) low = mid;
+    else high = mid - 1;
+  }
+  return low + 1;
 }
 
 /**
@@ -99,7 +120,8 @@ export interface Frontmatter {
 /** Splits `---` YAML front matter from a Markdown file. Invalid YAML yields empty data. */
 export function frontmatter(text: string): Frontmatter {
   const source = text.replace(/^\uFEFF/, '');
-  const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(source);
+  // Claude Code accepts spaces after either delimiter (`---  `).
+  const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(source);
   if (!match) return { data: {}, body: source, bodyLine: 1 };
   const body = source.slice(match[0].length);
   const bodyLine = lineAt(source, match[0].length);
@@ -136,6 +158,28 @@ export function asStringArray(value: unknown): string[] {
       .map(item => item.trim())
       .filter(Boolean);
   return [];
+}
+
+/**
+ * A tool list from front matter: a YAML list, or one string split on commas and on spaces outside
+ * parentheses, as Claude Code splits `allowed-tools: Read Bash(git log:*) WebFetch`.
+ */
+export function toolNames(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === 'string').flatMap(toolNames);
+  if (typeof value !== 'string') return [];
+  const out: string[] = [];
+  let depth = 0;
+  let word = '';
+  for (const char of value) {
+    if (char === '(') depth += 1;
+    else if (char === ')') depth = Math.max(0, depth - 1);
+    if (depth === 0 && (char === ',' || /\s/.test(char))) {
+      if (word.trim()) out.push(word.trim());
+      word = '';
+    } else word += char;
+  }
+  if (word.trim()) out.push(word.trim());
+  return out;
 }
 
 /** Characters that hide text from a human reader: zero-width, bidirectional controls, tag characters. */
@@ -195,7 +239,7 @@ export function oneLine(text: string): string {
  * Undefined when there is no front matter block or no such line.
  */
 export function lenientFrontmatter(text: string): Record<string, unknown> | undefined {
-  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(text);
+  const match = /^\uFEFF?---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(text);
   if (!match) return undefined;
   const out: Record<string, unknown> = {};
   for (const line of match[1]!.split(/\r?\n/)) {

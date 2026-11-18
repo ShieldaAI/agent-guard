@@ -90,10 +90,8 @@ function expressions(text: string): { full: string; inner: string }[] {
       }
       i += 1;
     }
-    if (end < 0) {
-      at = start + 3;
-      continue;
-    }
+    // No `}}` closes it, so none of the later ones closes either: stop rather than rescan.
+    if (end < 0) break;
     out.push({ full: text.slice(start, end + 2), inner: text.slice(start + 3, end) });
     at = end + 2;
   }
@@ -230,24 +228,68 @@ export function agenticFrontmatterHash(path: string, text: string, readFile: Rea
   return createHash('sha256').update(json, 'utf8').digest('hex');
 }
 
-/** A source and the text of every file it imports, for finding what the source asks for. */
-export function sourceWithImports(path: string, text: string, readFile: ReadFile): string {
-  const out = [text];
+/** What a source's front matter (and the front matter it imports) asks gh-aw to compile in. */
+export interface SourceAsks {
+  /** Every word of `engine.args`. */
+  readonly args: ReadonlySet<string>;
+  /** `engine.permission-mode`. */
+  readonly modes: ReadonlySet<string>;
+  /** `tools.bash` allows every command (`"*"`, `":*"`, `true` with no list). */
+  readonly bashAll: boolean;
+  readonly edit: boolean;
+  readonly webFetch: boolean;
+}
+
+/** Reads what the source and its imports ask for, from front matter only: prose explains nothing. */
+export function sourceAsks(path: string, text: string, readFile: ReadFile): SourceAsks {
+  const args = new Set<string>();
+  const modes = new Set<string>();
+  let bashAll = false;
+  let edit = false;
+  let webFetch = false;
   const visited = new Set<string>();
+  const read = (front: string) => {
+    let data: unknown;
+    try {
+      data = parseYaml(front, { maxAliasCount: 50 });
+    } catch {
+      return;
+    }
+    if (!isRecord(data)) return;
+    const engine = isRecord(data['engine']) ? data['engine'] : {};
+    const list = Array.isArray(engine['args'])
+      ? engine['args']
+      : typeof engine['args'] === 'string'
+        ? [engine['args']]
+        : [];
+    for (const item of list)
+      if (typeof item === 'string') for (const word of item.split(/[\s=]+/)) if (word) args.add(word);
+    if (typeof engine['permission-mode'] === 'string') modes.add(engine['permission-mode']);
+    const tools = isRecord(data['tools']) ? data['tools'] : {};
+    const bash = tools['bash'];
+    if (
+      bash === true ||
+      bash === null ||
+      (Array.isArray(bash) && bash.some(item => item === '*' || item === ':*')) ||
+      bash === '*'
+    )
+      bashAll = true;
+    if (tools['edit'] !== undefined && tools['edit'] !== false) edit = true;
+    if (tools['web-fetch'] !== undefined && tools['web-fetch'] !== false) webFetch = true;
+  };
   const walk = (front: string, folder: string, depth: number) => {
+    read(front);
     if (depth > 3) return;
     for (const item of importsOf(front)) {
       const full = joinPath(folder, item.split('#')[0]!.replace(/^\/+/, ''));
       if (full === undefined || visited.has(full)) continue;
       visited.add(full);
       const content = readFile(full);
-      if (content === undefined) continue;
-      out.push(content);
-      walk(split(content)?.front ?? '', dirOf(full), depth + 1);
+      if (content !== undefined) walk(split(content)?.front ?? '', dirOf(full), depth + 1);
     }
   };
   walk(split(text)?.front ?? '', dirOf(path), 0);
-  return out.join('\n');
+  return { args, modes, bashAll, edit, webFetch };
 }
 
 /** The `# gh-aw-metadata:` header of a lock file. */
@@ -301,13 +343,14 @@ function triggersOf(value: unknown): string[] {
 /** Permission flags gh-aw never writes for an engine unless the source asks (engine.args, permission-mode, bash: "*"). */
 const CLAUDE_UNLIMITED = /^(--dangerously-skip-permissions|--allow-dangerously-skip-permissions)$/;
 const COPILOT_UNLIMITED = /^--(allow-all-tools|allow-all|yolo)(=.*)?$/;
+/** Claude permission modes gh-aw writes by default. */
+const DEFAULT_MODES = new Set(['dontAsk', 'default']);
 
 /**
  * Why a compiled lock does not match its source: untrusted triggers the source does not have, and
- * agent permission flags the source does not ask for. `sourceTexts` are the source and the files
- * it imports, read as text: a flag named anywhere in them is the source's own.
+ * agent permission flags or allowed tools the source's front matter does not ask for.
  */
-export function lockMismatches(lockText: string, sourceFront: Record<string, unknown>, sourceTexts: string): string[] {
+export function lockMismatches(lockText: string, sourceFront: Record<string, unknown>, asks: SourceAsks): string[] {
   const out: string[] = [];
   let lock: unknown;
   try {
@@ -327,26 +370,35 @@ export function lockMismatches(lockText: string, sourceFront: Record<string, unk
     for (const step of job['steps']) {
       if (!isRecord(step) || typeof step['run'] !== 'string') continue;
       for (const call of agentCalls(step['run'])) {
-        const unlimited =
-          call.cli === 'claude'
-            ? call.args.filter(
-                (arg, i) =>
-                  CLAUDE_UNLIMITED.test(arg) ||
-                  (arg === '--permission-mode' &&
-                    /^(bypassPermissions|acceptEdits|auto)$/.test(call.args[i + 1] ?? '')),
-              )
-            : call.cli === 'copilot'
-              ? call.args.filter(arg => COPILOT_UNLIMITED.test(arg))
-              : [];
-        for (const flag of unlimited) {
-          const shown =
-            flag === '--permission-mode' ? `--permission-mode ${call.args[call.args.indexOf(flag) + 1]}` : flag;
-          const mode = shown.replace(/^--permission-mode /, '');
-          // `--allow-all-tools` is gh-aw's own output for `bash: "*"` (or ":*").
-          const bashAll =
-            flag.startsWith('--allow-all-tools') && /^\s*bash:\s*(\[\s*)?["']?:?\*["']?/m.test(sourceTexts);
-          if (!bashAll && !sourceTexts.includes(flag) && !sourceTexts.includes(mode)) flags.add(shown);
-        }
+        const args = call.args.flatMap(arg => (/^--[\w-]+=/.test(arg) ? arg.split(/=(.*)/s, 2) : [arg]));
+        const asked = (word: string) => asks.args.has(word);
+        if (call.cli === 'claude') {
+          for (const [i, arg] of args.entries()) {
+            if (CLAUDE_UNLIMITED.test(arg) && !asked(arg)) flags.add(arg);
+            if (arg === '--permission-mode') {
+              const mode = args[i + 1] ?? '';
+              if (!DEFAULT_MODES.has(mode) && !asks.modes.has(mode) && !asked(mode))
+                flags.add(`--permission-mode ${mode}`);
+            }
+            // Allowed tools the source's tools do not give: every Bash command, web fetches, edits.
+            if (arg === '--allowed-tools' || arg === '--allowedTools') {
+              const tools = (args[i + 1] ?? '').split(',').map(item => item.trim());
+              if (!asks.bashAll && tools.some(tool => /^Bash(\((\*|:\*)?\))?$/.test(tool)))
+                flags.add('--allowed-tools Bash');
+              if (!asks.webFetch && tools.includes('WebFetch')) flags.add('--allowed-tools WebFetch');
+              if (!asks.edit && tools.some(tool => /^(Edit|Write|MultiEdit)$/.test(tool)))
+                flags.add('--allowed-tools Edit');
+            }
+          }
+        } else if (call.cli === 'copilot') {
+          for (const arg of args)
+            if (
+              COPILOT_UNLIMITED.test(arg) &&
+              !asked(arg.split('=')[0]!) &&
+              !(arg.startsWith('--allow-all-tools') && asks.bashAll)
+            )
+              flags.add(arg);
+        } else if (call.cli === 'other' || call.unknown) flags.add(`${call.program} (an agent gh-aw does not compile)`);
       }
     }
   }

@@ -778,7 +778,7 @@ export const CASES = [
     files: {
       '.claude/settings.json': settings(
         { allow: ['Bash'] },
-        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './check.sh' }] }] } },
+        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
       ),
     },
   },
@@ -789,7 +789,7 @@ export const CASES = [
     files: {
       '.claude/settings.json': settings(
         { allow: ['Bash', 'WebFetch'] },
-        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './check.sh' }] }] } },
+        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
       ),
     },
   },

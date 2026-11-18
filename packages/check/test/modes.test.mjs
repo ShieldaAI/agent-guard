@@ -151,7 +151,7 @@ test('a session in dontAsk does not hide what a bypassPermissions or auto subage
 });
 
 test('disableAllHooks turns every hook off as a runtime check', () => {
-  const hooks = { PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: './g.sh' }] }] };
+  const hooks = { PreToolUse: [{ matcher: '', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] };
   const on = scanFiles({ '.claude/settings.json': settings({ allow: ['Bash'] }, { hooks }) });
   const off = scanFiles({
     '.claude/settings.json': settings({ allow: ['Bash'] }, { hooks }),

@@ -1,6 +1,6 @@
 import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule } from './common.js';
 import type { Rule } from './common.js';
-import { bashScope } from '../claude.js';
+import { bashScope, isOutsideProject } from '../claude.js';
 import { lineAt } from '../text.js';
 import { projectDir } from '../model.js';
 import { UNTRUSTED_TRIGGERS } from '../workflows.js';
@@ -56,8 +56,24 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           agent: project.agents.find(agent => agent.location.file === bypass.location.file),
           fix: bypass.agent.startsWith('Codex')
             ? 'Use approval_policy = "on-request" with sandbox_mode = "workspace-write".'
-            : 'Remove defaultApprovalMode "yolo", or set security.disableYoloMode to true.',
+            : bypass.agent.startsWith('Gemini')
+              ? 'Remove defaultApprovalMode "yolo", or set security.disableYoloMode to true.'
+              : 'Turn this setting off in the repository, so each tool call is approved by a person.',
         });
+      // A hook that answers "allow" for tool calls approves them instead of a person.
+      for (const { hook, judgement } of project.hookJudgements)
+        if (judgement.approves !== 'no')
+          report({
+            message:
+              judgement.approves === 'yes'
+                ? `A ${hook.event} hook approves tool calls${hook.matcher ? ` matching "${hook.matcher}"` : ''}, so they run without a person deciding.`
+                : `A ${hook.event} hook may approve tool calls${hook.matcher ? ` matching "${hook.matcher}"` : ''} (${judgement.why}); what it decides cannot be read.`,
+            location: hook.location,
+            subject: `hook-approves:${hook.event}:${hook.matcher}:${hook.command || hook.url || hook.type}`,
+            severity: judgement.approves === 'yes' ? 'critical' : 'high',
+            agent: project.agents.find(agent => agent.kind === 'claude-code'),
+            fix: 'Let the hook deny or ask, never allow; keep approvals with a person or with permission rules a reviewer can read.',
+          });
       for (const file of project.scripts) {
         const index = file.text.search(/--dangerously-(skip-permissions|bypass-approvals-and-sandbox)/);
         if (index >= 0)
@@ -82,7 +98,10 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
     (project, report) => {
       const servers = agentServers(project);
       for (const allowed of allowRules(project)) {
-        if (allowed.tool === '*' || (allowed.tool === 'Bash' && bashScope(allowed.specifier) === 'any')) {
+        if (
+          allowed.tool === '*' ||
+          (['Bash', 'PowerShell', 'Monitor'].includes(allowed.tool) && bashScope(allowed.specifier) === 'any')
+        ) {
           report({
             message: `"${allowed.raw}" lets the agent run any ${allowed.tool === '*' ? 'tool' : 'shell command'} without asking.`,
             location: allowed.location,
@@ -115,12 +134,22 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
     },
     (project, report) => {
       for (const allowed of allowRules(project))
-        if (allowed.tool === 'Bash' && bashScope(allowed.specifier) === 'network')
+        if (['Bash', 'PowerShell', 'Monitor'].includes(allowed.tool) && bashScope(allowed.specifier) === 'network')
           report({
             message: `"${allowed.raw}" runs without asking and can reach the network or run arbitrary code.`,
             location: allowed.location,
             subject: allowed.raw,
             fix: 'Keep this command behind approval, or narrow it to a fixed script that cannot take arbitrary arguments.',
+          });
+      // Hooks run without asking, on every matching event: one that can reach the network or run
+      // arbitrary code (or cannot be read) is such a command.
+      for (const { hook, judgement } of project.hookJudgements)
+        if (judgement.reach === 'network')
+          report({
+            message: `A ${hook.event} hook runs ${judgement.why} without asking; it can reach the network or run arbitrary code.`,
+            location: hook.location,
+            subject: `hook:${hook.event}:${hook.command || hook.url || hook.type}`,
+            fix: 'Run a script from the repository that only does local work, or remove the hook.',
           });
     },
   ),
@@ -134,15 +163,15 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
       help: 'Home directories hold SSH keys, cloud credentials and tokens. An agent that can read them can leak them.',
     },
     (project, report) => {
+      for (const allowed of allowRules(project))
+        if (['Read', 'Glob', 'Grep', 'LS'].includes(allowed.tool) && isOutsideProject(allowed.specifier))
+          report({
+            message: `"${allowed.raw}" lets the agent read outside the project without asking, where keys and tokens live.`,
+            location: allowed.location,
+            subject: allowed.raw,
+            fix: 'Allow only the specific directory the agent needs, and deny ~/.ssh, ~/.aws and .env files.',
+          });
       for (const file of project.settings) {
-        for (const allowed of file.allow)
-          if (['Read', 'Glob', 'Grep', 'LS'].includes(allowed.tool) && /^(~|\/\/|\$HOME)/.test(allowed.specifier ?? ''))
-            report({
-              message: `"${allowed.raw}" lets the agent read outside the project without asking, where keys and tokens live.`,
-              location: allowed.location,
-              subject: allowed.raw,
-              fix: 'Allow only the specific directory the agent needs, and deny ~/.ssh, ~/.aws and .env files.',
-            });
         for (const directory of file.additionalDirectories)
           if (/^(~\/?|\/|\$HOME\/?)$/.test(directory.value.trim()))
             report({

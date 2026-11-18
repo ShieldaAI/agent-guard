@@ -404,7 +404,7 @@ test('only a hook that sees Bash, and not this scanner, counts as a runtime chec
   const covered = hooks =>
     findingsFor(scanFiles({ '.claude/settings.json': settings({ allow: ['Bash(*)'] }, { hooks }) }), 'AGC-COV-001')
       .length === 0;
-  const hook = matcher => ({ PreToolUse: [{ matcher, hooks: [{ type: 'command', command: 'guard.sh' }] }] });
+  const hook = matcher => ({ PreToolUse: [{ matcher, hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] });
   assert.equal(covered(hook('Write|Edit')), false);
   assert.equal(covered(hook('Bash')), true);
   assert.equal(covered(hook('')), true);

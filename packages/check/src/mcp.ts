@@ -1,5 +1,5 @@
 import type { Capability, Location } from './types.js';
-import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
+import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
 
 /** One MCP server as a config file declares it. */
 export interface McpServer {
@@ -816,6 +816,8 @@ export function serversFromObject(
       ? parsed['servers']
       : {};
   const servers: McpServer[] = [];
+  // Server names appear in file order: a moving cursor finds each line without rescanning the file.
+  const locate = lineLocator(text);
   for (const [name, raw] of Object.entries(block)) {
     if (!isRecord(raw)) continue;
     const command = asString(raw['command']);
@@ -836,7 +838,7 @@ export function serversFromObject(
       ...(url === undefined ? {} : { url }),
       env: stringRecord(raw['env']),
       headers: stringRecord(raw['headers']),
-      location: { file: path, line: lineOf(text, JSON.stringify(name)) + lineOffset },
+      location: { file: path, line: locate(JSON.stringify(name)) + lineOffset },
       ...(catalog ? { catalog } : {}),
       identity: {
         ...(identity.package !== undefined ? { package: identity.package } : {}),

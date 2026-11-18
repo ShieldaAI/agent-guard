@@ -286,6 +286,8 @@ export function applySuppressions(
   const kept: Finding[] = [];
   const suppressed: Suppressed[] = [];
   const lines = new Map<string, string[]>();
+  // One match per line: a long line with many findings is read once.
+  const inlineCache = new Map<string, RegExpExecArray | null>();
   for (const original of findings) {
     const severity = config.severity[original.ruleId];
     const finding = severity ? { ...original, severity } : original;
@@ -294,10 +296,17 @@ export function applySuppressions(
       file = (readText(finding.location.file) ?? '').split('\n');
       lines.set(finding.location.file, file);
     }
-    const near = [file[finding.location.line - 1], file[finding.location.line - 2]];
-    const inline = near
-      .map(line => (line ? INLINE.exec(line) : null))
-      .find(match => match && match[1] === finding.ruleId);
+    const lineMatch = (index: number): RegExpExecArray | null => {
+      const key = `${finding.location.file}\0${index}`;
+      if (!inlineCache.has(key)) {
+        const line = file![index];
+        inlineCache.set(key, line && line.includes('agc-ignore') ? INLINE.exec(line) : null);
+      }
+      return inlineCache.get(key)!;
+    };
+    const inline = [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
+      match => match && match[1] === finding.ruleId,
+    );
     if (inline) {
       suppressed.push({ finding, reason: inline[2]!, source: 'inline' });
       continue;

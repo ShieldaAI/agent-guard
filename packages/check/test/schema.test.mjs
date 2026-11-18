@@ -42,7 +42,7 @@ test('inventory output validates against the published schema', () => {
   const result = scanFiles({
     '.claude/settings.json': settings(
       { allow: ['Bash(curl:*)', 'mcp__db', 'WebFetch'] },
-      { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './g.sh' }] }] } },
+      { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
     ),
     '.mcp.json': mcp({ db: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@0.6.2'] } }),
     '.claude/agents/x.md': '---\nname: x\ndescription: x\ntools: Bash\n---\nGo.\n',

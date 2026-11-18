@@ -159,6 +159,13 @@ export function parseCodex(path: string, text: string, declared: CatalogContext 
       what: 'approval_policy = "never" with sandbox_mode = "danger-full-access"',
       location: sandboxAt,
     });
+  // Never asking, inside a sandbox that reaches the network: every command runs and can send data out.
+  if (policyName === 'never' && sandbox === 'workspace-write' && network)
+    bypasses.push({
+      agent: name,
+      what: 'approval_policy = "never" with network_access = true',
+      location: policyAt,
+    });
   const profiles = isRecord(data['profiles']) ? data['profiles'] : {};
   for (const [profile, raw] of Object.entries(profiles)) {
     if (!isRecord(raw)) continue;
@@ -171,6 +178,16 @@ export function parseCodex(path: string, text: string, declared: CatalogContext 
         location: { file: path, line: lineOfTable(text, `profiles.${profile}`) || 1 },
       });
   }
+  // `notify` runs a program after every turn, without asking.
+  if (data['notify'] !== undefined)
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'notify',
+      value: JSON.stringify(data['notify']).slice(0, 120),
+      assumed: 'it runs a program after every turn without asking, which may reach the network',
+      location: at('notify'),
+      severity: 'high',
+    });
   const models: ModelChoice[] = [];
   const model = asString(data['model']);
   if (model) models.push({ agent: name, model, location: at('model') });
@@ -298,6 +315,30 @@ export function parseGemini(path: string, text: string, declared: CatalogContext
     if (trusted) allow.push(rule);
     grants.push(...grantsForRule(rule, trusted || yolo ? 'auto' : 'ask', usable));
   }
+  // Commands Gemini CLI runs on its own: hooks, and the commands that discover and call tools.
+  for (const [key, value, where] of [
+    ['hooks', data['hooks'], 'hooks'],
+    ['tools.discoveryCommand', tools['discoveryCommand'], 'discoveryCommand'],
+    ['tools.callCommand', tools['callCommand'], 'callCommand'],
+  ] as const)
+    if (value !== undefined && value !== null && value !== '' && !(isRecord(value) && !Object.keys(value).length))
+      unrecognized.push({
+        agent: 'Gemini CLI',
+        setting: key,
+        value: JSON.stringify(value).slice(0, 120),
+        assumed: 'it runs commands of its own without asking, which may reach the network',
+        location: at(where),
+        severity: 'high',
+      });
+  if (tools['autoAccept'] === true)
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'tools.autoAccept',
+      value: 'true',
+      assumed: 'tools Gemini CLI considers safe run without asking',
+      location: at('autoAccept'),
+      severity: 'medium',
+    });
   const bypasses: Bypass[] = [];
   if (yolo)
     bypasses.push({

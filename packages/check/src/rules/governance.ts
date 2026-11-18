@@ -1,9 +1,28 @@
-import { ASI, rule } from './common.js';
+import { ASI, allowRules, rule } from './common.js';
 import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
-import { bashScope, parseRule } from '../claude.js';
+import { bashScope, HARMLESS_TOOLS, parseRule } from '../claude.js';
 import { authority, isMediated } from '../authority.js';
 import { foldPath, isInstructionPath } from '../source.js';
+
+/** Tools whose allow rules the scanner models. */
+const MODELLED_TOOLS = new Set([
+  '*',
+  'Bash',
+  'PowerShell',
+  'Monitor',
+  'Read',
+  'Glob',
+  'Grep',
+  'LS',
+  'Edit',
+  'Write',
+  'MultiEdit',
+  'NotebookEdit',
+  'WebFetch',
+  'WebSearch',
+  'mcp',
+]);
 
 export const GOVERNANCE_RULES: readonly Rule[] = [
   rule(
@@ -143,6 +162,39 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           ...(item.severity ? { severity: item.severity, confidence: 'high' as const } : {}),
           fix: 'Check this capability by hand. If the value is valid, report it so the scanner can model it.',
         });
+      // An MCP server the scanner cannot identify, whose tools run without asking: what they do is
+      // unknown, so it is reported at high (unknown is never treated as safe).
+      const seen = new Set<string>();
+      for (const agent of project.agents)
+        for (const grant of agent.grants)
+          if (
+            grant.tool?.startsWith('mcp__') &&
+            grant.certainty === 'unknown' &&
+            grant.approval === 'auto' &&
+            !seen.has(`${agent.id}|${grant.tool}`)
+          ) {
+            seen.add(`${agent.id}|${grant.tool}`);
+            report({
+              message: `${agent.name} runs tools of MCP server ${grant.tool.slice(5)} without asking (${grant.via}); the scanner cannot identify the server, so they may run code, write and send data out.`,
+              location: grant.location,
+              subject: `mcp-unknown:${grant.tool}`,
+              agent,
+              severity: 'high',
+              confidence: 'high',
+              fix: 'Keep this server behind approval, or declare what it can do in .agc.yaml (mcp_servers).',
+            });
+          }
+      // An allow rule for a tool the scanner does not know: it may run code, write and send data out.
+      for (const allowed of allowRules(project))
+        if (!MODELLED_TOOLS.has(allowed.tool) && !HARMLESS_TOOLS.has(allowed.tool))
+          report({
+            message: `"${allowed.raw}" allows a tool the scanner does not model; the scan assumed it may run code, write and send data out without asking.`,
+            location: allowed.location,
+            subject: `tool:${allowed.raw}`,
+            severity: 'medium',
+            confidence: 'high',
+            fix: 'Check what this tool can do. If it is a valid tool, report it so the scanner can model it.',
+          });
     },
   ),
   rule(
@@ -170,6 +222,18 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           subject: path,
           severity: severityOf(path),
           fix: 'Keep agent configuration small, or split it; check this file by hand.',
+        });
+      for (const path of project.skippedConfig)
+        report({
+          message: `${path} is agent configuration inside a folder the scan skips (build output or vendored code), so it was not read and nothing in it was judged.`,
+          location: { file: path, line: 1 },
+          subject: `skipped:${path}`,
+          severity: /(^|\/)(\.mcp\.json|\.claude|\.codex|\.gemini|\.cursor|\.claude-plugin|opencode\.json)(\/|$)/.test(
+            path,
+          )
+            ? 'high'
+            : 'medium',
+          fix: 'Move agent configuration out of build and vendor folders, or check it by hand.',
         });
       for (const path of project.linkedFiles)
         report({
