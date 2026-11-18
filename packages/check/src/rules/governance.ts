@@ -3,6 +3,7 @@ import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
 import { bashScope, parseRule } from '../claude.js';
 import { authority, isMediated } from '../authority.js';
+import { foldPath, isInstructionPath } from '../source.js';
 
 export const GOVERNANCE_RULES: readonly Rule[] = [
   rule(
@@ -158,10 +159,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       // definitions written in Markdown (subagents, Copilot, OpenCode and gh-aw agents) grant tools.
       const severityOf = (path: string) => {
         const name = path.split('/').at(-1) ?? path;
-        const instructions =
-          /(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL|copilot-instructions)\.md$|\.(instructions|prompt)\.md$|\.mdc$|(^|\/)\.(cursorrules|windsurfrules)$|(^|\/)(\.claude\/commands|\.kiro\/steering|\.windsurf\/rules|\.cursor\/rules)\//.test(
-            path,
-          );
+        const instructions = isInstructionPath(path);
         // An unread package.json only stops identification (the scan then assumes the worst).
         return name === 'CODEOWNERS' ? 'low' : instructions || name === 'package.json' ? 'medium' : 'high';
       };
@@ -188,9 +186,27 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           subject: `unparsed:${item.path}`,
           fix: 'Fix the front matter: valid YAML, no duplicate keys, no more than 50 aliases.',
         });
+      for (const path of project.caseVariants)
+        report({
+          message: `${path} is agent configuration on macOS and Windows, where letter case is ignored, but the scanner reads only the exact name, so it was not judged.`,
+          location: { file: path, line: 1 },
+          subject: `case:${path}`,
+          severity: severityOf(foldPath(path)),
+          fix: 'Rename it to the exact name the agent expects, so every system and this scan read the same file.',
+        });
+      for (const [first, second] of project.caseCollisions)
+        report({
+          message: `${first} and ${second} differ only in letter case; on macOS and Windows only one of them exists, and which one is up to the checkout.`,
+          location: { file: second, line: 1 },
+          subject: `collision:${first.toLowerCase()}`,
+          fix: 'Keep one of the two files.',
+        });
       if (project.truncated)
         report({
-          message: 'The repository has more than 200,000 entries, so the scan stopped before it looked at all of them.',
+          message:
+            'The scan stopped before it looked at every file (more than 200,000 entries, or folders more than 32 levels deep).',
+          // Visible without failing: very large repositories reach the limits legitimately.
+          severity: 'medium',
           location: { file: '.', line: 1 },
           subject: 'truncated',
           fix: 'Scan the folder that holds the agents, or check the rest by hand.',

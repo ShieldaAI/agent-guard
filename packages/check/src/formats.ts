@@ -179,6 +179,8 @@ export function parseCodex(path: string, text: string, declared: CatalogContext 
         assumed:
           'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
         location: { file: path, line: lineOfKey(text, 'base_url') || 1 },
+        // In the repository's Codex config it sends every developer's key and context there.
+        ...(path.startsWith('~/') ? {} : { severity: 'high' as const }),
       });
   }
   const dir = path.split('/').slice(0, -2).join('/');

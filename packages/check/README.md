@@ -91,13 +91,13 @@ URL. The URL must use `https` (plain `http` only for localhost).
 
 | Agent | Files |
 | --- | --- |
-| Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md`, skills and hook scripts, `CLAUDE.md`, `AGENTS.md`, at any depth, so monorepo packages are separate agents |
+| Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md` and skills (including their `allowed-tools`, which run without asking while one is active), hook scripts, `CLAUDE.md`, `AGENTS.md`, up to 32 folders deep, so monorepo packages are separate agents. On macOS and Windows letter case is ignored: a path that is configuration only when case is ignored (`.CLAUDE/settings.json`, a root `claude.md`), and two paths that differ only in case, are reported |
 | Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, `mcpServers` and `hooks` (inline, a file in the plugin, or a list of them) and `hooks/hooks.json`; a file it names that cannot be read counts as unknown reach. A `.mcp.json` there still counts for Claude Code in that folder too |
 | Agent Plugins | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/` |
 | OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
 | Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
 | GitHub workflows | Steps that use `anthropics/claude-code-action` (with its `settings`: inline JSON, a mapping or a file), `openai/codex-action` (with its `sandbox` and `permission-profile`), or run `claude -p` (with `--settings`), `codex exec`, `copilot -p` or `gemini -p` |
-| GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` in the frontmatter: triggers, `engine` (and its `env`), `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github` with `read-only` and `github-token`), `safe-outputs` (with `threat-detection` and `jobs`), `permissions`, `env` and `github-token` secrets, `mcp-servers` (including `container`), `network`, and `imports` (front matter, `{{#import}}` and `@include`) from the repository, three levels deep, each relative to the file that names it. The `.lock.yml` it compiles to is judged from this source; a lock file with no source beside it is unknown reach. A lock file edited apart from its source is not detected |
+| GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` in the frontmatter: triggers, `engine` (and its `env`), `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github` with `read-only` and `github-token`), `safe-outputs` (with `threat-detection` and `jobs`), `permissions`, `env` and `github-token` secrets, `mcp-servers` (including `container`), `network`, and `imports` (front matter, `{{#import}}` and `@include`) from the repository, three levels deep, each relative to the file that names it. The `.lock.yml` it compiles to is judged from this source, except steps that use `claude-code-action`, `codex-action` or `run-gemini-cli`, which gh-aw never generates and which are judged in the lock; a lock with no gh-aw source beside it is read as a workflow and is also unknown reach. With `--base`, a lock that changed while its source did not is reported (AGC-CFG-002, high); without `--base`, a lock edited by hand in other ways is not detected. Frontmatter `jobs`, `steps` and `post-steps` that start an agent are unknown reach (high); `sandbox: { agent: false }` opens the network; a `secrets` mapping is private data |
 | VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
 | Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
 | OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md` |
@@ -419,9 +419,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 180 agents.
-  Every critical, high and medium finding, 60 in all, was reviewed by hand: 59 true positives
-  and 1 false positive (a low-confidence text rule), precision 98.3%.
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 183 agents.
+  Every critical, high and medium finding, 78 in all, was reviewed by hand: 77 true positives
+  and 1 false positive (a low-confidence text rule), precision 98.7%.
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
   configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
@@ -485,6 +485,10 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   command can leave it (`allowUnsandboxedCommands`, `excludedCommands`) through the normal
   permission flow, where an allowed command still runs without asking, and the sandbox's allowed
   domains are not modelled.
+- **Actions.** Agent actions are matched by name in any letter case and with any sub-path
+  (`anthropics/claude-code-action/base-action`). A local composite action (`uses: ./...`) whose
+  `action.yml` starts an agent is an agent of unknown reach, reported at high. `--mcp-config` and
+  `mcp_config` given as a path are read; one that cannot be read makes the step unknown reach.
 - **Workflow agents.** A Codex step runs commands without asking, inside its sandbox:
   `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
   unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
@@ -493,9 +497,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   different Codex sandboxes (`--sandbox read-only --full-auto`), the wider one is judged.
   `claude-code-action`'s `settings` (inline JSON with comments, a mapping or a file in the
   repository), `--settings`, and `claude -p --permission-mode` are read; settings that cannot be
-  read make the step unknown reach. Copilot CLI steps and Gemini CLI steps (`gemini`,
-  `npx @google/gemini-cli`, or the `google-github-actions/run-gemini-cli` action) are unknown
-  reach, or run
+  read make the step unknown reach. Copilot CLI steps (`copilot -p`) and Gemini CLI steps
+  (`gemini`, `gemini-cli` or `npx @google/gemini-cli` in command position, with `-p`, a positional
+  prompt or stdin, or the `google-github-actions/run-gemini-cli` action) are unknown reach, or run
   every tool without asking with `--allow-all-tools` / `--yolo`. A GitHub
   Agentic Workflow is unattended; its `safe-outputs` are posted by a separate job that checks
   them, which counts as a runtime check for them unless `threat-detection` is off. Imported tool
@@ -520,8 +524,10 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `workflow_run` carry text anyone can write and run with the repository's secrets.
   `pull_request` from forks gets no secrets and a read-only token, so it is not treated as
   outsider input. Commands that post to the repository count only when the job's token can
-  write. Secrets in environment variables the harness itself reads (`OTEL_*`,
-  `ANTHROPIC_*`, `CLAUDE_CODE_*`) are not counted as data given to the agent.
+  write. The harness's own credentials are not counted as data given to the agent: a variable
+  it reads (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`,
+  ...), matched by exact name, whose value is a model or telemetry key (by secret name). The same
+  variable carrying another secret (`OPENAI_API_KEY: ${{ secrets.NPM_TOKEN }}`) is counted.
 - **Runtime checks.** A runtime check counts only for the calls it sees. A hook matcher is a
   regular expression from the repository, so the scanner never runs it: it reads the matcher's
   `|` alternatives, and credits only exact tool names (`Bash`), name prefixes (`Web.*`,

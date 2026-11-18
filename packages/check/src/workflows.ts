@@ -13,6 +13,8 @@ export interface WorkflowAgent {
   readonly job: string;
   readonly step: string;
   readonly action: AgentAction;
+  /** The `uses:` of the step, when the agent runs as an action. */
+  readonly uses?: string;
   readonly location: Location;
   readonly triggers: readonly string[];
   readonly triggerLocation: Location;
@@ -200,15 +202,21 @@ function readFlags(text: string): Flags {
 }
 
 // Action names match regardless of case, as GitHub matches owner and repository names.
-const CLAUDE_ACTION = /^anthropics\/claude-code(-base)?-action@/i;
-const CODEX_ACTION = /^openai\/codex-action@/i;
-const GEMINI_ACTION = /^google-github-actions\/run-gemini-cli@/i;
+const CLAUDE_ACTION = /^anthropics\/claude-code(-base)?-action(\/[^@]*)?@/i;
+const CODEX_ACTION = /^openai\/codex-action(\/[^@]*)?@/i;
+const GEMINI_ACTION = /^google-github-actions\/run-gemini-cli(\/[^@]*)?@/i;
+/** An agent action, by name, anywhere in a local composite action's text. */
+export const AGENT_ACTION_TEXT =
+  /anthropics\/claude-code(-base)?-action|openai\/codex-action|google-github-actions\/run-gemini-cli|\bclaude\s+(-p|--print)\b|\bcodex\s+exec\b/i;
 // The CLI may be started by path or through npx (`npx -y @anthropic-ai/claude-code -p`, `@openai/codex exec`).
 const CLAUDE_CLI = /(^|[\s;&|(/])claude(-code(@\S*)?)?\s(?:[^\n]*\s)?(-p|--print)\b/;
 const CODEX_CLI = /(^|[\s;&|(/])codex(@\S*)?\s+(exec|e)\b/;
 /** GitHub Copilot CLI and Gemini CLI run headless with a prompt. */
 const COPILOT_CLI = /(^|[\s;&|(/])copilot(@\S*)?\s[^\n]*?(-p|--prompt)\b/;
-const GEMINI_CLI = /(^|[\s;&|(/])(gemini|gemini-cli|@google\/gemini-cli)(@\S*)?\s[^\n]*?(-p|--prompt)\b/;
+// Gemini CLI runs headless with -p, with a prompt on stdin, or with a positional prompt: any call
+// in command position counts.
+const GEMINI_CLI =
+  /(^|[|;&(]\s*|\bnpx\s+(-y\s+)?|\bbunx\s+|\bpnpm\s+dlx\s+)(gemini|gemini-cli|@google\/gemini-cli)(@\S*)?(\s|$)/m;
 
 /** Whether a workflow file says it was compiled by gh-aw. Only its name and a source make it a lock. */
 export function isAgenticLock(text: string): boolean {
@@ -243,6 +251,20 @@ export const HARNESS_SECRET_VARIABLES = new Set([
   'AWS_BEARER_TOKEN_BEDROCK',
   'OTEL_EXPORTER_OTLP_HEADERS',
 ]);
+/**
+ * Whether an environment entry is the harness's own model credential: a harness variable name
+ * whose value is only a model key (by secret name: `MODEL_SECRETS`, or a name ending in API_KEY or
+ * an auth token). `OPENAI_API_KEY: ${{ secrets.NPM_TOKEN }}` is not: naming hides nothing.
+ */
+export function isHarnessCredential(name: string, value: unknown): boolean {
+  if (!HARNESS_SECRET_VARIABLES.has(name)) return false;
+  const secrets = [...JSON.stringify(value ?? '').matchAll(SECRET_REF)].map(match => match[1]!);
+  // Telemetry headers carry the telemetry service's own token.
+  const credential =
+    name === 'OTEL_EXPORTER_OTLP_HEADERS' ? /(TOKEN|KEY|HEADERS?)$/ : /(_API_KEY|_AUTH_TOKEN|_OAUTH_TOKEN)$/;
+  return secrets.every(secret => MODEL_SECRETS.test(secret) || credential.test(secret));
+}
+
 export const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 
 /** Reads a workflow file and returns its agent steps. Throws on invalid YAML. */
@@ -302,21 +324,30 @@ export function parseWorkflow(
       const resolveEnv = (text: string): string =>
         text.replace(ENV_REF, (match, name: string) => envValue(name) ?? match);
       const run = resolveEnv(joinLines(asString(step['run']) ?? ''));
-      const action: AgentAction | undefined = CLAUDE_ACTION.test(uses)
-        ? 'claude-code-action'
-        : GEMINI_ACTION.test(uses)
-          ? 'gemini-cli'
-          : CODEX_ACTION.test(uses)
-            ? 'codex-action'
-            : CLAUDE_CLI.test(run)
-              ? 'claude-cli'
-              : CODEX_CLI.test(run)
-                ? 'codex-cli'
-                : COPILOT_CLI.test(run)
-                  ? 'copilot-cli'
-                  : GEMINI_CLI.test(run)
-                    ? 'gemini-cli'
-                    : undefined;
+      // A local composite action (`uses: ./.github/actions/x`) that wraps an agent is an agent
+      // whose settings are in a file the scan does not model: unknown reach.
+      const localAction = /^\.\//.test(uses)
+        ? (readFile(`${uses.replace(/^\.\//, '').replace(/\/$/, '')}/action.yml`) ??
+          readFile(`${uses.replace(/^\.\//, '').replace(/\/$/, '')}/action.yaml`))
+        : undefined;
+      const wrapsAgent = localAction !== undefined && AGENT_ACTION_TEXT.test(localAction);
+      const action: AgentAction | undefined = wrapsAgent
+        ? 'claude-cli'
+        : CLAUDE_ACTION.test(uses)
+          ? 'claude-code-action'
+          : GEMINI_ACTION.test(uses)
+            ? 'gemini-cli'
+            : CODEX_ACTION.test(uses)
+              ? 'codex-action'
+              : CLAUDE_CLI.test(run)
+                ? 'claude-cli'
+                : CODEX_CLI.test(run)
+                  ? 'codex-cli'
+                  : COPILOT_CLI.test(run)
+                    ? 'copilot-cli'
+                    : GEMINI_CLI.test(run)
+                      ? 'gemini-cli'
+                      : undefined;
       if (!action) return;
       const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
       const line = nodeLine(stepNode, 1);
@@ -361,7 +392,7 @@ export function parseWorkflow(
       // Settings for the step: claude-code-action's `settings` input (inline JSON, a YAML mapping or a
       // path to a file in the repository) and `--settings` (JSON or a path). One that cannot be read
       // is unknown: the step may then do anything.
-      let settingsUnreadable: string | undefined;
+      let settingsUnreadable: string | undefined = wrapsAgent ? `local action ${uses}` : undefined;
       const settingsEnv: Record<string, unknown>[] = [];
       const readSettings = (value: unknown): Record<string, unknown> | undefined => {
         if (value === undefined) return undefined;
@@ -423,7 +454,10 @@ export function parseWorkflow(
         (action === 'copilot-cli' && /\s--(allow-all-tools|allow-all|yolo)\b/.test(` ${run}`)) ||
         (action === 'gemini-cli' &&
           (/\s(--yolo|-y|--approval-mode[= ]yolo)(\s|$)/.test(` ${run} `) ||
-            (GEMINI_ACTION.test(uses) && /yolo/i.test(JSON.stringify(inputs)))));
+            (GEMINI_ACTION.test(uses) &&
+              /approval_?mode\\?"?\s*:\s*\\?"?yolo|--yolo\b|approval-mode[= ]yolo/i.test(
+                JSON.stringify(Object.fromEntries(Object.entries(inputs).filter(([key]) => key !== 'prompt'))),
+              ))));
       const skip =
         cliAllowAll ||
         flags.skip ||
@@ -447,21 +481,31 @@ export function parseWorkflow(
       // handed to the agent as data. Inputs that configure tools (MCP servers, settings) are.
       const agentText = JSON.stringify([
         ...[step['env'], job['env'], workflowEnv].flatMap(env =>
-          isRecord(env) ? Object.entries(env).filter(([key]) => !HARNESS_SECRET_VARIABLES.has(key)) : [],
+          isRecord(env) ? Object.entries(env).filter(([key, value]) => !isHarnessCredential(key, value)) : [],
         ),
         ...['mcp_config', 'settings', 'claude_args'].map(key => inputs[key] ?? ''),
       ]);
       const agentSecrets = secrets.filter(secret => agentText.includes(`secrets.${secret.name}`));
       const mcpText = input('mcp_config') ?? flags.mcpConfig;
+      const mcpKey = input('mcp_config') !== undefined ? 'mcp_config' : 'claude_args';
       let servers: McpServer[] = [];
-      if (mcpText && mcpText.trim().startsWith('{')) {
+      let mcpUnreadable: string | undefined;
+      if (mcpText !== undefined && mcpText.trim()) {
+        // Inline JSON, or a path to a file in the repository, as `--settings` is read.
+        const trimmed = mcpText.trim();
+        const inline = /^(\{|\/\/|\/\*)/.test(trimmed);
+        const content = inline ? trimmed : /\$\{\{/.test(trimmed) ? undefined : readFile(trimmed.replace(/^\.\//, ''));
         try {
-          const mcpKey = input('mcp_config') !== undefined ? 'mcp_config' : 'claude_args';
-          servers = serversFromObject(JSON.parse(mcpText), path, mcpText, 'workflow', inputLine(mcpKey) - 1, declared);
+          if (content === undefined) throw new Error('not read');
+          servers = inline
+            ? serversFromObject(parseJsonc(content), path, content, 'workflow', inputLine(mcpKey) - 1, declared)
+            : serversFromObject(parseJsonc(content), trimmed.replace(/^\.\//, ''), content, 'workflow', 0, declared);
         } catch {
-          servers = [];
+          mcpUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
         }
       }
+      if (mcpUnreadable !== undefined && settingsUnreadable === undefined)
+        settingsUnreadable = `MCP config ${mcpUnreadable}`;
       const tokenInput = asString(inputs['github_token']);
       const tokenEnvValue = ['GH_TOKEN', 'GITHUB_TOKEN']
         .map(name => envValue(name))
@@ -491,6 +535,7 @@ export function parseWorkflow(
         job: jobName,
         step: asString(step['name']) ?? asString(step['id']) ?? `step ${index + 1}`,
         action,
+        ...(uses ? { uses } : {}),
         location: { file: path, line },
         triggers,
         triggerLocation,

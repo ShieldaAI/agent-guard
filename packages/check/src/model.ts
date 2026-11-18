@@ -19,7 +19,7 @@ import {
   type DeclaredServer,
   type McpServer,
 } from './mcp.js';
-import { PACKAGE_SOURCE_FILES, packageSourceEcosystem } from './source.js';
+import { PACKAGE_SOURCE_FILES, packageSourceEcosystem, SKIPPED_DIRECTORIES } from './source.js';
 import { asString, asStringArray, frontmatter, isRecord, lenientFrontmatter, lineOf, parseJsonc } from './text.js';
 import {
   parseCodex,
@@ -110,6 +110,13 @@ export interface Project {
   readonly truncated: boolean;
   /** Agent definitions whose settings could not be parsed (invalid front matter or YAML). */
   readonly unparsed: readonly { readonly path: string; readonly error: string }[];
+  /** gh-aw lock files judged from their source, with both texts (to catch a lock edited alone). */
+  readonly compiledLocks: readonly { readonly lock: string; readonly lockText: string; readonly sourceText: string }[];
+  /** `allowed-tools` from skills and commands: tools that run without asking while one is active. */
+  readonly skillAllow: readonly PermissionRule[];
+  /** Paths that are configuration only when letter case is ignored, and case collisions. */
+  readonly caseVariants: readonly string[];
+  readonly caseCollisions: readonly (readonly [string, string])[];
 }
 
 /**
@@ -258,7 +265,17 @@ export interface BuildOptions {
 
 /** Variables that send an agent's model traffic to another endpoint. */
 export const MODEL_ENDPOINT =
-  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS)$/i;
+  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|ANTHROPIC_FOUNDRY_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|NODE_OPTIONS)$/i;
+
+/**
+ * How serious an endpoint variable in the repository's own Claude Code settings is: a model base
+ * URL sends every developer's key and context to that host, and NODE_OPTIONS can load code into
+ * Claude Code itself (high); a proxy or CA bundle can intercept traffic but is often a corporate
+ * gateway (medium).
+ */
+function endpointSeverity(name: string): 'high' | 'medium' {
+  return /PROXY|EXTRA_CA_CERTS/i.test(name) ? 'medium' : 'high';
+}
 
 /**
  * Whether a file the scanner could not read is agent configuration. `mcp.json` and `plugin.json`
@@ -311,6 +328,7 @@ export function buildProject(
   const pluginUnknownHooks = new Map<string, Location>();
   const cursorCli: TextFile[] = [];
   const unparsed: { path: string; error: string }[] = [];
+  const compiledLocks: { lock: string; lockText: string; sourceText: string }[] = [];
   /** The first VS Code and Cursor MCP files: the IDE agent exists even when they list no server. */
   const ideFiles: { vscode?: string; cursor?: string } = {};
   const openCode: TextFile[] = [];
@@ -548,23 +566,44 @@ export function buildProject(
         pluginSources.push(...parsePluginSettings(path, text));
       } else if (parent === '.codex' && name === 'config.toml') others.push(parseCodex(path, text, declaredServers));
       else if (parent === '.gemini' && name === 'settings.json') others.push(parseGemini(path, text, declaredServers));
-      else if (parent === '.claude-plugin' && name === 'marketplace.json')
+      else if (parent === '.claude-plugin' && name === 'marketplace.json') {
         pluginSources.push(...parseMarketplace(path, text));
-      else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code', declaredServers));
+        // A plugin the marketplace keeps in a folder the scan skips (vendor/, dist/, build/, ...)
+        // is never read: its hooks and servers are unknown, reported at high.
+        const data = parseJsonc(text);
+        const plugins = isRecord(data) && Array.isArray(data['plugins']) ? data['plugins'] : [];
+        const base = path.split('/').slice(0, -2);
+        for (const plugin of plugins) {
+          const where = isRecord(plugin) ? plugin['source'] : undefined;
+          if (typeof where !== 'string') continue;
+          const parts = [...base, ...where.split('/')].filter(part => part !== '' && part !== '.');
+          if (parts.some(part => SKIPPED_DIRECTORIES.has(part)))
+            unrecognized.push({
+              agent: `Plugin ${isRecord(plugin) ? (asString(plugin['name']) ?? where) : where}`,
+              setting: 'source',
+              value: where,
+              assumed: 'it is in a folder the scan skips, so its hooks and servers may do anything',
+              location: { file: path, line: lineOf(text, JSON.stringify(where)) || 1 },
+              severity: 'high',
+            });
+        }
+      } else if (name === '.mcp.json') servers.push(...parseMcpConfig(path, text, 'claude-code', declaredServers));
       else if (path.endsWith('.vscode/mcp.json') && (ideFiles.vscode ??= path))
         servers.push(...parseMcpConfig(path, text, 'vscode', declaredServers));
       else if (path.endsWith('.cursor/mcp.json') && (ideFiles.cursor ??= path))
         servers.push(...parseMcpConfig(path, text, 'cursor', declaredServers));
       else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name)) {
-        // A gh-aw lock file is judged from its source: only a `.lock.yml` with the gh-aw header and
-        // a gh-aw `.md` beside it. Any other file is a workflow, whatever its first line says.
-        if (compiledFromSource(path, text)) continue;
-        workflows.push(
-          ...parseWorkflow(path, text, declaredServers, named => {
-            const relative = safeRelative(named);
-            return relative === undefined ? undefined : source.readNamed(relative);
-          }),
-        );
+        // A gh-aw lock file (a `.lock.yml` with the gh-aw header and a gh-aw `.md` beside it) is
+        // judged from its source; any other file is a workflow, whatever its first line says. A
+        // compiled lock is judged from its source, except agent actions gh-aw never generates:
+        // a lock that uses claude-code-action, codex-action or run-gemini-cli was edited by hand.
+        const compiled = compiledFromSource(path, text);
+        if (compiled) compiledLocks.push({ lock: path, lockText: text, sourceText: sourceOf(path) ?? '' });
+        const steps = parseWorkflow(path, text, declaredServers, named => {
+          const relative = safeRelative(named);
+          return relative === undefined ? undefined : source.readNamed(relative);
+        });
+        workflows.push(...(compiled ? steps.filter(step => step.uses !== undefined) : steps));
       } else if (name === 'CODEOWNERS') codeowners ??= { path, text };
       else if (path === 'package.json') {
         const data = JSON.parse(text) as unknown;
@@ -641,6 +680,20 @@ export function buildProject(
 
   // User-scope and managed servers are judged by the server rules (pinning, secrets, policy) too.
   servers.push(...userServers, ...localScopeServers);
+  // Skills and commands can list `allowed-tools`: while one is active those tools run without
+  // asking, so they count as allow rules for the project they belong to.
+  const skillAllow = new Map<string, PermissionRule[]>();
+  for (const prompt of prompts) {
+    if (!/(^|\/)\.claude\/(skills|commands)\//.test(prompt.path)) continue;
+    const parsed = frontmatter(prompt.text);
+    const data = parsed.error ? (lenientFrontmatter(prompt.text) ?? {}) : parsed.data;
+    const tools = data['allowed-tools'];
+    if (tools === undefined) continue;
+    const line = prompt.text.split('\n').findIndex(item => item.startsWith('allowed-tools:')) + 1 || 1;
+    const rules = asStringArray(tools).map(raw => parseRule(raw, { file: prompt.path, line }));
+    const dir = projectDir(prompt.path);
+    skillAllow.set(dir, [...(skillAllow.get(dir) ?? []), ...rules]);
+  }
   const agents: Agent[] = [];
   // User and managed settings apply to every project; Claude Code runs at the root with them alone.
   const userLevel = [
@@ -651,6 +704,7 @@ export function buildProject(
   const dirs = new Set<string>(
     [
       ...settings.map(file => projectDir(file.path)),
+      ...skillAllow.keys(),
       ...servers.filter(server => server.client === 'claude-code').map(server => projectDir(server.location.file)),
       ...subagents.map(item => item.projectDir),
       ...(userLevel.length || userServers.length || localScopeServers.length ? [''] : []),
@@ -668,7 +722,7 @@ export function buildProject(
       ...userServers,
       ...(dir === '' ? localScopeServers : []),
     ];
-    const allow = [...local, ...userLevel].flatMap(file => file.allow);
+    const allow = [...[...local, ...userLevel].flatMap(file => file.allow), ...(skillAllow.get(dir) ?? [])];
     const deny = [...local, ...userLevel].flatMap(file => file.deny);
     // Managed settings win, then the project's own (local before shared), then the user's.
     const chosen =
@@ -705,7 +759,7 @@ export function buildProject(
               'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
             location: entry.location,
             // In the repository's own settings it sends every developer's key and context there.
-            ...(local.includes(file) ? { severity: 'high' as const } : {}),
+            ...(local.includes(file) ? { severity: endpointSeverity(entry.name) } : {}),
           });
     // Claude Code's Bash sandbox: sandboxed commands run and write without asking unless
     // autoAllowBashIfSandboxed is false. Network reach is left as the rules give it: a command can
@@ -1156,5 +1210,9 @@ export function buildProject(
     linkedFiles: (source.linkedFiles ?? []).filter(path => isConfigPath(path, inputs)),
     truncated: source.truncated ?? false,
     unparsed: [...unparsed, ...others.flatMap(other => other.unparsed ?? [])],
+    compiledLocks,
+    skillAllow: [...skillAllow.values()].flat(),
+    caseVariants: [...(source.caseVariants ?? [])],
+    caseCollisions: [...(source.caseCollisions ?? [])],
   };
 }

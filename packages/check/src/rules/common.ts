@@ -110,6 +110,7 @@ export function agentServers(project: Project): McpServer[] {
 export function allowRules(project: Project): PermissionRule[] {
   return [
     ...project.settings.flatMap(file => file.allow),
+    ...project.skillAllow,
     ...project.workflows.flatMap(step => step.allowedTools),
     ...project.otherAllow,
   ];

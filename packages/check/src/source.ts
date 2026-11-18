@@ -6,8 +6,8 @@ import { isAbsolute, join, relative, sep } from 'node:path';
 export const MAX_FILE_BYTES = 1_048_576;
 /** The walk stops after visiting this many directory entries. */
 export const MAX_ENTRIES = 200_000;
-const MAX_DEPTH = 12;
-const SKIPPED_DIRECTORIES = new Set([
+const MAX_DEPTH = 32;
+export const SKIPPED_DIRECTORIES = new Set([
   '.git',
   'node_modules',
   'dist',
@@ -38,8 +38,12 @@ export interface FileSource {
   readonly skippedFiles?: readonly string[];
   /** Links where configuration lives that were not followed (they leave the root or do not resolve). */
   readonly linkedFiles?: readonly string[];
-  /** Whether the walk stopped at MAX_ENTRIES, so later files were never looked at. */
+  /** Whether the walk stopped (MAX_ENTRIES, MAX_DEPTH), so some files were never looked at. */
   readonly truncated?: boolean;
+  /** Paths that are configuration only on a case-insensitive file system (`.CLAUDE/settings.json`). */
+  readonly caseVariants?: readonly string[];
+  /** Pairs of paths that differ only in letter case, where one touches configuration. */
+  readonly caseCollisions?: readonly (readonly [string, string])[];
 }
 
 /** A repo-relative path with no `..`, no absolute prefix and no empty segment; undefined otherwise. */
@@ -72,6 +76,31 @@ export function linkTarget(linkPath: string, target: string): string | undefined
     }
   }
   return out.length ? out.join('/') : undefined;
+}
+
+/**
+ * Whether a path is configuration once letter case is ignored, as on macOS and Windows, where
+ * `.CLAUDE/settings.json` is the file Claude Code opens as `.claude/settings.json`.
+ */
+export function foldsToCandidate(path: string): boolean {
+  const folded = foldPath(path);
+  if (folded === path || !isCandidate(folded)) return false;
+  // A lowercase `agents.md` in a docs folder is a page about agents: instruction names count only
+  // at the root or inside an agent folder. Folder and settings names count anywhere.
+  if (!/(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL)\.md$/.test(folded)) return true;
+  return !path.includes('/') || /^\.(claude|codex|gemini|cursor|github|kiro|opencode|windsurf)\/[^/]+$/i.test(path);
+}
+
+/** A path with letter case folded the way the agent would find it (`claude.md` → `CLAUDE.md`). */
+export function foldPath(path: string): string {
+  return path
+    .toLowerCase()
+    .replace(
+      /(^|\/)claude(\.local)?\.md$/,
+      (_, start: string, local: string | undefined) => `${start}CLAUDE${local ?? ''}.md`,
+    )
+    .replace(/(^|\/)(agents|gemini|skill)\.md$/, (_, start: string, name: string) => `${start}${name.toUpperCase()}.md`)
+    .replace(/(^|\/)codeowners$/, '$1CODEOWNERS');
 }
 
 /** Instruction files: text an agent reads, as opposed to settings or agent definitions that grant tools. */
@@ -199,6 +228,8 @@ export class DirectorySource implements FileSource {
   skipped = 0;
   readonly skippedFiles: string[] = [];
   readonly linkedFiles: string[] = [];
+  readonly caseVariants: string[] = [];
+  readonly caseCollisions: [string, string][] = [];
   truncated = false;
   /** Candidate links that point to a regular file inside the root: read through their target. */
   readonly #aliases = new Map<string, string>();
@@ -223,14 +254,29 @@ export class DirectorySource implements FileSource {
     })();
     // `directory` is a real folder; `prefix` is the repository path it is seen at (a folder link
     // inside the root is walked at the link's own path, as the agent sees it).
+    // Real folders on the current path: a folder link back to one of them is a loop, not more files.
+    const open = new Set<string>();
     const walk = (directory: string, prefix: string, depth: number, linked = false): void => {
-      if (depth > MAX_DEPTH || entries > MAX_ENTRIES) return;
+      if (entries > MAX_ENTRIES) return;
       let names: string[];
       try {
         names = readdirSync(directory).sort();
       } catch {
         return;
       }
+      if (depth > MAX_DEPTH) {
+        // Deeper folders are not looked at: say so rather than skip them silently.
+        if (names.length) this.truncated = true;
+        return;
+      }
+      let real: string;
+      try {
+        real = realpathSync.native(directory);
+      } catch {
+        real = directory;
+      }
+      if (open.has(real)) return;
+      open.add(real);
       for (const name of names) {
         entries += 1;
         if (entries > MAX_ENTRIES) {
@@ -269,6 +315,7 @@ export class DirectorySource implements FileSource {
           if (!SKIPPED_DIRECTORIES.has(name)) walk(full, path, depth + 1, linked);
           continue;
         }
+        if (info.isFile() && !isCandidate(path) && foldsToCandidate(path)) this.caseVariants.push(path);
         if (!info.isFile() || !isCandidate(path)) continue;
         if (info.size > MAX_FILE_BYTES) {
           this.skipped += 1;
@@ -279,9 +326,13 @@ export class DirectorySource implements FileSource {
         if (linked) this.#aliases.set(path, relative(root, full).split(sep).join('/'));
         found.push(path);
       }
+      open.delete(real);
     };
     walk(this.#root, '', 0);
-    found.splice(0, found.length, ...dedupeLinked(found, this.#aliases));
+    // Assigned, not spread: a spread of a very large list overflows the call stack.
+    const kept = dedupeLinked(found, this.#aliases);
+    found.length = 0;
+    for (const path of kept) found.push(path);
     this.#paths = found;
     return found;
   }
@@ -355,6 +406,8 @@ export class GitSource implements FileSource {
   skipped = 0;
   readonly skippedFiles: string[] = [];
   readonly linkedFiles: string[] = [];
+  readonly caseVariants: string[] = [];
+  readonly caseCollisions: [string, string][] = [];
   /** Candidate links whose target is a regular file in the tree: read as that file. */
   readonly #aliases = new Map<string, string>();
   readonly #root: string;
@@ -403,44 +456,91 @@ export class GitSource implements FileSource {
     // Links are read through their target when it is in the tree and reached without passing
     // through another link: a file at the link's path, or a folder walked at the link's path.
     if (links.length) {
-      const texts = this.#git(['cat-file', '--batch'], links.map(link => link.object).join('\n') + '\n').toString(
-        'utf8',
-      );
+      // Kept as bytes: sizes from git are byte counts, so decoding first would misalign targets.
+      const batch = this.#git(['cat-file', '--batch'], links.map(link => link.object).join('\n') + '\n');
+      const targets = new Map<string, string>();
+      let offset = 0;
+      for (const link of links) {
+        const header = batch.indexOf(0x0a, offset);
+        const size = Number(batch.subarray(offset, header).toString('utf8').split(' ')[2]);
+        targets.set(link.path, batch.subarray(header + 1, header + 1 + size).toString('utf8'));
+        offset = header + 1 + size + 1;
+      }
       const passesLink = (path: string) => {
         const parts = path.split('/');
         for (let depth = 1; depth <= parts.length; depth += 1)
           if (tree.get(parts.slice(0, depth).join('/'))?.mode === '120000') return true;
         return false;
       };
-      let offset = 0;
+      // Sorted paths, so the files below a folder are one range rather than a scan of the tree.
+      const sorted = [...tree.keys()].sort();
+      const below = (folder: string): string[] => {
+        const start = `${folder}/`;
+        let low = 0;
+        let high = sorted.length;
+        while (low < high) {
+          const middle = (low + high) >> 1;
+          if (sorted[middle]! < start) low = middle + 1;
+          else high = middle;
+        }
+        const out: string[] = [];
+        for (let index = low; index < sorted.length && sorted[index]!.startsWith(start); index += 1)
+          out.push(sorted[index]!);
+        return out;
+      };
+      /** A link's target file in the tree, when it resolves without passing through another link. */
+      const fileOf = (linkPath: string): { path: string; object: string } | undefined => {
+        const text = targets.get(linkPath);
+        const resolved = text === undefined ? undefined : linkTarget(linkPath, text);
+        if (resolved === undefined || passesLink(resolved)) return undefined;
+        const entry = tree.get(resolved);
+        return entry && entry.mode !== '120000' ? { path: resolved, object: entry.object } : undefined;
+      };
       for (const link of links) {
-        const header = texts.indexOf('\n', offset);
-        const size = Number(texts.slice(offset, header).split(' ')[2]);
-        const target = texts.slice(header + 1, header + 1 + size);
-        offset = header + 1 + size + 1;
-        const resolved = linkTarget(link.path, target);
+        const text = targets.get(link.path)!;
+        const resolved = linkTarget(link.path, text);
         const usable = resolved !== undefined && !passesLink(resolved);
-        const entry = usable ? tree.get(resolved!) : undefined;
-        if (entry) {
+        const file = fileOf(link.path);
+        if (file) {
           if (isCandidate(link.path)) {
-            this.#aliases.set(link.path, resolved!);
-            candidates.push({ path: link.path, object: entry.object });
+            this.#aliases.set(link.path, file.path);
+            candidates.push({ path: link.path, object: file.object });
           }
           continue;
         }
-        const below = usable ? [...tree].filter(([path]) => path.startsWith(`${resolved}/`)) : [];
-        if (below.length) {
-          for (const [path, item] of below) {
+        const inside = usable ? below(resolved!) : [];
+        if (inside.length) {
+          for (const path of inside) {
             const seen = `${link.path}${path.slice(resolved!.length)}`;
-            if (item.mode === '120000' || !isCandidate(seen)) continue;
-            this.#aliases.set(seen, path);
-            candidates.push({ path: seen, object: item.object });
+            const item = tree.get(path)!;
+            // A link inside the linked folder: followed one step if it lands on a file in the tree.
+            const nested = item.mode === '120000' ? fileOf(path) : { path, object: item.object };
+            if (nested === undefined) {
+              if (isCandidate(seen) || CONFIG_FOLDER.test(seen)) this.linkedFiles.push(seen);
+              continue;
+            }
+            if (!isCandidate(seen)) continue;
+            this.#aliases.set(seen, nested.path);
+            candidates.push({ path: seen, object: nested.object });
           }
           continue;
         }
         if (isCandidate(link.path) || CONFIG_FOLDER.test(link.path)) this.linkedFiles.push(link.path);
       }
     }
+    // Paths that differ only in letter case are one file on macOS and Windows: which one the agent
+    // gets is up to the checkout, so a collision that touches configuration is reported.
+    const byFold = new Map<string, string>();
+    for (const path of tree.keys()) {
+      const fold = path.toLowerCase();
+      const other = byFold.get(fold);
+      if (other !== undefined && (isCandidate(path) || isCandidate(other) || foldsToCandidate(path))) {
+        this.caseCollisions.push([other, path]);
+      } else byFold.set(fold, path);
+    }
+    for (const path of tree.keys())
+      if (!isCandidate(path) && foldsToCandidate(path) && tree.get(path)!.mode !== '120000')
+        this.caseVariants.push(path);
     const sizes = candidates.length
       ? this.#git(['cat-file', '--batch-check=%(objectsize)'], candidates.map(item => item.object).join('\n') + '\n')
           .toString('utf8')

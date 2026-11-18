@@ -5,7 +5,8 @@ import type { Bypass, ModelChoice, OtherAgent } from './formats.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
 import { parse as parseYaml } from 'yaml';
 import {
-  HARNESS_SECRET_VARIABLES,
+  AGENT_ACTION_TEXT,
+  isHarnessCredential,
   MODEL_SECRETS,
   PUBLISHING_SCOPES,
   SECRET_REF,
@@ -788,9 +789,15 @@ export function parseAgenticWorkflow(
     if (AGENTIC_UNTRUSTED.has(trigger)) add('untrustedInput', `trigger ${trigger}`, at('on'), 'yes', 'trigger');
   const tools = isRecord(data['tools']) ? data['tools'] : {};
   const allow: PermissionRule[] = [];
-  // `network: { allowed: ["*"] }` opens gh-aw's firewall to every host.
+  // `network: { allowed: ["*"] }` opens gh-aw's firewall to every host; `sandbox: { agent: false }`
+  // removes the agent's sandbox, firewall included.
   const network = data['network'];
-  const openNetwork = network === '*' || (isRecord(network) && asStringArray(network['allowed'] ?? []).includes('*'));
+  const sandbox = own['sandbox'];
+  const openNetwork =
+    network === '*' ||
+    (isRecord(network) && asStringArray(network['allowed'] ?? []).includes('*')) ||
+    sandbox === false ||
+    (isRecord(sandbox) && sandbox['agent'] === false);
   // The GitHub tool is on unless set to false: issue and pull-request text from anyone. Reading the
   // repository it runs in is not counted as private data, as for other workflow agents. With
   // read-only off it can also write and post.
@@ -851,7 +858,7 @@ export function parseAgenticWorkflow(
   // and telemetry. The safe-output jobs run apart from the agent.
   const engineEnv = isRecord(data['engine']) && isRecord(data['engine']['env']) ? data['engine']['env'] : {};
   const agentEnv = Object.fromEntries(
-    Object.entries(engineEnv).filter(([variable]) => !HARNESS_SECRET_VARIABLES.has(variable)),
+    Object.entries(engineEnv).filter(([variable, value]) => !isHarnessCredential(variable, value)),
   );
   const agentData = [data['env'], data['mcp-servers'], data['tools'], agentEnv];
   const secrets = new Set<string>();
@@ -887,6 +894,24 @@ export function parseAgenticWorkflow(
   // not in this file.
   const engine = isRecord(data['engine']) ? asString(data['engine']['id']) : asString(data['engine']);
   if (engine !== undefined && !AGENTIC_ENGINES.has(engine)) unknownReach('engine', engine, at('engine'));
+  // Custom jobs and steps compile into the lock that runs: one that starts an agent of its own is
+  // not modelled, so it is unknown reach, reported at high.
+  for (const key of ['jobs', 'steps', 'pre-steps', 'post-steps', 'pre-agent-steps'])
+    if (own[key] !== undefined && AGENT_ACTION_TEXT.test(JSON.stringify(own[key]))) {
+      unknownReach(key, 'runs an agent', at(key));
+      unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
+    }
+  // Secrets the workflow maps for the agent are data it holds.
+  if (own['secrets'] !== undefined)
+    for (const match of JSON.stringify(own['secrets']).matchAll(SECRET_REF))
+      if (!MODEL_SECRETS.test(match[1]!))
+        add(
+          'privateData',
+          `secret ${match[1]}`,
+          { file: path, line: lineOf(text, `secrets.${match[1]}`) || 1 },
+          'yes',
+          'secret',
+        );
   // Engine settings beyond these (args, command, steps, ...) change how the agent runs.
   if (isRecord(data['engine']))
     for (const key of Object.keys(data['engine']))
@@ -894,10 +919,13 @@ export function parseAgenticWorkflow(
         unknownReach('engine', key, at(key));
   if (unreadImports.length) {
     unknownReach('imports', unreadImports.map(item => item.what).join(', '), at('imports'));
-    if (unreadImports.some(item => !item.pinned)) {
-      const last = unrecognized.at(-1)!;
-      unrecognized[unrecognized.length - 1] = { ...last, severity: 'high' };
-    }
+    // Unpinned or local unread imports are high; one pinned to a commit of another repository is
+    // fixed but unseen content chosen by its author: medium, so it is visible without failing.
+    const last = unrecognized.at(-1)!;
+    unrecognized[unrecognized.length - 1] = {
+      ...last,
+      severity: unreadImports.some(item => !item.pinned) ? 'high' : 'medium',
+    };
   }
   if (ownParsed.error) {
     unknownReach('front matter', ownParsed.error, anchor);

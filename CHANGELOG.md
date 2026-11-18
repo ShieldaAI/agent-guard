@@ -46,6 +46,17 @@
   what they post unless threat detection is off), secrets, tokens, permissions, MCP servers
   (including containers) and repository imports three levels deep. A custom engine, an import
   that cannot be read, an unmodelled tool or custom safe-output jobs are unknown reach.
+- Fix (sixth review): gh-aw lock files are read for agent actions gh-aw never generates, and
+  `--base` reports a lock changed apart from its source; gh-aw `jobs`/`steps` that start an
+  agent, `sandbox: { agent: false }` and `secrets` are modelled; agent actions match any case and
+  sub-path (`base-action`), and local actions that wrap an agent are agents; harness credentials
+  must carry a model key to be excluded; `--mcp-config` paths are read; skill and command
+  `allowed-tools` are allow rules; case variants and case collisions are reported; a marketplace
+  plugin in a skipped folder, a Codex provider endpoint and NODE_OPTIONS in settings are high;
+  pinned remote gh-aw imports are medium; Gemini runs without `-p` are detected. Robustness:
+  folder-link loops are walked once, the walk reports folders deeper than 32 levels (medium),
+  git link targets are read by bytes, nested links in git trees are followed, and very large
+  repositories no longer crash the walk.
 - Fix (fifth review): links are resolved as the operating system resolves them and folder links
   inside the repository are walked at their path; a gh-aw header hides nothing unless the file is
   a `.lock.yml` with a gh-aw source beside it; linked agent definitions are kept; harness secrets

@@ -168,4 +168,9 @@ export interface ScanResult {
     readonly agentGuard: readonly { readonly path: string; readonly kind: string }[];
     readonly live: { readonly url: string; readonly notes: readonly string[] } | null;
   };
+  /**
+   * gh-aw lock files judged from their source, with digests of both. `diffScans` reports a lock
+   * that changed while its source did not: what runs is the lock, and only the source was judged.
+   */
+  readonly compiledLocks?: readonly { readonly lock: string; readonly lockHash: string; readonly sourceHash: string }[];
 }

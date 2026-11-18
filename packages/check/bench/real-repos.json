@@ -13,9 +13,10 @@
     {
       "repo": "PostHog/posthog",
       "commit": "89e2b9090f4142944efff32be147ea17a69b5f08",
-      "agents": 4,
+      "agents": 5,
       "expected": {
-        "AGC-COV-001:medium": 1,
+        "AGC-COV-001:medium": 2,
+        "AGC-PERM-003:high": 1,
         "AGC-SUP-004:medium": 1,
         "AGC-TXT-002:medium": 1
       },
@@ -35,9 +36,10 @@
     {
       "repo": "anthropics/claude-code",
       "commit": "eba1240d09fd468b984a2a317c77cb48e1e51d2f",
-      "agents": 8,
+      "agents": 9,
       "expected": {
         "AGC-LIM-001:medium": 1,
+        "AGC-PERM-005:medium": 1,
         "AGC-TRG-001:high": 2,
         "AGC-TRG-001:medium": 1
       }
@@ -57,7 +59,7 @@
       "commit": "ce8b2629efe8b24048b127b4c79af1e9cbab93d4",
       "agents": 12,
       "expected": {
-        "AGC-COV-001:medium": 2
+        "AGC-COV-001:medium": 3
       }
     },
     {
@@ -118,7 +120,7 @@
     {
       "repo": "denoland/deno",
       "commit": "e7b39ebd55c85aaf6a29290c1f5a99e2e21e09dd",
-      "agents": 0,
+      "agents": 1,
       "expected": {}
     },
     {
@@ -214,13 +216,16 @@
       "repo": "oven-sh/bun",
       "commit": "d85aed4f0987fde4192fbc4f448538fb022f8918",
       "agents": 1,
-      "expected": {}
+      "expected": {
+        "AGC-PERM-003:high": 2
+      }
     },
     {
       "repo": "pydantic/pydantic-ai",
       "commit": "a9db02ed3f86668eaaad8bdc6ecc9758f8a5b970",
       "agents": 17,
       "expected": {
+        "AGC-CFG-001:medium": 12,
         "AGC-COV-001:medium": 2,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-005:medium": 1,
