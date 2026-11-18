@@ -45,12 +45,49 @@ export interface Grant {
   readonly location: Location;
 }
 
-export type AgentKind = 'claude-code' | 'subagent' | 'workflow' | 'mcp-client' | 'codex' | 'gemini';
+export type AgentKind =
+  | 'claude-code'
+  | 'subagent'
+  | 'workflow'
+  | 'mcp-client'
+  | 'codex'
+  | 'gemini'
+  | 'opencode'
+  | 'cursor'
+  | 'copilot'
+  | 'kiro'
+  | 'plugin';
 
-/** Something that mediates tool calls at runtime. */
-export interface Mediator {
-  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway';
+/**
+ * A setting the scanner does not model: an unknown value, or a feature it does not evaluate. The
+ * result says what was assumed, which is never safer than the worst case it could stand for.
+ */
+export interface Unrecognized {
+  readonly agent: string;
+  readonly setting: string;
+  readonly value: string;
+  readonly assumed: string;
   readonly location: Location;
+  /**
+   * Set when the gap is one a change could use to hide authority (a file outside the repository,
+   * an import at a moving ref, a model endpoint redirect): reported at this severity, not as a note.
+   */
+  readonly severity?: Severity;
+}
+
+/**
+ * Something that mediates tool calls at runtime, and which calls it sees. A pre-tool hook sees the
+ * tools its `matcher` names; Agent Guard or a gateway reached as an MCP server sees only the calls
+ * made through that `server`; gh-aw safe outputs see only what the agent asks to post. Every other
+ * call bypasses it.
+ */
+export interface Mediator {
+  readonly kind: 'agent-guard' | 'pre-tool-hook' | 'mcp-gateway' | 'safe-outputs' | 'auto-mode';
+  readonly location: Location;
+  /** For a hook: its matcher (`''` or `*` means every tool). */
+  readonly matcher?: string;
+  /** For Agent Guard or a gateway reached over MCP: the server's name in the agent's config. */
+  readonly server?: string;
 }
 
 export interface Agent {
@@ -131,4 +168,9 @@ export interface ScanResult {
     readonly agentGuard: readonly { readonly path: string; readonly kind: string }[];
     readonly live: { readonly url: string; readonly notes: readonly string[] } | null;
   };
+  /**
+   * gh-aw lock files judged from their source, with digests of both. `diffScans` reports a lock
+   * that changed while its source did not: what runs is the lock, and only the source was judged.
+   */
+  readonly compiledLocks?: readonly { readonly lock: string; readonly lockHash: string; readonly sourceHash: string }[];
 }

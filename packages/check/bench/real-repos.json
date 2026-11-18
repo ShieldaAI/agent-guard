@@ -1,46 +1,60 @@
 {
-  "description": "Public repositories scanned at pinned commits. Every critical, high and medium finding listed under expected was reviewed by hand as a true positive (2026-11). run.mjs --real re-scans them and reports any difference.",
-  "reviewed": "2026-11-16",
+  "description": "Public repositories scanned at pinned commits. Every critical, high and medium finding listed under expected was reviewed by hand; the ones under falsePositives were judged false positives. run.mjs --real re-scans them and reports any difference.",
+  "reviewed": "2026-11-18",
   "repos": [
     {
       "repo": "BerriAI/litellm",
       "commit": "2aa57d7e0492f8cbd91f411a6e7005d4f780d620",
       "agents": 1,
-      "expected": {}
-    },
-    {
-      "repo": "PostHog/posthog",
-      "commit": "89e2b9090f4142944efff32be147ea17a69b5f08",
-      "agents": 3,
       "expected": {
         "AGC-COV-001:medium": 1
       }
     },
     {
-      "repo": "anthropics/claude-agent-sdk-python",
-      "commit": "4720d367f7db9d5df8a166c74d7f36a538ac8c34",
+      "repo": "PostHog/posthog",
+      "commit": "89e2b9090f4142944efff32be147ea17a69b5f08",
       "agents": 5,
       "expected": {
+        "AGC-CFG-001:medium": 1,
+        "AGC-COV-001:high": 1,
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-003:high": 2,
+        "AGC-SUP-004:medium": 1,
+        "AGC-TXT-002:medium": 1
+      },
+      "falsePositives": {
+        "AGC-TXT-002:medium": 1
+      },
+      "notes": "AGC-TXT-002 in products/signals/skills/inbox-exploration/SKILL.md (\"Do not tell the user they hid a held-back report\") asks the agent not to make a false claim; it does not hide anything. Low-confidence text rule; kept as a known false positive."
+    },
+    {
+      "repo": "anthropics/claude-agent-sdk-python",
+      "commit": "4720d367f7db9d5df8a166c74d7f36a538ac8c34",
+      "agents": 6,
+      "expected": {
+        "AGC-CFG-001:high": 3,
+        "AGC-PER-002:medium": 2,
         "AGC-TRG-001:high": 1
       }
     },
     {
       "repo": "anthropics/claude-code",
       "commit": "eba1240d09fd468b984a2a317c77cb48e1e51d2f",
-      "agents": 3,
+      "agents": 9,
       "expected": {
-        "AGC-TRG-001:high": 2,
         "AGC-LIM-001:medium": 1,
+        "AGC-PERM-005:medium": 1,
+        "AGC-TRG-001:high": 2,
         "AGC-TRG-001:medium": 1
       }
     },
     {
       "repo": "anthropics/claude-code-action",
       "commit": "9fa68854da5fadef4ed3dce240325a0dfe251880",
-      "agents": 5,
+      "agents": 10,
       "expected": {
-        "AGC-TRG-001:high": 1,
         "AGC-LIM-001:medium": 1,
+        "AGC-TRG-001:high": 1,
         "AGC-TRG-001:medium": 1
       }
     },
@@ -49,14 +63,21 @@
       "commit": "ce8b2629efe8b24048b127b4c79af1e9cbab93d4",
       "agents": 12,
       "expected": {
-        "AGC-COV-001:medium": 2
+        "AGC-COV-001:medium": 3,
+        "AGC-PER-002:medium": 1,
+        "AGC-PERM-003:high": 1
       }
     },
     {
       "repo": "anthropics/claude-plugins-official",
       "commit": "b5b01ac4f889fec0c4c6bb89f27ca7c8574473f6",
-      "agents": 6,
-      "expected": {}
+      "agents": 63,
+      "expected": {
+        "AGC-COV-001:high": 2,
+        "AGC-PER-002:medium": 11,
+        "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 3
+      }
     },
     {
       "repo": "anthropics/skills",
@@ -68,16 +89,22 @@
       "repo": "astral-sh/uv",
       "commit": "d5c3f174417418c24ec3c276e01b0f62b961b13c",
       "agents": 10,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:high": 3,
+        "AGC-COV-001:medium": 10
+      }
     },
     {
       "repo": "browser-use/browser-use",
       "commit": "47fecddd8f3e6c80e92d7963bbffa28c40254820",
       "agents": 1,
       "expected": {
+        "AGC-COV-001:high": 1,
         "AGC-LIM-001:medium": 1,
-        "AGC-TRG-001:medium": 1,
-        "AGC-PERM-005:medium": 1
+        "AGC-PERM-003:high": 4,
+        "AGC-PERM-005:medium": 1,
+        "AGC-SUP-004:medium": 1,
+        "AGC-TRG-001:high": 1
       }
     },
     {
@@ -95,8 +122,10 @@
     {
       "repo": "cloudflare/workers-sdk",
       "commit": "c46d179e95fcf979ecc6fbea1b1d60ac4e2c6119",
-      "agents": 0,
-      "expected": {}
+      "agents": 2,
+      "expected": {
+        "AGC-PER-002:medium": 1
+      }
     },
     {
       "repo": "continuedev/continue",
@@ -107,31 +136,52 @@
     {
       "repo": "denoland/deno",
       "commit": "e7b39ebd55c85aaf6a29290c1f5a99e2e21e09dd",
-      "agents": 0,
-      "expected": {}
+      "agents": 1,
+      "expected": {
+        "AGC-COV-001:high": 1,
+        "AGC-PER-002:medium": 3,
+        "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 5,
+        "AGC-PERM-005:medium": 1
+      }
     },
     {
       "repo": "getsentry/sentry-mcp",
       "commit": "cfd76ae6cd79f8c0ad5f9aa32b4f8270ab386d3a",
-      "agents": 3,
+      "agents": 7,
       "expected": {
-        "AGC-PERM-003:high": 5,
+        "AGC-CFG-001:high": 5,
+        "AGC-CFG-001:medium": 1,
+        "AGC-COV-001:high": 1,
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-003:high": 26,
         "AGC-PERM-005:medium": 3,
-        "AGC-COV-001:medium": 2,
+        "AGC-SUP-004:medium": 1,
+        "AGC-TRI-001:critical": 1,
         "AGC-TRI-002:medium": 1
       }
     },
     {
       "repo": "github/github-mcp-server",
       "commit": "0663b830582af923e30fb14cb2e10dd3248baa86",
-      "agents": 0,
-      "expected": {}
+      "agents": 4,
+      "expected": {
+        "AGC-COV-001:medium": 1,
+        "AGC-TRI-002:medium": 1
+      }
     },
     {
       "repo": "google-gemini/gemini-cli",
       "commit": "4ed06ed0ddc523a6d356a4ad35ddfea331041888",
-      "agents": 0,
-      "expected": {}
+      "agents": 9,
+      "expected": {
+        "AGC-CFG-001:high": 1,
+        "AGC-CFG-001:medium": 5,
+        "AGC-SUP-004:medium": 2,
+        "AGC-TRG-001:high": 1,
+        "AGC-TRG-002:medium": 1,
+        "AGC-TRI-002:medium": 1
+      }
     },
     {
       "repo": "langchain-ai/langchainjs",
@@ -143,7 +193,10 @@
       "repo": "mastra-ai/mastra",
       "commit": "536faa650832fe08d5f3f9694faaeec2840a9a5b",
       "agents": 2,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:medium": 1,
+        "AGC-TXT-004:medium": 1
+      }
     },
     {
       "repo": "microsoft/playwright-mcp",
@@ -154,14 +207,18 @@
     {
       "repo": "microsoft/vscode",
       "commit": "9893f280efbceb0dd54b0327120977223e49af93",
-      "agents": 1,
-      "expected": {}
+      "agents": 2,
+      "expected": {
+        "AGC-SUP-004:medium": 1
+      }
     },
     {
       "repo": "modelcontextprotocol/inspector",
       "commit": "488c30d9d16e4993bc548ad298eb7450f5125c93",
       "agents": 2,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:medium": 1
+      }
     },
     {
       "repo": "modelcontextprotocol/servers",
@@ -172,29 +229,42 @@
     {
       "repo": "n8n-io/n8n",
       "commit": "c46e2579d1bec17921583174d3106745ab70565f",
-      "agents": 1,
-      "expected": {}
+      "agents": 2,
+      "expected": {
+        "AGC-CFG-001:high": 1,
+        "AGC-TXT-004:medium": 1
+      }
     },
     {
       "repo": "openai/codex",
       "commit": "aea4c6ee4b652d84b416731b11c2b8299d767209",
       "agents": 4,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 3
+      }
     },
     {
       "repo": "oven-sh/bun",
       "commit": "d85aed4f0987fde4192fbc4f448538fb022f8918",
       "agents": 1,
-      "expected": {}
+      "expected": {
+        "AGC-CFG-001:medium": 1,
+        "AGC-PERM-003:high": 6
+      }
     },
     {
       "repo": "pydantic/pydantic-ai",
       "commit": "a9db02ed3f86668eaaad8bdc6ecc9758f8a5b970",
-      "agents": 5,
+      "agents": 17,
       "expected": {
-        "AGC-TRG-001:medium": 2,
+        "AGC-CFG-001:medium": 12,
+        "AGC-COV-001:high": 5,
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-002:high": 1,
+        "AGC-PERM-003:high": 9,
         "AGC-PERM-005:medium": 1,
-        "AGC-COV-001:medium": 1
+        "AGC-TRG-001:high": 1,
+        "AGC-TRG-001:medium": 1
       }
     },
     {
@@ -206,7 +276,7 @@
     {
       "repo": "upstash/context7",
       "commit": "4087030ad2dc16578130e2dab1e48ba735f8ea38",
-      "agents": 3,
+      "agents": 7,
       "expected": {}
     },
     {

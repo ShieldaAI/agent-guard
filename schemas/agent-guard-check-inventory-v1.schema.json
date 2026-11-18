@@ -1,0 +1,280 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-check-inventory-v1.schema.json",
+  "title": "Agent Guard Check inventory, version 1",
+  "description": "What each AI agent configured in a repository can do, as `agent-guard-check --format inventory` writes it. Seven capabilities, each with how it is reached (with or without a person's approval) and the settings that grant it. A capability that is absent is `no`; `unknown` is never a promise of `no`. Evidence, not authorization: it states what the files allow, not what happened. Tools other than Agent Guard Check may write and read this format.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "kind",
+    "schemaVersion",
+    "tool",
+    "evidence",
+    "agents",
+    "summary",
+    "suppressed"
+  ],
+  "properties": {
+    "kind": {
+      "const": "agent-guard-check-inventory"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "tool": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "version"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        }
+      }
+    },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "files",
+        "agentGuard",
+        "live"
+      ],
+      "properties": {
+        "files": {
+          "const": true,
+          "description": "Repository files were read. Always true."
+        },
+        "agentGuard": {
+          "type": "array",
+          "description": "Agent Guard records that were read.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "path",
+              "kind"
+            ],
+            "properties": {
+              "path": {
+                "type": "string"
+              },
+              "kind": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "live": {
+          "description": "The Agent Map queried for live evidence, or null.",
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/agent"
+      }
+    },
+    "summary": {
+      "$ref": "#/$defs/counts",
+      "description": "Findings by severity, after suppressions."
+    },
+    "suppressed": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Findings suppressed inline, in .agc.yaml or by a baseline."
+    }
+  },
+  "$defs": {
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "critical",
+        "high",
+        "medium",
+        "low",
+        "info"
+      ],
+      "properties": {
+        "critical": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "high": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "medium": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "low": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "location": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "file",
+        "line"
+      ],
+      "properties": {
+        "file": {
+          "type": "string",
+          "description": "Repository-relative path, or ~/... and <managed>/... for settings outside the repository."
+        },
+        "line": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "privateData",
+        "untrustedInput",
+        "write",
+        "exec",
+        "egress",
+        "spend",
+        "selfModify"
+      ]
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "kind",
+        "name",
+        "definedIn",
+        "headless",
+        "runtimeChecks",
+        "capabilities",
+        "tools",
+        "findings"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Stable across commits: the kind and the file that defines the agent."
+        },
+        "kind": {
+          "type": "string",
+          "description": "Which tool runs the agent. New kinds may be added in a minor release; readers should accept unknown kinds.",
+          "examples": [
+            "claude-code",
+            "subagent",
+            "workflow",
+            "mcp-client",
+            "codex",
+            "gemini",
+            "opencode",
+            "cursor",
+            "copilot",
+            "kiro",
+            "plugin"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "definedIn": {
+          "$ref": "#/$defs/location"
+        },
+        "headless": {
+          "type": "boolean",
+          "description": "No person answers prompts, so paths that need approval are not reachable."
+        },
+        "runtimeChecks": {
+          "type": "array",
+          "description": "Kinds of runtime check configured. Each sees only some calls; see the JSON report for which.",
+          "items": {
+            "type": "string",
+            "enum": [
+              "agent-guard",
+              "pre-tool-hook",
+              "mcp-gateway",
+              "safe-outputs",
+              "auto-mode"
+            ]
+          }
+        },
+        "capabilities": {
+          "type": "object",
+          "description": "Capabilities the agent has, keyed by name. A capability that is not listed is no.",
+          "propertyNames": {
+            "$ref": "#/$defs/capability"
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "level",
+              "via"
+            ],
+            "properties": {
+              "level": {
+                "type": "string",
+                "enum": [
+                  "yes, no approval",
+                  "yes, with approval",
+                  "unknown"
+                ]
+              },
+              "via": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "The settings that grant it, as the configuration names them."
+              }
+            }
+          }
+        },
+        "tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Tools that carry a grant: Bash, WebFetch, mcp__<server>, ..."
+        },
+        "findings": {
+          "$ref": "#/$defs/counts"
+        }
+      }
+    }
+  }
+}

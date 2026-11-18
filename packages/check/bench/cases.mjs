@@ -778,9 +778,60 @@ export const CASES = [
     files: {
       '.claude/settings.json': settings(
         { allow: ['Bash'] },
-        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './check.sh' }] }] } },
+        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
       ),
     },
+  },
+  {
+    id: 'cov1-hook-misses-webfetch',
+    rule: 'AGC-COV-001',
+    expect: true,
+    files: {
+      '.claude/settings.json': settings(
+        { allow: ['Bash', 'WebFetch'] },
+        { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
+      ),
+    },
+  },
+  {
+    id: 'cov1-server-beside-gateway',
+    rule: 'AGC-COV-001',
+    expect: true,
+    files: {
+      '.claude/settings.json': settings({ allow: ['mcp__fetch'] }),
+      '.mcp.json': mcp({
+        gateway: { command: 'docker', args: ['mcp', 'gateway', 'run'] },
+        fetch: { command: 'uvx', args: ['mcp-server-fetch==2025.4.7'] },
+      }),
+    },
+  },
+
+  {
+    id: 'cfg1-unknown-mode',
+    rule: 'AGC-CFG-001',
+    expect: true,
+    files: { '.claude/settings.json': settings({ defaultMode: 'turbo' }) },
+  },
+  {
+    id: 'cfg1-known-mode',
+    rule: 'AGC-CFG-001',
+    expect: false,
+    files: { '.claude/settings.json': settings({ defaultMode: 'dontAsk' }) },
+  },
+
+  {
+    id: 'cfg2-padded-settings',
+    rule: 'AGC-CFG-002',
+    expect: true,
+    files: {
+      '.claude/settings.json': `${settings({ defaultMode: 'bypassPermissions' })}\n${' '.repeat(1_100_000)}\n`,
+    },
+  },
+  {
+    id: 'cfg2-small-settings',
+    rule: 'AGC-CFG-002',
+    expect: false,
+    files: { '.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }) },
   },
 
   // ---- policy as code ----

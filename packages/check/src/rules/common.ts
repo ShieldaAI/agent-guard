@@ -50,13 +50,81 @@ export const DESTRUCTIVE_TOOL =
   /(delete|remove|drop|destroy|truncate|merge|push|publish|deploy|send|post|transfer|pay|charge|refund|payment|wire)/i;
 export const DESTRUCTIVE_COMMAND =
   /^(git push|rm\b|npm publish|pnpm publish|yarn publish|terraform (apply|destroy)|kubectl (delete|apply)|docker push|gh (pr merge|release|repo delete)|aws s3 rm|gcloud .* delete)/;
-export const PIPE_TO_SHELL =
-  /\b(curl|wget)\b[^|\n]*\|\s*(sudo\s+)?(ba|z|da|k)?sh\b|\b(bash|sh|zsh)\s+<\(\s*(curl|wget)\b|\b(iex|Invoke-Expression)\b[^\n]*\b(iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b/i;
-export const REMOTE_FETCH = /\b(curl|wget|Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b[^\n]*https?:\/\//i;
-export const IDENTITY_WRITE =
+/** Where a line pipes a download into a shell, or -1. Linear: each line is split on `|` once. */
+function pipeInLine(line: string): number {
+  const segments = line.split('|');
+  let at = 0;
+  for (const [i, segment] of segments.entries()) {
+    if (i > 0 && /^\s*(sudo\s+)?(ba|z|da|k)?sh\b/i.test(segment)) {
+      const previous = segments[i - 1]!;
+      const fetch = /\b(curl|wget)\b/i.exec(previous);
+      if (fetch) return at - previous.length - 1 + fetch.index;
+    }
+    at += segment.length + 1;
+  }
+  const substitution = /\b(bash|sh|zsh)\s+<\(\s*(curl|wget)\b/i.exec(line);
+  if (substitution) return substitution.index;
+  const iex = /\b(iex|Invoke-Expression)\b/i.exec(line);
+  if (iex && /\b(iwr|irm|Invoke-WebRequest|Invoke-RestMethod)\b/i.test(line.slice(iex.index))) return iex.index;
+  return -1;
+}
+
+/**
+ * `curl … | sh`, `bash <(curl …)`, `iex (iwr …)`. Checked line by line without backtracking, so a
+ * long line of repeated `curl` cannot make the scan slow.
+ */
+export const PIPE_TO_SHELL = {
+  exec(text: string): { index: number } | null {
+    let offset = 0;
+    for (const line of text.split('\n')) {
+      const found = pipeInLine(line);
+      if (found >= 0) return { index: offset + found };
+      offset += line.length + 1;
+    }
+    return null;
+  },
+  test(text: string): boolean {
+    return this.exec(text) !== null;
+  },
+};
+/** A download from an http(s) URL on one line: the first fetch command, then a URL after it. */
+export const REMOTE_FETCH = {
+  test(text: string): boolean {
+    return text.split('\n').some(line => {
+      const fetch = /\b(curl|wget|Invoke-WebRequest|Invoke-RestMethod|iwr|irm)\b/i.exec(line);
+      return fetch !== null && /https?:\/\//i.test(line.slice(fetch.index));
+    });
+  },
+};
+const IDENTITY_WRITE_PATTERN =
   /(>>?|\btee(\s+-a)?|\bsed\s+-i\S*|\bcp\b|\bmv\b)\s+[^|;&\n]*?\b(CLAUDE(\.local)?\.md|AGENTS\.md|SOUL\.md|MEMORY\.md)\b/;
-export const SETTINGS_WRITE =
+const SETTINGS_WRITE_PATTERN =
   /(>>?|\btee(\s+-a)?|\bsed\s+-i\S*|\bcp\b|\bmv\b|\bjq\b[^\n]*>)\s+[^|;&\n]*?\.claude\/(settings(\.local)?\.json|hooks|agents|skills)/;
+
+/**
+ * A pattern matched one command at a time, and only in commands that name the target at all: the
+ * pattern backtracks over a command that does not, so a long line of `>` would make it slow.
+ */
+function perCommand(pattern: RegExp, target: RegExp) {
+  return {
+    exec(text: string): { index: number } | null {
+      let offset = 0;
+      for (const part of text.split(/([|;&\n])/)) {
+        if (part.length > 1 && target.test(part)) {
+          const match = pattern.exec(part);
+          if (match) return { index: offset + match.index };
+        }
+        offset += part.length;
+      }
+      return null;
+    },
+    test(text: string): boolean {
+      return this.exec(text) !== null;
+    },
+  };
+}
+export const IDENTITY_WRITE = perCommand(IDENTITY_WRITE_PATTERN, /CLAUDE(\.local)?\.md|AGENTS\.md|SOUL\.md|MEMORY\.md/);
+export const SETTINGS_WRITE = perCommand(SETTINGS_WRITE_PATTERN, /\.claude\//);
 
 const TOKEN_PATTERNS: readonly [string, RegExp][] = [
   ['Anthropic API key', /\bsk-ant-[A-Za-z0-9_-]{20,}/],
@@ -103,6 +171,15 @@ export function serverLabel(server: McpServer): string {
   return `MCP server "${server.name}"`;
 }
 
+/**
+ * A server in a finding's fingerprint: its name and what it runs. Under `--base`, a server whose
+ * program changed is a new finding, even when its name already had one.
+ */
+export function serverKey(server: McpServer): string {
+  const launch = [server.command ?? '', ...server.args, server.url ?? ''].join('\0');
+  return `${server.name}@${createHash('sha256').update(launch).digest('hex').slice(0, 12)}`;
+}
+
 export function agentServers(project: Project): McpServer[] {
   return [...project.servers, ...project.workflows.flatMap(step => step.servers)];
 }
@@ -110,9 +187,10 @@ export function agentServers(project: Project): McpServer[] {
 export function allowRules(project: Project): PermissionRule[] {
   return [
     ...project.settings.flatMap(file => file.allow),
+    ...project.skillAllow,
     ...project.workflows.flatMap(step => step.allowedTools),
     ...project.otherAllow,
   ];
 }
 
-export const hooks = (project: Project) => project.settings.flatMap(file => file.hooks);
+export const hooks = (project: Project) => [...project.settings.flatMap(file => file.hooks), ...project.pluginHooks];

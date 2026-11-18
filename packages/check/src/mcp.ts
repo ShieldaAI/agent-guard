@@ -1,10 +1,21 @@
 import type { Capability, Location } from './types.js';
-import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
+import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
 
 /** One MCP server as a config file declares it. */
 export interface McpServer {
   readonly name: string;
-  readonly client: 'claude-code' | 'vscode' | 'cursor' | 'workflow' | 'codex' | 'gemini' | 'subagent';
+  readonly client:
+    | 'claude-code'
+    | 'vscode'
+    | 'cursor'
+    | 'workflow'
+    | 'codex'
+    | 'gemini'
+    | 'subagent'
+    | 'opencode'
+    | 'copilot'
+    | 'kiro'
+    | 'plugin';
   readonly command?: string;
   readonly args: readonly string[];
   readonly url?: string;
@@ -12,6 +23,11 @@ export interface McpServer {
   readonly headers: Readonly<Record<string, string>>;
   readonly location: Location;
   readonly catalog?: CatalogEntry;
+  /**
+   * What the server runs, when the command has exactly the expected shape: the package, image or
+   * remote host. Policy and declarations match on this, never on the config name.
+   */
+  readonly identity?: { readonly package?: string; readonly image?: string; readonly host?: string };
 }
 
 export interface CatalogEntry {
@@ -28,6 +44,8 @@ const CATALOG: readonly (CatalogEntry & {
   readonly packages?: readonly string[];
   readonly images?: readonly string[];
   readonly hosts?: readonly string[];
+  /** An installed command and its first argument (`sentry mcp`), found on the PATH, not in the repository. */
+  readonly commands?: readonly (readonly [string, string])[];
 })[] = [
   {
     id: 'github',
@@ -138,7 +156,9 @@ const CATALOG: readonly (CatalogEntry & {
     label: 'Sentry',
     packages: ['@sentry/mcp-server'],
     hosts: ['mcp.sentry.dev'],
-    capabilities: { privateData: 'yes', untrustedInput: 'yes' },
+    commands: [['sentry', 'mcp']],
+    // It can also update issues and create projects and DSNs.
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
   },
   {
     id: 'notion',
@@ -166,6 +186,166 @@ const CATALOG: readonly (CatalogEntry & {
     hosts: ['mcp.stripe.com'],
     capabilities: { privateData: 'yes', write: 'yes', spend: 'yes' },
   },
+  // Servers that only think or read the clock: nothing to reach.
+  {
+    id: 'sequential-thinking',
+    label: 'Sequential Thinking',
+    packages: ['@modelcontextprotocol/server-sequential-thinking'],
+    images: ['mcp/sequentialthinking'],
+    capabilities: {},
+  },
+  {
+    id: 'time',
+    label: 'Time',
+    packages: ['mcp-server-time'],
+    images: ['mcp/time'],
+    capabilities: {},
+  },
+  // Documentation servers: they return text written by others, and send only the query to one vendor.
+  {
+    id: 'microsoft-learn',
+    label: 'Microsoft Learn docs',
+    hosts: ['learn.microsoft.com'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'aws-documentation',
+    label: 'AWS documentation',
+    packages: ['awslabs.aws-documentation-mcp-server'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'cloudflare-docs',
+    label: 'Cloudflare docs',
+    hosts: ['docs.mcp.cloudflare.com'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'shopify-dev',
+    label: 'Shopify dev docs',
+    packages: ['@shopify/dev-mcp'],
+    capabilities: { untrustedInput: 'yes' },
+  },
+  {
+    id: 'huggingface',
+    label: 'Hugging Face',
+    hosts: ['huggingface.co', 'hf.co'],
+    // Spaces added as tools run on other people's servers with the arguments they are given.
+    capabilities: { untrustedInput: 'yes', egress: 'unknown' },
+  },
+  {
+    id: 'terraform',
+    label: 'Terraform registry',
+    images: ['hashicorp/terraform-mcp-server'],
+    // With a Terraform Cloud token it can also read workspaces and start runs.
+    capabilities: { untrustedInput: 'yes', privateData: 'unknown', write: 'unknown', exec: 'unknown' },
+  },
+  // Web search and browsing: outside text comes in, and queries or page requests go to any host.
+  {
+    id: 'exa',
+    label: 'Exa search',
+    packages: ['exa-mcp-server'],
+    hosts: ['mcp.exa.ai'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'tavily',
+    label: 'Tavily search',
+    packages: ['tavily-mcp'],
+    hosts: ['mcp.tavily.com'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'firecrawl',
+    label: 'Firecrawl',
+    packages: ['firecrawl-mcp'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'google-maps',
+    label: 'Google Maps',
+    packages: ['@modelcontextprotocol/server-google-maps'],
+    images: ['mcp/google-maps'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes' },
+  },
+  {
+    id: 'chrome-devtools',
+    label: 'Chrome DevTools browser',
+    packages: ['chrome-devtools-mcp'],
+    // It drives a Chrome profile, which may hold the user's sign-ins.
+    capabilities: { untrustedInput: 'yes', egress: 'yes', privateData: 'unknown' },
+  },
+  {
+    id: 'browsermcp',
+    label: 'Browser MCP (your own browser)',
+    packages: ['@browsermcp/mcp'],
+    capabilities: { untrustedInput: 'yes', egress: 'yes', privateData: 'yes' },
+  },
+  // Data stores and SaaS accounts: the account's data, and changes to it.
+  {
+    id: 'redis',
+    label: 'Redis',
+    packages: ['@modelcontextprotocol/server-redis'],
+    images: ['mcp/redis'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'mongodb',
+    label: 'MongoDB',
+    packages: ['mongodb-mcp-server'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'neon',
+    label: 'Neon',
+    packages: ['@neondatabase/mcp-server-neon'],
+    hosts: ['mcp.neon.tech'],
+    capabilities: { privateData: 'yes', write: 'yes' },
+  },
+  {
+    id: 'kubernetes',
+    label: 'Kubernetes',
+    packages: ['mcp-server-kubernetes'],
+    // `kubectl exec` runs commands in pods, which can reach any host the cluster can.
+    capabilities: { privateData: 'yes', write: 'yes', exec: 'yes', egress: 'unknown' },
+  },
+  {
+    id: 'mcp-atlassian',
+    label: 'Atlassian (community server)',
+    packages: ['mcp-atlassian'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'figma',
+    label: 'Figma',
+    hosts: ['mcp.figma.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes' },
+  },
+  {
+    id: 'vercel',
+    label: 'Vercel',
+    hosts: ['mcp.vercel.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'unknown' },
+  },
+  {
+    id: 'posthog',
+    label: 'PostHog',
+    hosts: ['mcp.posthog.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'asana',
+    label: 'Asana',
+    hosts: ['mcp.asana.com'],
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes' },
+  },
+  {
+    id: 'zapier',
+    label: 'Zapier',
+    hosts: ['mcp.zapier.com'],
+    // Its tools are whatever actions the account set up: anything, including sending and paying.
+    capabilities: { privateData: 'yes', untrustedInput: 'yes', write: 'yes', egress: 'yes', spend: 'unknown' },
+  },
 ];
 
 /** Commands that fetch and run a package named in their arguments. */
@@ -175,7 +355,13 @@ const RUNNERS = new Set(['npx', 'bunx', 'uvx', 'pipx', 'pnpx']);
 export function runnerPackage(
   command: string | undefined,
   args: readonly string[],
-): { readonly runner: string; readonly spec: string; readonly localOnly: boolean } | undefined {
+):
+  | {
+      readonly runner: string;
+      readonly spec: string;
+      readonly localOnly: boolean;
+    }
+  | undefined {
   if (!command) return undefined;
   const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
   // Launchers that run a command line: `cmd /c npx -y pkg` (the documented Windows form) and `sh -c "npx -y pkg"`.
@@ -213,6 +399,49 @@ export function runnerPackage(
     return found(arg);
   }
   return undefined;
+}
+
+/**
+ * Every package a runner command fetches: the one it runs and any `-p`/`--package`/`--from`/`--with`
+ * extras, each with its runner. `unverifiable` when a shell line runs more than one command, so what
+ * it fetches cannot be read from the config.
+ */
+export function runnerSpecs(
+  command: string | undefined,
+  args: readonly string[],
+): {
+  readonly specs: readonly { readonly runner: string; readonly spec: string; readonly localOnly: boolean }[];
+  readonly unverifiable: boolean;
+} {
+  if (!command) return { specs: [], unverifiable: false };
+  const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
+    if (/[;&|`$<>(){}\n\r^]/.test(words)) return { specs: [], unverifiable: true };
+    const line = splitShell(words);
+    return runnerSpecs(line[0], line.slice(1));
+  }
+  // `-c`, or combined short flags ending in c (`-lc`, `-ic`), takes the script.
+  const scriptFlag = args.findIndex(arg => /^-[a-z]*c$/.test(arg));
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && scriptFlag >= 0) {
+    const script = args[scriptFlag + 1] ?? '';
+    if (/[;&|`$<>(){}\n\r]/.test(script)) return { specs: [], unverifiable: true };
+    const line = splitShell(script);
+    return runnerSpecs(line[0], line.slice(1));
+  }
+  const first = runnerPackage(command, args);
+  if (!first) return { specs: [], unverifiable: false };
+  const specs = [first];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    const value = ['-p', '--package', '--from', '--with'].includes(arg)
+      ? args[i + 1]
+      : /^--(package|from|with)=/.test(arg)
+        ? arg.split('=', 2)[1]
+        : undefined;
+    if (value !== undefined && value !== first.spec) specs.push({ ...first, spec: value });
+  }
+  return { specs, unverifiable: false };
 }
 
 /** Splits a shell command line into words, honouring quotes. */
@@ -259,6 +488,8 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
 /** The image a `docker run` command starts, or undefined. */
 export function dockerImage(command: string | undefined, args: readonly string[]): string | undefined {
   if (!command || !/(^|[\\/])(docker|podman)$/.test(command) || args[0] !== 'run') return undefined;
+  // A replaced entrypoint runs something else inside the image: it is not that image's server.
+  if (args.some(arg => arg === '--entrypoint' || arg.startsWith('--entrypoint='))) return undefined;
   const valued = new Set(['-e', '--env', '-v', '--volume', '--name', '-p', '--publish', '--network', '-w', '--user']);
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i]!;
@@ -272,12 +503,241 @@ export function dockerImage(command: string | undefined, args: readonly string[]
   return undefined;
 }
 
-function identify(command: string | undefined, args: readonly string[], url: string | undefined) {
-  const runner = runnerPackage(command, args);
-  const pkg = runner ? splitSpec(runner.spec).name : undefined;
-  const image = dockerImage(command, args)
-    ?.split('@')[0]
-    ?.replace(/:[^/:]+$/, '');
+/** Runner flags that change neither what is fetched nor what runs. Any other flag ends identification. */
+const SAFE_RUNNER_FLAGS = new Set([
+  '-y',
+  '--yes',
+  '-q',
+  '--quiet',
+  '--silent',
+  '--no',
+  '--no-install',
+  '--offline',
+  '--prefer-offline',
+  '--isolated',
+  '--no-cache',
+  '--refresh',
+]);
+/** Environment variables that change what a runner fetches, or what code an interpreter loads. */
+const LOADER_ENV =
+  /^(DOCKER_HOST|DOCKER_CONFIG|DOCKER_CONTEXT|DOCKER_CERT_PATH|CONTAINER_HOST|NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|npm_config_.*|YARN_.*|PNPM_.*|BUN_.*|DENO_.*|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|PYTHONUSERBASE|PIP_.*|PIPX_.*|UV_.*|LD_.*|DYLD_.*|PATH|JAVA_TOOL_OPTIONS|RUBYOPT|PERL5OPT)$/i;
+/** Shell syntax that runs more than one command, or substitutes one. */
+const SHELL_SYNTAX = /[;&|`$<>(){}\n\r]/;
+
+/**
+ * Whether a command is found on the system rather than in the repository: a bare name, or an
+ * absolute path in a system folder. `./bin/npx` or `tools\\npx.cmd` is a file the change chose.
+ */
+function systemCommand(command: string): boolean {
+  if (!/[\\/]/.test(command)) return /^[A-Za-z0-9_.-]+$/.test(command);
+  return (
+    /^\/(usr\/(local\/)?)?s?bin\/[A-Za-z0-9_.-]+$/.test(command) ||
+    /^\/opt\/homebrew\/bin\/[A-Za-z0-9_.-]+$/.test(command) ||
+    /^[A-Za-z]:\\(Program Files( \(x86\))?|Windows)\\/i.test(command)
+  );
+}
+
+function baseName(command: string): string {
+  return (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
+}
+
+/**
+ * The package a server runs, for the catalog, only when the command has exactly the shape of
+ * "runner, harmless flags, package, the package's own arguments". `-p pkg other-command`,
+ * `--call`, a registry or other flag, a shell line with a second command, or an environment
+ * variable that changes what is loaded all mean the package name says nothing about what runs.
+ */
+function catalogPackage(
+  command: string | undefined,
+  args: readonly string[],
+  env: Readonly<Record<string, string>>,
+): { readonly name: string; readonly ecosystem: 'npm' | 'python' } | undefined {
+  if (!command || !systemCommand(command) || Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
+  const base = baseName(command);
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
+    if (SHELL_SYNTAX.test(words)) return undefined;
+    const line = splitShell(words);
+    return catalogPackage(line[0], line.slice(1), {});
+  }
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base)) {
+    if (args.length !== 2 || args[0] !== '-c' || SHELL_SYNTAX.test(args[1]!)) return undefined;
+    const line = splitShell(args[1]!);
+    return catalogPackage(line[0], line.slice(1), {});
+  }
+  let rest = [...args];
+  if ((base === 'pnpm' || base === 'yarn') && rest[0] === 'dlx') rest = rest.slice(1);
+  else if (base === 'pipx' && rest[0] === 'run') rest = rest.slice(1);
+  else if (base === 'npm' && rest[0] === 'exec') rest = rest.slice(1);
+  else if (!RUNNERS.has(base)) return undefined;
+  const ecosystem = base === 'uvx' || base === 'pipx' ? 'python' : 'npm';
+  for (const arg of rest) {
+    if (arg === '--') continue;
+    if (arg.startsWith('-')) {
+      if (SAFE_RUNNER_FLAGS.has(arg)) continue;
+      return undefined;
+    }
+    const name = registryName(arg);
+    return name === undefined ? undefined : { name, ecosystem };
+  }
+  return undefined;
+}
+
+/**
+ * The registry package a spec names, or undefined when the spec fetches from somewhere else: an npm
+ * alias (`name@npm:other`), a URL, git or a local path (`name@github:x`, `name@file:./x`), or a
+ * Python direct reference (`name @ git+https://...`).
+ */
+function registryName(spec: string): string | undefined {
+  const { name, version, operator } = splitSpec(spec);
+  if (!/^(@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+$/.test(name)) return undefined;
+  if (version !== undefined && (/[:/\\\s]/.test(version) || (operator === '@' && /^[a-z]+\+/.test(version))))
+    return undefined;
+  return name;
+}
+
+/**
+ * `docker run` flags that take a value and change neither the image nor what it runs. Mounts and
+ * the working folder are not listed: a mount can replace the image's own code.
+ */
+const DOCKER_VALUED = new Set([
+  '-e',
+  '--env',
+  '--name',
+  '--network',
+  '--net',
+  '-u',
+  '--user',
+  '--add-host',
+  '-m',
+  '--memory',
+  '--cpus',
+  '-l',
+  '--label',
+  '--platform',
+  '--pull',
+  '-h',
+  '--hostname',
+  '--tmpfs',
+  '--ulimit',
+  '--dns',
+  '--expose',
+  '-p',
+  '--publish',
+  '--log-driver',
+  '--stop-signal',
+  '--restart',
+]);
+const DOCKER_FLAGS = new Set([
+  '-i',
+  '--interactive',
+  '-t',
+  '--tty',
+  '-it',
+  '-ti',
+  '--rm',
+  '-d',
+  '--detach',
+  '--init',
+  '--read-only',
+  '-q',
+  '--quiet',
+  '-P',
+  '--publish-all',
+]);
+
+/**
+ * The image a server runs, for the catalog, only when every `docker run` flag before it is known:
+ * an unknown flag might take the next word as its value, and `--entrypoint`, `--env-file` or an
+ * environment variable that changes what is loaded means the image name says nothing about what runs.
+ */
+function catalogImage(
+  command: string | undefined,
+  args: readonly string[],
+  env: Readonly<Record<string, string>>,
+): string | undefined {
+  if (!command || !systemCommand(command) || !['docker', 'podman'].includes(baseName(command)) || args[0] !== 'run')
+    return undefined;
+  if (Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
+  for (let i = 1; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (!arg.startsWith('-')) return arg.split('@')[0]!.replace(/:[^/:]+$/, '');
+    const [flag, inline] = arg.includes('=')
+      ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
+      : [arg, undefined];
+    if (DOCKER_FLAGS.has(flag) && inline === undefined) continue;
+    if (!DOCKER_VALUED.has(flag)) return undefined;
+    const value = inline ?? args[(i += 1)];
+    if (value === undefined) return undefined;
+    if ((flag === '-e' || flag === '--env') && LOADER_ENV.test(value.split('=')[0]!)) return undefined;
+  }
+  return undefined;
+}
+
+/**
+ * A team's own statement of what an MCP server can do, from `.agc.yaml` (`mcp_servers`). `match` is a
+ * server's config name, a catalog ID, a package, an image or a remote host. It takes precedence over
+ * the built-in catalog.
+ */
+export interface DeclaredServer {
+  readonly match: string;
+  readonly capabilities: Readonly<Partial<Record<Capability, 'yes' | 'unknown'>>>;
+}
+
+/**
+ * What identification needs besides the server itself: the team's declarations, the packages the
+ * repository itself depends on (a runner resolves those locally, from whatever the dependency spec
+ * says), and whether the repository configures where packages come from (`.npmrc`, `uv.toml`, ...).
+ */
+export interface CatalogContext {
+  readonly declared: readonly DeclaredServer[];
+  /** Package names the repository provides or depends on anywhere: a runner may resolve those locally. */
+  readonly localPackages: ReadonlySet<string>;
+  /**
+   * Folders ('' for the root) whose package-source files redirect npm-family or Python runners.
+   * A redirect applies to servers configured in that folder or below.
+   */
+  readonly redirected: { readonly npm: ReadonlySet<string>; readonly python: ReadonlySet<string> };
+}
+
+export const NO_CONTEXT: CatalogContext = Object.freeze({
+  declared: Object.freeze([]),
+  localPackages: new Set<string>(),
+  redirected: { npm: new Set<string>(), python: new Set<string>() },
+});
+
+/** Whether a folder or one above it is in a set of folders ('' for the root). */
+function underAny(folders: ReadonlySet<string>, path: string): boolean {
+  const parts = path.split('/').slice(0, -1);
+  for (let depth = 0; depth <= parts.length; depth += 1) if (folders.has(parts.slice(0, depth).join('/'))) return true;
+  return false;
+}
+
+/** What a server runs: its package, image or host, each only for an exact command shape. */
+function identityOf(
+  command: string | undefined,
+  args: readonly string[],
+  url: string | undefined,
+  env: Readonly<Record<string, string>>,
+  context: CatalogContext,
+  path: string,
+): { package?: string; image?: string; host?: string; installed?: readonly [string, string] } {
+  // A server with both a command and a URL is ambiguous: which one runs depends on the client.
+  if (command !== undefined && url !== undefined) return {};
+  const found = catalogPackage(command, args, env);
+  // The repository decides what a dependency, or a registry configured for that runner, resolves to.
+  const pkg =
+    found !== undefined &&
+    !context.localPackages.has(found.name) &&
+    !underAny(context.redirected[found.ecosystem], path)
+      ? found.name
+      : undefined;
+  const image = catalogImage(command, args, env);
+  // A bare command name (no path, so not a file in the repository) and its first argument.
+  const installed: readonly [string, string] | undefined =
+    command !== undefined && /^[A-Za-z0-9_-]+$/.test(command) && !Object.keys(env).some(name => LOADER_ENV.test(name))
+      ? [command, args[0] ?? '']
+      : undefined;
   let host: string | undefined;
   if (url) {
     try {
@@ -286,13 +746,39 @@ function identify(command: string | undefined, args: readonly string[], url: str
       host = undefined;
     }
   }
-  return CATALOG.find(
+  return {
+    ...(pkg !== undefined ? { package: pkg } : {}),
+    ...(image !== undefined ? { image } : {}),
+    ...(host !== undefined ? { host } : {}),
+    ...(installed !== undefined ? { installed } : {}),
+  };
+}
+
+function identify(identity: ReturnType<typeof identityOf>, declared: CatalogContext): CatalogEntry | undefined {
+  const { package: pkg, image, host, installed } = identity;
+  const known = CATALOG.find(
     entry =>
       (pkg !== undefined && entry.packages?.includes(pkg)) ||
       (image !== undefined && entry.images?.includes(image)) ||
-      (host !== undefined && entry.hosts?.includes(host)),
+      (host !== undefined && entry.hosts?.includes(host)) ||
+      (installed !== undefined &&
+        entry.commands?.some(([name, first]) => name === installed[0] && first === installed[1])),
   );
+  // A declaration matches what runs (package, image, host, or the catalog entry they identify), never
+  // the config name: a change under review chooses names, so a name could claim another server's entry.
+  const keys = [pkg, image, host, known?.id].filter((key): key is string => key !== undefined);
+  const own = keys.map(key => declared.declared.find(item => item.match === key)).find(item => item !== undefined);
+  if (own)
+    return {
+      id: `declared:${own.match}`,
+      label: `declared in .agc.yaml as "${own.match}"`,
+      capabilities: own.capabilities,
+    };
+  return known ? { id: known.id, label: known.label, capabilities: known.capabilities } : undefined;
 }
+
+/** Built-in catalog IDs, for validating declarations and for documentation. */
+export const CATALOG_IDS: readonly string[] = CATALOG.map(entry => entry.id);
 
 function stringRecord(value: unknown): Record<string, string> {
   if (!isRecord(value)) return {};
@@ -305,9 +791,14 @@ function stringRecord(value: unknown): Record<string, string> {
  * Reads the servers in an MCP config. `.mcp.json` and Cursor use `mcpServers`; VS Code uses `servers`.
  * Throws on invalid JSON so the caller can report it.
  */
-export function parseMcpConfig(path: string, text: string, client: McpServer['client']): McpServer[] {
+export function parseMcpConfig(
+  path: string,
+  text: string,
+  client: McpServer['client'],
+  declared: CatalogContext = NO_CONTEXT,
+): McpServer[] {
   const parsed = parseJsonc(text);
-  return serversFromObject(parsed, path, text, client);
+  return serversFromObject(parsed, path, text, client, 0, declared);
 }
 
 export function serversFromObject(
@@ -316,6 +807,7 @@ export function serversFromObject(
   text: string,
   client: McpServer['client'],
   lineOffset = 0,
+  declared: CatalogContext = NO_CONTEXT,
 ): McpServer[] {
   if (!isRecord(parsed)) return [];
   const block = isRecord(parsed['mcpServers'])
@@ -324,12 +816,20 @@ export function serversFromObject(
       ? parsed['servers']
       : {};
   const servers: McpServer[] = [];
+  // Server names appear in file order: a moving cursor finds each line without rescanning the file.
+  const locate = lineLocator(text);
   for (const [name, raw] of Object.entries(block)) {
     if (!isRecord(raw)) continue;
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    const catalog = identify(command, args, url);
+    // `envFile` loads variables the scanner cannot see, and `cwd` changes what resolves locally.
+    const env =
+      'envFile' in raw || 'cwd' in raw
+        ? { ...stringRecord(raw['env']), NODE_OPTIONS: '(envFile or cwd)' }
+        : stringRecord(raw['env']);
+    const identity = identityOf(command, args, url, env, declared, path);
+    const catalog = identify(identity, declared);
     servers.push({
       name,
       client,
@@ -338,8 +838,13 @@ export function serversFromObject(
       ...(url === undefined ? {} : { url }),
       env: stringRecord(raw['env']),
       headers: stringRecord(raw['headers']),
-      location: { file: path, line: lineOf(text, JSON.stringify(name)) + lineOffset },
-      ...(catalog ? { catalog: { id: catalog.id, label: catalog.label, capabilities: catalog.capabilities } } : {}),
+      location: { file: path, line: locate(JSON.stringify(name)) + lineOffset },
+      ...(catalog ? { catalog } : {}),
+      identity: {
+        ...(identity.package !== undefined ? { package: identity.package } : {}),
+        ...(identity.image !== undefined ? { image: identity.image } : {}),
+        ...(identity.host !== undefined ? { host: identity.host } : {}),
+      },
     });
   }
   return servers;

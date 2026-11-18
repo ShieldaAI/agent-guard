@@ -1,4 +1,4 @@
-import type { Finding, RuleMeta } from '../types.js';
+import { SEVERITY_ORDER, type Finding, type RuleMeta } from '../types.js';
 import type { Project } from '../model.js';
 import { fingerprint, type Report, type Rule, type RuleContext } from './common.js';
 import { AGENT_GUARD_RULES } from './agent-guard.js';
@@ -55,10 +55,13 @@ export function runRules(
     const report: Report = input => {
       const agentId = input.agent?.id ?? '';
       const key = fingerprint(item.id, agentId, input.location.file, input.subject);
-      if (findings.has(key)) return;
+      // The same finding reported twice keeps the higher severity.
+      const earlier = findings.get(key);
+      const severity = input.severity ?? item.severity;
+      if (earlier && SEVERITY_ORDER.indexOf(earlier.severity) >= SEVERITY_ORDER.indexOf(severity)) return;
       findings.set(key, {
         ruleId: item.id,
-        severity: input.severity ?? item.severity,
+        severity,
         confidence: input.confidence ?? item.confidence,
         message: input.message,
         location: input.location,
@@ -70,9 +73,19 @@ export function runRules(
     try {
       item.check(project, report, context);
     } catch (error) {
-      errors.push({
-        file: '',
-        message: `${item.id} could not run: ${error instanceof Error ? error.message : String(error)}`,
+      const message = `${item.id} could not run: ${error instanceof Error ? error.message : String(error)}`;
+      errors.push({ file: '', message });
+      // A rule that stops part way judged only part of the project: a finding, so the gate fails
+      // closed instead of passing on a warning.
+      const key = fingerprint('AGC-CFG-002', '', '.', `rule-error:${item.id}`);
+      findings.set(key, {
+        ruleId: 'AGC-CFG-002',
+        severity: 'high',
+        confidence: 'high',
+        message: `${message}. What it checks was not judged.`,
+        location: { file: '.', line: 1 },
+        fingerprint: key,
+        fix: 'Report this error; meanwhile check what the rule covers by hand.',
       });
     }
   }

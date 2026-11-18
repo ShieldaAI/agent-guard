@@ -1,0 +1,1298 @@
+{
+  "labelingRules": [
+    "Capabilities describe what the configured agent can reach given the committed config plus the tool's documented defaults; a person approving each use = ask, anything gated only by an automated classifier (Claude Code --permission-mode auto) or by nothing = auto.",
+    "Workflow agents: a downstream deterministic job that applies the agent's structured output (labels, issues, PR reviews, commits) counts toward write; publishing agent-authored free text publicly counts toward egress ('post publicly'). Such cases are marked '(indirect)' in why.",
+    "privateData ignores a repo-scoped GITHUB_TOKEN on a public repo and an ephemeral CI runner's filesystem; it counts other secrets the agent can read (unscrubbed env), private SaaS data, and files outside the project on a developer machine.",
+    "spend on a developer machine mirrors the approval level of unsandboxed arbitrary exec (cloud CLIs may be logged in) unless the config names a concrete paid path; CI agents without paid credentials = no. Model inference cost of the agent itself is not counted.",
+    "selfModify counts edits to the agent's own instruction or permission files (CLAUDE.md/AGENTS.md/.claude/settings.json/.codex). When the change only lands after a human merges a PR, it is ask.",
+    "Entries whose why starts with [extra format] use a config format outside the listed file types; entries starting with [test workflow] are CI tests of the action itself. Drop them if your scanner's scope excludes them."
+  ],
+  "repos": [
+    {
+      "repo": "getsentry/sentry-mcp",
+      "agents": [
+        {
+          "file": ".claude/settings.json",
+          "tool": "claude-code",
+          "name": "root Claude Code project (+ .mcp.json sentry, sentry-dev)",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "auto",
+            "selfModify": "auto"
+          },
+          "why": "enableAllProjectMcpServers + allow mcp__sentry__search_events/search_issues/get_issue_details (Sentry org data via the logged-in `sentry mcp` CLI) and Bash(cat:*) -> privateData; WebSearch, WebFetch(github.com), gh issue view, Sentry events with end-user text -> untrustedInput; Bash(rm/mv/sed/tee), git push, gh pr create/merge -> write; Bash(node:*), pnpm exec/run -> exec; Bash(curl:*), gh issue/pr comment -> egress; pnpx wrangler versions upload/delete and mcp__sentry__analyze_issue_with_seer (Seer is billed) -> spend; Bash(sed:*)/tee/mv can rewrite .claude/settings.json and Skill(sentry-skills:claude-settings-audit) edits settings -> selfModify (unsure whether Claude Code still prompts for Bash writes into .claude/). Also enables third-party plugins dex, sentry-skills, pr-review-toolkit."
+        },
+        {
+          "file": ".codex/config.toml",
+          "tool": "codex",
+          "name": "Codex with sentry + sentry-dev MCP",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "auto"
+          },
+          "why": "No sandbox/approval keys, so Codex defaults for a trusted project: workspace-write sandbox, on-request approvals, network off. Sentry MCP (`sentry mcp sentry/mcp-server --experimental`) reads org data; read-only MCP tools run without a prompt (my understanding of Codex defaults, unsure) and the sandbox can read the whole disk -> privateData auto. Sentry events carry end-user text -> untrustedInput auto. Workspace writes and sandboxed commands run unprompted -> write/exec auto. Network to arbitrary hosts needs escalation -> egress ask. Seer/project-creation tools are non-read-only MCP calls, likely prompted -> spend ask (unsure). AGENTS.md is writable in the workspace (.codex/ is protected) -> selfModify auto."
+        },
+        {
+          "file": ".cursor/mcp.json",
+          "tool": "cursor",
+          "name": "Cursor with sentry + sentry-dev MCP",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "auto",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "Same Sentry servers as .mcp.json (stdio `sentry mcp --experimental` + localhost dev). Cursor defaults: MCP tool calls and terminal commands need approval unless auto-run is enabled, agent edits are applied to workspace files without a prompt. Sentry data -> privateData ask; event text -> untrustedInput ask; Seer -> spend ask. Unsure: Cursor 2.x sandboxed auto-run on macOS could make exec auto; whether edits to .cursor/ are protected by default."
+        },
+        {
+          "file": ".vscode/mcp.json",
+          "tool": "mcp-client",
+          "name": "VS Code Copilot agent with sentry MCP",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "auto",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "stdio `sentry mcp` (stable tools). VS Code agent-mode defaults: MCP tool calls, terminal commands (apart from a small built-in safe list) and fetch to new domains are confirmed; workspace edits are applied automatically except protected files such as .vscode/*. Unsure whether VS Code auto-runs MCP tools annotated readOnlyHint, which would make privateData/untrustedInput auto."
+        },
+        {
+          "file": "plugins/sentry-mcp/.claude-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "sentry-mcp Claude Code plugin (remote mcp.sentry.dev + sentry-mcp subagent)",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "no"
+          },
+          "why": "plugins/sentry-mcp/.mcp.json adds HTTP https://mcp.sentry.dev/mcp (OAuth to the user's Sentry org). Its agents/sentry-mcp.md subagent lists write tools (update_issue, create_project, create_team, delete_alert_rule, update_dsn...) under `allowedTools`, which is not a Claude Code permission key, so host defaults apply and each MCP call is asked. Sentry data/events -> privateData/untrustedInput; mutations -> write; create_uptime_monitor/alert rules can point Sentry at an arbitrary URL -> egress ask (judgement call); analyze_issue_with_seer and creating projects/monitors can incur Sentry charges -> spend ask. No code execution tools."
+        },
+        {
+          "file": "plugins/sentry-mcp-experimental/.claude-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "sentry-mcp-experimental Claude Code plugin",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "no"
+          },
+          "why": "Same as sentry-mcp plugin but URL https://mcp.sentry.dev/mcp?experimental=1 and the subagent adds search_attributes; same reasoning and same uncertainty on egress/spend."
+        },
+        {
+          "file": "packages/cli/plugins/sentry-cli/.claude-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "sentry-cli skills-only plugin",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "no",
+            "spend": "ask",
+            "selfModify": "no"
+          },
+          "why": "Adds only skills/sentry-cli/SKILL.md (no MCP, hooks or permissions); it directs the agent to run the authenticated `sentry` CLI through the host's Bash, which is asked by default. The CLI reads org data and event text, can change issues/releases and `sentry api` makes arbitrary API calls; references include `trial` (starting a paid-product trial) -> spend ask. If you label skills-only plugins as adding nothing, all seven become no."
+        }
+      ]
+    },
+    {
+      "repo": "upstash/context7",
+      "agents": [
+        {
+          "file": "plugins/claude/context7/.claude-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "context7 Claude Code plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "plugins/claude/context7/.mcp.json adds HTTP https://mcp.context7.com/mcp (resolve-library-id, query-docs). Returned docs are third-party-authored -> untrustedInput, asked per call by Claude Code default. Queries go to one fixed host, not an arbitrary one -> egress no. No write/exec tools."
+        },
+        {
+          "file": "plugins/copilot/context7/.mcp.json",
+          "tool": "plugin",
+          "name": "context7 GitHub Copilot CLI plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Copilot CLI plugin (plugin.json + .mcp.json + agents/docs-researcher.agent.md + skills/commands). Context7 HTTP MCP with Context7-API-Key header from env (the key is not handed to the model). Copilot CLI asks before tool use unless --allow-all-tools. Also a folder-level .mcp.json, so opening Claude Code in this folder would give the same labels."
+        },
+        {
+          "file": "plugins/codex/context7/.mcp.json",
+          "tool": "plugin",
+          "name": "context7 Codex plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Codex plugin (.codex-plugin/plugin.json, capabilities [\"Read\"]) adding the Context7 HTTP MCP. Context7 tools are read-only and Codex runs read-only MCP tools without a prompt by default (my understanding; unsure) -> untrustedInput auto."
+        },
+        {
+          "file": "gemini-extension.json",
+          "tool": "gemini",
+          "name": "context7 Gemini CLI extension",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Gemini CLI extension running `npx -y @upstash/context7-mcp --api-key ${CONTEXT7_API_KEY}`; no `trust: true`, so Gemini CLI confirms each MCP call. The npx package is fixed, not agent-chosen code."
+        },
+        {
+          "file": "plugins/cursor/context7/.cursor-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "context7 Cursor plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Cursor plugin (via .cursor-plugin/marketplace.json): mcp.json -> https://mcp.context7.com/mcp/oauth, docs-researcher agent, rule, skill. Cursor confirms MCP calls by default."
+        },
+        {
+          "file": "plugins/context7-power/mcp.json",
+          "tool": "kiro",
+          "name": "context7 Kiro power",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Kiro Power (POWER.md + mcp.json) adding the Context7 HTTP MCP; Kiro asks before MCP tool calls unless autoApprove is set (none here)."
+        },
+        {
+          "file": "plugins/antigravity/context7/mcp_config.json",
+          "tool": "mcp-client",
+          "name": "context7 Antigravity plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Google Antigravity plugin with serverUrl https://mcp.context7.com/mcp. Unsure of Antigravity's default MCP approval policy; ask assumed."
+        },
+        {
+          "file": "plugins/agent-plugins/context7/plugin.json",
+          "tool": "plugin",
+          "name": "context7 agent-plugins.org plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Generic agent-plugins.org manifest + mcp.json (Context7 OAuth endpoint) + skill; host-dependent approval, ask assumed."
+        }
+      ]
+    },
+    {
+      "repo": "astral-sh/uv",
+      "agents": [
+        {
+          "file": ".github/workflows/diagnose-workflow-failure.yml",
+          "tool": "workflow",
+          "name": "codex-action: Diagnose workflow failure",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "workflow_dispatch; permission-profile workflow-failure (read-only FS, network only github.com/api.github.com), drop-sudo, read-only GITHUB_TOKEN. Failed-run logs come from trusted refs only, but network access lets it read public issues by outsiders -> untrustedInput. Sandboxed shell -> exec. Its schema output makes the report job create/comment an issue in public astral-sh/uv-dev and the retry job rerun jobs -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/issue-triage.yml",
+          "tool": "workflow",
+          "name": "codex-action: Triage issue",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "issues: opened by anyone, allow-users \"*\"; profile issue-triage (read-only + tmpdir write, network github only). Issue text -> untrustedInput. It writes README.md in $RUNNER_TEMP/issue-context, which the context job commits and pushes to public astral-sh/uv-dev, and its type output triggers reproduce-bug/fix-bug -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/pull-request-labels.yml",
+          "tool": "workflow",
+          "name": "codex-action: Determine pull request labels",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "workflow_dispatch for a PR; profile pull-request-labels (read-only, network github). PR text/code can come from outside contributors -> untrustedInput. Output schema drives a later job that applies repository labels -> write (indirect); output otherwise only goes to the step summary -> egress no."
+        },
+        {
+          "file": ".github/workflows/release-prepare.yml",
+          "tool": "workflow",
+          "name": "codex-action: Rewrite changelog",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "workflow_dispatch by maintainers; permission-profile :read-only, no network, no token in step env. Input changelog is generated from merged PR titles written by contributors -> untrustedInput auto (low confidence; titles were maintainer-merged). Output file becomes CHANGELOG.md, committed, force-pushed and opened as a public release PR -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/reproduce-bug.yml",
+          "tool": "workflow",
+          "name": "codex-action: Reproduce issue behavior",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Called from issue-triage for outsider issues, allow-users \"*\"; profile reproduce-bug (read-only + tmpdir and /tmp write, network github + pypi). Runs reproductions (can install arbitrary PyPI packages) in the sandbox -> exec. Issue context README is pushed to public uv-dev -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/reproduce-bug.yml",
+          "tool": "workflow",
+          "name": "codex-action: Create integration test",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Profile create-bug-test (:workspace write, network github/pypi/crates). Writes tests in the workspace; the next step restores agents/codex/config.toml, refuses changes outside crates/uv/tests, and the publish job pushes a draft PR to public uv-dev -> write/egress (indirect). Path guard prevents persisting AGENTS.md/config edits -> selfModify no."
+        },
+        {
+          "file": ".github/workflows/fix-bug.yml",
+          "tool": "workflow",
+          "name": "codex-action: Fix reproduced bug",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Resumes the reproduction thread (outsider issue text); profile fix-reproduced-bug (:workspace + tmpdir write, network github/pypi/crates). Edits source, builds and tests -> write/exec. Commit step allows only crates/*/src and test paths, then pushes a PR to public uv-dev -> egress (indirect); selfModify no thanks to that guard."
+        },
+        {
+          "file": ".github/workflows/rebase-conflicted-pull-request.yml",
+          "tool": "workflow",
+          "name": "codex-action: Rebase pull request",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Called from pull-request-conflicts for PRs by astral-automations-bot or same-repo/uv-dev heads; profile pull-request-rebase (:workspace + .git write, no network). Inputs are trusted-branch code -> untrustedInput no (judgement: bot PRs were themselves derived from outsider issues). Rebased branch is pushed to the public PR branch -> write/egress (indirect). Pushes to a PR branch, not main -> selfModify no."
+        },
+        {
+          "file": ".github/workflows/pull-request-code-quality-review.yml",
+          "tool": "workflow",
+          "name": "codex-action: Review pull request",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same-repo PRs from an allowlisted set of authors (incl. renovate bot); profile pull-request-review (:workspace write, network github) plus network_proxy. Renovate PR bodies and public issues/comments reachable over the GitHub API are third-party text -> untrustedInput. Findings are published as a public PR review by a later job -> write/egress (indirect); a check fails if the checkout moved."
+        },
+        {
+          "file": ".github/workflows/update-issue-context.yml",
+          "tool": "workflow",
+          "name": "codex-action: Update issue context",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "issue_comment created by anyone, allow-users \"*\"; resumes the triage thread with profile issue-triage. Updated README.md (only file allowed) is pushed to public uv-dev -> write/egress (indirect)."
+        }
+      ]
+    },
+    {
+      "repo": "PostHog/posthog",
+      "agents": [
+        {
+          "file": ".claude/settings.json",
+          "tool": "claude-code",
+          "name": "root Claude Code project (+ .mcp.json phrocs, posthog-local, trunk)",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "settings.json has only SessionStart hooks (fixed setup scripts) and disables typescript-lsp; no permission rules and no enableAllProjectMcpServers, so every Bash/Edit/WebFetch/MCP call is asked. .mcp.json: phrocs (local dev process logs; send_keys writes to dev-process stdin -> exec), posthog-local (localhost PostHog MCP), trunk (https://mcp.trunk.io, private CI/test data -> privateData)."
+        },
+        {
+          "file": ".claude/agents/access-control.md",
+          "tool": "subagent",
+          "name": "access-control",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "tools: Read, Write, Edit, MultiEdit, Grep, Glob, Bash (no MCP/Web tools); no permissionMode, so parent defaults ask for Bash/edits. Bash alone can reach files outside the project, curl, etc. with approval."
+        },
+        {
+          "file": ".claude/agents/activity-log-expert.md",
+          "tool": "subagent",
+          "name": "activity-logging-expert",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all parent tools incl. the three project MCP servers; parent has no allow rules, so everything is asked."
+        },
+        {
+          "file": ".claude/agents/code-reviewer.md",
+          "tool": "subagent",
+          "name": "code-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field (model: opus) -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/prompt-engineer.md",
+          "tool": "subagent",
+          "name": "prompt-engineer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/resource-duplication.md",
+          "tool": "subagent",
+          "name": "resource-duplication",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "tools: Read, Write, Edit, MultiEdit, Grep, Glob, Bash; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/systematic-debugger.md",
+          "tool": "subagent",
+          "name": "systematic-debugger",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/test-writer.md",
+          "tool": "subagent",
+          "name": "test-writer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/ingestion/pipeline-composition-doctor.md",
+          "tool": "subagent",
+          "name": "pipeline-composition-doctor",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "Nested under .claude/agents/ingestion/; no tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/ingestion/pipeline-result-doctor.md",
+          "tool": "subagent",
+          "name": "pipeline-result-doctor",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/ingestion/pipeline-step-doctor.md",
+          "tool": "subagent",
+          "name": "pipeline-step-doctor",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".claude/agents/ingestion/pipeline-testing-doctor.md",
+          "tool": "subagent",
+          "name": "pipeline-testing-doctor",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "No tools field -> inherits all tools; parent defaults ask."
+        },
+        {
+          "file": ".codex/config.toml",
+          "tool": "codex",
+          "name": "Codex (flox wrapper, no MCP)",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "auto"
+          },
+          "why": "No sandbox_mode/approval_policy -> trusted-project defaults workspace-write + on-request; [sandbox_workspace_write] network_access = false with extra writable cache roots; developer_instructions tell it to request elevation for env/dependency commands. Sandbox reads the whole disk -> privateData auto; built-in web search (cached by default, unsure for this version) -> untrustedInput auto; network needs escalation -> egress/spend ask; AGENTS.md writable -> selfModify auto."
+        },
+        {
+          "file": "products/desktop/plugins/posthog/plugin.json",
+          "tool": "plugin",
+          "name": "posthog desktop-app plugin (empty)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "plugin.json at plugin root (not .claude-plugin/), .mcp.json is {}, .lsp.json is {}, agents/commands/hooks/skills dirs are empty -> adds nothing. If treated as a separate Claude Code project because of its .mcp.json, it would be plain defaults (all ask)."
+        },
+        {
+          "file": ".cursor/environment.json",
+          "tool": "cursor",
+          "name": "Cursor background (cloud) agent environment",
+          "capabilities": {
+            "privateData": "unknown",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "unknown",
+            "selfModify": "ask"
+          },
+          "why": "[extra format] Background-agent snapshot + start command (flox activate, docker compose up). Cursor background agents auto-run commands, have internet access and push branches by default. Secrets are set in the Cursor dashboard, not the repo -> privateData/spend unknown. Config changes reach main only via a merged PR -> selfModify ask."
+        }
+      ]
+    },
+    {
+      "repo": "openai/codex",
+      "agents": [
+        {
+          "file": ".github/workflows/issue-translator.yml",
+          "tool": "workflow",
+          "name": "codex-action: translate-issue",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "issues: opened by anyone, allow-users \"*\", sandbox read-only (no network), drop-sudo, contents: read. Issue title/body -> untrustedInput. Sandboxed read-only shell -> exec. apply-translation job (issues: write) rewrites the issue title and posts the agent's translated body as a public comment -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/issue-deduplicator.yml",
+          "tool": "workflow",
+          "name": "codex-action: Find duplicates (pass 1, all issues)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "issues opened/labeled; sandbox read-only; reads the new issue plus up to 1000 existing issue bodies -> untrustedInput. Output `issues` items are unvalidated strings that a later job posts as `- #<value>` in a public comment -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/issue-deduplicator.yml",
+          "tool": "workflow",
+          "name": "codex-action: Find duplicates (pass 2, open issues)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Fallback pass with the same settings (read-only sandbox, allow-users \"*\") over open issues; same downstream public comment."
+        },
+        {
+          "file": "codex-rs/message-board-mcp/plugin/.mcp.json",
+          "tool": "plugin",
+          "name": "message-board Codex plugin",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "unknown",
+            "write": "auto",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Codex plugin (.codex-plugin/plugin.json) adding codex_message_board at http://127.0.0.1:7777/mcp with a bearer token from env: a local shared board where agents read and post messages. Posts change board state; Codex runs MCP calls without a prompt by default as I understand it (unsure) -> write auto. Messages come from other local agents, which may relay outside text -> untrustedInput unknown. Localhost only -> egress no. Also a folder-level .mcp.json for Claude Code."
+        }
+      ]
+    },
+    {
+      "repo": "github/github-mcp-server",
+      "agents": [
+        {
+          "file": ".github/agents/go-sdk-tool-migrator.md",
+          "tool": "copilot",
+          "name": "go-sdk-tool-migrator custom agent",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "ask"
+          },
+          "why": "No tools: list -> all tools. As Copilot coding agent (default target for .github/agents): runs in an Actions sandbox with auto-run shell and edits, read-only GitHub MCP for this public repo (outsider issues/comments), firewall with default allowlist, pushes to a copilot/* branch and opens a public PR -> write/exec/egress auto. Instruction files change only through a reviewed PR -> selfModify ask. In VS Code the same agent would be mostly ask."
+        },
+        {
+          "file": ".github/workflows/issue-triage.md",
+          "tool": "workflow",
+          "name": "gh-aw Issue Triage (copilot engine)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Compiled to issue-triage.lock.yml. tools: bash false, github false, cli-proxy false; the check job reads the issue in code and passes only an enum result, so issue text never reaches the agent. safe-outputs add-labels/add-comment are `staged: true` (previews only, nothing written). Becomes write auto (fixed labels/comments) once staged is removed."
+        },
+        {
+          "file": ".github/workflows/pr-triage.md",
+          "tool": "workflow",
+          "name": "gh-aw PR Triage (copilot engine)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "no",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Compiled to pr-triage.lock.yml. Same pattern: no bash/github tools, agent sees only the check job's result and template section names, safe-outputs staged: true."
+        },
+        {
+          "file": "gemini-extension.json",
+          "tool": "gemini",
+          "name": "github Gemini CLI extension",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "no"
+          },
+          "why": "[extra format] Remote GitHub MCP https://api.githubcopilot.com/mcp/ with Bearer $GITHUB_MCP_PAT; Gemini CLI confirms MCP calls (no trust). PAT reaches private repos -> privateData; issues/PRs -> untrustedInput; create/update files, issues, PRs -> write; pushing workflow files or running workflows -> exec (judgement); public comments/gists -> egress; Actions minutes / assigning Copilot -> spend."
+        },
+        {
+          "file": "agent-plugin/plugin.json",
+          "tool": "plugin",
+          "name": "github agent-plugins.org plugin",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "no"
+          },
+          "why": "[extra format] agent-plugin/mcp.json -> remote GitHub MCP (OAuth); host-dependent approval, ask assumed; same reasoning as the Gemini extension."
+        }
+      ]
+    },
+    {
+      "repo": "pydantic/pydantic-ai",
+      "agents": [
+        {
+          "file": ".claude/settings.json",
+          "tool": "claude-code",
+          "name": "root Claude Code project",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "auto",
+            "selfModify": "auto"
+          },
+          "why": "Allows Bash(uv run:*) and Bash(make:*), which run arbitrary code without a prompt, so file reads outside the project, writes, network and settings edits are all reachable unprompted; gh issue view/list (outsider text) -> untrustedInput. spend/selfModify auto follow from unprompted arbitrary exec (rule), no concrete paid path."
+        },
+        {
+          "file": ".github/workflows/at-claude.yml",
+          "tool": "workflow",
+          "name": "claude-code-action @claude (same-repo job at-claude)",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "ask"
+          },
+          "why": "Triggered by OWNER/MEMBER/COLLABORATOR @claude on non-fork PRs/issues; contents/pr/issues write. allowedTools incl. Bash(uv run:*), Bash(make:*), git push, gh pr create, gh pr comment, gh issue view -> exec/write/egress/untrustedInput. No allowed_non_write_users, so no subprocess env scrub: `uv run` can read CLAUDE_CODE_OAUTH_TOKEN -> privateData. Can edit CLAUDE.md/.claude and push a branch; reaching main needs a merge -> selfModify ask (unsure whether later runs on that PR branch load the edited settings)."
+        },
+        {
+          "file": ".github/workflows/at-claude.yml",
+          "tool": "workflow",
+          "name": "claude-code-action @claude (fork job at-claude-fork)",
+          "capabilities": {
+            "privateData": "auto",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Fork PR code from outsiders; contents: read, pr/issues write; --setting-sources user; disallows make/uv/rg; Bash limited to gh/git read commands and `gh pr comment <this PR>` -> exec no, public comment -> egress/write. Agent-config guard for non-writers. privateData auto is low confidence: tag mode allows Read on any path and env is not scrubbed, so /proc/self/environ could expose CLAUDE_CODE_OAUTH_TOKEN."
+        },
+        {
+          "file": ".github/workflows/bots.yml",
+          "tool": "workflow",
+          "name": "claude-code-action Category Classify",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "pull_request_target (fork PRs), allowed_non_write_users \"*\" (env scrub + bwrap), read-only token, allowedTools only Bash(gh pr view/diff). PR text -> untrustedInput. Output validated against 5 categories, then category-apply sets the label -> write (indirect, allowlisted)."
+        },
+        {
+          "file": ".github/workflows/bots.yml",
+          "tool": "opencode",
+          "name": "OpenCode Category Classify (fallback)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Runs `opencode` via .github/scripts/category_classify_opencode.py when Claude hits a usage limit; permission policy denies everything except read/grep/glob (no MCP, plugins, external dirs) over prefetched PR text. Same allowlisted label output -> write (indirect)."
+        },
+        {
+          "file": ".github/workflows/bots.yml",
+          "tool": "workflow",
+          "name": "claude-code-action douwebot review",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Maintainer label on pull_request_target; base ref owns the workspace, fork head under --add-dir pr-head; read-only token; allowed_non_write_users scrubs secrets. allowedTools: gh/git read commands, jq, cat, ls, grep, WebSearch, WebFetch (curated so nothing executes code) -> exec no; WebFetch to any URL -> egress auto; structured findings published as a public PR review by a trusted job -> write (indirect)."
+        },
+        {
+          "file": ".github/workflows/bots.yml",
+          "tool": "opencode",
+          "name": "OpenCode douwebot review (fallback)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "douwebot_opencode_run.py: read/grep/glob only, no network tools, over fork code and PR context. Its review is validated then published publicly by the publish job -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/pr-review-checks.yml",
+          "tool": "opencode",
+          "name": "OpenCode PR Review Checks",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "pull_request_target on fork heads checked out as data; run_pr_review_check.py runs OpenCode read-only (read/grep/glob). Findings published as commit status + public PR review comments by the publish job -> write/egress (indirect)."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-bug-hunter.md",
+          "tool": "workflow",
+          "name": "gh-aw Bug Hunter (pydantic-ai engine)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Custom gh-aw engine pydantic-ai (clai2 + pydantic_ai_gh_aw_shim Coder: shell + file edits, LLM keys stripped from env) in the AWF firewall; network: defaults, python, github, chrome + many vendor domains; GitHub read via gh-proxy (outsider issues) -> untrustedInput. safe-outputs create-issue (public free text) and report-security-finding (private Slack) -> write/egress. Task prompt fetched from a Logfire managed variable."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-community-demand.md",
+          "tool": "workflow",
+          "name": "gh-aw Community Demand",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "In the shim's NO_SHELL_WORKFLOWS (shell tool removed), github false, checkout false; reads a prefetched snapshot of old issues (outsider text). Output is a choice verdict applied as a label by record-community-verdict -> write (indirect); no free-text publication -> egress no (unsure whether Coder has a web tool besides shell)."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-docs-drift.md",
+          "tool": "workflow",
+          "name": "gh-aw Docs Drift",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter (shell, vendor-domain network, gh-proxy read, create-issue + private security report)."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-feature-digest.md",
+          "tool": "workflow",
+          "name": "gh-aw Feature Digest",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "no",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "NO_SHELL workflow, github false; reads prefetched feature-request issues. record-feature-pick validates issue numbers + one-sentence reason and posts a digest to the internal triage Slack webhook -> write (indirect); private channel, not public/arbitrary -> egress no."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-pr-review.md",
+          "tool": "workflow",
+          "name": "gh-aw CI Review",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "workflow_run/pull_request_review/labeled/dispatch, roles admin/maintainer/write, eligibility job limits it to same-repo PRs; shell + vendor-domain network; gh-proxy toolsets pull_requests, repos, search, issues (outsider comments) -> untrustedInput. safe-outputs create-pull-request-review-comment (max 30) + submit-pull-request-review -> public write/egress."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-provider-mapping-sweep.md",
+          "tool": "workflow",
+          "name": "gh-aw Provider Mapping Sweep",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter; network includes provider APIs but no provider keys reach the agent -> spend no."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-provider-parity-explore.md",
+          "tool": "workflow",
+          "name": "gh-aw Provider Parity Explore",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter (shell, vendor network, gh-proxy read, create-issue)."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-regression-detector.md",
+          "tool": "workflow",
+          "name": "gh-aw Regression Detector",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-roundtrip-sweep.md",
+          "tool": "workflow",
+          "name": "gh-aw Round-Trip Sweep",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter (daily)."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-stale-issues-finder.md",
+          "tool": "workflow",
+          "name": "gh-aw Stale Issues Finder",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Shell (not in NO_SHELL list), narrower network (defaults, python, api.z.ai, logfire), gh-proxy read + prefetched open issues (outsider text); create-issue [stale-finder] public -> write/egress."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-streaming-resilience-sweep.md",
+          "tool": "workflow",
+          "name": "gh-aw Streaming Resilience Sweep",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same shared setup as Bug Hunter."
+        },
+        {
+          "file": ".github/workflows/pydantic-ai-weekly-ce-audit.md",
+          "tool": "workflow",
+          "name": "gh-aw Weekly Agent Instructions Audit",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "ask"
+          },
+          "why": "bash ['*'], vendor network, gh-proxy read; safe-output create-pull-request (Docs App token) limited to AGENTS.md, agent_docs, .agents/.claude *.md -> it edits the agents' own instructions, but via a non-draft PR with protected-files: request_review that a human must merge -> selfModify ask; public PR -> write/egress auto."
+        }
+      ]
+    },
+    {
+      "repo": "anthropics/claude-code-action",
+      "agents": [
+        {
+          "file": ".claude/settings.json",
+          "tool": "claude-code",
+          "name": "root Claude Code project",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "ask",
+            "exec": "ask",
+            "egress": "ask",
+            "spend": "ask",
+            "selfModify": "ask"
+          },
+          "why": "Only a PostToolUse hook running `bunx prettier@3.5.3 --no-config --write .` after Edit/Write (fixed command, runs automatically after an approved edit); no permission rules or MCP, so defaults ask for everything."
+        },
+        {
+          "file": ".claude/agents/code-quality-reviewer.md",
+          "tool": "subagent",
+          "name": "code-quality-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "tools: Glob, Grep, Read, WebFetch, TodoWrite, WebSearch, BashOutput, KillBash: no Bash/Edit/Write. WebFetch/WebSearch and Read outside the project ask in interactive use; WebFetch URL can carry data -> egress ask. When run from claude-review.yml under --permission-mode auto these become auto."
+        },
+        {
+          "file": ".claude/agents/documentation-accuracy-reviewer.md",
+          "tool": "subagent",
+          "name": "documentation-accuracy-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same read/web-only tool list as code-quality-reviewer."
+        },
+        {
+          "file": ".claude/agents/performance-reviewer.md",
+          "tool": "subagent",
+          "name": "performance-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same read/web-only tool list as code-quality-reviewer."
+        },
+        {
+          "file": ".claude/agents/security-code-reviewer.md",
+          "tool": "subagent",
+          "name": "security-code-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same read/web-only tool list as code-quality-reviewer."
+        },
+        {
+          "file": ".claude/agents/test-coverage-reviewer.md",
+          "tool": "subagent",
+          "name": "test-coverage-reviewer",
+          "capabilities": {
+            "privateData": "ask",
+            "untrustedInput": "ask",
+            "write": "no",
+            "exec": "no",
+            "egress": "ask",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "Same read/web-only tool list as code-quality-reviewer."
+        },
+        {
+          "file": ".github/workflows/claude.yml",
+          "tool": "workflow",
+          "name": "claude-code-action @claude",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "ask"
+          },
+          "why": "@claude on issues/PRs (action requires a write-access actor; content can be outsiders'); contents/pr/issues write; --permission-mode auto (non-allowlisted calls gated by a classifier, not a person) plus Bash(bun install/test/...) -> exec/write auto. Egress-firewall runner limits hosts, but public comments/pushes -> egress auto. Only secrets are a short-lived WIF API token and the repo token -> privateData no (low confidence). Instruction/settings edits reach main only via merge -> selfModify ask."
+        },
+        {
+          "file": ".github/workflows/claude-review.yml",
+          "tool": "workflow",
+          "name": "claude-code-action PR Review",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "pull_request opened, same-repo only; contents: read, pull-requests: write; /review-pr allows gh pr comment/diff/view + inline comments; --permission-mode auto lets other tools (incl. WebFetch, Bash) run if the classifier passes -> untrustedInput/exec auto. Public review comments -> write/egress. Cannot push -> selfModify no."
+        },
+        {
+          "file": ".github/workflows/issue-triage.yml",
+          "tool": "workflow",
+          "name": "claude-code-action Issue Triage",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "auto",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "auto",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "issues opened by anyone, allowed_non_write_users \"*\" (env scrub + bwrap), issues: write; /label-issue allows ./scripts/gh.sh and edit-issue-labels.sh (capped at 2 calls); disallows WebFetch/WebSearch/Write/Edit, but --permission-mode auto can still pass other Bash -> exec auto. Labels -> write; gh.sh/auto-mode gh could comment publicly -> egress auto (lower confidence)."
+        },
+        {
+          "file": ".github/workflows/test-base-action.yml",
+          "tool": "workflow",
+          "name": "base-action tests (inline prompt, prompt file)",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[test workflow] Local ./base-action with fixed prompts (or a writer's workflow_dispatch prompt), --allowedTools LS,Read --permission-mode auto -> other tools allowed by classifier; contents: read, firewall runner, no posting token."
+        },
+        {
+          "file": ".github/workflows/test-custom-executables.yml",
+          "tool": "workflow",
+          "name": "base-action test with custom executables",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[test workflow] Fixed prompt, --allowedTools LS,Read --permission-mode auto, contents: read, firewall runner."
+        },
+        {
+          "file": ".github/workflows/test-mcp-servers.yml",
+          "tool": "workflow",
+          "name": "base-action MCP server tests",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[test workflow] Two jobs calling mcp__test-server__test_tool (fixture server base-action/test/mcp-test, which I did not list separately) with --permission-mode auto; contents: read, firewall runner."
+        },
+        {
+          "file": ".github/workflows/test-settings.yml",
+          "tool": "workflow",
+          "name": "base-action settings tests",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[test workflow] Jobs with inline/file settings allowing or denying Bash(echo:*), --permission-mode auto; fixed prompts; contents: read, firewall runner."
+        },
+        {
+          "file": ".github/workflows/test-structured-output.yml",
+          "tool": "workflow",
+          "name": "base-action structured-output tests",
+          "capabilities": {
+            "privateData": "no",
+            "untrustedInput": "no",
+            "write": "auto",
+            "exec": "auto",
+            "egress": "no",
+            "spend": "no",
+            "selfModify": "no"
+          },
+          "why": "[test workflow] Five jobs with --allowedTools Bash --permission-mode auto and fixed prompts; contents: read, firewall runner."
+        }
+      ]
+    }
+  ],
+  "description": "Ground truth for recall: every agent the committed configuration of 8 public repositories sets up (at the commits in real-repos.json), with each of the seven capabilities labelled no, ask, auto or unknown. Labelled from the repositories' own files and the tools' documented defaults by a reviewer who did not see the scanner's output or source (2026-11-18). Entries whose why starts with [extra format] or [test workflow] are out of scope."
+}

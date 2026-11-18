@@ -1,5 +1,177 @@
 # Changelog
 
+## Unreleased
+
+### Check
+
+- Fix (twelfth review): a deciding hook whose output is decoded, or printed from a file next to
+  it, may approve; `Bash(name*)` matches other programs; a single `&` and `<( )` split exact
+  rules; scripts outside the project and more pass-through forms are not project code;
+  `additionalDirectories` and Gemini `includeDirectories` outside the project are private data;
+  settings and loaders moved through `$GITHUB_ENV` / `$GITHUB_PATH`, job and workflow
+  `defaults.run.shell`, commands built by expressions, local JavaScript and Docker actions and
+  the Claude Agent SDK are followed; MCP findings are keyed on what a server runs, so `--base`
+  sees a swapped program; edit rules aimed at agent settings by pattern are AGC-PER-002 (every
+  file: medium); the Claude Code VS Code extension's bypass settings and Zed `tool_permissions`
+  are read. Harmless exact commands (version checks, listings, workspace scripts) are no longer
+  reported. Hooks with the same command are judged once.
+- Fix (eleventh review, root causes): exact Bash rules are split like a shell and options that
+  run programs are read; network-scope commands bring in untrusted input. Hooks fail closed: a
+  deciding hook whose decision cannot be read may approve, and files it prints and modules it
+  imports are read. MCP servers that start a network tool or inline code are AGC-PERM-003. Unknown
+  Claude Code and Codex flags, Codex `-s`/`-c`/`CODEX_HOME` forms, earlier steps that write agent
+  settings, remote actions and reusable workflows handed agent flags or model keys, decoded text
+  piped into a shell, `npm test`/lifecycle scripts, Taskfile, Dockerfile, aliases and symlinks
+  are followed or made unknown reach. `claude-code-base-action` is not write-gated. AGC-COV-001
+  is high when an agent can both run code and send data out without approval and nothing checks
+  it. VS Code settings in workspace files and dev containers, URL and edit auto-approve, Cursor
+  hooks, more settings `env` loaders, unknown gh-aw keys, gh-aw write tokens and risky safe
+  outputs on outsider events, OpenCode `lsp` and provider URLs, and Codex and Gemini telemetry
+  are read. Script chains, gh-aw import graphs, reusable-workflow call graphs and long quoted
+  rules are scanned in linear time.
+- Fix (tenth review): gh-aw lock tool lists are read as Claude Code reads them (spaces,
+  several arguments), and an agent CLI other than the source's engine is a hand edit. A Bash
+  rule for a repository script that runs its arguments as a command, and prefix rules for
+  `make`, `go`, `cargo` and `just`, allow any command. `CLAUDE_CONFIG_DIR` and `HOME` redirects
+  in workflows are followed.
+- Fix (ninth review): files run by an interpreter (`python3 ci/x.py`, `node`, `ruby`, `uv run
+python`) are read for a process that starts an agent; `"${ARGS[@]}"` counts as unresolved
+  flags; `find -exec` commands are read; a `./` path that climbs out of the project is not a
+  project script.
+- Fix (eighth review): fail-closed defaults. A Bash rule is narrower than "any network command"
+  only when it matches a known command shape: unknown programs, wrappers (`sudo`, `timeout`,
+  `xargs`), wildcards inside the command and prefix rules for commands whose options run programs
+  (`git:*`, `find:*`, `rg:*`) are AGC-PERM-003, in every agent that uses Claude's rule syntax.
+  Hooks are judged like commands (scripts from the repository read); a hook that approves tool
+  calls is AGC-PERM-001 and never a runtime check; HTTP hooks and helper commands are covered.
+  Build-output folder names are skipped only outside configuration folders, and configuration in
+  a skipped folder is reported. Workflow scripts: shell keywords, `eval`, repository scripts,
+  `npm run` and `make` targets, `docker run`, other agent CLIs and actions, case-insensitive
+  inputs, expressions inside flags and agents named where the scan cannot follow. gh-aw locks are
+  checked against front matter only. Unknown MCP servers that run without asking, enabled
+  plugins from outside the repository, unmodelled agent files (Cursor hooks, Roo, Continue, ...),
+  VS Code, Zed and Aider auto-approve, Gemini hooks and discovery commands, Codex `notify`,
+  OpenCode plugins and settings `env` loaders are reported. Secrets passed through files,
+  `$GITHUB_OUTPUT`, cloud-credential actions and checkout tokens reach the agent. Front matter
+  with spaces after `---` and space-separated tool lists are read. Quadratic paths removed.
+- Fix (seventh review): configuration folders are walked first and a folder reached through
+  links more than 4 times stops the walk, which is reported at high. Agent CLIs in `run:` scripts
+  are found by splitting the script into commands (quotes, wrappers, `bash -c`, `$(...)`, shell
+  variables), so quoting or an env prefix no longer hides one and `claude --version` is no
+  longer an agent; unresolved arguments and expressions in `claude_args` are unknown reach.
+  Agent actions are matched under any owner, composite actions are read step by step, list
+  flags are variadic, and CLI paths follow `working-directory`. Secrets are found in every
+  expression form, in prompts and through `$GITHUB_ENV`; a harness variable is excluded only
+  for a secret named for a model or telemetry provider. Reusable workflows take their callers'
+  triggers. gh-aw lock files are checked against their source (triggers, agent flags, and
+  gh-aw's own `frontmatter_hash`). Files that cannot be parsed and rules that fail are findings,
+  not only warnings. `apiKeyHelper`, `statusLine` and the other helper commands, and hooks in
+  skill, command and subagent front matter, are judged as hooks. Model endpoints in workflows
+  and gh-aw engines are high unless they name a provider's host. Duplicate step names no longer
+  merge agents, and a duplicate finding keeps the higher severity. A Codex `profile` selects its
+  sandbox; `gh api` prefix rules are not read-only.
+- Fix: AGC-COV-001 counts a runtime check only for the calls it sees. A `PreToolUse` hook on
+  `Bash` no longer hides an unchecked `WebFetch` or MCP server, and Agent Guard or an MCP gateway
+  reached as an MCP server covers only the calls made through that server. The text report says
+  what each check sees, for example `pre-tool-hook (Bash)`.
+- Fix: Claude Code permission modes `auto` (no person approves; its safety review counts as a
+  runtime check), `dontAsk` and `manual` are modelled; `acceptEdits`
+  also runs `mkdir`, `touch`, `mv` and `cp` without asking; a subagent in `auto` mode is reported
+  by AGC-PERM-006 (medium). An unknown mode, Codex `sandbox_mode` or `approval_policy`, or Gemini
+  approval mode is judged at its widest instead of being ignored.
+- Add: AGC-CFG-001 (info, low confidence) reports a setting the scanner does not model, with
+  what it assumed: unknown modes, Cursor CLI tokens, OpenCode actions, OpenCode files with no
+  permission settings, and Claude Code's Bash sandbox.
+- Add: `mcp_servers` in `.agc.yaml` declares what an MCP server can do, keyed by what runs
+  (package, image, host or catalog ID), never by the config name a change chooses. With `--base`
+  it is read from the base commit.
+- Fix: a package or image is identified only when the command has exactly the expected shape
+  (runner, harmless flags, package and its arguments; or `docker run` with known flags and the
+  image). `-p`, `--call`, other runner flags, shell lines with a second command,
+  `--entrypoint`, `--env-file`, unknown docker flags, loader environment variables
+  (`NODE_OPTIONS`, `npm_config_*`, `LD_PRELOAD`, ...) and command-plus-URL servers stay unknown.
+- Add: AGC-CFG-002 reports an agent configuration file the scan could not read (too large, a
+  link out of the repository, unparseable front matter): high for settings and
+  agent definitions (subagents, Copilot, OpenCode and gh-aw agents in Markdown), so padding one
+  past 1 MiB fails the gate instead of hiding it; medium for instruction files.
+- Fix: identification also gives up for project dependencies, repository package sources
+  (`.npmrc`, `uv.toml`, ...), `envFile`, docker mounts, and package specs that fetch from outside
+  the registry. AGC-POL-001 matches on the same identity and never on the config name;
+  AGC-SUP-001 checks every package a command fetches and reports shell lines it cannot read.
+- Add: the MCP catalog knows 24 more servers, 44 in all (search, browsers, documentation,
+  databases, Kubernetes and SaaS accounts such as Zapier, Asana, Figma and PostHog).
+- Fix: hook matchers are never run. Coverage is read from the matcher's alternatives (exact tool
+  names, name prefixes, every tool); a matcher must compile and be at most 512 characters.
+  `disableAllHooks` and managed `allowManagedHooksOnly` are honoured.
+- Fix: Claude Code's Bash sandbox: sandboxed Bash runs and writes without asking unless
+  `autoAllowBashIfSandboxed` is false; the sandbox never lowers network reach.
+- Fix: AGC-TXT-001 no longer reports the zero-width joiner inside an emoji, and AGC-TXT-002 no
+  longer reports a phrase quoted as an example of an attack, or "do not tell the user to ...".
+- Add: GitHub Agentic Workflows (`.github/workflows/*.md` with `on:`) are read as unattended
+  agents, with their triggers, tools (imported lists joined), safe outputs (a runtime check for
+  what they post unless threat detection is off), secrets, tokens, permissions, MCP servers
+  (including containers) and repository imports three levels deep. A custom engine, an import
+  that cannot be read, an unmodelled tool or custom safe-output jobs are unknown reach.
+- Fix (sixth review): gh-aw lock files are read for agent actions gh-aw never generates, and
+  `--base` reports a lock changed apart from its source; gh-aw `jobs`/`steps` that start an
+  agent, `sandbox: { agent: false }` and `secrets` are modelled; agent actions match any case and
+  sub-path (`base-action`), and local actions that wrap an agent are agents; harness credentials
+  must carry a model key to be excluded; `--mcp-config` paths are read; skill and command
+  `allowed-tools` are allow rules; case variants and case collisions are reported; a marketplace
+  plugin in a skipped folder, a Codex provider endpoint and NODE_OPTIONS in settings are high;
+  pinned remote gh-aw imports are medium; Gemini runs without `-p` are detected. Robustness:
+  folder-link loops are walked once, the walk reports folders deeper than 32 levels (medium),
+  git link targets are read by bytes, nested links in git trees are followed, and very large
+  repositories no longer crash the walk.
+- Fix (fifth review): links are resolved as the operating system resolves them and folder links
+  inside the repository are walked at their path; a gh-aw header hides nothing unless the file is
+  a `.lock.yml` with a gh-aw source beside it; linked agent definitions are kept; harness secrets
+  are matched by exact name; settings files and gh-aw imports outside the repository (or at a
+  moving ref) are high; Gemini through `npx` and `run-gemini-cli`, mixed-case action names, and
+  model endpoints in action settings are read; an endpoint redirect in the repository's Claude
+  Code settings is high.
+- Fix (fourth review): fail closed on what is not read. A configuration file committed as a link
+  is read through a target inside the repository and otherwise reported; front matter that is not
+  valid YAML, a settings file that cannot be read, and a walk that stopped early are reported as
+  AGC-CFG-002 and counted as unknown reach. `claude-code-action` `settings` as a file, a mapping or
+  JSONC, and `--settings`, are read. Runners and `docker` from the repository, `cwd`, docker daemon
+  variables and nested package sources stop identification, and package sources are scoped to
+  their ecosystem and folder (an `.npmrc` with only `engine-strict` changes nothing). Unidentified
+  servers may also write and run code (unknown). gh-aw container servers with an entrypoint,
+  mounts or arguments, engine `args`, body imports, nested imports relative to their file, engine
+  environment secrets and an open network are modelled. Copilot CLI and Gemini CLI steps, and
+  gh-aw lock files with no source, are agents. Auto mode's review covers only the calls the mode
+  lets through, and project `defaultMode: auto` is AGC-PERM-001 (medium). AGC-POL-001 can allow a
+  remote server by host. Model endpoints and proxies in workflow `env` and Codex providers are
+  reported.
+- Fix: `codex-args` given as a JSON array or YAML list is read, and the wider Codex sandbox wins
+  when flags and inputs disagree. `claude-code-action`'s inline `settings` and
+  `claude -p --permission-mode acceptEdits|auto` are read. Wide edit patterns (`Edit(**/*.md)`,
+  `Edit(/**)`) and an allow-all rule count as changing the agent itself. YAML merge keys in
+  frontmatter are read. A model endpoint override (`ANTHROPIC_BASE_URL`) is reported.
+- Fix: `openai/codex-action` steps and `codex exec` run commands without asking inside their
+  sandbox; they were reported with no capabilities. A workflow agent with a GitHub token and a
+  shell has unknown untrusted input. VS Code and Cursor agents have their built-in terminal,
+  fetch and edits. An agent that can edit any file or run any command can change itself.
+- Add: the Sentry CLI server (`sentry mcp`) is in the catalog, and Sentry can write.
+- Add: the benchmark measures recall against independent labels for 8 public repositories
+  (`bench/recall-labels.json`): 97% of agents found, 80% of labelled capabilities reported.
+- Note: the inventory's `runtimeChecks` may now list `safe-outputs`, and lists every `PreToolUse` hook, not only those that
+  see Bash. Which calls each check sees is in the JSON report (`mediators`), and AGC-COV-001
+  uses it.
+- Add: OpenCode (`opencode.json`, agent overrides and `.opencode/agent/*.md`), the Cursor CLI
+  (`.cursor/cli.json`), GitHub Copilot custom agents (`.github/agents/*.md`, cloud or
+  `target: vscode`), Kiro (`.kiro/settings/mcp.json`), Claude Code plugin folders and Agent
+  Plugins are read as agents. A plugin never takes a project's `.mcp.json` away from Claude Code.
+  Repository folders named `~` or `<managed>` are never read as user or managed settings, and a
+  FIFO named by a plugin manifest cannot block the scan. Copilot, Cursor, Windsurf and Kiro instruction files
+  feed the text rules.
+- Add: `--include-user` merges your own settings (`~/.claude`, `~/.claude.json`, `~/.codex`,
+  `~/.gemini`, managed settings and servers) in Claude Code's order. Local runs only: refused
+  when `CI` is set, with `--fix` and with `--write-baseline`.
+- Add: `schemas/agent-guard-check-inventory-v1.schema.json` publishes the `--format inventory`
+  output, and a test keeps them in step.
+
 ## 1.3.0 — 2026-11-16
 
 ### Core
@@ -281,7 +453,7 @@ additions, then fixes.
   `readsUntrusted`. Defaults are unchanged (`allow`), and tools that set none of the
   labels keep their fingerprints.
 - Add (core API shape for 1.0): `executeDetailed()` returns `{ value, charged,
-  actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
+actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
   in long-running guards; `unapproveTool()` and `unregisterTool()`; an `onDecision`
   audit hook (identifiers only; it cannot change an outcome); `snapshot()` adds
   `budget` and `revoked`; a `limits` option for the previously fixed approval and
@@ -635,7 +807,7 @@ additions, then fixes.
   limit and returns `truncated: true` when its work budget runs out.
 - Fix (agent map): the identity endpoint ignores other applications' cookies; ID token
   `iat`/`nbf` may be up to 5 seconds ahead (`oidc.clockToleranceSeconds`); `Expect:
-  100-continue` is answered; names sort in code-point order; `get_changes` accepts
+100-continue` is answered; names sort in code-point order; `get_changes` accepts
   `changeKind: inventory` and shows renamed agents under their current name; evidence rows
   carry allowlisted properties only; launchers print `MAP_START_FAILED <code>: <hint>` and
   accept `--version`.
@@ -758,7 +930,7 @@ additions, then fixes.
 - Fix (collector): pending receipts are capped per source (`--archive-max-pending`), listed
   and discarded with `agent-guard-recovery pending` / `discard --reviewed`; a foreign or damaged
   file fails only its own source and is named; backup, restore and the new `agent-guard-recovery
-  replay` accept the archive limit flags.
+replay` accept the archive limit flags.
 - Fix (collector): at an unchanged ledger revision a capture older than the published one
   is refused (`GENERATED_AT_ROLLBACK`); SIGTERM stops `--watch` cleanly; the AWS worker's
   process group is signalled only while its leader is unreaped.

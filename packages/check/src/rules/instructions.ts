@@ -2,6 +2,20 @@ import { ASI, rule } from './common.js';
 import type { Rule } from './common.js';
 import { findHiddenCharacter, lineAt } from '../text.js';
 
+/**
+ * A phrase quoted as an example of an attack (`such as "ignore previous instructions"`), or advice
+ * about what to suggest (`do not tell the user to restart`), is not an instruction to hide anything.
+ */
+function quotedOrAdvice(text: string, match: RegExpMatchArray): boolean {
+  const before = text[match.index! - 1] ?? '';
+  const end = match.index! + match[0].length;
+  // Quoted as an example only when the quotes wrap the phrase itself (`"ignore previous
+  // instructions"`, `'Ignore previous instructions...'`), not when they open a longer instruction.
+  if (/["'“‘`«]/.test(before) && /^(\.\.\.|…)?[.,]?["'”’`»]/.test(text.slice(end, end + 5))) return true;
+  const after = text.slice(match.index! + match[0].length, match.index! + match[0].length + 4);
+  return /^(tell|inform)/i.test(match[0].replace(/^do not /i, '')) && /^\s+to\s/i.test(after);
+}
+
 export const INSTRUCTIONS_RULES: readonly Rule[] = [
   rule(
     {
@@ -36,9 +50,9 @@ export const INSTRUCTIONS_RULES: readonly Rule[] = [
     },
     (project, report) => {
       const pattern =
-        /\b(ignore (all |any )?(previous|prior|above|earlier) (instructions|rules|directions)|disregard (all |your |the )?(previous |prior )?(instructions|rules|guidelines)|do not (tell|inform|alert|notify) the user|without (telling|informing|alerting) the user|hide this from the user)\b/i;
+        /\b(ignore (all |any )?(previous|prior|above|earlier) (instructions|rules|directions)|disregard (all |your |the )?(previous |prior )?(instructions|rules|guidelines)|do not (tell|inform|alert|notify) the user|without (telling|informing|alerting) the user|hide this from the user)\b/gi;
       for (const file of project.prompts) {
-        const match = pattern.exec(file.text);
+        const match = [...file.text.matchAll(pattern)].find(item => !quotedOrAdvice(file.text, item));
         if (match)
           report({
             message: `"${match[0]}" in ${file.path}.`,

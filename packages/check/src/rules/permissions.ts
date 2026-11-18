@@ -1,9 +1,16 @@
-import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule } from './common.js';
+import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule, serverKey } from './common.js';
 import type { Rule } from './common.js';
-import { bashScope } from '../claude.js';
+import { bashScope, HARMLESS_TOOLS, isOutsideProject } from '../claude.js';
+import { commands, unwrap } from '../shell.js';
 import { lineAt } from '../text.js';
 import { projectDir } from '../model.js';
 import { UNTRUSTED_TRIGGERS } from '../workflows.js';
+
+/** A hook matcher that names only tools that run nothing (`AskUserQuestion`, `TodoWrite`). */
+function onlyHarmless(matcher: string): boolean {
+  const names = matcher.split('|').map(name => name.trim());
+  return matcher.trim() !== '' && names.every(name => HARMLESS_TOOLS.has(name));
+}
 
 export const PERMISSIONS_RULES: readonly Rule[] = [
   rule(
@@ -25,6 +32,17 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
             agent: project.agents.find(agent => agent.kind === 'claude-code'),
             fix: 'Remove defaultMode or set it to "default", and allow only the tools the agent needs.',
           });
+        else if (file.defaultMode?.value === 'auto')
+          // A safety review approves calls instead of a person: less than a bypass, still no person.
+          report({
+            message:
+              'Claude Code runs tools without a person approving them (defaultMode: auto); a safety review decides.',
+            location: file.defaultMode.location,
+            subject: 'defaultMode',
+            severity: 'medium',
+            agent: project.agents.find(agent => agent.kind === 'claude-code'),
+            fix: 'Set defaultMode to "default" in shared settings; choose auto per session where it is wanted.',
+          });
       for (const step of project.workflows)
         if (step.skipPermissions) {
           const untrusted = step.triggers.some(trigger => UNTRUSTED_TRIGGERS.has(trigger));
@@ -45,8 +63,24 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           agent: project.agents.find(agent => agent.location.file === bypass.location.file),
           fix: bypass.agent.startsWith('Codex')
             ? 'Use approval_policy = "on-request" with sandbox_mode = "workspace-write".'
-            : 'Remove defaultApprovalMode "yolo", or set security.disableYoloMode to true.',
+            : bypass.agent.startsWith('Gemini')
+              ? 'Remove defaultApprovalMode "yolo", or set security.disableYoloMode to true.'
+              : 'Turn this setting off in the repository, so each tool call is approved by a person.',
         });
+      // A hook that answers "allow" for tool calls approves them instead of a person.
+      for (const { hook, judgement } of project.hookJudgements)
+        if (judgement.approves !== 'no' && !onlyHarmless(hook.matcher))
+          report({
+            message:
+              judgement.approves === 'yes'
+                ? `A ${hook.event} hook approves tool calls${hook.matcher ? ` matching "${hook.matcher}"` : ''}, so they run without a person deciding.`
+                : `A ${hook.event} hook may approve tool calls${hook.matcher ? ` matching "${hook.matcher}"` : ''} (${judgement.why}); what it decides cannot be read.`,
+            location: hook.location,
+            subject: `hook-approves:${hook.event}:${hook.matcher}:${hook.command || hook.url || hook.type}`,
+            severity: judgement.approves === 'yes' ? 'critical' : 'high',
+            agent: project.agents.find(agent => agent.kind === 'claude-code'),
+            fix: 'Let the hook deny or ask, never allow; keep approvals with a person or with permission rules a reviewer can read.',
+          });
       for (const file of project.scripts) {
         const index = file.text.search(/--dangerously-(skip-permissions|bypass-approvals-and-sandbox)/);
         if (index >= 0)
@@ -71,7 +105,10 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
     (project, report) => {
       const servers = agentServers(project);
       for (const allowed of allowRules(project)) {
-        if (allowed.tool === '*' || (allowed.tool === 'Bash' && bashScope(allowed.specifier) === 'any')) {
+        if (
+          allowed.tool === '*' ||
+          (['Bash', 'PowerShell', 'Monitor'].includes(allowed.tool) && bashScope(allowed.specifier) === 'any')
+        ) {
           report({
             message: `"${allowed.raw}" lets the agent run any ${allowed.tool === '*' ? 'tool' : 'shell command'} without asking.`,
             location: allowed.location,
@@ -104,12 +141,43 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
     },
     (project, report) => {
       for (const allowed of allowRules(project))
-        if (allowed.tool === 'Bash' && bashScope(allowed.specifier) === 'network')
+        if (['Bash', 'PowerShell', 'Monitor'].includes(allowed.tool) && bashScope(allowed.specifier) === 'network')
           report({
             message: `"${allowed.raw}" runs without asking and can reach the network or run arbitrary code.`,
             location: allowed.location,
             subject: allowed.raw,
             fix: 'Keep this command behind approval, or narrow it to a fixed script that cannot take arbitrary arguments.',
+          });
+      // An MCP server whose command is itself a network tool or inline code (`curl -d @file url`,
+      // `python3 -c "..."`): it runs when the server starts, whatever its tools are.
+      for (const server of agentServers(project)) {
+        if (!server.command) continue;
+        const launch = [server.command, ...server.args].map(arg =>
+          /[\s"']/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg,
+        );
+        const call = unwrap(commands(launch.join(' '))[0] ?? []);
+        if (!call) continue;
+        const inline =
+          /^(python[0-9.]*|node|nodejs|ruby|perl|php|deno|bun|bash|sh|zsh|dash|ksh|pwsh|powershell|osascript)$/.test(
+            call.name,
+          ) && call.args.some(arg => /^(-[a-zA-Z]*[ceE]|--eval|--command|--print|eval)$/.test(arg.text));
+        if (inline || /^(curl|wget|nc|ncat|netcat|socat|ssh|scp|sftp|telnet|ftp|rsync|openssl)$/.test(call.name))
+          report({
+            message: `MCP server ${server.name} starts \`${launch.join(' ').slice(0, 100)}\`, which runs when the server starts and can reach the network or run arbitrary code.`,
+            location: server.location,
+            subject: `mcp-command:${serverKey(server)}`,
+            fix: 'Start the server from a package or a script in the repository, not from a network tool or inline code.',
+          });
+      }
+      // Hooks run without asking, on every matching event: one that can reach the network or run
+      // arbitrary code (or cannot be read) is such a command.
+      for (const { hook, judgement } of project.hookJudgements)
+        if (judgement.reach === 'network')
+          report({
+            message: `A ${hook.event} hook runs ${judgement.why} without asking; it can reach the network or run arbitrary code.`,
+            location: hook.location,
+            subject: `hook:${hook.event}:${hook.command || hook.url || hook.type}`,
+            fix: 'Run a script from the repository that only does local work, or remove the hook.',
           });
     },
   ),
@@ -123,19 +191,21 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
       help: 'Home directories hold SSH keys, cloud credentials and tokens. An agent that can read them can leak them.',
     },
     (project, report) => {
+      for (const allowed of allowRules(project))
+        if (['Read', 'Glob', 'Grep', 'LS'].includes(allowed.tool) && isOutsideProject(allowed.specifier))
+          report({
+            message: `"${allowed.raw}" lets the agent read outside the project without asking, where keys and tokens live.`,
+            location: allowed.location,
+            subject: allowed.raw,
+            fix: 'Allow only the specific directory the agent needs, and deny ~/.ssh, ~/.aws and .env files.',
+          });
       for (const file of project.settings) {
-        for (const allowed of file.allow)
-          if (['Read', 'Glob', 'Grep', 'LS'].includes(allowed.tool) && /^(~|\/\/|\$HOME)/.test(allowed.specifier ?? ''))
-            report({
-              message: `"${allowed.raw}" lets the agent read outside the project without asking, where keys and tokens live.`,
-              location: allowed.location,
-              subject: allowed.raw,
-              fix: 'Allow only the specific directory the agent needs, and deny ~/.ssh, ~/.aws and .env files.',
-            });
         for (const directory of file.additionalDirectories)
-          if (/^(~\/?|\/|\$HOME\/?)$/.test(directory.value.trim()))
+          if (/^(~|\$HOME|\/)/.test(directory.value.trim()))
             report({
-              message: `additionalDirectories includes "${directory.value}", which opens the whole ${directory.value.trim() === '/' ? 'disk' : 'home directory'} to the agent.`,
+              message: /^(~\/?|\/|\$HOME\/?)$/.test(directory.value.trim())
+                ? `additionalDirectories includes "${directory.value}", which opens the whole ${directory.value.trim() === '/' ? 'disk' : 'home directory'} to the agent.`
+                : `additionalDirectories includes "${directory.value}", outside the project: the agent reads it without asking.`,
               location: directory.location,
               subject: `dir:${directory.value}`,
               fix: 'List only the project directories the agent needs.',
@@ -174,7 +244,7 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.tools, ASI.trust],
-      help: 'A subagent’s permissionMode replaces the session’s for its own calls. bypassPermissions skips every prompt; acceptEdits and auto write files without asking. Claude Code ignores permissionMode for plugin subagents, not for project ones.',
+      help: 'A subagent’s permissionMode replaces the session’s for its own calls. bypassPermissions skips every prompt; auto lets a classifier, not a person, approve most calls; acceptEdits writes files without asking. Claude Code ignores permissionMode for plugin subagents, not for project ones.',
     },
     (project, report) => {
       for (const sub of project.subagents) {
@@ -185,16 +255,23 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           // The session's own settings: the same project directory, settings.local.json first.
           .find(file => file.defaultMode && projectDir(file.path) === sub.projectDir)?.defaultMode?.value;
         const agent = project.agents.find(item => item.id === `subagent:${sub.path}`);
-        if (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions')
+        if (
+          (mode.value === 'bypassPermissions' && parentMode !== 'bypassPermissions') ||
+          (mode.value === 'auto' && parentMode !== 'bypassPermissions' && parentMode !== 'auto')
+        )
           report({
-            message: `Subagent ${sub.name} sets permissionMode: bypassPermissions, so ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'} run without asking.`,
+            message:
+              mode.value === 'auto'
+                ? `Subagent ${sub.name} sets permissionMode: auto, so a classifier, not a person, approves ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'}.`
+                : `Subagent ${sub.name} sets permissionMode: bypassPermissions, so ${sub.tools ? `its tools (${sub.tools.join(', ')})` : 'every tool it inherits'} run without asking.`,
             location: mode.location,
             subject: `mode:${sub.path}`,
             agent,
+            ...(mode.value === 'auto' ? { severity: 'medium' as const } : {}),
             fix: 'Remove permissionMode, or use plan or default and allow the specific tools it needs.',
           });
         else if (
-          (mode.value === 'acceptEdits' || mode.value === 'auto') &&
+          mode.value === 'acceptEdits' &&
           parentMode !== 'acceptEdits' &&
           parentMode !== 'bypassPermissions' &&
           parentMode !== 'auto'

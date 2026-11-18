@@ -1,7 +1,7 @@
 import { parse as parseToml } from 'smol-toml';
-import type { Agent, Approval, Capability, Grant, Location } from './types.js';
+import type { Agent, Approval, Capability, Grant, Location, Unrecognized } from './types.js';
 import { grantsForRule, parseRule, type PermissionRule } from './claude.js';
-import { serversFromObject, type McpServer } from './mcp.js';
+import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
 
 /**
@@ -30,7 +30,14 @@ export interface OtherAgent {
   readonly allow: readonly PermissionRule[];
   readonly bypasses: readonly Bypass[];
   readonly models: readonly ModelChoice[];
+  readonly unrecognized: readonly Unrecognized[];
+  /** Agent definitions whose settings could not be parsed: reported as unread (AGC-CFG-002). */
+  readonly unparsed?: readonly { readonly path: string; readonly error: string }[];
 }
+
+const CODEX_POLICIES = new Set(['untrusted', 'on-failure', 'on-request', 'never']);
+const CODEX_SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access']);
+const GEMINI_MODES = new Set(['default', 'auto_edit', 'yolo', 'plan']);
 
 function lineOfKey(text: string, key: string, from = 0): number {
   const lines = text.split('\n');
@@ -56,12 +63,23 @@ const grant = (
 ): Grant => ({ capability, via, approval, certainty, location, ...(tool ? { tool } : {}) });
 
 /** `.codex/config.toml`. Throws on invalid TOML so the caller can report it. */
-export function parseCodex(path: string, text: string): OtherAgent {
-  const data = parseToml(text) as Record<string, unknown>;
+export function parseCodex(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
+  const raw = parseToml(text) as Record<string, unknown>;
+  // `profile = "x"` makes `[profiles.x]` the settings Codex starts with: its policy and sandbox win.
+  const selected = asString(raw['profile']);
+  const chosen =
+    selected !== undefined && isRecord(raw['profiles']) && isRecord(raw['profiles'][selected])
+      ? raw['profiles'][selected]
+      : {};
+  const data: Record<string, unknown> = { ...raw, ...chosen };
   const at = (key: string): Location => ({ file: path, line: lineOfKey(text, key) || 1 });
   const policy = data['approval_policy'];
   const policyName = typeof policy === 'string' ? policy : isRecord(policy) ? 'granular' : 'on-request';
-  const sandbox = asString(data['sandbox_mode']) ?? 'workspace-write';
+  // A value of the wrong type is not a sandbox Codex knows: keep it, so it is judged as unknown.
+  const sandbox =
+    data['sandbox_mode'] === undefined
+      ? 'workspace-write'
+      : (asString(data['sandbox_mode']) ?? JSON.stringify(data['sandbox_mode']));
   const workspace = isRecord(data['sandbox_workspace_write']) ? data['sandbox_workspace_write'] : {};
   const network = workspace['network_access'] === true;
   // `untrusted` asks before anything outside a small trusted set; the others run inside the sandbox.
@@ -69,12 +87,34 @@ export function parseCodex(path: string, text: string): OtherAgent {
   const policyAt = policy === undefined ? { file: path, line: 1 } : at('approval_policy');
   const sandboxAt = data['sandbox_mode'] === undefined ? { file: path, line: 1 } : at('sandbox_mode');
   const grants: Grant[] = [];
+  const unrecognized: Unrecognized[] = [];
   const via = (detail: string) => `Codex ${detail}`;
-  if (sandbox === 'danger-full-access') {
+  if (policy !== undefined && !isRecord(policy) && (typeof policy !== 'string' || !CODEX_POLICIES.has(policy)))
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'approval_policy',
+      value: String(policy),
+      assumed: 'commands run without asking',
+      location: policyAt,
+    });
+  if (!CODEX_SANDBOXES.has(sandbox)) {
+    // Never assume a sandbox the scanner cannot name: judge it as no sandbox, with the reach unknown.
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'sandbox_mode',
+      value: sandbox,
+      assumed: 'no sandbox: commands may write, run code and reach the network',
+      location: sandboxAt,
+    });
     for (const capability of ['exec', 'write', 'egress'] as const)
+      grants.push(grant(capability, via(`sandbox_mode = "${sandbox}"`), approval, sandboxAt, 'unknown', 'shell'));
+  } else if (sandbox === 'danger-full-access') {
+    for (const capability of ['exec', 'write', 'egress', 'selfModify'] as const)
       grants.push(grant(capability, via('sandbox_mode = "danger-full-access"'), approval, sandboxAt, 'yes', 'shell'));
   } else if (sandbox === 'workspace-write') {
     grants.push(grant('write', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
+    // The workspace holds .codex/config.toml and AGENTS.md: it can rewrite its own settings and instructions.
+    grants.push(grant('selfModify', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
     grants.push(grant('exec', via('sandbox_mode = "workspace-write"'), approval, sandboxAt, 'yes', 'shell'));
     if (network)
       grants.push(
@@ -103,7 +143,7 @@ export function parseCodex(path: string, text: string): OtherAgent {
   for (const [name, raw] of Object.entries(mcp)) {
     if (!isRecord(raw) || raw['enabled'] === false) continue;
     const line = lineOfTable(text, `mcp_servers.${name}`) || lineOfTable(text, `mcp_servers."${name}"`) || 1;
-    const [server] = serversFromObject({ mcpServers: { [name]: raw } }, path, '', 'codex');
+    const [server] = serversFromObject({ mcpServers: { [name]: raw } }, path, '', 'codex', 0, declared);
     if (!server) continue;
     const located: McpServer = { ...server, location: { file: path, line } };
     servers.push(located);
@@ -119,6 +159,13 @@ export function parseCodex(path: string, text: string): OtherAgent {
       what: 'approval_policy = "never" with sandbox_mode = "danger-full-access"',
       location: sandboxAt,
     });
+  // Never asking, inside a sandbox that reaches the network: every command runs and can send data out.
+  if (policyName === 'never' && sandbox === 'workspace-write' && network)
+    bypasses.push({
+      agent: name,
+      what: 'approval_policy = "never" with network_access = true',
+      location: policyAt,
+    });
   const profiles = isRecord(data['profiles']) ? data['profiles'] : {};
   for (const [profile, raw] of Object.entries(profiles)) {
     if (!isRecord(raw)) continue;
@@ -131,9 +178,45 @@ export function parseCodex(path: string, text: string): OtherAgent {
         location: { file: path, line: lineOfTable(text, `profiles.${profile}`) || 1 },
       });
   }
+  // An OpenTelemetry exporter sends session events (prompts too, with log_user_prompt) to its endpoint.
+  if (isRecord(data['otel']) && data['otel']['exporter'] !== undefined && data['otel']['exporter'] !== 'none')
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'otel.exporter',
+      value: JSON.stringify(data['otel']['exporter']).slice(0, 120),
+      assumed: `session events${data['otel']['log_user_prompt'] === true ? ', prompts included,' : ''} are sent to this endpoint`,
+      location: at('otel'),
+      severity: 'medium',
+    });
+  // `notify` runs a program after every turn, without asking.
+  if (data['notify'] !== undefined)
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'notify',
+      value: JSON.stringify(data['notify']).slice(0, 120),
+      assumed: 'it runs a program after every turn without asking, which may reach the network',
+      location: at('notify'),
+      severity: 'high',
+    });
   const models: ModelChoice[] = [];
   const model = asString(data['model']);
   if (model) models.push({ agent: name, model, location: at('model') });
+  // A model provider with its own endpoint receives everything the agent reads.
+  const providers = isRecord(data['model_providers']) ? data['model_providers'] : {};
+  for (const [provider, raw] of Object.entries(providers)) {
+    const url = isRecord(raw) ? asString(raw['base_url']) : undefined;
+    if (url)
+      unrecognized.push({
+        agent: name,
+        setting: `model_providers.${provider}.base_url`,
+        value: url,
+        assumed:
+          'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
+        location: { file: path, line: lineOfKey(text, 'base_url') || 1 },
+        // In the repository's Codex config it sends every developer's key and context there.
+        ...(path.startsWith('~/') ? {} : { severity: 'high' as const }),
+      });
+  }
   const dir = path.split('/').slice(0, -2).join('/');
   return {
     agent: {
@@ -149,6 +232,7 @@ export function parseCodex(path: string, text: string): OtherAgent {
     allow: [],
     bypasses,
     models,
+    unrecognized,
   };
 }
 
@@ -179,7 +263,7 @@ function geminiRule(name: string): string | undefined {
 }
 
 /** `.gemini/settings.json` (both the nested v2 layout and the flat v1 one). Throws on invalid JSON. */
-export function parseGemini(path: string, text: string): OtherAgent {
+export function parseGemini(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
   const data = parseJsonc(text);
   if (!isRecord(data)) throw new Error('settings must be an object');
   const tools = isRecord(data['tools']) ? data['tools'] : {};
@@ -192,8 +276,18 @@ export function parseGemini(path: string, text: string): OtherAgent {
     Array.isArray(tools['core']) || Array.isArray(data['coreTools']) ? list(tools['core'], data['coreTools']) : null;
   const excluded = list(tools['exclude'], data['excludeTools']);
   const mode = asString(general['defaultApprovalMode']) ?? asString(data['defaultApprovalMode']);
+  const unrecognized: Unrecognized[] = [];
+  const unknownMode = mode !== undefined && !GEMINI_MODES.has(mode);
+  if (unknownMode)
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'defaultApprovalMode',
+      value: mode,
+      assumed: 'every tool runs without asking',
+      location: at('defaultApprovalMode'),
+    });
   const yolo = mode === 'yolo' && security['disableYoloMode'] !== true;
-  const servers = serversFromObject(data, path, text, 'gemini');
+  const servers = serversFromObject(data, path, text, 'gemini', 0, declared);
   const available = (rule: string) => {
     const base = rule.split('(')[0]!;
     if (excluded.some(item => item === rule || geminiRule(item) === rule || geminiRule(item)?.split('(')[0] === base))
@@ -204,7 +298,12 @@ export function parseGemini(path: string, text: string): OtherAgent {
   const grants: Grant[] = [];
   // Built-in tools are available with confirmation unless excluded or left out of tools.core.
   for (const base of ['Bash', 'Edit', 'WebFetch', 'WebSearch'])
-    if (available(base)) grants.push(...grantsForRule(parseRule(base, anchor), yolo ? 'auto' : 'ask', []));
+    if (available(base))
+      grants.push(
+        ...grantsForRule(parseRule(base, anchor), yolo || unknownMode ? 'auto' : 'ask', []).map(item =>
+          unknownMode ? { ...item, certainty: 'unknown' as const } : item,
+        ),
+      );
   if (mode === 'auto_edit' && available('Edit'))
     grants.push(...grantsForRule(parseRule('Edit', at('defaultApprovalMode')), 'auto', []));
   const allow: PermissionRule[] = [];
@@ -226,6 +325,55 @@ export function parseGemini(path: string, text: string): OtherAgent {
     if (trusted) allow.push(rule);
     grants.push(...grantsForRule(rule, trusted || yolo ? 'auto' : 'ask', usable));
   }
+  // Commands Gemini CLI runs on its own: hooks, and the commands that discover and call tools.
+  for (const [key, value, where] of [
+    ['hooks', data['hooks'], 'hooks'],
+    ['tools.discoveryCommand', tools['discoveryCommand'], 'discoveryCommand'],
+    ['tools.callCommand', tools['callCommand'], 'callCommand'],
+  ] as const)
+    if (value !== undefined && value !== null && value !== '' && !(isRecord(value) && !Object.keys(value).length))
+      unrecognized.push({
+        agent: 'Gemini CLI',
+        setting: key,
+        value: JSON.stringify(value).slice(0, 120),
+        assumed: 'it runs commands of its own without asking, which may reach the network',
+        location: at(where),
+        severity: 'high',
+      });
+  // Telemetry sent to an OTLP endpoint (or Google Cloud) carries prompts unless logPrompts is false.
+  const telemetry = isRecord(data['telemetry']) ? data['telemetry'] : {};
+  if (telemetry['enabled'] === true && (asString(telemetry['otlpEndpoint']) || telemetry['target'] === 'gcp'))
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'telemetry',
+      value: asString(telemetry['otlpEndpoint']) ?? 'gcp',
+      assumed: `session events${telemetry['logPrompts'] === false ? '' : ', prompts included,'} are sent to this endpoint`,
+      location: at('telemetry'),
+      severity: 'medium',
+    });
+  // Folders added outside the project are read without asking.
+  const context = isRecord(data['context']) ? data['context'] : {};
+  for (const folder of asStringArray(context['includeDirectories'] ?? []))
+    if (/^(~|\$HOME|\/)/.test(folder.trim()))
+      grants.push(
+        grant(
+          'privateData',
+          `context.includeDirectories ${folder}`,
+          'auto',
+          at('includeDirectories'),
+          'yes',
+          'read_file',
+        ),
+      );
+  if (tools['autoAccept'] === true)
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'tools.autoAccept',
+      value: 'true',
+      assumed: 'tools Gemini CLI considers safe run without asking',
+      location: at('autoAccept'),
+      severity: 'medium',
+    });
   const bypasses: Bypass[] = [];
   if (yolo)
     bypasses.push({
@@ -251,6 +399,7 @@ export function parseGemini(path: string, text: string): OtherAgent {
     allow,
     bypasses,
     models,
+    unrecognized,
   };
 }
 

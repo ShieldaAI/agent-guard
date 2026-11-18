@@ -10,7 +10,9 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
+import { homedir } from 'node:os';
 import { relative, resolve, sep } from 'node:path';
+import { readUserConfig } from './user.js';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import {
@@ -84,6 +86,8 @@ Evidence:
                                        The token comes from AGENT_MAP_TOKEN (or agent_map.token_env,
                                        which must end in AGENT_MAP_TOKEN)
   --import-sarif <file>                Merge another tool's SARIF 2.1.0 findings (repeatable)
+  --include-user                       Also read your own settings: ~/.claude, ~/.claude.json, ~/.codex,
+                                       ~/.gemini and managed settings (local runs only, not in CI)
 
 Fixing:
   --fix                                Apply safe fixes to agent settings and workflows, then report
@@ -103,6 +107,8 @@ export interface CliIo {
   readonly env?: Readonly<Record<string, string | undefined>>;
   /** For tests; defaults to the global fetch. */
   readonly fetch?: typeof fetch;
+  /** Home folder for --include-user; defaults to the user's home. For tests. */
+  readonly home?: string;
 }
 
 class UsageError extends Error {}
@@ -114,7 +120,7 @@ class UsageError extends Error {}
 function readInput(path: string): string {
   let fd: number | undefined;
   try {
-    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    fd = openSync(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
     const info = fstatSync(fd);
     if (!info.isFile()) throw new UsageError(`${path} is not a regular file`);
     if (info.size > MAX_INPUT_BYTES) throw new UsageError(`${path} is larger than ${MAX_INPUT_BYTES} bytes`);
@@ -181,6 +187,7 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         fix: { type: 'boolean', default: false },
         'fix-dry-run': { type: 'boolean', default: false },
         'list-rules': { type: 'boolean', default: false },
+        'include-user': { type: 'boolean', default: false },
         version: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
@@ -216,10 +223,16 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   if (minFlag !== undefined && minFlag !== 'high' && minFlag !== 'low')
     return usage('--min-confidence must be high or low.');
   if (values.fix && values['fix-dry-run']) return usage('Use --fix or --fix-dry-run, not both.');
+  if (values['include-user'] && (values.fix || values['fix-dry-run']))
+    return usage('--fix changes repository files only; run it without --include-user.');
+  if (values['include-user'] && values['write-baseline'])
+    return usage('--write-baseline records repository findings; run it without --include-user.');
+  const env = io.env ?? process.env;
+  if (values['include-user'] && env['CI'] && env['CI'] !== 'false' && env['CI'] !== '0')
+    return usage('--include-user reads your own settings; it is for local runs, not CI.');
   if ((values.fix || values['fix-dry-run']) && values.base) return usage('--fix cannot be combined with --base.');
 
   const root = resolve(io.cwd, positionals[0] ?? '.');
-  const env = io.env ?? process.env;
   try {
     // With --base, the change under review must not set its own gate: .agc.yaml and an in-repo
     // baseline are read from the base commit, so an edit to either takes effect once merged.
@@ -291,6 +304,15 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       agentGuardFiles,
       imported,
       ...(live ? { live } : {}),
+      ...(values['include-user']
+        ? {
+            userFiles: readUserConfig(io.home ?? homedir(), process.platform, path =>
+              io.stderr(
+                `${TOOL_NAME}: ${path} was not read (larger than 1 MiB, or not a readable file); settings in it are not in this report.\n`,
+              ),
+            ),
+          }
+        : {}),
     };
     let head = scan({ root, ...options });
 

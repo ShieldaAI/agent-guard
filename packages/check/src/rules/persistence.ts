@@ -2,6 +2,25 @@ import { ASI, IDENTITY_WRITE, SETTINGS_WRITE, allowRules, hooks, rule } from './
 import type { Rule } from './common.js';
 import { lineAt } from '../text.js';
 
+// An edit pattern that can match the agent's own settings without naming them: a wildcard in a dot
+// folder's name (.claud? or .[c]laude), any settings*.json, the home folder (which holds
+// ~/.claude) or every file.
+function everyFile(specifier: string | undefined): boolean {
+  const spec = (specifier ?? '').trim();
+  return !spec || /^(\.\/)?\*\*?(\/\*\*?)?$/.test(spec);
+}
+
+function reachesAgentFiles(specifier: string | undefined): boolean {
+  const spec = (specifier ?? '').trim();
+  if (!spec) return true;
+  return (
+    /^(\.\/)?\.[^/]*[*?[]/.test(spec) ||
+    /(^|\/)\*\*\/settings[^/]*\.json$|(^|\/)settings\*/.test(spec) ||
+    /^(~|\$HOME)(\/|$)/.test(spec) ||
+    /^(\.\/)?\*\*?(\/\*\*?)?$/.test(spec)
+  );
+}
+
 export const PERSISTENCE_RULES: readonly Rule[] = [
   rule(
     {
@@ -57,10 +76,15 @@ export const PERSISTENCE_RULES: readonly Rule[] = [
       for (const allowed of allowRules(project))
         if (
           ['Edit', 'Write', 'MultiEdit'].includes(allowed.tool) &&
-          /\.claude(\/\*\*?|\/?$|\/(settings[^/]*\.json|hooks|agents|skills|commands)\b)/.test(allowed.specifier ?? '')
+          (/\.claude(\/\*\*?|\/?$|\/(settings[^/]*\.json|hooks|agents|skills|commands)\b)/.test(
+            allowed.specifier ?? '',
+          ) ||
+            reachesAgentFiles(allowed.specifier))
         )
           report({
             message: `"${allowed.raw}" lets the agent edit its own settings, hooks or skills without asking.`,
+            // Every file, without naming the agent's settings: medium; a pattern aimed at them: high.
+            ...(everyFile(allowed.specifier) ? { severity: 'medium' as const } : {}),
             location: allowed.location,
             subject: allowed.raw,
             fix: 'Remove this allow rule and deny Edit(.claude/**).',

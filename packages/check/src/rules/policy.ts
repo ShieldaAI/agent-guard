@@ -1,16 +1,16 @@
 import { ASI, agentServers, rule } from './common.js';
 import type { Rule } from './common.js';
 import { authority, primaryGrant } from '../authority.js';
-import { dockerImage, runnerPackage, splitSpec, type McpServer } from '../mcp.js';
+import type { McpServer } from '../mcp.js';
 import { CAPABILITY_LABELS, type Capability } from '../types.js';
 
-/** Every name a policy may use for a server: config name, catalog ID, package and image. */
+/**
+ * Every name a policy may use for a server: its catalog ID, and the package or image it runs when
+ * the command has exactly the expected shape. Never the config name, which a change chooses: a
+ * server called `github` that runs `node evil.js` is not the GitHub server.
+ */
 export function serverIdentities(server: McpServer): string[] {
-  const names = [server.name, server.catalog?.id];
-  const runner = runnerPackage(server.command, server.args);
-  if (runner) names.push(splitSpec(runner.spec).name);
-  const image = dockerImage(server.command, server.args);
-  if (image) names.push(image.split('@')[0]!.replace(/:[^/:]+$/, ''));
+  const names = [server.catalog?.id, server.identity?.package, server.identity?.image, server.identity?.host];
   return names.filter((name): name is string => typeof name === 'string' && name.length > 0);
 }
 
@@ -45,17 +45,18 @@ export const POLICY_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.supply],
-      help: 'policy.allowed_mcp_servers in .agc.yaml lists the MCP servers agents may use, by config name, catalog ID, npm/PyPI package or container image.',
+      help: 'policy.allowed_mcp_servers in .agc.yaml lists the MCP servers agents may use, by catalog ID, npm/PyPI package or container image. A server matches only when its command has exactly the expected shape; the config name never counts.',
     },
     (project, report, context) => {
       const allowed = context.config.policy.allowedMcpServers;
       if (allowed === null) return;
       const set = new Set(allowed.map(name => name.toLowerCase()));
       for (const server of agentServers(project)) {
-        if (server.client === 'workflow' && server.command === undefined && server.url === undefined) continue;
+        // The servers claude-code-action starts itself are part of the action, not a choice in the repo.
+        if (server.catalog?.id.startsWith('claude-code-action/')) continue;
         if (serverIdentities(server).some(name => set.has(name.toLowerCase()))) continue;
         report({
-          message: `MCP server "${server.name}" (${serverIdentities(server).slice(1).join(', ') || 'no package or image'}) is not on policy.allowed_mcp_servers.`,
+          message: `MCP server "${server.name}" (${serverIdentities(server).join(', ') || 'no package or image the scanner can confirm'}) is not on policy.allowed_mcp_servers.`,
           location: server.location,
           subject: `server:${server.client}:${server.name}`,
           fix: `Remove "${server.name}", or add it to policy.allowed_mcp_servers after review.`,

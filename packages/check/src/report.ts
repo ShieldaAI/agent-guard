@@ -1,4 +1,4 @@
-import type { Agent, Finding, ScanResult, Severity } from './types.js';
+import type { Agent, Finding, Mediator, ScanResult, Severity } from './types.js';
 import { CAPABILITIES, CAPABILITY_LABELS, SEVERITY_ORDER } from './types.js';
 import { authority, describeLevel } from './authority.js';
 import { RULES, RULES_BY_ID } from './rules/index.js';
@@ -57,6 +57,15 @@ function authorityLines(agent: Agent): string[] {
 }
 
 /** Plain text for a terminal. */
+/** A runtime check and the calls it sees: `pre-tool-hook (Bash)`, `agent-guard (server guard)`. */
+function describeMediator(mediator: Mediator): string {
+  if (mediator.kind === 'pre-tool-hook') {
+    const matcher = (mediator.matcher ?? '').trim();
+    return `pre-tool-hook (${matcher === '' || matcher === '*' ? 'every tool' : oneLine(matcher)})`;
+  }
+  return mediator.server === undefined ? mediator.kind : `${mediator.kind} (server ${oneLine(mediator.server)})`;
+}
+
 export function formatText(result: ScanResult, diff?: ScanDiff): string {
   const out: string[] = [];
   out.push(`${TOOL_NAME} ${TOOL_VERSION}: ${result.agents.length} agent(s), ${counts(result.findings)}`);
@@ -79,7 +88,7 @@ export function formatText(result: ScanResult, diff?: ScanDiff): string {
     for (const line of lines) out.push(`  ${line}`);
     if (agent.kind !== 'subagent')
       out.push(
-        `  runtime check: ${agent.mediators.length ? [...new Set(agent.mediators.map(m => m.kind))].join(', ') : 'none'}`,
+        `  runtime check: ${agent.mediators.length ? [...new Set(agent.mediators.map(describeMediator))].join(', ') : 'none'}`,
       );
   }
   const shown = diff ? diff.added : result.findings;

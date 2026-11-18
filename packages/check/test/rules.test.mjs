@@ -78,7 +78,15 @@ test('AGC-PERM-002: wildcards, and server-wide allows for servers that write or 
 });
 
 test('AGC-PERM-003: network commands and interpreters, not tests', () => {
-  for (const raw of ['Bash(curl:*)', 'Bash(python3:*)', 'Bash(npx:*)', 'Bash(gh api:*)', 'Bash(node:*)'])
+  // `git fetch --upload-pack=<program>` runs a program: a prefix rule for it is a network command.
+  for (const raw of [
+    'Bash(curl:*)',
+    'Bash(python3:*)',
+    'Bash(npx:*)',
+    'Bash(gh api:*)',
+    'Bash(node:*)',
+    'Bash(git fetch:*)',
+  ])
     assert.equal(
       findingsFor(scanFiles({ '.claude/settings.json': settings({ allow: [raw] }) }), 'AGC-PERM-003').length,
       1,
@@ -94,7 +102,6 @@ test('AGC-PERM-003: network commands and interpreters, not tests', () => {
     'Bash(bun install)',
     'Bash(uv run ruff check:*)',
     'Bash(gh pr view:*)',
-    'Bash(git fetch:*)',
     'Bash(xargs kill:*)',
   ])
     assert.equal(
@@ -444,7 +451,7 @@ test('AGC-LIM, AGC-IDN, AGC-GOV and AGC-COV', () => {
   assert.equal(findingsFor(scanFiles({ '.claude/settings.json': risky }), 'AGC-COV-001').length, 1);
   const hooked = settings(
     { allow: ['Bash'] },
-    { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: './check.sh' }] }] } },
+    { hooks: { PreToolUse: [{ matcher: 'Bash', hooks: [{ type: 'command', command: 'jq -e .tool_input' }] }] } },
   );
   assert.equal(findingsFor(scanFiles({ '.claude/settings.json': hooked }), 'AGC-COV-001').length, 0);
 });

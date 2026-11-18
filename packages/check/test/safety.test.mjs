@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -42,6 +43,23 @@ test('only agent configuration paths are read', () => {
     'AGENTS.md',
     '.github/workflows/ci.yml',
     '.github/CODEOWNERS',
+    'opencode.json',
+    '.opencode/opencode.jsonc',
+    '.cursor/cli.json',
+    '.cursor/rules/style.mdc',
+    '.github/agents/reviewer.agent.md',
+    '.github/copilot-instructions.md',
+    '.kiro/settings/mcp.json',
+    '.kiro/steering/product.md',
+    '.windsurfrules',
+    'plugins/x/.claude-plugin/plugin.json',
+    'plugins/x/hooks/hooks.json',
+    // Agent Plugins: plugin.json beside mcp.json; whether a folder is a plugin is decided from both.
+    'plugin.json',
+    'mcp.json',
+    'skills/pdf/SKILL.md',
+    'sub/package.json',
+    'app/.npmrc',
   ])
     assert.ok(isCandidate(path), path);
   for (const path of [
@@ -50,26 +68,30 @@ test('only agent configuration paths are read', () => {
     '.claude/notes.txt',
     'docs/workflows/a.yml',
     '.github/workflows/sub/a.yml',
-    'mcp.json',
-    'sub/package.json',
+    '.github/agents/notes.txt',
+    '.cursor/settings.json',
+    'skills/pdf/helper.py',
+    'hooks.json',
   ])
     assert.ok(!isCandidate(path), path);
 });
 
-test('node_modules, symbolic links and oversized files are skipped', t => {
+test('node_modules and oversized files are skipped; a folder link inside the root is walked at its path', t => {
   const dir = repo({
     'node_modules/pkg/.mcp.json': '{"mcpServers":{"x":{"command":"npx","args":["y"]}}}',
     'outside/.mcp.json': '{}',
     'CLAUDE.md': `${'a'.repeat(1_100_000)}`,
   });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let linked = true;
   try {
     symlinkSync(join(dir, 'outside'), join(dir, 'linked'), 'dir');
   } catch (error) {
     if (error.code !== 'EPERM') throw error; // Windows without symlink privilege: the rest still applies.
+    linked = false;
   }
   const source = new DirectorySource(dir);
-  assert.deepEqual(source.list(), ['outside/.mcp.json']);
+  assert.deepEqual(source.list(), linked ? ['linked/.mcp.json', 'outside/.mcp.json'] : ['outside/.mcp.json']);
   assert.equal(source.skipped, 1);
 });
 
@@ -149,4 +171,15 @@ test('named files are read only inside the root, never through a link', async t 
   }
   assert.equal(source.readNamed('build/link.json'), undefined);
   assert.equal(source.readNamed('out/secret.json'), undefined);
+});
+
+test('a FIFO named by a plugin manifest does not block the scan', { skip: process.platform === 'win32' }, t => {
+  const dir = repo({ 'p/.claude-plugin/plugin.json': JSON.stringify({ name: 'p', hooks: './pipe' }) });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  const made = spawnSync('mkfifo', [join(dir, 'p', 'pipe')]);
+  if (made.status !== 0) return t.skip('mkfifo is not available');
+  const started = Date.now();
+  const result = scan({ root: dir });
+  assert.ok(Date.now() - started < 2000);
+  assert.ok(result.findings.some(finding => finding.ruleId === 'AGC-CFG-001'));
 });

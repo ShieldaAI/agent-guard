@@ -1,11 +1,14 @@
+import { resolve } from 'node:path';
 import type { Finding, ScanResult } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
 import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
 import type { LiveEvidence } from './agent-map.js';
 import { buildProject, type TextFile } from './model.js';
-import { runRules } from './rules/index.js';
+import { createHash } from 'node:crypto';
+import { fingerprint, runRules } from './rules/index.js';
 import { applySuppressions, DEFAULT_CONFIG, parseConfig, type CheckConfig } from './config.js';
 import { authority, level } from './authority.js';
+import { withScriptReader } from './claude.js';
 import { CAPABILITIES, type Agent, type Capability, type CapabilityState } from './types.js';
 
 export interface ScanOptions {
@@ -24,6 +27,8 @@ export interface ScanOptions {
   readonly live?: LiveEvidence;
   /** Findings from other tools (see `importSarif`), reported and suppressed like this tool's own. */
   readonly imported?: readonly Finding[];
+  /** Settings outside the repository that apply to the person running the scan (`readUserConfig`). */
+  readonly userFiles?: readonly TextFile[];
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -42,6 +47,17 @@ function bySeverity(a: Finding, b: Finding): number {
 export function scan(options: ScanOptions): ScanResult {
   const source =
     options.source ?? (options.ref ? new GitSource(options.root, options.ref) : new DirectorySource(options.root));
+  // Bash rules for a repository script are judged by what the script does with its arguments.
+  return withScriptReader(
+    path => {
+      const clean = safeRelative(path.replace(/^\.\//, ''));
+      return clean === undefined ? undefined : source.readNamed(clean);
+    },
+    () => scanSource(options, source),
+  );
+}
+
+function scanSource(options: ScanOptions, source: FileSource): ScanResult {
   const errors: { file: string; message: string }[] = [];
   let config = options.config ?? DEFAULT_CONFIG;
   if (!options.config) {
@@ -66,7 +82,10 @@ export function scan(options: ScanOptions): ScanResult {
       });
     else named.push({ path: clean, text });
   }
-  const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])]);
+  const project = buildProject(source, [...named, ...(options.agentGuardFiles ?? [])], {
+    declaredServers: config.mcpServers,
+    ...(options.userFiles ? { userFiles: options.userFiles, root: resolve(options.root) } : {}),
+  });
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
     [...runRules(project, errors, { config, live: options.live }), ...(options.imported ?? [])],
@@ -85,6 +104,11 @@ export function scan(options: ScanOptions): ScanResult {
       agentGuard: project.agentGuard.files,
       live: options.live ? { url: options.live.url, notes: options.live.notes } : null,
     },
+    compiledLocks: project.compiledLocks.map(item => ({
+      lock: item.lock,
+      lockHash: digest(item.lockText),
+      sourceHash: digest(item.sourceText),
+    })),
   };
 }
 
@@ -110,6 +134,35 @@ const rank = (finding: Finding) => SEVERITY_ORDER.indexOf(finding.severity);
  * added when it is new, when its severity rose (the same configuration made more dangerous), or when
  * the change introduced it (or raised its severity) and silenced it with an inline `agc-ignore` comment.
  */
+function digest(text: string): string {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+/**
+ * gh-aw lock files the change edited while their source stayed the same (or that it added beside
+ * an existing source). The lock is what Actions runs, and the scan judges only its source, so the
+ * edit could add anything: reported as unread configuration (AGC-CFG-002, high).
+ */
+function lockEditedAlone(base: ScanResult, head: ScanResult): Finding[] {
+  const before = new Map((base.compiledLocks ?? []).map(item => [item.lock, item]));
+  const out: Finding[] = [];
+  for (const item of head.compiledLocks ?? []) {
+    const old = before.get(item.lock);
+    if (old ? old.lockHash === item.lockHash || old.sourceHash !== item.sourceHash : true) continue;
+    const message = `${item.lock} changed while its source did not. Actions runs the lock, and the scan judges only its source, so this edit was not judged.`;
+    out.push({
+      ruleId: 'AGC-CFG-002',
+      severity: 'high',
+      confidence: 'high',
+      message,
+      location: { file: item.lock, line: 1 },
+      fingerprint: fingerprint('AGC-CFG-002', '', item.lock, `lock:${item.lockHash}`),
+      fix: 'Change the .md source and run gh aw compile, so the lock and its source agree.',
+    });
+  }
+  return out;
+}
+
 export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
   const baseSeverity = new Map<string, number>();
   for (const finding of [...base.findings, ...base.suppressed.map(item => item.finding)])
@@ -134,6 +187,7 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
   }
   return {
     added: [
+      ...lockEditedAlone(base, head),
       ...head.findings.filter(
         finding => !before.has(finding.fingerprint) || rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
       ),
