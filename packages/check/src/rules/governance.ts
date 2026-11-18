@@ -181,10 +181,11 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
         });
       for (const item of project.unparsed)
         report({
-          message: `The settings in ${item.path} could not be parsed (${item.error}), so the scan assumed the agent may do anything.`,
+          message: `${item.path} could not be parsed (${item.error}), so nothing in it was judged.`,
           location: { file: item.path, line: 1 },
           subject: `unparsed:${item.path}`,
-          fix: 'Fix the front matter: valid YAML, no duplicate keys, no more than 50 aliases.',
+          severity: severityOf(item.path),
+          fix: 'Fix the file: valid JSON, YAML or TOML, no duplicate keys, no more than 50 YAML aliases.',
         });
       for (const path of project.caseVariants)
         report({

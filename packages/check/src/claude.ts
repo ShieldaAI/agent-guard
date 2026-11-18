@@ -104,6 +104,12 @@ export function parseSettings(path: string, text: string): ClaudeSettings {
       }
     }
   }
+  // Commands Claude Code runs on its own, outside the hook events: judged by the same rules.
+  for (const key of ['apiKeyHelper', 'otelHeadersHelper', 'awsAuthRefresh', 'awsCredentialExport', 'statusLine']) {
+    const value = data[key];
+    const command = isRecord(value) ? asString(value['command']) : asString(value);
+    if (command) hooks.push({ event: key, matcher: '', command, location: at(`"${key}"`) });
+  }
   const env = isRecord(data['env'])
     ? Object.entries(data['env'])
         .filter((entry): entry is [string, string] => typeof entry[1] === 'string')

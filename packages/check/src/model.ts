@@ -1,4 +1,6 @@
 import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
+import { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
+import { agenticFrontmatterHash, lockMetadata, lockMismatches, sourceWithImports } from './ghaw.js';
 import { EMPTY_EVIDENCE, readAgentGuardFiles, type AgentGuardEvidence } from './agent-guard.js';
 import { safeRelative, type FileSource } from './source.js';
 import {
@@ -267,18 +269,7 @@ export interface BuildOptions {
 }
 
 /** Variables that send an agent's model traffic to another endpoint. */
-export const MODEL_ENDPOINT =
-  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|ANTHROPIC_FOUNDRY_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS|NODE_OPTIONS)$/i;
-
-/**
- * How serious an endpoint variable in the repository's own Claude Code settings is: a model base
- * URL sends every developer's key and context to that host, and NODE_OPTIONS can load code into
- * Claude Code itself (high); a proxy or CA bundle can intercept traffic but is often a corporate
- * gateway (medium).
- */
-function endpointSeverity(name: string): 'high' | 'medium' {
-  return /PROXY|EXTRA_CA_CERTS/i.test(name) ? 'medium' : 'high';
-}
+export { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
 
 /**
  * Whether a file the scanner could not read is agent configuration. `mcp.json` and `plugin.json`
@@ -336,8 +327,14 @@ export function buildProject(
   const ideFiles: { vscode?: string; cursor?: string } = {};
   const openCode: TextFile[] = [];
   const openCodeAgents: TextFile[] = [];
-  const fail = (file: string, error: unknown) =>
-    errors.push({ file, message: error instanceof Error ? error.message.split('\n')[0]! : String(error) });
+  // A configuration file that cannot be parsed is not judged: a finding, not only a warning, so a
+  // file broken on purpose (too many YAML aliases, a stray byte) cannot hide what it grants.
+  const fail = (file: string, error: unknown) => {
+    const message = error instanceof Error ? error.message.split('\n')[0]! : String(error);
+    errors.push({ file, message });
+    if (file && isConfigPath(file, inputs) && !unparsed.some(item => item.path === file))
+      unparsed.push({ path: file, error: message });
+  };
 
   const extraPaths = new Set(extraFiles.map(file => file.path));
   // `~/...` and `<managed>/...` paths are settings outside the repository only when they come from
@@ -567,6 +564,32 @@ export function buildProject(
       else if (parent === '.claude' && (name === 'settings.json' || name === 'settings.local.json')) {
         settings.push(parseSettings(path, text));
         pluginSources.push(...parsePluginSettings(path, text));
+        // A marketplace in a folder of the repository the scan skips (node_modules/, vendor/, ...),
+        // or outside the repository, is never read: its plugins' hooks and servers are unknown.
+        const settingsData = parseJsonc(text);
+        const known =
+          isRecord(settingsData) && isRecord(settingsData['extraKnownMarketplaces'])
+            ? settingsData['extraKnownMarketplaces']
+            : {};
+        for (const [market, entry] of Object.entries(known)) {
+          const from = isRecord(entry) && isRecord(entry['source']) ? entry['source'] : undefined;
+          const where =
+            from && /^(directory|file|local)$/.test(String(from['source'])) ? asString(from['path']) : undefined;
+          if (where === undefined) continue;
+          const parts = where.split(/[\\/]/).filter(part => part !== '' && part !== '.');
+          const outside = /^([\\/]|~|[A-Za-z]:)/.test(where) || parts.includes('..');
+          if (outside || parts.some(part => SKIPPED_DIRECTORIES.has(part)))
+            unrecognized.push({
+              agent: `Marketplace ${market}`,
+              setting: 'source.path',
+              value: where,
+              assumed: outside
+                ? 'it is outside the repository, so its plugins’ hooks and servers may do anything'
+                : 'it is in a folder the scan skips, so its plugins’ hooks and servers may do anything',
+              location: { file: path, line: lineOf(text, JSON.stringify(where)) || 1 },
+              severity: 'high',
+            });
+        }
       } else if (parent === '.codex' && name === 'config.toml') others.push(parseCodex(path, text, declaredServers));
       else if (parent === '.gemini' && name === 'settings.json') others.push(parseGemini(path, text, declaredServers));
       else if (parent === '.claude-plugin' && name === 'marketplace.json') {
@@ -686,15 +709,36 @@ export function buildProject(
   // Skills and commands can list `allowed-tools`: while one is active those tools run without
   // asking, so they count as allow rules for the project they belong to.
   const skillAllow = new Map<string, PermissionRule[]>();
+  // Skills, commands and subagents can carry `hooks:` in their front matter: they run while the
+  // skill or subagent is active, and are judged as hooks. Plugin skills and commands count for the
+  // project at the root, where the plugin is installed.
   for (const prompt of prompts) {
-    if (!/(^|\/)\.claude\/(skills|commands)\//.test(prompt.path)) continue;
+    const own = /(^|\/)\.claude\/(skills|commands|agents)\//.test(prompt.path);
+    const inPlugin =
+      !own &&
+      [...roots].some(
+        root =>
+          (!root || prompt.path.startsWith(`${root}/`)) &&
+          /^(skills\/[^/]+\/SKILL\.md|commands\/[^/]+\.md|agents\/[^/]+\.md)$/.test(
+            root ? prompt.path.slice(root.length + 1) : prompt.path,
+          ),
+      );
+    if (!own && !inPlugin) continue;
     const parsed = frontmatter(prompt.text);
     const data = parsed.error ? (lenientFrontmatter(prompt.text) ?? {}) : parsed.data;
+    const lineOfKey = (key: string) => prompt.text.split('\n').findIndex(item => item.startsWith(`${key}:`)) + 1 || 1;
+    if (isRecord(data['hooks']))
+      pluginHooks.push(
+        ...parseSettings(prompt.path, JSON.stringify({ hooks: data['hooks'] })).hooks.map(hook => ({
+          ...hook,
+          location: { file: prompt.path, line: lineOfKey('hooks') },
+        })),
+      );
     const tools = data['allowed-tools'];
-    if (tools === undefined) continue;
-    const line = prompt.text.split('\n').findIndex(item => item.startsWith('allowed-tools:')) + 1 || 1;
+    if (tools === undefined || /(^|\/)agents\/[^/]+\.md$/.test(prompt.path)) continue;
+    const line = lineOfKey('allowed-tools');
     const rules = asStringArray(tools).map(raw => parseRule(raw, { file: prompt.path, line }));
-    const dir = projectDir(prompt.path);
+    const dir = own ? projectDir(prompt.path) : '';
     skillAllow.set(dir, [...(skillAllow.get(dir) ?? []), ...rules]);
   }
   const agents: Agent[] = [];
@@ -762,7 +806,7 @@ export function buildProject(
               'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
             location: entry.location,
             // In the repository's own settings it sends every developer's key and context there.
-            ...(local.includes(file) ? { severity: endpointSeverity(entry.name) } : {}),
+            ...(local.includes(file) ? { severity: endpointSeverity(entry.name, entry.value) } : {}),
           });
     // Claude Code's Bash sandbox: sandboxed commands run and write without asking unless
     // autoAllowBashIfSandboxed is false. Network reach is left as the rules give it: a command can
@@ -993,6 +1037,8 @@ export function buildProject(
         assumed:
           'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
         location: endpoint.location,
+        // The workflow's own file sends the repository's key and the agent's context there.
+        severity: endpointSeverity(endpoint.name, endpoint.value),
       });
     if (step.settingsUnreadable) {
       const { value, location } = step.settingsUnreadable;
@@ -1121,15 +1167,39 @@ export function buildProject(
   }
 
   // A gh-aw lock file is judged from its source; one with no source beside it, as unknown reach.
+  // A lock with triggers or agent flags its source does not explain was edited by hand: unknown
+  // reach too. One whose source hash differs is out of date (or edited): reported.
   const inputPaths = new Set(inputs.map(input => input.path));
-  for (const { path, text } of inputs)
-    if (
-      text !== undefined &&
-      /^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) &&
-      isAgenticLock(text) &&
-      !compiledFromSource(path, text)
-    )
+  const readRepo = (named: string) => {
+    const relative = safeRelative(named);
+    return relative === undefined ? undefined : (inputText.get(relative) ?? source.readNamed(relative));
+  };
+  for (const { path, text } of inputs) {
+    if (text === undefined || !/^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) || !isAgenticLock(text)) continue;
+    if (!compiledFromSource(path, text)) {
       others.push(parseAgenticLockAlone(path, text));
+      continue;
+    }
+    const mdPath = path.replace(/\.lock\.ya?ml$/, '.md');
+    const md = sourceOf(path)!;
+    const mismatches = lockMismatches(text, frontmatter(md).data, sourceWithImports(mdPath, md, readRepo));
+    if (mismatches.length) others.push(parseAgenticLockAlone(path, text, mismatches.join('; ')));
+    const meta = lockMetadata(text);
+    const recorded = meta?.['frontmatter_hash'];
+    if (meta?.['schema_version'] === 'v4' && typeof recorded === 'string') {
+      const actual = agenticFrontmatterHash(mdPath, md, readRepo);
+      if (actual !== undefined && actual !== recorded)
+        unrecognized.push({
+          agent: `Agentic workflow ${mdPath.split('/').at(-1)}`,
+          setting: 'frontmatter_hash',
+          value: path,
+          assumed:
+            'the lock was not compiled from this source (it is out of date or was edited), so what runs may differ from what was judged',
+          location: { file: path, line: 1 },
+          severity: 'medium',
+        });
+    }
+  }
 
   for (const file of cursorCli) {
     const dir = file.path.split('/').slice(0, -2).join('/');

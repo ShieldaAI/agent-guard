@@ -4,8 +4,9 @@ import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } fr
 import type { Bypass, ModelChoice, OtherAgent } from './formats.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
 import { parse as parseYaml } from 'yaml';
+import { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
+import { agentCalls } from './shell.js';
 import {
-  AGENT_ACTION_TEXT,
   isHarnessCredential,
   MODEL_SECRETS,
   PUBLISHING_SCOPES,
@@ -647,6 +648,20 @@ export function parseKiroMcp(path: string, text: string, declared: CatalogContex
 // ---------------------------------------------------------------------------------------------
 // GitHub Agentic Workflows (gh-aw)
 
+/** gh-aw keys whose jobs and steps compile into the lock. */
+const STEP_KEYS = ['jobs', 'steps', 'pre-steps', 'post-steps', 'pre-agent-steps'] as const;
+const AGENT_USES = /^[^/@\s]+\/(claude-code(-base)?-action|codex-action|run-gemini-cli)(\/[^@]*)?@/i;
+
+/** Whether jobs or steps run an agent: an agent action, or an agent CLI call in a script. */
+function runsAgent(value: unknown, depth = 0): boolean {
+  if (depth > 8) return false;
+  if (Array.isArray(value)) return value.some(item => runsAgent(item, depth + 1));
+  if (!isRecord(value)) return false;
+  if (typeof value['uses'] === 'string' && AGENT_USES.test(value['uses'])) return true;
+  if (typeof value['run'] === 'string' && agentCalls(value['run']).length > 0) return true;
+  return Object.values(value).some(item => runsAgent(item, depth + 1));
+}
+
 /** Triggers that start a gh-aw workflow from text anyone can write. */
 const AGENTIC_UNTRUSTED = new Set([...UNTRUSTED_TRIGGERS, 'command', 'slash_command']);
 /** Safe-output kinds (`add-comment`, `create-pull-request`, ...), not the keys that configure the job. */
@@ -708,7 +723,10 @@ export function parseAgenticWorkflow(
   const own = ownParsed.data;
   const data: Record<string, unknown> = { ...own };
   const unreadImports: { what: string; pinned: boolean }[] = [];
+  // Jobs and steps from imports compile into the lock as well: kept to be checked with the workflow's own.
+  const importedSteps: { key: string; value: unknown }[] = [];
   const merge = (imported: Record<string, unknown>) => {
+    for (const key of STEP_KEYS) if (imported[key] !== undefined) importedSteps.push({ key, value: imported[key] });
     for (const key of AGENTIC_MERGED) {
       if (imported[key] === undefined) continue;
       data[key] = key === 'engine' ? (data[key] ?? imported[key]) : widen(data[key], imported[key]);
@@ -893,9 +911,12 @@ export function parseAgenticWorkflow(
   if (engine !== undefined && !AGENTIC_ENGINES.has(engine)) unknownReach('engine', engine, at('engine'));
   // Custom jobs and steps compile into the lock that runs: one that starts an agent of its own is
   // not modelled, so it is unknown reach, reported at high.
-  for (const key of ['jobs', 'steps', 'pre-steps', 'post-steps', 'pre-agent-steps'])
-    if (own[key] !== undefined && AGENT_ACTION_TEXT.test(JSON.stringify(own[key]))) {
-      unknownReach(key, 'runs an agent', at(key));
+  for (const { key, value } of [
+    ...STEP_KEYS.filter(key => own[key] !== undefined).map(key => ({ key, value: own[key] })),
+    ...importedSteps.map(item => ({ key: `${item.key} (imported)`, value: item.value })),
+  ])
+    if (runsAgent(value)) {
+      unknownReach(key, 'runs an agent', at(key.replace(/ \(imported\)$/, '')));
       unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
     }
   // Secrets the workflow maps for the agent are data it holds.
@@ -912,8 +933,19 @@ export function parseAgenticWorkflow(
   // Engine settings beyond these (args, command, steps, ...) change how the agent runs.
   if (isRecord(data['engine']))
     for (const key of Object.keys(data['engine']))
-      if (!['id', 'version', 'model', 'env', 'concurrency', 'max-turns', 'user-agent'].includes(key))
+      if (!['id', 'version', 'model', 'env', 'concurrency', 'max-turns', 'user-agent'].includes(key)) {
         unknownReach('engine', key, at(key));
+        // `command` and `steps` replace or prepare the agent itself; `args` that lift its limits
+        // run every tool without asking. Both are high.
+        const value = JSON.stringify(data['engine'][key]);
+        if (
+          key === 'command' ||
+          key === 'steps' ||
+          (key === 'args' &&
+            /dangerously|allow-all|--yolo|bypassPermissions|danger-full-access|approval-mode[= ]yolo/.test(value))
+        )
+          unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
+      }
   if (unreadImports.length) {
     unknownReach('imports', unreadImports.map(item => item.what).join(', '), at('imports'));
     // Unpinned or local unread imports are high; one pinned to a commit of another repository is
@@ -929,7 +961,7 @@ export function parseAgenticWorkflow(
     add('untrustedInput', 'front matter not readable', anchor, 'unknown', 'trigger');
   }
   for (const [variable, value] of Object.entries(engineEnv))
-    if (/^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL)$/.test(variable))
+    if (MODEL_ENDPOINT.test(variable))
       unrecognized.push({
         agent: name,
         setting: `engine.env.${variable}`,
@@ -937,6 +969,7 @@ export function parseAgenticWorkflow(
         assumed:
           'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
         location: at(variable),
+        severity: endpointSeverity(variable, String(value)),
       });
   const permissions = data['permissions'];
   const writes =
@@ -1020,7 +1053,7 @@ function triggerNamesOf(value: unknown): string[] {
  * A gh-aw lock file (`<name>.lock.yml`) with no `<name>.md` source beside it. Its compiled steps
  * are not modelled, so it is judged as an unattended agent of unknown reach, started by its triggers.
  */
-export function parseAgenticLockAlone(path: string, text: string): OtherAgent {
+export function parseAgenticLockAlone(path: string, text: string, mismatch?: string): OtherAgent {
   let triggers: string[] = [];
   try {
     const data = parseYaml(text, { maxAliasCount: 50 }) as unknown;
@@ -1035,7 +1068,16 @@ export function parseAgenticLockAlone(path: string, text: string): OtherAgent {
     if (AGENTIC_UNTRUSTED.has(trigger))
       grants.push(grantOf('untrustedInput', `trigger ${trigger}`, 'auto', anchor, 'yes', 'trigger'));
   for (const capability of ['exec', 'write', 'egress'] as const)
-    grants.push(grantOf(capability, 'compiled steps (no source to judge)', 'auto', anchor, 'unknown', 'engine'));
+    grants.push(
+      grantOf(
+        capability,
+        mismatch ? 'compiled steps that do not match the source' : 'compiled steps (no source to judge)',
+        'auto',
+        anchor,
+        'unknown',
+        'engine',
+      ),
+    );
   return {
     agent: {
       id: `agentic-lock:${path}`,
@@ -1054,9 +1096,14 @@ export function parseAgenticLockAlone(path: string, text: string): OtherAgent {
       {
         agent: name,
         setting: 'source',
-        value: path.replace(/\.lock\.yml$/, '.md'),
-        assumed: 'the compiled workflow has no source in the repository, so it may run code, write and send data out',
+        value: mismatch
+          ? `${path.replace(/\.lock\.ya?ml$/, '.md')} (the lock has ${mismatch})`
+          : path.replace(/\.lock\.ya?ml$/, '.md'),
+        assumed: mismatch
+          ? 'the lock was edited by hand, so its source says nothing about it: it may run code, write and send data out'
+          : 'the compiled workflow has no source in the repository, so it may run code, write and send data out',
         location: anchor,
+        ...(mismatch ? { severity: 'high' as const } : {}),
       },
     ],
   };
