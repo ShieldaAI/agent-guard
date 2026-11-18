@@ -165,6 +165,8 @@ const HARMLESS_VALUE_FLAGS = new Set([
   '--session-id',
   '--resume',
   '-r',
+  // Codex `exec resume SESSION_ID`.
+  'resume',
 ]);
 
 /**
@@ -304,7 +306,8 @@ function compositeAgent(
       })();
     if (found) return found;
   }
-  return AGENT_ACTION_TEXT.test(text) ? 'unknown' : undefined;
+  // Parsed, and no step runs an agent: text that only mentions one (a comment) is not an agent.
+  return undefined;
 }
 /** An agent action, by name, anywhere in a local composite action's text. */
 export const AGENT_ACTION_TEXT =

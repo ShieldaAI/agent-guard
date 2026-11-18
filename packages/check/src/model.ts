@@ -658,7 +658,9 @@ export function buildProject(
           const data: Record<string, unknown> = parsed.error
             ? (lenient ?? { permissionMode: '(front matter not readable)' })
             : parsed.data;
-          const tools = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
+          // `tools: "*"` (or a list with `*`) is every tool, as if no list were given.
+          const listed = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
+          const tools = listed?.some(tool => tool.trim() === '*') ? undefined : listed;
           const description = asString(data['description']);
           // The line of a top-level frontmatter key (never a match in the body or a description).
           const fm = (key: string): Location => {
@@ -738,7 +740,13 @@ export function buildProject(
     if (tools === undefined || /(^|\/)agents\/[^/]+\.md$/.test(prompt.path)) continue;
     const line = lineOfKey('allowed-tools');
     const rules = asStringArray(tools).map(raw => parseRule(raw, { file: prompt.path, line }));
-    const dir = own ? projectDir(prompt.path) : '';
+    // A plugin's skill grants its tools to whoever installs the plugin: kept under the plugin's own
+    // folder, not given to the project that only ships it (unless the repository is the plugin).
+    const dir = own
+      ? projectDir(prompt.path)
+      : ([...roots]
+          .filter(root => !root || prompt.path.startsWith(`${root}/`))
+          .sort((a, b) => b.length - a.length)[0] ?? '');
     skillAllow.set(dir, [...(skillAllow.get(dir) ?? []), ...rules]);
   }
   const agents: Agent[] = [];

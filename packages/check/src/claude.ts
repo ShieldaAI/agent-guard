@@ -149,6 +149,12 @@ const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)\b/;
 /** The project's own test, lint, build and install commands: they run project code, nothing chosen by the agent. */
 const PROJECT_COMMANDS =
   /^((npm|pnpm|yarn|bun) (test|install|ci|i|add|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npx|bunx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx)|tsc|eslint|prettier|biome|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest|pip install -r)|uv (run (pytest|ruff|mypy|python -m pytest)|sync|lock)|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod)|cargo (test|check|build|clippy|fmt|run)|make|just|gradlew? (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))\b/;
+/**
+ * An interpreter running one named script file (`python3 "${CLAUDE_PLUGIN_ROOT}/scripts/x.py"`): the
+ * script is code in the repository or plugin, like a project command; `-c`, `-e` or `-` would not be.
+ */
+const SCRIPT_COMMAND =
+  /^(python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'-][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))( |$)/;
 /** Commands that read from the network (issue and pull-request text) without sending anything. */
 const READ_COMMANDS =
   /^gh (pr|issue|run|repo|release|search|workflow) (view|list|diff|checks|status|logs|watch|checkout)\b|^gh search\b|^gh api (-X GET |--method GET )?repos\/\S*\/(contents|commits|compare)\b/;
@@ -169,9 +175,12 @@ export function bashScope(specifier: string | undefined): BashScope {
     .replace(/\s*\*$/, '')
     .trim();
   if (command === '' || command === '*') return 'any';
-  if (READ_COMMANDS.test(command)) return 'read';
+  // `gh api PATH` reads only as written: a prefix rule also allows `-X PUT`, `-f` or `--input`
+  // after the path, which write.
+  const prefix = command !== specifier.trim();
+  if (READ_COMMANDS.test(command) && !(prefix && /^gh api\b/.test(command))) return 'read';
   if (PUBLISH_COMMANDS.test(command)) return 'publish';
-  if (PROJECT_COMMANDS.test(command)) return 'project';
+  if (PROJECT_COMMANDS.test(command) || (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))) return 'project';
   if (FETCH_COMMANDS.test(command)) return 'fetch';
   if (EDIT_COMMANDS.test(command)) return 'edit';
   if (LOCAL_COMMANDS.test(command)) return 'local';

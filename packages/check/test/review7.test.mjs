@@ -294,3 +294,40 @@ test('gh-aw: imported jobs that run an agent, and engine command or steps, are h
     findingsFor(command, 'AGC-CFG-001').some(item => item.severity === 'high' && item.message.includes('command')),
   );
 });
+
+test('a prefix rule for gh api is not read-only: -X PUT can follow the path', () => {
+  const exact = scanFiles({
+    '.claude/settings.json': settings({ allow: ['Bash(gh api repos/o/r/contents/README.md)'] }),
+  });
+  const prefix = scanFiles({
+    '.claude/settings.json': settings({ allow: ['Bash(gh api repos/o/r/contents:*)'] }),
+  });
+  const write = result =>
+    authority(result.agents.find(agent => agent.kind === 'claude-code')).egress.grants.some(
+      grant => grant.via.includes('gh api') && grant.approval === 'auto',
+    );
+  assert.equal(write(exact), false);
+  assert.equal(write(prefix), true);
+});
+
+test('.github/Workflows is not reported as a case variant: GitHub reads only the exact name', () => {
+  const result = scanFiles({ '.github/Workflows/a.yml': 'on: push\njobs: {}\n' });
+  assert.ok(!findingsFor(result, 'AGC-CFG-002').some(item => item.message.includes('letter case')));
+});
+
+test('Codex: the selected profile’s sandbox is the one judged', () => {
+  const result = scanFiles({
+    '.codex/config.toml':
+      'profile = "ci"\napproval_policy = "untrusted"\nsandbox_mode = "read-only"\n[profiles.ci]\napproval_policy = "never"\nsandbox_mode = "danger-full-access"\n',
+  });
+  const codex = result.agents.find(agent => agent.kind === 'codex');
+  assert.equal(authority(codex).exec.value, 'yes');
+  assert.equal(authority(codex).exec.approval, 'auto');
+});
+
+test('a very large run script is scanned quickly', () => {
+  const script = `${'echo "claude -p x" && '.repeat(20_000)}true`;
+  const started = Date.now();
+  scanFiles({ '.github/workflows/a.yml': job(`      - run: '${script}'\n`) });
+  assert.ok(Date.now() - started < 5_000, `${Date.now() - started} ms`);
+});

@@ -64,7 +64,14 @@ const grant = (
 
 /** `.codex/config.toml`. Throws on invalid TOML so the caller can report it. */
 export function parseCodex(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
-  const data = parseToml(text) as Record<string, unknown>;
+  const raw = parseToml(text) as Record<string, unknown>;
+  // `profile = "x"` makes `[profiles.x]` the settings Codex starts with: its policy and sandbox win.
+  const selected = asString(raw['profile']);
+  const chosen =
+    selected !== undefined && isRecord(raw['profiles']) && isRecord(raw['profiles'][selected])
+      ? raw['profiles'][selected]
+      : {};
+  const data: Record<string, unknown> = { ...raw, ...chosen };
   const at = (key: string): Location => ({ file: path, line: lineOfKey(text, key) || 1 });
   const policy = data['approval_policy'];
   const policyName = typeof policy === 'string' ? policy : isRecord(policy) ? 'granular' : 'on-request';

@@ -66,7 +66,10 @@
       "repo": "anthropics/claude-plugins-official",
       "commit": "b5b01ac4f889fec0c4c6bb89f27ca7c8574473f6",
       "agents": 63,
-      "expected": {}
+      "expected": {
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-002:high": 1
+      }
     },
     {
       "repo": "anthropics/skills",

@@ -6,13 +6,7 @@ import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } fr
 import { parse as parseYaml } from 'yaml';
 import { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
 import { agentCalls } from './shell.js';
-import {
-  isHarnessCredential,
-  MODEL_SECRETS,
-  PUBLISHING_SCOPES,
-  secretNames,
-  UNTRUSTED_TRIGGERS,
-} from './workflows.js';
+import { isHarnessCredential, MODEL_SECRETS, PUBLISHING_SCOPES, secretNames, UNTRUSTED_TRIGGERS } from './workflows.js';
 
 /**
  * More agents, each reduced to the grants the rules use: OpenCode (`opencode.json`), the Cursor

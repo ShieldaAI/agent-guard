@@ -4,6 +4,22 @@
 
 ### Check
 
+- Fix (seventh review): configuration folders are walked first and a folder reached through
+  links more than 4 times stops the walk, which is reported at high. Agent CLIs in `run:` scripts
+  are found by splitting the script into commands (quotes, wrappers, `bash -c`, `$(...)`, shell
+  variables), so quoting or an env prefix no longer hides one and `claude --version` is no
+  longer an agent; unresolved arguments and expressions in `claude_args` are unknown reach.
+  Agent actions are matched under any owner, composite actions are read step by step, list
+  flags are variadic, and CLI paths follow `working-directory`. Secrets are found in every
+  expression form, in prompts and through `$GITHUB_ENV`; a harness variable is excluded only
+  for a secret named for a model or telemetry provider. Reusable workflows take their callers'
+  triggers. gh-aw lock files are checked against their source (triggers, agent flags, and
+  gh-aw's own `frontmatter_hash`). Files that cannot be parsed and rules that fail are findings,
+  not only warnings. `apiKeyHelper`, `statusLine` and the other helper commands, and hooks in
+  skill, command and subagent front matter, are judged as hooks. Model endpoints in workflows
+  and gh-aw engines are high unless they name a provider's host. Duplicate step names no longer
+  merge agents, and a duplicate finding keeps the higher severity. A Codex `profile` selects its
+  sandbox; `gh api` prefix rules are not read-only.
 - Fix: AGC-COV-001 counts a runtime check only for the calls it sees. A `PreToolUse` hook on
   `Bash` no longer hides an unchecked `WebFetch` or MCP server, and Agent Guard or an MCP gateway
   reached as an MCP server covers only the calls made through that server. The text report says

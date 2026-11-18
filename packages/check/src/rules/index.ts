@@ -73,9 +73,19 @@ export function runRules(
     try {
       item.check(project, report, context);
     } catch (error) {
-      errors.push({
-        file: '',
-        message: `${item.id} could not run: ${error instanceof Error ? error.message : String(error)}`,
+      const message = `${item.id} could not run: ${error instanceof Error ? error.message : String(error)}`;
+      errors.push({ file: '', message });
+      // A rule that stops part way judged only part of the project: a finding, so the gate fails
+      // closed instead of passing on a warning.
+      const key = fingerprint('AGC-CFG-002', '', '.', `rule-error:${item.id}`);
+      findings.set(key, {
+        ruleId: 'AGC-CFG-002',
+        severity: 'high',
+        confidence: 'high',
+        message: `${message}. What it checks was not judged.`,
+        location: { file: '.', line: 1 },
+        fingerprint: key,
+        fix: 'Report this error; meanwhile check what the rule covers by hand.',
       });
     }
   }

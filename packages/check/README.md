@@ -115,9 +115,12 @@ at the link's own path, so `.claude -> tools/agentcfg` is read as `.claude`. In 
 whose target passes through another link, or has `..` after a folder name, is not followed. A
 link that is not followed is never read. A configuration file the scan could not read is
 reported as AGC-CFG-002: one over 1 MiB, a link (to a file or a folder where configuration lives)
-that leaves the repository or cannot be resolved, front matter of an agent definition that is not valid YAML (Claude Code subagents
-are first read the lenient way Claude Code reads them), or a repository so large the walk
-stopped. For settings and agent definitions (including subagents, Copilot, OpenCode and gh-aw
+that leaves the repository or cannot be resolved, a file that cannot be parsed (invalid JSON,
+YAML or TOML, or more YAML aliases than allowed; Claude Code subagents are first read the
+lenient way Claude Code reads them), or a walk that stopped (more than 200,000 entries, folders
+more than 32 levels deep, or one folder reached through links more than 4 times). Folders and
+files where configuration lives are walked first, so filler cannot use up the walk before
+`.github` or `.claude`; a walk that stopped is still high. For settings and agent definitions (including subagents, Copilot, OpenCode and gh-aw
 agents written in Markdown) it is high and fails the default gate, so padding or linking one
 cannot hide what it grants; for instruction files it is medium. An agent whose definition could
 not be read, or a file a configuration names (a gh-aw import, a plugin's server or hook file, a
@@ -131,9 +134,10 @@ Amp and Goose keep their permissions outside the repository, so they are not rea
 the scanner does not model, such as a permission mode or Copilot tool name it does not know, a
 gh-aw engine key or tool it does not know, or the domains Claude Code's Bash sandbox allows, is
 reported as AGC-CFG-001 with what the scan assumed instead, and the reach it could give is
-counted as unknown. Commands Claude Code runs on its own from project settings (hooks,
-`apiKeyHelper`, `statusLine`) are judged by the hook and script rules, not as agent capabilities,
-and a `PreToolUse` hook is credited as a runtime check whatever its command does.
+counted as unknown. Commands Claude Code runs on its own from settings (hooks, `apiKeyHelper`,
+`otelHeadersHelper`, `awsAuthRefresh`, `awsCredentialExport`, `statusLine`) and hooks in skill,
+command and subagent front matter are judged by the hook rules, not as agent capabilities, and a
+`PreToolUse` hook is credited as a runtime check whatever its command does.
 
 ### Your own settings
 
@@ -419,9 +423,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 183 agents.
-  Every critical, high and medium finding, 78 in all, was reviewed by hand: 77 true positives
-  and 1 false positive (a low-confidence text rule), precision 98.7%.
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 187 agents.
+  Every critical, high and medium finding, 80 in all, was reviewed by hand: 79 true positives
+  and 1 false positive (a low-confidence text rule), precision 98.8%.
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
   configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
@@ -485,10 +489,20 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   command can leave it (`allowUnsandboxedCommands`, `excludedCommands`) through the normal
   permission flow, where an allowed command still runs without asking, and the sandbox's allowed
   domains are not modelled.
-- **Actions.** Agent actions are matched by name in any letter case and with any sub-path
-  (`anthropics/claude-code-action/base-action`). A local composite action (`uses: ./...`) whose
-  `action.yml` starts an agent is an agent of unknown reach, reported at high. `--mcp-config` and
-  `mcp_config` given as a path are read; one that cannot be read makes the step unknown reach.
+- **Actions.** Agent actions are matched by name in any letter case, with any sub-path
+  (`anthropics/claude-code-action/base-action`) and under any owner, so a fork counts. A local
+  composite action (`uses: ./` or `uses: ./path`) is read step by step, through the local actions
+  it uses, three levels deep; one that starts an agent is an agent of unknown reach, reported at
+  high. Every `--mcp-config` file and `mcp_config` given as a path is read, relative to the
+  step's `working-directory` for a CLI; one that cannot be read makes the step unknown reach.
+- **Scripts.** A `run:` script is split into commands the way a shell would: quotes removed,
+  variable assignments, `env`, `time`, `sudo`, `timeout`, `xargs`, `npx` and other wrappers
+  skipped, and `bash -c "..."`, `$(...)` and back quotes read as commands of their own. Shell
+  variables set in the script or in `env` are expanded; an unquoted variable the scan cannot
+  resolve (`$FLAGS`, `"$@"`), or a GitHub expression where a flag could be
+  (`claude_args: ${{ inputs.args }}`), makes the step unknown reach. `claude --version`,
+  `npm i -g @anthropic-ai/claude-code`, `claude mcp add` or an `echo` that mentions an agent are
+  not agents. Claude Code's list flags are variadic (`--allowedTools Read Bash`).
 - **Workflow agents.** A Codex step runs commands without asking, inside its sandbox:
   `read-only` writes nothing, `workspace-write` writes the checkout, and the network is unknown
   unless the sandbox is `danger-full-access`; a permission profile, defined in Codex's own config,
@@ -508,14 +522,25 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   or custom safe-output `jobs` are unknown reach, as are engine settings it does not model
   (`args`, `command`, ...) and container MCP servers with an entrypoint, mounts or arguments.
   Secrets in the agent's `env`, its MCP servers, its tools and its engine's environment (which its
-  shell inherits) are private data, except the model credentials the harness itself reads, matched
-  by exact variable name (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...) or secret name, never by
-  prefix. With
+  shell inherits) are private data, except the model credentials the harness itself reads (see
+  workflow triggers below). Imported `jobs` and `steps` that start an agent, and engine `command`,
+  `steps` or `args` that lift the agent's limits, are unknown reach, reported at high. With
   `network: { allowed: ["*"] }` the firewall is open, so outbound reach is yes. The repository a
   workflow runs in is not counted as private data.
+- **gh-aw lock files.** The `.lock.yml` that runs is checked against its source. Untrusted
+  triggers the source does not have (after gh-aw's own expansion of `slash_command` and
+  `label_command`), or agent flags it does not ask for (`--allow-all-tools` without `bash: "*"`,
+  `--dangerously-skip-permissions`, a permission mode the source does not set), mean the lock was
+  edited by hand: it is unknown reach, reported at high. A `frontmatter_hash` that differs from the
+  source's (gh-aw's own algorithm, recomputed) means the lock is out of date or edited: medium.
+  Other hand edits to compiled steps are not detected; recompiling in CI (`gh aw compile` and a
+  diff) is the complete check.
 - **Model endpoints.** `ANTHROPIC_BASE_URL` and similar variables send model traffic, with
   everything the agent reads, to another endpoint. That is reported (AGC-CFG-001) but not counted
-  as sending data out, since it is the model's own channel.
+  as sending data out, since it is the model's own channel. In the repository's settings, a
+  workflow or a gh-aw engine it is high, except for a model provider's own host
+  (`https://api.z.ai/...`) or a value set outside the repository (`${{ vars.X }}`), which are
+  medium; proxies and CA bundles are medium.
 - **IDE agents.** The VS Code and Cursor agents behind `.vscode/mcp.json` and `.cursor/mcp.json`
   ask before terminal commands and fetches, apply edits without asking, and ask before MCP tools.
 - **Changing itself.** An agent that can edit any file, or run any shell command, can rewrite its
@@ -524,10 +549,16 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `workflow_run` carry text anyone can write and run with the repository's secrets.
   `pull_request` from forks gets no secrets and a read-only token, so it is not treated as
   outsider input. Commands that post to the repository count only when the job's token can
-  write. The harness's own credentials are not counted as data given to the agent: a variable
-  it reads (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `GEMINI_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`,
-  ...), matched by exact name, whose value is a model or telemetry key (by secret name). The same
-  variable carrying another secret (`OPENAI_API_KEY: ${{ secrets.NPM_TOKEN }}`) is counted.
+  write. A reusable workflow (`workflow_call`) takes the triggers of its callers in the
+  repository; with no caller here, anyone's event may start it (unknown). Secrets are found in
+  every expression form (`secrets.X`, `secrets['X']`, `toJSON(secrets)` for all of them), in every
+  input but the harness's own credentials (the prompt included), in the script of a CLI step, and
+  through `$GITHUB_ENV` from an earlier step. The harness's own credentials are not counted as
+  data given to the agent: a variable it reads (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`,
+  `GEMINI_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`, ...), matched by exact name, whose value is a
+  secret named for a model provider (`ZAI_API_KEY`) or, for telemetry headers, a telemetry
+  service. The same variable carrying another secret (`ANTHROPIC_API_KEY:
+  ${{ secrets.PROD_DB_API_KEY }}`) is counted.
 - **Runtime checks.** A runtime check counts only for the calls it sees. A hook matcher is a
   regular expression from the repository, so the scanner never runs it: it reads the matcher's
   `|` alternatives, and credits only exact tool names (`Bash`), name prefixes (`Web.*`,

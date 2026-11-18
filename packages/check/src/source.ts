@@ -99,6 +99,8 @@ export function linkTarget(linkPath: string, target: string): string | undefined
 export function foldsToCandidate(path: string): boolean {
   const folded = foldPath(path);
   if (folded === path || !isCandidate(folded)) return false;
+  // GitHub, not an agent on a laptop, reads workflows, and only at the exact `.github/workflows`.
+  if (folded.startsWith('.github/workflows/')) return false;
   // A lowercase `agents.md` in a docs folder is a page about agents: instruction names count only
   // at the root or inside an agent folder. Folder and settings names count anywhere.
   if (!/(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL)\.md$/.test(folded)) return true;
@@ -238,6 +240,7 @@ export function isCandidate(path: string): boolean {
  * only inside the root; any other link where configuration lives is reported, never followed.
  */
 export class DirectorySource implements FileSource {
+  #listed: Set<string> | undefined;
   readonly label: string;
   skipped = 0;
   readonly skippedFiles: string[] = [];
@@ -362,7 +365,8 @@ export class DirectorySource implements FileSource {
   }
 
   read(path: string): string | undefined {
-    if (!this.list().includes(path)) return undefined;
+    // A set, so each read is a lookup rather than a scan of the whole list.
+    if (!(this.#listed ??= new Set(this.list())).has(path)) return undefined;
     const alias = this.#aliases.get(path);
     if (alias !== undefined) return this.readNamed(alias);
     try {
@@ -426,6 +430,7 @@ const SAFE_REF = /^[A-Za-z0-9][A-Za-z0-9._/@~^{}-]*$/;
 
 /** Files at one commit, read with git. Nothing is checked out and nothing in the repo runs. */
 export class GitSource implements FileSource {
+  #listed: Set<string> | undefined;
   readonly label: string;
   skipped = 0;
   readonly skippedFiles: string[] = [];
@@ -584,7 +589,8 @@ export class GitSource implements FileSource {
   }
 
   read(path: string): string | undefined {
-    if (!this.list().includes(path)) return undefined;
+    // A set, so each read is a lookup rather than a scan of the whole list.
+    if (!(this.#listed ??= new Set(this.list())).has(path)) return undefined;
     path = this.#aliases.get(path) ?? path;
     try {
       // `./` makes the path relative to the scanned directory, matching ls-tree run from there.
