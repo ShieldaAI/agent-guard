@@ -171,6 +171,15 @@ export function serverLabel(server: McpServer): string {
   return `MCP server "${server.name}"`;
 }
 
+/**
+ * A server in a finding's fingerprint: its name and what it runs. Under `--base`, a server whose
+ * program changed is a new finding, even when its name already had one.
+ */
+export function serverKey(server: McpServer): string {
+  const launch = [server.command ?? '', ...server.args, server.url ?? ''].join('\0');
+  return `${server.name}@${createHash('sha256').update(launch).digest('hex').slice(0, 12)}`;
+}
+
 export function agentServers(project: Project): McpServer[] {
   return [...project.servers, ...project.workflows.flatMap(step => step.servers)];
 }

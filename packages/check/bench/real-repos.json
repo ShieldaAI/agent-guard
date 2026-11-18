@@ -32,6 +32,8 @@
       "commit": "4720d367f7db9d5df8a166c74d7f36a538ac8c34",
       "agents": 6,
       "expected": {
+        "AGC-CFG-001:high": 3,
+        "AGC-PER-002:medium": 2,
         "AGC-TRG-001:high": 1
       }
     },
@@ -62,6 +64,7 @@
       "agents": 12,
       "expected": {
         "AGC-COV-001:medium": 3,
+        "AGC-PER-002:medium": 1,
         "AGC-PERM-003:high": 1
       }
     },
@@ -71,6 +74,7 @@
       "agents": 63,
       "expected": {
         "AGC-COV-001:high": 2,
+        "AGC-PER-002:medium": 11,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-003:high": 3
       }
@@ -119,7 +123,9 @@
       "repo": "cloudflare/workers-sdk",
       "commit": "c46d179e95fcf979ecc6fbea1b1d60ac4e2c6119",
       "agents": 2,
-      "expected": {}
+      "expected": {
+        "AGC-PER-002:medium": 1
+      }
     },
     {
       "repo": "continuedev/continue",
@@ -133,6 +139,7 @@
       "agents": 1,
       "expected": {
         "AGC-COV-001:high": 1,
+        "AGC-PER-002:medium": 3,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-003:high": 5,
         "AGC-PERM-005:medium": 1
@@ -147,7 +154,7 @@
         "AGC-CFG-001:medium": 1,
         "AGC-COV-001:high": 1,
         "AGC-COV-001:medium": 1,
-        "AGC-PERM-003:high": 27,
+        "AGC-PERM-003:high": 26,
         "AGC-PERM-005:medium": 3,
         "AGC-SUP-004:medium": 1,
         "AGC-TRI-001:critical": 1,

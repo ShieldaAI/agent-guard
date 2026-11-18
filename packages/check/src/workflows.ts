@@ -3,7 +3,14 @@ import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
-import { agentCalls, AGENT_MENTION, spawnsAgent, type AgentCli } from './shell.js';
+import {
+  agentCalls,
+  AGENT_MENTION,
+  spawnsAgent,
+  spawnsWithAgentFlags,
+  USES_AGENT_SDK,
+  type AgentCli,
+} from './shell.js';
 import { parse as parseYaml } from 'yaml';
 
 export type AgentAction =
@@ -435,6 +442,13 @@ const CREDENTIAL_ACTION =
 /** A write (redirect, tee, cp, mv, sed -i, jq into a file) to agent settings or MCP config. */
 export const AGENT_CONFIG_WRITE =
   /(>>?|\btee\b|\bcp\b|\bmv\b|\bln\b|\binstall\b|\bsed\s+-i|\bdd\b)[^\n;&|]*(\.claude\/(settings(\.local)?\.json|agents|commands|skills|hooks)|\.claude\.json|\.mcp\.json|managed-settings\.json|managed-mcp\.json|\.codex\/config\.toml|\.gemini\/settings\.json|\.cursor\/(mcp|cli)\.json|opencode\.jsonc?)/;
+/**
+ * A write to `$GITHUB_ENV` or `$GITHUB_PATH` that moves the agent's settings, loads code or swaps
+ * programs for later steps: a settings-moving or loader variable, or text from a file or command.
+ */
+const ENV_REDIRECT =
+  /\b(CLAUDE_CONFIG_DIR|CLAUDE_CODE_\w+|HOME|XDG_CONFIG_HOME|CODEX_HOME|GEMINI_\w+|ANTHROPIC_\w+|OPENAI_BASE_URL|NODE_OPTIONS|BASH_ENV|LD_PRELOAD|DYLD_\w+|PATH|PYTHONPATH|GIT_CONFIG_\w+)=[^\n]*>>\s*"?\$\{?GITHUB_ENV|\b(cat|envsubst|jq|yq|sed|awk|curl|wget)\b[^\n]*>>\s*"?\$\{?GITHUB_ENV|>>\s*"?\$\{?GITHUB_PATH/;
+
 /** CLI commands that add servers or change settings for a later agent run. */
 export const AGENT_CONFIG_COMMAND =
   /\b(claude\s+(mcp\s+(add|add-json|add-from-claude-desktop)|config\s+(set|add)|plugin\s+(install|marketplace\s+add))|codex\s+mcp\s+add|gemini\s+(mcp\s+add|extensions?\s+install))\b/;
@@ -497,6 +511,27 @@ function compositeAgent(
     return AGENT_ACTION_TEXT.test(text) ? 'unknown' : undefined;
   }
   const runs = isRecord(data) && isRecord(data['runs']) ? data['runs'] : {};
+  const folder = uses.replace(/^\.\//, '').replace(/\/+$/, '');
+  const inFolder = (name: string) => (folder ? `${folder}/${name}` : name).replace(/^\.\//, '');
+  // A JavaScript action: its entry script. A Docker action: its Dockerfile's commands.
+  const using = asString(runs['using']) ?? '';
+  if (/^node/.test(using)) {
+    const main = asString(runs['main']);
+    const code = main === undefined ? undefined : readFile(inFolder(main));
+    return code !== undefined && (spawnsAgent(code) || spawnsWithAgentFlags(code) || USES_AGENT_SDK.test(code))
+      ? 'unknown'
+      : undefined;
+  }
+  if (using === 'docker') {
+    const image = asString(runs['image']) ?? '';
+    const dockerfile = /^docker:\/\//.test(image) ? undefined : readFile(inFolder(image || 'Dockerfile'));
+    const commands = (dockerfile ?? '')
+      .split('\n')
+      .filter(line => /^\s*(RUN|CMD|ENTRYPOINT)\s/i.test(line))
+      .join('\n');
+    const entry = JSON.stringify([runs['entrypoint'] ?? '', runs['args'] ?? '']);
+    return AGENT_MENTION.test(commands) || AGENT_MENTION.test(entry) || AGENT_IMAGE.test(image) ? 'unknown' : undefined;
+  }
   const steps = Array.isArray(runs['steps']) ? runs['steps'] : [];
   for (const step of steps) {
     if (!isRecord(step)) continue;
@@ -774,7 +809,7 @@ export function parseWorkflow(
       const configuredByEarlier = configuredBefore;
       const ownRun = asString(step['run']) ?? '';
       const configuredHere =
-        AGENT_CONFIG_WRITE.test(ownRun) || AGENT_CONFIG_COMMAND.test(ownRun)
+        AGENT_CONFIG_WRITE.test(ownRun) || AGENT_CONFIG_COMMAND.test(ownRun) || ENV_REDIRECT.test(ownRun)
           ? `step ${index + 1} changes agent settings`
           : undefined;
       const configured = configuredByEarlier ?? configuredHere;
@@ -824,7 +859,10 @@ export function parseWorkflow(
       const context = { readFile, cwd: stepDirectory.includes('${{') ? '' : stepDirectory.replace(/^\.\/?/, '') };
       // A custom `shell:` (`bash -c "...; {0}"`) runs its own text too; a non-shell language
       // (`shell: python`) is not read as shell.
-      const shellText = asString(step['shell']) ?? '';
+      // The step's `shell:`, or the job's or workflow's `defaults.run.shell`.
+      const shellOf = (value: unknown) =>
+        isRecord(value) && isRecord(value['run']) ? asString(value['run']['shell']) : undefined;
+      const shellText = asString(step['shell']) ?? shellOf(job['defaults']) ?? shellOf(data['defaults']) ?? '';
       const posixShell = !shellText || /^(bash|sh|zsh)\b/.test(shellText.trim());
       const calls = uses
         ? []
@@ -877,8 +915,11 @@ export function parseWorkflow(
           (/^docker:\/\//.test(uses) &&
             agentCalls(asString((step['with'] as Record<string, unknown> | undefined)?.['args']) ?? '').length > 0));
       const containerAgent = !uses && AGENT_IMAGE.test(JSON.stringify(job['container'] ?? ''));
+      // A command built from an expression (`${{ format('{0}{1}', 'cla', 'ude') }} -p … --flags`)
+      // that carries agent flags.
+      const built = /\$\{\{/.test(rawRun) && AGENT_FLAG_TEXT.test(rawRun);
       const hidden =
-        !calls.length && (opaque || containerAgent || (dynamicText !== '' && namesAgentAnywhere(dynamicText)));
+        !calls.length && (opaque || containerAgent || built || (dynamicText !== '' && namesAgentAnywhere(dynamicText)));
       const detections: {
         action: AgentAction;
         args: readonly string[];

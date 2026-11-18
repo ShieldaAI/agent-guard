@@ -1,4 +1,4 @@
-import { ASI, allowRules, rule } from './common.js';
+import { ASI, agentServers, allowRules, rule, serverKey } from './common.js';
 import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
 import { bashScope, HARMLESS_TOOLS, parseRule } from '../claude.js';
@@ -180,7 +180,10 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
             report({
               message: `${agent.name} runs tools of MCP server ${grant.tool.slice(5)} without asking (${grant.via}); the scanner cannot identify the server, so they may run code, write and send data out.`,
               location: grant.location,
-              subject: `mcp-unknown:${grant.tool}`,
+              subject: `mcp-unknown:${(() => {
+                const server = agentServers(project).find(item => `mcp__${item.name}` === grant.tool);
+                return server ? serverKey(server) : grant.tool;
+              })()}`,
               agent,
               severity: 'high',
               confidence: 'high',

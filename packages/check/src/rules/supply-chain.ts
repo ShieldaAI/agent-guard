@@ -1,4 +1,14 @@
-import { ASI, LOCAL_HOST, PIPE_TO_SHELL, REMOTE_FETCH, agentServers, hooks, rule, serverLabel } from './common.js';
+import {
+  ASI,
+  LOCAL_HOST,
+  serverKey,
+  PIPE_TO_SHELL,
+  REMOTE_FETCH,
+  agentServers,
+  hooks,
+  rule,
+  serverLabel,
+} from './common.js';
 import type { Rule } from './common.js';
 import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
@@ -20,7 +30,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
           report({
             message: `${serverLabel(server)} starts a shell line with more than one command, so what it fetches and runs cannot be checked.`,
             location: server.location,
-            subject: `server:${server.name}:shell`,
+            subject: `server:${serverKey(server)}:shell`,
             fix: 'Start the server with one command, with its package pinned to an exact version.',
           });
           continue;
@@ -49,7 +59,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
           report({
             message: `${serverLabel(server)} runs image "${image}" with no fixed tag or digest.`,
             location: server.location,
-            subject: `server:${server.name}`,
+            subject: `server:${serverKey(server)}`,
             fix: 'Pin the image by digest: image@sha256:<digest>.',
           });
       }
@@ -77,7 +87,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
         report({
           message: `${serverLabel(server)} connects to ${host} over plain HTTP.`,
           location: server.location,
-          subject: `server:${server.name}`,
+          subject: `server:${serverKey(server)}`,
           fix: 'Use https://.',
         });
       }

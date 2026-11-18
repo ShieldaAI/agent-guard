@@ -417,6 +417,19 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
           severity: key.includes('urls') ? 'high' : 'medium',
         });
     }
+    // The Claude Code extension's own settings: a starting mode of bypassPermissions skips approval.
+    if (
+      record['claudeCode.initialPermissionMode'] === 'bypassPermissions' ||
+      record['claudeCode.allowDangerouslySkipPermissions'] === true
+    )
+      bypasses.push({
+        agent: 'Claude Code (VS Code extension)',
+        what:
+          record['claudeCode.initialPermissionMode'] === 'bypassPermissions'
+            ? 'claudeCode.initialPermissionMode: bypassPermissions'
+            : 'claudeCode.allowDangerouslySkipPermissions: true',
+        location: at('claudeCode.'),
+      });
     for (const key of ['chat.tools.autoApprove', 'chat.tools.global.autoApprove'])
       if (record[key] === true)
         bypasses.push({ agent: 'VS Code agent', what: `${key}: true`, location: at(`"${key}"`) });
@@ -444,6 +457,8 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
   }
   // Zed: `agent.always_allow_tool_actions`, and context servers (MCP) it starts.
   const agent = isRecord(record['agent']) ? record['agent'] : isRecord(record['assistant']) ? record['assistant'] : {};
+  if (isRecord(agent['tool_permissions']) && agent['tool_permissions']['default'] === 'allow')
+    bypasses.push({ agent: 'Zed agent', what: 'tool_permissions.default: "allow"', location: at('tool_permissions') });
   if (agent['always_allow_tool_actions'] === true)
     bypasses.push({
       agent: 'Zed agent',
@@ -612,13 +627,18 @@ export function buildProject(
         // Reported where the manifest is read.
       }
   const judged = new Map<Hook, HookJudgement>();
+  const judgedByCommand = new Map<string, HookJudgement>();
   const judgeOf = (hook: Hook): HookJudgement => {
     const known = judged.get(hook);
     if (known) return known;
     const file = hook.location.file;
     const dir = USER_DIRS.has(projectDir(file)) ? '' : projectDir(file);
     const root = [...roots].filter(item => !item || file.startsWith(`${item}/`)).sort((a, b) => b.length - a.length)[0];
-    const judgement = judgeHook(hook, readRepoFile, dir, root ?? dir);
+    // Hooks with the same command in the same folder are judged once: a file with thousands of
+    // copies is not read thousands of times.
+    const key = `${hook.type}\0${hook.event}\0${hook.command}\0${hook.url ?? ''}\0${dir}\0${root ?? dir}`;
+    const judgement = judgedByCommand.get(key) ?? judgeHook(hook, readRepoFile, dir, root ?? dir);
+    judgedByCommand.set(key, judgement);
     judged.set(hook, judgement);
     return judgement;
   };
@@ -1179,7 +1199,22 @@ export function buildProject(
       name,
       location: anchor,
       grants: approvedByHooks(
-        editThenRun(inSandbox(withoutDenied(grants, deny))),
+        editThenRun([
+          ...inSandbox(withoutDenied(grants, deny)),
+          // Folders added outside the project are read without asking.
+          ...[...local, ...userLevel].flatMap(file =>
+            file.additionalDirectories
+              .filter(directory => /^(~|\$HOME|\/)/.test(directory.value.trim()))
+              .map(directory => ({
+                capability: 'privateData' as const,
+                via: `additionalDirectories ${directory.value}`,
+                tool: 'Read',
+                approval: 'auto' as const,
+                certainty: 'yes' as const,
+                location: directory.location,
+              })),
+          ),
+        ]),
         [
           ...activeHooks([...local, ...userLevel]),
           ...(local.concat(userLevel).some(file => file.disableAllHooks)

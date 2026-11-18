@@ -4,6 +4,17 @@
 
 ### Check
 
+- Fix (twelfth review): a deciding hook whose output is decoded, or printed from a file next to
+  it, may approve; `Bash(name*)` matches other programs; a single `&` and `<( )` split exact
+  rules; scripts outside the project and more pass-through forms are not project code;
+  `additionalDirectories` and Gemini `includeDirectories` outside the project are private data;
+  settings and loaders moved through `$GITHUB_ENV` / `$GITHUB_PATH`, job and workflow
+  `defaults.run.shell`, commands built by expressions, local JavaScript and Docker actions and
+  the Claude Agent SDK are followed; MCP findings are keyed on what a server runs, so `--base`
+  sees a swapped program; edit rules aimed at agent settings by pattern are AGC-PER-002 (every
+  file: medium); the Claude Code VS Code extension's bypass settings and Zed `tool_permissions`
+  are read. Harmless exact commands (version checks, listings, workspace scripts) are no longer
+  reported. Hooks with the same command are judged once.
 - Fix (eleventh review, root causes): exact Bash rules are split like a shell and options that
   run programs are read; network-scope commands bring in untrusted input. Hooks fail closed: a
   deciding hook whose decision cannot be read may approve, and files it prints and modules it
@@ -24,7 +35,7 @@
   `make`, `go`, `cargo` and `just`, allow any command. `CLAUDE_CONFIG_DIR` and `HOME` redirects
   in workflows are followed.
 - Fix (ninth review): files run by an interpreter (`python3 ci/x.py`, `node`, `ruby`, `uv run
-  python`) are read for a process that starts an agent; `"${ARGS[@]}"` counts as unresolved
+python`) are read for a process that starts an agent; `"${ARGS[@]}"` counts as unresolved
   flags; `find -exec` commands are read; a `./` path that climbs out of the project is not a
   project script.
 - Fix (eighth review): fail-closed defaults. A Bash rule is narrower than "any network command"
@@ -442,7 +453,7 @@ additions, then fixes.
   `readsUntrusted`. Defaults are unchanged (`allow`), and tools that set none of the
   labels keep their fingerprints.
 - Add (core API shape for 1.0): `executeDetailed()` returns `{ value, charged,
-  actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
+actionId }`; `retireTask()` revokes and forgets a task, bounding memory and task IDs
   in long-running guards; `unapproveTool()` and `unregisterTool()`; an `onDecision`
   audit hook (identifiers only; it cannot change an outcome); `snapshot()` adds
   `budget` and `revoked`; a `limits` option for the previously fixed approval and
@@ -796,7 +807,7 @@ additions, then fixes.
   limit and returns `truncated: true` when its work budget runs out.
 - Fix (agent map): the identity endpoint ignores other applications' cookies; ID token
   `iat`/`nbf` may be up to 5 seconds ahead (`oidc.clockToleranceSeconds`); `Expect:
-  100-continue` is answered; names sort in code-point order; `get_changes` accepts
+100-continue` is answered; names sort in code-point order; `get_changes` accepts
   `changeKind: inventory` and shows renamed agents under their current name; evidence rows
   carry allowlisted properties only; launchers print `MAP_START_FAILED <code>: <hint>` and
   accept `--version`.
@@ -919,7 +930,7 @@ additions, then fixes.
 - Fix (collector): pending receipts are capped per source (`--archive-max-pending`), listed
   and discarded with `agent-guard-recovery pending` / `discard --reviewed`; a foreign or damaged
   file fails only its own source and is named; backup, restore and the new `agent-guard-recovery
-  replay` accept the archive limit flags.
+replay` accept the archive limit flags.
 - Fix (collector): at an unchanged ledger revision a capture older than the published one
   is refused (`GENERATED_AT_ROLLBACK`); SIGTERM stops `--watch` cleanly; the AWS worker's
   process group is signalled only while its leader is unreaped.

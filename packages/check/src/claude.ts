@@ -179,7 +179,7 @@ const FETCH_COMMANDS = /^git (fetch|pull|clone|submodule update)(?=\s|$)/;
  * by the agent. Matched as whole words, so `npx tsc-evil-pkg` is not `npx tsc`.
  */
 const PROJECT_COMMANDS =
-  /^((npm|pnpm|yarn|bun) (test|ci|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npm|pnpm|yarn|bun) (install|i|add)|(npx|bunx|pnpx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx|oxlint|knip|stylelint)|tsc|eslint|prettier|biome|oxlint|knip|stylelint|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest)|uv (run (pytest|ruff|mypy|pyright|basedpyright|ty|pre-commit|tox|nox|coverage|black|isort|flake8|pylint|python -m pytest)|sync|lock)|pre-commit run|pyright|basedpyright|tox|nox|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod tidy)|cargo (test|check|build|clippy|fmt|run|nextest run)|make|just|gradlew? (test|build|check)|\.\/gradlew (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))(?=\s|$)/;
+  /^((npm|pnpm|yarn|bun) (test|ci|run|typecheck|lint|format|fmt|build|check|exec (tsc|eslint|prettier|vitest|jest))|(npm|pnpm|yarn|bun) (install|i|add)|(npx|bunx|pnpx|pnpm exec) (tsc|eslint|prettier|vitest|jest|playwright test|biome|turbo|nx|oxlint|knip|stylelint)|tsc|eslint|prettier|biome|oxlint|knip|stylelint|vitest|jest|pytest|python3? -m (pytest|ruff|mypy|black|isort|flake8|pylint|unittest)|uv (run (pytest|ruff|mypy|pyright|basedpyright|ty|pre-commit|black|isort|flake8|pylint|python -m pytest)|sync|lock)|pre-commit run|pyright|basedpyright|tox|nox|poetry (install|run (pytest|ruff|mypy))|ruff|mypy|black|go (test|build|vet|mod tidy)|cargo (test|check|build|clippy|fmt|run|nextest run)|make|just|gradlew? (test|build|check)|\.\/gradlew (test|build|check)|mvn (test|verify|package)|dotnet (test|build)|swift (test|build))(?=\s|$)/;
 /**
  * Project commands whose arguments choose what is installed or run: as a prefix rule they fetch
  * and run any package (`npm install evil`), so they are judged as network commands.
@@ -219,7 +219,9 @@ export function withScriptReader<T>(reader: (path: string) => string | undefined
  * `sys.argv` / `process.argv` handed to a process call): a rule for it allows any command.
  */
 const PASSES_ARGUMENTS =
-  /(^[ \t]*|(?:;|&&|\|\||\||\bthen|\bdo|\belse)[ \t]+|\b(?:exec|eval|command|xargs|sudo|nohup|env)[ \t]+|\b(?:ba)?sh[ \t]+-c[ \t]+)"?\$(?:\{?[@*1]\}?)"?(?=[ \t;]|$)|(subprocess\.\w+|os\.system|os\.exec\w*|Popen|spawnSync|execSync|execFileSync|spawn|exec)\s*\([^\n]*(sys\.argv|process\.argv)/m;
+  /(^[ \t]*|(?:;|&&|\|\||\||\bthen|\bdo|\belse)[ \t]+|\b(?:exec|eval|command|xargs|sudo|nohup|time|env|sh\s+-c|bash\s+-c)[ \t]+)"?\$(?:\{?[@*1-9]\}?|\{@:[0-9]+\}|\{\w+\[@\]\})"?(?=[ \t;]|$)|=\(\s*"?\$\{?@|(subprocess\.\w+|os\.system|os\.exec\w*|Popen|spawnSync|execSync|execFileSync|spawn|exec)\s*\([^\n]*(sys\.argv|process\.argv)|\b(docker( compose)? (exec|run)|kubectl exec)\b[^\n]*"?\$\{?@/m;
+/** Arguments kept in a variable and run later: `args = sys.argv[1:]` then `subprocess.run(args)`. */
+const ARGUMENTS_KEPT = /(\w+)\s*=\s*(sys\.argv|process\.argv)/;
 
 function scriptPassesArguments(command: string): boolean {
   if (!scriptReader) return false;
@@ -229,7 +231,15 @@ function scriptPassesArguments(command: string): boolean {
     : words.slice(1).find(word => !word.startsWith('-') && /\.(sh|bash|py|js|mjs|cjs|ts|rb|pl)$/.test(word));
   if (!file) return false;
   const text = scriptReader(file.replace(/^"|"$/g, '').replace(/^\$\{?CLAUDE_PROJECT_DIR\}?\//, ''));
-  return text !== undefined && PASSES_ARGUMENTS.test(text);
+  if (text === undefined) return false;
+  if (PASSES_ARGUMENTS.test(text)) return true;
+  const kept = ARGUMENTS_KEPT.exec(text)?.[1];
+  return (
+    kept !== undefined &&
+    new RegExp(
+      `(subprocess\\.\\w+|os\\.system|Popen|spawnSync|execSync|execFileSync|spawn|exec)\\s*\\(\\s*\\[?\\s*\\*?${kept}\\b`,
+    ).test(text)
+  );
 }
 
 export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'fetch' | 'edit' | 'local' | 'project' | 'other';
@@ -330,6 +340,30 @@ function commandScope(simple: string, prefix: boolean): BashScope {
   // `/usr/bin/curl` is curl; a path elsewhere is an unknown program.
   command = command.replace(/^\/(usr\/(local\/)?)?s?bin\/(?=\S)/, '');
   if (/^xargs kill(?=\s|$)/.test(command)) return 'local';
+  // Exact commands that only print a version, help, or a listing.
+  if (
+    !prefix &&
+    /^(?!(npx|bunx|pnpx|uvx|pipx|sh|bash|zsh|eval|exec)\b)[\w.-]+ (--version|-v|-V|version|--help|-h|help)$/.test(
+      command,
+    )
+  )
+    return 'local';
+  if (
+    !prefix &&
+    /^(docker (ps|images|version|info)|pip3? (list|show|freeze)|terraform (fmt|validate|version)|kubectl (get|describe|version|config view)|helm (list|version)|gh auth status|node -v|python3? -V)(?=\s|$)/.test(
+      command,
+    )
+  )
+    return 'local';
+  // A workspace's own script (`pnpm --filter web test`, `npm -w web test`, `yarn workspace web
+  // test`, `turbo run test`) is project code.
+  if (
+    !prefix &&
+    /^(pnpm (--filter|-F) \S+( run)? [a-z][\w:.-]*|npm (-w|--workspace) \S+ (test|run [a-z][\w:.-]*)|yarn workspace \S+ [a-z][\w:.-]*|turbo run [a-z][\w:.-]*( --filter[= ]\S+)?|bundle exec (rspec|rubocop|rake (test|spec))|rspec|rubocop|rake (test|spec)|phpunit|composer test)( |$)/.test(
+      command,
+    )
+  )
+    return 'project';
   // pnpm's workspace flags choose where a command runs, not what: `pnpm -w run lint` is `pnpm run lint`.
   command = command.replace(/^pnpm( (-w|-r|--workspace-root|--recursive))+(?=\s)/, 'pnpm');
   // Package managers' read-only commands.
@@ -366,7 +400,17 @@ function commandScope(simple: string, prefix: boolean): BashScope {
     return 'project';
   // Build tools whose options run any program: `make --eval`, `go test -exec`, `cargo --config`
   // (a runner), `just --shell`. As a prefix rule they allow any command.
-  if (prefix && /^(make|gmake|just|go (test|build|vet|run|generate|tool)|cargo)(?=\s|$)/.test(command))
+  if (
+    prefix &&
+    /^(make|gmake|just|go (test|build|vet|run|generate|tool)|cargo|dotnet|msbuild|uv (lock|sync|run (tox|nox|coverage))|tox|nox|coverage)(?=\s|$)/.test(
+      command,
+    )
+  )
+    return 'network';
+  // A script outside the project (`~/x.js`, `$HOME/x.sh`, `../../tmp/x.py`) is not project code.
+  // Claude Code's own folders (`${CLAUDE_PROJECT_DIR}`, `${CLAUDE_PLUGIN_ROOT}`, `${CLAUDE_SKILL_DIR}`) are not outside.
+  const ownPaths = command.replace(/"?\$\{?CLAUDE_(PROJECT_DIR|PLUGIN_ROOT|SKILL_DIR)\}?"?/g, '.');
+  if (SCRIPT_COMMAND.test(command) && /(^|\s)(~|\$|\S*\.\.\/)/.test(ownPaths.split(/\s+/).slice(0, 3).join(' ')))
     return 'network';
   if (SCRIPT_COMMAND.test(command) && !/\$\(|`/.test(command))
     return scriptPassesArguments(command) ? 'network' : 'project';
@@ -396,10 +440,15 @@ export function bashScope(specifier: string | undefined): BashScope {
     .trim();
   if (command === '' || command === '*') return 'any';
   const prefix = command !== raw;
+  // `name*` with no space before the star matches other programs and subcommands too
+  // (`git diff*` matches `git difftool`, `ls*` matches `lsof`), except a package script prefix.
+  // A path glob (`tests/*`, `*.py`) is an argument, not a program name.
+  if (/(^|\s)[^\s/.=*:-][^\s/.=*:]*\*$/.test(raw) && !/^(pnpm|yarn|bun|npm run) [a-z][\w:.-]*\*$/.test(raw))
+    return 'network';
   if (command.length > 4096) return 'network';
   // Shell operators outside quotes: judge every command in the rule.
   const unquoted = command.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
-  if (!/&&|\|\||[;|\n`]|\$\(|>/.test(unquoted.replace(/[0-9]?>&[0-9-]+|[0-9&]?>>?\s*\/dev\/null/g, '')))
+  if (!/&|\|\||[;|\n`]|\$\(|<\(|>/.test(unquoted.replace(/[0-9]?>&[0-9-]+|[0-9&]?>>?\s*\/dev\/null/g, '')))
     return commandScope(command, prefix);
   const parts = commands(command);
   if (!parts.length) return commandScope(command, prefix);

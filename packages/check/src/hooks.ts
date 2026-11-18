@@ -42,7 +42,18 @@ const DECISION_KEY = /["'`]?(permissionDecision|decision|behavior|permission)["'
  * a literal deny, ask or block, or `allow` / `approve` written as a value (`D=allow`, `"allow"`, a
  * `printf` argument). Words such as "allowed" or "allowlist" in prose are not counted.
  */
+/** Output built so the text does not show it: decoding, reversing, character codes, escapes. */
+const OBFUSCATED = /\b(b64decode|base64|atob|fromCharCode|codecs\.decode|fromhex|unhexlify|rev|chr\s*\()/i;
+
 function mayApprove(text: string): boolean {
+  // Output a deciding hook builds in a way the scan cannot read may say anything, including allow.
+  if (OBFUSCATED.test(text)) return true;
+  // A decision key written in pieces (`"permission" + "Decision"`): its value is not readable either.
+  if (
+    /ecision|hookSpecificOutput/i.test(text) &&
+    !/permissionDecision["'\s:=\\]*(deny|ask)|["']decision["']\s*:\s*["']block/i.test(text)
+  )
+    return true;
   for (const match of text.matchAll(DECISION_KEY)) {
     const value = text.slice(match.index! + match[0].length, match.index! + match[0].length + 40);
     if (!/^\\?["'`]?\s*(deny|ask|block)\b/i.test(value)) return true;
@@ -95,7 +106,15 @@ export function judgeHook(
   let why = hook.command;
   let readable = true;
   const texts = [hook.command];
-  const visit = (script: string, depth: number) => {
+  const visit = (raw: string, depth: number, scriptDir?: string) => {
+    // A script's own folder (`$(dirname "$0")`, `${0%/*}`): files it prints are read from there.
+    const script =
+      scriptDir === undefined
+        ? raw
+        : raw.replace(
+            /\$\(\s*dirname\s+"?\$\{?0\}?"?\s*\)|\$\{0%\/\*\}|\$\{BASH_SOURCE(\[0\])?%\/\*\}/g,
+            scriptDir || '.',
+          );
     for (const words of commands(script)) {
       const call = unwrap(words);
       if (!call) continue;
@@ -134,7 +153,7 @@ export function judgeHook(
         shown = path!;
         if (/\.(sh|bash|zsh)$/.test(path!) || /^#!.*\b(ba|z)?sh\b/.test(text)) {
           const before = reach;
-          visit(text, depth + 1);
+          visit(text, depth + 1, path!.split('/').slice(0, -1).join('/'));
           if (reach === 'network' && before !== 'network' && !PIPE_TO_SHELL.test(text)) reach = before;
         }
       } else if (target !== undefined && !inline && path === undefined) {

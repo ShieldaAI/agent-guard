@@ -351,6 +351,20 @@ export function parseGemini(path: string, text: string, declared: CatalogContext
       location: at('telemetry'),
       severity: 'medium',
     });
+  // Folders added outside the project are read without asking.
+  const context = isRecord(data['context']) ? data['context'] : {};
+  for (const folder of asStringArray(context['includeDirectories'] ?? []))
+    if (/^(~|\$HOME|\/)/.test(folder.trim()))
+      grants.push(
+        grant(
+          'privateData',
+          `context.includeDirectories ${folder}`,
+          'auto',
+          at('includeDirectories'),
+          'yes',
+          'read_file',
+        ),
+      );
   if (tools['autoAccept'] === true)
     unrecognized.push({
       agent: 'Gemini CLI',

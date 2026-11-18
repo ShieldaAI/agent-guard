@@ -50,7 +50,14 @@ That is the whole result for this `.claude/settings.json` and `.mcp.json`:
 ```
 
 ```json
-{ "mcpServers": { "postgres": { "command": "npx", "args": ["-y", "@modelcontextprotocol/server-postgres@0.6.2", "postgresql://localhost/app"] } } }
+{
+  "mcpServers": {
+    "postgres": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-postgres@0.6.2", "postgresql://localhost/app"]
+    }
+  }
+}
 ```
 
 For each agent it works out seven capabilities: reads private data, reads untrusted input,
@@ -60,11 +67,11 @@ grants it. An unknown capability is never treated as safe.
 
 ## Three levels of evidence
 
-| Evidence | When it runs | What it adds |
-| --- | --- | --- |
-| Repository files | Always | Agents, their capabilities and 36 rules on configuration |
+| Evidence            | When it runs                                                                                                                                                                      | What it adds                                                                                                                                                                                                                           |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 36 rules on configuration                                                                                                                                                                               |
 | Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
-| Live Agent Map | Only with `--live` or `--agent-map-url` and a read-only token | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory |
+| Live Agent Map      | Only with `--live` or `--agent-map-url` and a read-only token                                                                                                                     | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory                                                                             |
 
 Files named `agent-guard*.json` are read automatically, and what each one is (describe() output,
 inventory snapshot or manifest) is recognised from its content. Name any other path in
@@ -89,24 +96,24 @@ URL. The URL must use `https` (plain `http` only for localhost).
 
 ## What it reads
 
-| Agent | Files |
-| --- | --- |
-| Claude Code | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md` and skills (including their `allowed-tools`, which run without asking while one is active), hook scripts, `CLAUDE.md`, `AGENTS.md`, up to 32 folders deep, so monorepo packages are separate agents. On macOS and Windows letter case is ignored: a path that is configuration only when case is ignored (`.CLAUDE/settings.json`, a root `claude.md`), and two paths that differ only in case, are reported |
-| Claude Code plugins | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, `mcpServers` and `hooks` (inline, a file in the plugin, or a list of them) and `hooks/hooks.json`; a file it names that cannot be read counts as unknown reach. A `.mcp.json` there still counts for Claude Code in that folder too |
-| Agent Plugins | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/` |
-| OpenAI Codex | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles |
-| Gemini CLI | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md` |
-| GitHub workflows | Steps that use `anthropics/claude-code-action` (with its `settings`: inline JSON, a mapping or a file), `openai/codex-action` (with its `sandbox` and `permission-profile`), or run `claude -p` (with `--settings`), `codex exec`, `copilot -p` or `gemini -p` |
+| Agent                    | Files                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Claude Code              | `.claude/settings.json`, `.claude/settings.local.json`, `.mcp.json`, `.claude/agents/*.md` (including `permissionMode`, `disallowedTools`, inline `mcpServers`, `model`), `.claude/commands/*.md` and skills (including their `allowed-tools`, which run without asking while one is active), hook scripts, `CLAUDE.md`, `AGENTS.md`, up to 32 folders deep, so monorepo packages are separate agents. On macOS and Windows letter case is ignored: a path that is configuration only when case is ignored (`.CLAUDE/settings.json`, a root `claude.md`), and two paths that differ only in case, are reported                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Claude Code plugins      | `extraKnownMarketplaces` in settings, `.claude-plugin/marketplace.json`; a plugin folder (`.claude-plugin/plugin.json`) is its own agent with its `.mcp.json` servers, `mcpServers` and `hooks` (inline, a file in the plugin, or a list of them) and `hooks/hooks.json`; a file it names that cannot be read counts as unknown reach. A `.mcp.json` there still counts for Claude Code in that folder too                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| Agent Plugins            | `plugin.json` beside `mcp.json` or a `skills/` folder; `SKILL.md` files anywhere under `skills/`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| OpenAI Codex             | `.codex/config.toml`: approval policy, sandbox mode, network access, web search, MCP servers, profiles                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Gemini CLI               | `.gemini/settings.json` (nested and flat layouts): approval mode, allowed, core and excluded tools, trusted MCP servers, `mcp.allowed`, `GEMINI.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| GitHub workflows         | Steps that use `anthropics/claude-code-action` (with its `settings`: inline JSON, a mapping or a file), `openai/codex-action` (with its `sandbox` and `permission-profile`), or run `claude -p` (with `--settings`), `codex exec`, `copilot -p` or `gemini -p`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | GitHub Agentic Workflows | `.github/workflows/*.md` with `on:` in the frontmatter: triggers, `engine` (and its `env`), `tools` (`bash`, `edit`, `web-fetch`, `web-search`, `playwright`, `github` with `read-only` and `github-token`), `safe-outputs` (with `threat-detection` and `jobs`), `permissions`, `env` and `github-token` secrets, `mcp-servers` (including `container`), `network`, and `imports` (front matter, `{{#import}}` and `@include`) from the repository, three levels deep, each relative to the file that names it. The `.lock.yml` it compiles to is judged from this source, except steps that use `claude-code-action`, `codex-action` or `run-gemini-cli`, which gh-aw never generates and which are judged in the lock; a lock with no gh-aw source beside it is read as a workflow and is also unknown reach. With `--base`, a lock that changed while its source did not is reported (AGC-CFG-002, high); without `--base`, a lock edited by hand in other ways is not detected. Frontmatter `jobs`, `steps` and `post-steps` that start an agent are unknown reach (high); `sandbox: { agent: false }` opens the network; a `secrets` mapping is private data |
-| VS Code and Cursor | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`) |
-| Cursor CLI | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json` |
-| OpenCode | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md` |
-| GitHub Copilot | Custom agents in `.github/agents/*.md` (`tools` with GitHub's and VS Code's tool names, `mcp-servers`, `target`, `model`); `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `.github/prompts/*.prompt.md` for the text rules |
-| Kiro | `.kiro/settings/mcp.json` (`autoApprove`, `disabled`); `.kiro/steering/*.md` for the text rules |
-| Windsurf | `.windsurfrules` and `.windsurf/rules/*.md`, for the text rules (its MCP and permission settings live outside the repository) |
-| Agent Guard | `agent-guard*.json` records, or files named in `.agc.yaml` or on the command line |
-| Repository | `CODEOWNERS`, `package.json` files (names and dependencies) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml` |
-| Your own settings | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings |
+| VS Code and Cursor       | `.vscode/mcp.json`, `.cursor/mcp.json` (comments and trailing commas allowed), Cursor rules (`.cursor/rules/*.mdc`, `.cursorrules`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Cursor CLI               | `.cursor/cli.json`: `Shell`, `Read`, `Write`, `WebFetch` and `Mcp` allow and deny tokens, with the servers in `.cursor/mcp.json`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| OpenCode                 | `opencode.json` or `opencode.jsonc` (also in `.opencode/`): V1 `permission` objects, bash patterns and `<server>_*` keys, V2 `permissions` rules, disabled `tools`, `mcp` servers, `model`; agent overrides in `agent.<name>` and `.opencode/agent/*.md`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| GitHub Copilot           | Custom agents in `.github/agents/*.md` (`tools` with GitHub's and VS Code's tool names, `mcp-servers`, `target`, `model`); `.github/copilot-instructions.md`, `.github/instructions/*.instructions.md` and `.github/prompts/*.prompt.md` for the text rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| Kiro                     | `.kiro/settings/mcp.json` (`autoApprove`, `disabled`); `.kiro/steering/*.md` for the text rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| Windsurf                 | `.windsurfrules` and `.windsurf/rules/*.md`, for the text rules (its MCP and permission settings live outside the repository)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| Agent Guard              | `agent-guard*.json` records, or files named in `.agc.yaml` or on the command line                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Repository               | `CODEOWNERS`, `package.json` files (names and dependencies) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Your own settings        | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 `node_modules`, `.git` and virtual environments are skipped. Build output and vendored code
 (`dist`, `build`, `out`, `vendor`, `target`, ...) are skipped too, but only outside configuration
@@ -164,7 +171,8 @@ matches run without asking, it is AGC-PERM-001 (critical), and it is not a runti
 decision is read from the hook's command, the scripts it runs, the files it prints and the local
 modules a script imports. A hook may approve (high, and not a runtime check either) when it
 builds a decision the scan cannot read (`"permissionDecision": "al" + "low"`, `D=allow`), when
-a decision key's value is anything but a literal deny or ask, or when its text cannot be read (a
+a decision key's value is anything but a literal deny or ask, when its output is decoded or
+reversed (base64, `rev`, character codes), or when its text cannot be read (a
 script that is missing or outside the repository, an HTTP or prompt hook). Settings `env`
 values that run code or change where packages come from are high: shell startup and prefix
 variables (`BASH_ENV`, `CLAUDE_CODE_SHELL_PREFIX`, `PATH`), loaders (`LD_PRELOAD`, `NODE_OPTIONS`,
@@ -212,8 +220,8 @@ name: Agent config
 on: pull_request
 permissions:
   contents: read
-  pull-requests: write     # for comment: true
-  security-events: write   # for sarif: true
+  pull-requests: write # for comment: true
+  security-events: write # for sarif: true
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -276,11 +284,11 @@ re-derive them for each change:
 
 ```yaml
 policy:
-  allowed_mcp_servers: [github, postgres, mcp/fetch]   # catalog ID, package or image (never the config name)
+  allowed_mcp_servers: [github, postgres, mcp/fetch] # catalog ID, package or image (never the config name)
   allowed_mcp_hosts: [mcp.example.com, githubcopilot.com]
   forbid:
     - name: untrusted input with unasked network access
-      when: { untrustedInput: auto, egress: auto }      # auto: without approval; any: at all
+      when: { untrustedInput: auto, egress: auto } # auto: without approval; any: at all
       severity: critical
 ```
 
@@ -290,7 +298,14 @@ policy:
 configuration before it changes it. It scans one root fixed at start-up and never leaves it.
 
 ```json
-{ "mcpServers": { "agent-guard-check": { "command": "npx", "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.3.0", "agent-guard-check-mcp", "."] } } }
+{
+  "mcpServers": {
+    "agent-guard-check": {
+      "command": "npx",
+      "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.3.0", "agent-guard-check-mcp", "."]
+    }
+  }
+}
 ```
 
 Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref) and
@@ -299,20 +314,20 @@ Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref)
 
 ## Options
 
-| Option | Meaning |
-| --- | --- |
+| Option                                            | Meaning                                                                                                                                                                                                                              |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `--format text\|json\|sarif\|markdown\|inventory` | Output format. JSON includes each agent's computed authority. SARIF 2.1.0 works with GitHub code scanning. Markdown is a PR comment. Inventory is an auditor's export: agents, capabilities, tools and counts, without finding text. |
-| `--output <file>` | Write the report to a file (owner-only permissions). |
-| `--fail-on <severity\|none>` | Exit 1 at or above this severity. Default `high`. |
-| `--min-confidence high\|low` | By default, low-confidence findings are reported but never fail the run. |
-| `--base <ref>` | Compare with a commit and report only what the change made worse. |
-| `--baseline <file>` / `--write-baseline <file>` | Accept current findings once; later runs fail only on new ones. |
-| `--agent-guard <file>` | Read an Agent Guard record from anywhere (repeatable). |
-| `--live`, `--agent-map-url <url>` | Add live evidence from Agent Map (read-only). |
-| `--import-sarif <file>` | Merge another tool's SARIF findings into the report, baseline and gate (repeatable). They keep their own tool name in SARIF output. |
-| `--fix`, `--fix-dry-run` | Apply or print verified safe fixes. |
-| `--include-user` | Also read your own settings outside the repository (local runs only). See [Your own settings](#your-own-settings). |
-| `--list-rules` | Print every rule. |
+| `--output <file>`                                 | Write the report to a file (owner-only permissions).                                                                                                                                                                                 |
+| `--fail-on <severity\|none>`                      | Exit 1 at or above this severity. Default `high`.                                                                                                                                                                                    |
+| `--min-confidence high\|low`                      | By default, low-confidence findings are reported but never fail the run.                                                                                                                                                             |
+| `--base <ref>`                                    | Compare with a commit and report only what the change made worse.                                                                                                                                                                    |
+| `--baseline <file>` / `--write-baseline <file>`   | Accept current findings once; later runs fail only on new ones.                                                                                                                                                                      |
+| `--agent-guard <file>`                            | Read an Agent Guard record from anywhere (repeatable).                                                                                                                                                                               |
+| `--live`, `--agent-map-url <url>`                 | Add live evidence from Agent Map (read-only).                                                                                                                                                                                        |
+| `--import-sarif <file>`                           | Merge another tool's SARIF findings into the report, baseline and gate (repeatable). They keep their own tool name in SARIF output.                                                                                                  |
+| `--fix`, `--fix-dry-run`                          | Apply or print verified safe fixes.                                                                                                                                                                                                  |
+| `--include-user`                                  | Also read your own settings outside the repository (local runs only). See [Your own settings](#your-own-settings).                                                                                                                   |
+| `--list-rules`                                    | Print every rule.                                                                                                                                                                                                                    |
 
 Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage, read or live-evidence error.
 
@@ -321,27 +336,27 @@ Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage, read o
 `.agc.yaml` at the repository root:
 
 ```yaml
-fail_on: high          # critical, high, medium, low, info or none
-min_confidence: high   # high or low
+fail_on: high # critical, high, medium, low, info or none
+min_confidence: high # high or low
 severity:
   AGC-LIM-002: info
 ignore:
   - rule: AGC-SUP-001
-    path: tools/          # optional: a file or folder
+    path: tools/ # optional: a file or folder
     reason: Served from our internal registry mirror, pinned there.
 agent_guard:
   files: [build/agent-guard-description.json]
-  max_deadline_hours: 24  # AGC-AGX-007 ceilings
+  max_deadline_hours: 24 # AGC-AGX-007 ceilings
   max_calls: 1000
   max_cost: 500
 agent_map:
   url: https://agent-map.internal.example
   token_env: AGENT_MAP_TOKEN
-policy: {}                # see Policy as code
-mcp_servers:              # what servers the catalog does not know can do
-  mcp.docs.example.com:   # a package, image, remote host or catalog ID
+policy: {} # see Policy as code
+mcp_servers: # what servers the catalog does not know can do
+  mcp.docs.example.com: # a package, image, remote host or catalog ID
     capabilities: [untrustedInput]
-  "@acme/crm-mcp":
+  '@acme/crm-mcp':
     capabilities: [privateData, write]
     unknown: [egress]
 ```
@@ -392,56 +407,56 @@ in JSON output.
 Severity is the default; `.agc.yaml` can change it. The [rule catalog](docs/rules.md) shows,
 for every rule, a configuration it flags and a look-alike it does not.
 
-| ID | Severity | Finding | OWASP |
-| --- | --- | --- | --- |
-| AGC-PERM-001 | Critical | Agent runs every tool without asking | ASI02, ASI09 |
-| AGC-PERM-002 | High | Wildcard tool allow | ASI02 |
-| AGC-PERM-003 | High | Allowed command can send data out or run any code | ASI02, ASI05 |
-| AGC-PERM-004 | High | Agent can read files outside the project | ASI03 |
-| AGC-PERM-005 | Medium | Destructive action allowed without approval | ASI02, ASI09 |
-| AGC-PERM-006 | High | Subagent runs with broader permissions than its parent | ASI02, ASI09 |
-| AGC-TRI-001 | Critical | Lethal trifecta: private data, untrusted input and an unguarded way out | ASI01, ASI02 |
-| AGC-TRI-002 | Medium | Lethal trifecta behind one approval, or one leg unknown | ASI01 |
-| AGC-SUP-001 | High | MCP server runs an unpinned package | ASI04 |
-| AGC-SUP-002 | High | Remote MCP server over plain HTTP | ASI04 |
-| AGC-SUP-003 | High | Remote content loaded into the agent at runtime | ASI04, ASI01 |
-| AGC-SUP-004 | Critical | Download piped into a shell | ASI04, ASI05 |
-| AGC-SUP-005 | Medium | Plugin or marketplace not pinned | ASI04 |
-| AGC-PER-001 | High | Agent can rewrite its own instructions | ASI06, ASI10 |
-| AGC-PER-002 | High | Agent can change its own permissions or hooks | ASI10 |
-| AGC-SEC-001 | Critical | Hardcoded credential | ASI03 |
-| AGC-SEC-002 | Medium | Secret passed on a command line | ASI03 |
-| AGC-TXT-001 | Medium (low confidence) | Hidden characters in agent instructions | ASI01, ASI06 |
-| AGC-TXT-002 | Medium (low confidence) | Instruction-override phrasing in shipped prompts | ASI01 |
-| AGC-TXT-003 | Low (low confidence) | Long encoded blob in agent instructions | ASI01 |
-| AGC-TXT-004 | Medium (low confidence) | Instructions to act without asking | ASI02, ASI09 |
-| AGC-TRG-001 | High | Agent triggered by outsiders with write access | ASI01, ASI03 |
-| AGC-LIM-001 | Low | No turn limit on an automated agent | ASI08 |
-| AGC-LIM-002 | Low | No timeout on an automated agent | ASI08 |
-| AGC-IDN-001 | High | Agent runs on a personal access token | ASI03 |
-| AGC-TRG-002 | Medium | Unattended agent changes the repository with no reviewer | ASI09, ASI08 |
-| AGC-IDN-002 | Medium | Agent gets long-lived cloud keys | ASI03 |
-| AGC-GOV-001 | Low | Agent configuration has no code owner | ASI10 |
-| AGC-GOV-002 | Low | Subagent has no stated purpose | ASI10 |
-| AGC-COV-001 | Medium | Risky actions with no runtime check | ASI02 |
-| AGC-GOV-003 | Info | Agent model is a moving alias | ASI04 |
-| AGC-CFG-001 | Info (low confidence) | Agent setting the scanner does not model | ASI02 |
-| AGC-CFG-002 | High | Agent configuration file too large to read | ASI02, ASI04 |
-| AGC-POL-001 | High | MCP server not on the approved list | ASI04 |
-| AGC-POL-002 | High | Remote MCP server on a host not on the approved list | ASI04, ASI02 |
-| AGC-POL-003 | High | Agent holds a forbidden capability combination | ASI02, ASI01 |
-| AGC-AGX-001 | High | Agent reaches a guarded MCP server directly | ASI02 |
-| AGC-AGX-002 | High | Declared access outside the guard | ASI02, ASI03 |
-| AGC-AGX-003 | Critical | Agent Guard task exposed to the dangerous three | ASI01, ASI02 |
-| AGC-AGX-004 | Medium | Agent without an owner, or retired with live work | ASI10 |
-| AGC-AGX-005 | Medium | Guarded tool registered but not approved | ASI04 |
-| AGC-AGX-006 | Medium | Task grant broader than its tool warrants | ASI02, ASI03 |
-| AGC-AGX-007 | Medium | Task budget above the team ceiling | ASI08 |
-| AGC-AGX-008 | Medium | Outbound tool labels leave a gap | ASI02 |
-| AGC-DRF-001 | High | Guarded activity no declared agent accounts for | ASI10, ASI03 |
-| AGC-DRF-002 | Medium | Cloud identities no agent claims | ASI03 |
-| AGC-DRF-003 | High | Live agent exposed to the dangerous three | ASI01, ASI02 |
-| AGC-DRF-004 | Low | Live inventory is stale | ASI10 |
+| ID           | Severity                | Finding                                                                 | OWASP        |
+| ------------ | ----------------------- | ----------------------------------------------------------------------- | ------------ |
+| AGC-PERM-001 | Critical                | Agent runs every tool without asking                                    | ASI02, ASI09 |
+| AGC-PERM-002 | High                    | Wildcard tool allow                                                     | ASI02        |
+| AGC-PERM-003 | High                    | Allowed command can send data out or run any code                       | ASI02, ASI05 |
+| AGC-PERM-004 | High                    | Agent can read files outside the project                                | ASI03        |
+| AGC-PERM-005 | Medium                  | Destructive action allowed without approval                             | ASI02, ASI09 |
+| AGC-PERM-006 | High                    | Subagent runs with broader permissions than its parent                  | ASI02, ASI09 |
+| AGC-TRI-001  | Critical                | Lethal trifecta: private data, untrusted input and an unguarded way out | ASI01, ASI02 |
+| AGC-TRI-002  | Medium                  | Lethal trifecta behind one approval, or one leg unknown                 | ASI01        |
+| AGC-SUP-001  | High                    | MCP server runs an unpinned package                                     | ASI04        |
+| AGC-SUP-002  | High                    | Remote MCP server over plain HTTP                                       | ASI04        |
+| AGC-SUP-003  | High                    | Remote content loaded into the agent at runtime                         | ASI04, ASI01 |
+| AGC-SUP-004  | Critical                | Download piped into a shell                                             | ASI04, ASI05 |
+| AGC-SUP-005  | Medium                  | Plugin or marketplace not pinned                                        | ASI04        |
+| AGC-PER-001  | High                    | Agent can rewrite its own instructions                                  | ASI06, ASI10 |
+| AGC-PER-002  | High                    | Agent can change its own permissions or hooks                           | ASI10        |
+| AGC-SEC-001  | Critical                | Hardcoded credential                                                    | ASI03        |
+| AGC-SEC-002  | Medium                  | Secret passed on a command line                                         | ASI03        |
+| AGC-TXT-001  | Medium (low confidence) | Hidden characters in agent instructions                                 | ASI01, ASI06 |
+| AGC-TXT-002  | Medium (low confidence) | Instruction-override phrasing in shipped prompts                        | ASI01        |
+| AGC-TXT-003  | Low (low confidence)    | Long encoded blob in agent instructions                                 | ASI01        |
+| AGC-TXT-004  | Medium (low confidence) | Instructions to act without asking                                      | ASI02, ASI09 |
+| AGC-TRG-001  | High                    | Agent triggered by outsiders with write access                          | ASI01, ASI03 |
+| AGC-LIM-001  | Low                     | No turn limit on an automated agent                                     | ASI08        |
+| AGC-LIM-002  | Low                     | No timeout on an automated agent                                        | ASI08        |
+| AGC-IDN-001  | High                    | Agent runs on a personal access token                                   | ASI03        |
+| AGC-TRG-002  | Medium                  | Unattended agent changes the repository with no reviewer                | ASI09, ASI08 |
+| AGC-IDN-002  | Medium                  | Agent gets long-lived cloud keys                                        | ASI03        |
+| AGC-GOV-001  | Low                     | Agent configuration has no code owner                                   | ASI10        |
+| AGC-GOV-002  | Low                     | Subagent has no stated purpose                                          | ASI10        |
+| AGC-COV-001  | Medium                  | Risky actions with no runtime check                                     | ASI02        |
+| AGC-GOV-003  | Info                    | Agent model is a moving alias                                           | ASI04        |
+| AGC-CFG-001  | Info (low confidence)   | Agent setting the scanner does not model                                | ASI02        |
+| AGC-CFG-002  | High                    | Agent configuration file too large to read                              | ASI02, ASI04 |
+| AGC-POL-001  | High                    | MCP server not on the approved list                                     | ASI04        |
+| AGC-POL-002  | High                    | Remote MCP server on a host not on the approved list                    | ASI04, ASI02 |
+| AGC-POL-003  | High                    | Agent holds a forbidden capability combination                          | ASI02, ASI01 |
+| AGC-AGX-001  | High                    | Agent reaches a guarded MCP server directly                             | ASI02        |
+| AGC-AGX-002  | High                    | Declared access outside the guard                                       | ASI02, ASI03 |
+| AGC-AGX-003  | Critical                | Agent Guard task exposed to the dangerous three                         | ASI01, ASI02 |
+| AGC-AGX-004  | Medium                  | Agent without an owner, or retired with live work                       | ASI10        |
+| AGC-AGX-005  | Medium                  | Guarded tool registered but not approved                                | ASI04        |
+| AGC-AGX-006  | Medium                  | Task grant broader than its tool warrants                               | ASI02, ASI03 |
+| AGC-AGX-007  | Medium                  | Task budget above the team ceiling                                      | ASI08        |
+| AGC-AGX-008  | Medium                  | Outbound tool labels leave a gap                                        | ASI02        |
+| AGC-DRF-001  | High                    | Guarded activity no declared agent accounts for                         | ASI10, ASI03 |
+| AGC-DRF-002  | Medium                  | Cloud identities no agent claims                                        | ASI03        |
+| AGC-DRF-003  | High                    | Live agent exposed to the dangerous three                               | ASI01, ASI02 |
+| AGC-DRF-004  | Low                     | Live inventory is stale                                                 | ASI10        |
 
 Some findings change severity with context: AGC-TRG-001 is medium when
 `claude-code-action` only answers people with write access, high when anyone can start the
@@ -456,8 +471,8 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 187 agents.
-  Every critical, high and medium finding, 158 in all, was reviewed by hand: 157 true positives
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 191 agents.
+  Every critical, high and medium finding, 178 in all, was reviewed by hand: 177 true positives
   and 1 false positive (a low-confidence text rule), precision 99.4%. "True" follows the
   fail-closed reading above: `Bash(git *)` or `Bash(rg:*)` is reported because an option can run
   any program, and a local MCP server the scanner cannot identify is reported when its tools run
@@ -468,15 +483,15 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   (97%). Of the 300 capabilities labelled yes it reports 84% (as yes or unknown), and 67% at the
   labelled approval level or wider:
 
-  | Capability | Labelled yes | Reported | At level |
-  | --- | --- | --- | --- |
-  | untrustedInput | 64 | 92% | 81% |
-  | write | 58 | 93% | 71% |
-  | egress | 56 | 96% | 73% |
-  | exec | 48 | 98% | 79% |
-  | privateData | 29 | 55% | 21% |
-  | selfModify | 23 | 96% | 96% |
-  | spend | 22 | 0% | 0% |
+  | Capability     | Labelled yes | Reported | At level |
+  | -------------- | ------------ | -------- | -------- |
+  | untrustedInput | 64           | 92%      | 81%      |
+  | write          | 58           | 93%      | 71%      |
+  | egress         | 56           | 96%      | 73%      |
+  | exec           | 48           | 98%      | 79%      |
+  | privateData    | 29           | 55%      | 21%      |
+  | selfModify     | 23           | 96%      | 96%      |
+  | spend          | 22           | 0%       | 0%       |
 
   Most of the gap is a difference in definitions, not a missed setting. The labels count money
   spent by any command that runs unsandboxed and data read outside the project after a prompt;
@@ -517,7 +532,12 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   that run a program are read (`awk 'BEGIN{system(…)}'`, `sed e`, `find -exec`, `git -c`,
   `rg --pre`, `sort --compress-program`, `tar --to-command`). Prefix rules for `git fetch`,
   `pull`, `clone` and `remote` reach the network (`--upload-pack` runs a program), and ones for
-  `git diff`, `log` and `show` write files (`--output`). An unknown program, an absolute path to one, a wrapper that runs
+  `git diff`, `log` and `show` write files (`--output`). A star with no space before it
+  (`git diff*`, `ls*`) matches other programs and subcommands (`git difftool`, `lsof`), so it
+  counts as running code; a path glob (`tests/*`) and a package-script prefix (`pnpm test*`) do
+  not. Harmless exact commands are not reported: version and help checks (`node --version`),
+  listings (`docker ps`, `pip list`, `kubectl get`) and workspace scripts (`pnpm --filter web
+test`, `yarn workspace web test`, `turbo run test`, `bundle exec rspec`). An unknown program, an absolute path to one, a wrapper that runs
   another command (`sudo`, `timeout`, `xargs`, `env`, `eval`), a wildcard inside the command
   (`c*`, `*url`) and a prefix rule for a command whose options run programs (`git:*`, `find:*`,
   `rg:*`, `sort:*`, `sed:*`, `awk:*`, `git rebase:*`, `git grep:*`) all count as running code;
@@ -642,18 +662,30 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   `GEMINI_API_KEY`, `OTEL_EXPORTER_OTLP_HEADERS`, ...), matched by exact name, whose value is a
   secret named for a model provider (`ZAI_API_KEY`) or, for telemetry headers, a telemetry
   service. The same variable carrying another secret (`ANTHROPIC_API_KEY:
-  ${{ secrets.PROD_DB_API_KEY }}`) is counted.
+${{ secrets.PROD_DB_API_KEY }}`) is counted.
 - **The gate and computed reach.** An agent that can both run code and send data out without
   approval, with no runtime check that sees those calls, is AGC-COV-001 at high, whichever
   setting gave it that reach (a Codex `danger-full-access` sandbox, a Bash rule, a mode). An
   agent that can edit any file and run a project command without asking can rewrite that
   command's code, so its network reach is counted as unknown.
-- **What the scan does not see.** It reads files; it does not run anything. Code that builds an
-  agent's name at run time (`os.system("cla" + "ude …")` without agent flags on that line), a
-  container image's own entry point, a program installed outside the repository, a remote
-  action or reusable workflow that gets neither agent flags nor a model key, and settings an
-  earlier step writes somewhere other than the agent's settings files are not seen. Recompiling
-  gh-aw workflows in CI is the complete check for lock files.
+- **What the scan does not see.** It reads files; it does not run anything, so a determined
+  author can still hide reach from it. Known gaps:
+  - code that builds an agent's name at run time (`os.system("cla" + "ude …")` without agent
+    flags on that line);
+  - a container image's own entry point, a program installed outside the repository, and a
+    remote action or reusable workflow that gets neither agent flags nor a model key;
+  - settings an earlier step writes somewhere other than the agent's settings files or
+    `$GITHUB_ENV` / `$GITHUB_PATH`;
+  - Codex permission profiles, Gemini policy files, Copilot and Windsurf hook files, and the
+    auth headers of a remote MCP server;
+  - `Bash(tee:*)`, `Bash(yq:*)` and similar prefix rules count as writes, not as reaching the
+    agent's own settings;
+  - `.env` is never read, since it holds secrets.
+
+  In a full scan an inline `agc-ignore` comment can silence a finding in the same change; only
+  `--base` judges a change against the base commit's suppressions. Recompiling gh-aw workflows in
+  CI is the complete check for lock files.
+
 - **Runtime checks.** A runtime check counts only for the calls it sees. A hook matcher is a
   regular expression from the repository, so the scanner never runs it: it reads the matcher's
   `|` alternatives, and credits only exact tool names (`Bash`), name prefixes (`Web.*`,

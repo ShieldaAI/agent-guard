@@ -1,4 +1,4 @@
-import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule } from './common.js';
+import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule, serverKey } from './common.js';
 import type { Rule } from './common.js';
 import { bashScope, HARMLESS_TOOLS, isOutsideProject } from '../claude.js';
 import { commands, unwrap } from '../shell.js';
@@ -165,7 +165,7 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           report({
             message: `MCP server ${server.name} starts \`${launch.join(' ').slice(0, 100)}\`, which runs when the server starts and can reach the network or run arbitrary code.`,
             location: server.location,
-            subject: `mcp-command:${server.name}`,
+            subject: `mcp-command:${serverKey(server)}`,
             fix: 'Start the server from a package or a script in the repository, not from a network tool or inline code.',
           });
       }
@@ -201,9 +201,11 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
           });
       for (const file of project.settings) {
         for (const directory of file.additionalDirectories)
-          if (/^(~\/?|\/|\$HOME\/?)$/.test(directory.value.trim()))
+          if (/^(~|\$HOME|\/)/.test(directory.value.trim()))
             report({
-              message: `additionalDirectories includes "${directory.value}", which opens the whole ${directory.value.trim() === '/' ? 'disk' : 'home directory'} to the agent.`,
+              message: /^(~\/?|\/|\$HOME\/?)$/.test(directory.value.trim())
+                ? `additionalDirectories includes "${directory.value}", which opens the whole ${directory.value.trim() === '/' ? 'disk' : 'home directory'} to the agent.`
+                : `additionalDirectories includes "${directory.value}", outside the project: the agent reads it without asking.`,
               location: directory.location,
               subject: `dir:${directory.value}`,
               fix: 'List only the project directories the agent needs.',

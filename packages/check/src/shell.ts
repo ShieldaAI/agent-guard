@@ -515,6 +515,19 @@ function importsSpawnAgent(path: string, text: string, readFile: (path: string) 
   return localImports(path, text, readFile).some(module => spawnsAgent(module) || spawnsWithAgentFlags(module));
 }
 
+/** Code that drives an agent through its SDK (Claude Agent SDK, the Codex SDK): an agent run. */
+export const USES_AGENT_SDK = {
+  // An import of the SDK and a call that runs the agent, outside comments; a mention is not one.
+  test(text: string): boolean {
+    const code = withoutComments(text);
+    return (
+      /(from\s+["']?@anthropic-ai\/claude-agent-sdk|require\(\s*["']@anthropic-ai\/claude-agent-sdk|from\s+claude_agent_sdk\s+import|import\s+claude_agent_sdk|from\s+claude_code_sdk\s+import|from\s+["']@openai\/codex-sdk)/.test(
+        code,
+      ) && /\b(query|ClaudeSDKClient|startThread|run)\s*\(/.test(code)
+    );
+  },
+};
+
 /** Where agent calls can read files a script runs: package.json scripts, Makefile targets, shell scripts. */
 export interface ScriptContext {
   readonly readFile?: (path: string) => string | undefined;
@@ -586,6 +599,7 @@ export function agentCalls(
       !shell &&
       (spawnsAgent(text) ||
         spawnsWithAgentFlags(text) ||
+        USES_AGENT_SDK.test(text) ||
         (context.readFile && importsSpawnAgent(why, text, context.readFile)))
     )
       unknown('agent', why);
