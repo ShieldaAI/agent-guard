@@ -46,6 +46,9 @@ import {
   parseWorkflow,
   PUBLISHING_SCOPES,
   UNTRUSTED_TRIGGERS,
+  UNKNOWN_CALLER,
+  inheritedTriggers,
+  workflowCalls,
   type WorkflowAgent,
 } from './workflows.js';
 
@@ -887,6 +890,19 @@ export function buildProject(
     }
   }
 
+  // A reusable workflow runs on its callers' events: give it their triggers.
+  const calls = new Map(
+    inputs
+      .filter(input => input.text !== undefined && /^\.github\/workflows\/[^/]+\.ya?ml$/.test(input.path))
+      .map(input => [input.path, workflowCalls(input.text!)] as const),
+  );
+  for (const [index, step] of workflows.entries())
+    if (step.triggers.includes('workflow_call'))
+      workflows[index] = {
+        ...step,
+        triggers: [...new Set([...step.triggers, ...inheritedTriggers(step.path, calls)])],
+      };
+
   for (const step of workflows) {
     const at = step.location;
     const grants: Grant[] = [];
@@ -897,7 +913,7 @@ export function buildProject(
         add({
           capability: 'untrustedInput',
           via: `trigger ${trigger}`,
-          certainty: 'yes',
+          certainty: trigger === UNKNOWN_CALLER ? 'unknown' : 'yes',
           location: step.triggerLocation,
         });
     const publishing = step.permissions.write
@@ -1044,7 +1060,13 @@ export function buildProject(
       ...(step.action.startsWith('claude') ? rootSettings.flatMap(file => file.deny) : []),
     ];
     agents.push({
-      id: `workflow:${step.path}#${step.job}/${step.step}`,
+      // Two steps with one name are two agents: the step's position tells them apart.
+      id: `workflow:${step.path}#${step.job}/${step.step}${
+        workflows.filter(other => other.path === step.path && other.job === step.job && other.step === step.step)
+          .length > 1
+          ? `#${step.stepIndex}`
+          : ''
+      }`,
       kind: 'workflow',
       name: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
       location: at,

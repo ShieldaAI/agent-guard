@@ -9,7 +9,7 @@ import {
   isHarnessCredential,
   MODEL_SECRETS,
   PUBLISHING_SCOPES,
-  SECRET_REF,
+  secretNames,
   UNTRUSTED_TRIGGERS,
 } from './workflows.js';
 
@@ -862,15 +862,12 @@ export function parseAgenticWorkflow(
   );
   const agentData = [data['env'], data['mcp-servers'], data['tools'], agentEnv];
   const secrets = new Set<string>();
-  for (const match of JSON.stringify(agentData).matchAll(SECRET_REF)) {
-    const secret = match[1]!;
-    if (!MODEL_SECRETS.test(secret)) secrets.add(secret);
-  }
+  for (const secret of secretNames(JSON.stringify(agentData))) if (!MODEL_SECRETS.test(secret)) secrets.add(secret);
   for (const secret of secrets)
     add(
       'privateData',
       `secret ${secret}`,
-      { file: path, line: lineOf(text, `secrets.${secret}`) || 1 },
+      { file: path, line: lineOf(text, `secrets.${secret}`) || lineOf(text, 'secrets') || 1 },
       'yes',
       'secret',
     );
@@ -880,13 +877,13 @@ export function parseAgenticWorkflow(
     isRecord(github) ? github['github-token'] : undefined,
     safeOutputs['github-token'],
   ]);
-  for (const match of token.matchAll(SECRET_REF))
-    if (match[1] !== 'GITHUB_TOKEN')
+  for (const secret of secretNames(token))
+    if (secret !== 'GITHUB_TOKEN')
       for (const capability of ['write', 'egress'] as const)
         add(
           capability,
-          `github-token secrets.${match[1]}`,
-          { file: path, line: lineOf(text, `secrets.${match[1]}`) || 1 },
+          `github-token secrets.${secret}`,
+          { file: path, line: lineOf(text, `secrets.${secret}`) || lineOf(text, 'github-token') || 1 },
           'unknown',
           'token',
         );
@@ -903,12 +900,12 @@ export function parseAgenticWorkflow(
     }
   // Secrets the workflow maps for the agent are data it holds.
   if (own['secrets'] !== undefined)
-    for (const match of JSON.stringify(own['secrets']).matchAll(SECRET_REF))
-      if (!MODEL_SECRETS.test(match[1]!))
+    for (const secret of secretNames(JSON.stringify(own['secrets'])))
+      if (!MODEL_SECRETS.test(secret))
         add(
           'privateData',
-          `secret ${match[1]}`,
-          { file: path, line: lineOf(text, `secrets.${match[1]}`) || 1 },
+          `secret ${secret}`,
+          { file: path, line: lineOf(text, `secrets.${secret}`) || 1 },
           'yes',
           'secret',
         );

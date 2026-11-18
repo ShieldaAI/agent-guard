@@ -204,9 +204,9 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       if (project.truncated)
         report({
           message:
-            'The scan stopped before it looked at every file (more than 200,000 entries, or folders more than 32 levels deep).',
-          // Visible without failing: very large repositories reach the limits legitimately.
-          severity: 'medium',
+            'The scan stopped before it looked at every file (more than 200,000 entries, folders more than 32 levels deep, or one folder reached through links more than 4 times), so configuration may be unread.',
+          // Configuration folders are walked first, so a large repository reaches the limit only
+          // after its agent configuration; still, what was not read was not judged.
           location: { file: '.', line: 1 },
           subject: 'truncated',
           fix: 'Scan the folder that holds the agents, or check the rest by hand.',

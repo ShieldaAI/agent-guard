@@ -7,6 +7,20 @@ export const MAX_FILE_BYTES = 1_048_576;
 /** The walk stops after visiting this many directory entries. */
 export const MAX_ENTRIES = 200_000;
 const MAX_DEPTH = 32;
+/** How many times one real folder may be walked through folder links (diamonds of links multiply). */
+const MAX_LINK_VISITS = 4;
+
+/**
+ * Names in walk order: folders and files that hold agent configuration first, so a repository
+ * cannot spend the entry budget on filler before the walk reaches `.github` or `.claude`.
+ */
+function walkOrder(names: string[], prefix: string): string[] {
+  const first = (name: string) => {
+    const path = prefix ? `${prefix}/${name}` : name;
+    return name.startsWith('.') || CONFIG_FOLDER.test(path) || isCandidate(path) ? 0 : 1;
+  };
+  return names.sort().sort((a, b) => first(a) - first(b));
+}
 export const SKIPPED_DIRECTORIES = new Set([
   '.git',
   'node_modules',
@@ -256,11 +270,13 @@ export class DirectorySource implements FileSource {
     // inside the root is walked at the link's own path, as the agent sees it).
     // Real folders on the current path: a folder link back to one of them is a loop, not more files.
     const open = new Set<string>();
+    // Real folders already walked through a link, and how often: each one at most MAX_LINK_VISITS times.
+    const linkVisits = new Map<string, number>();
     const walk = (directory: string, prefix: string, depth: number, linked = false): void => {
       if (entries > MAX_ENTRIES) return;
       let names: string[];
       try {
-        names = readdirSync(directory).sort();
+        names = walkOrder(readdirSync(directory), prefix);
       } catch {
         return;
       }
@@ -298,7 +314,15 @@ export class DirectorySource implements FileSource {
           // link's path; anything else where configuration lives is reported, never followed.
           const target = this.#resolve(root, full);
           if (target?.kind === 'folder') {
-            if (!SKIPPED_DIRECTORIES.has(name)) walk(target.real, path, depth + 1, true);
+            if (SKIPPED_DIRECTORIES.has(name)) continue;
+            const visits = (linkVisits.get(target.real) ?? 0) + 1;
+            linkVisits.set(target.real, visits);
+            if (visits > MAX_LINK_VISITS) {
+              // Folder links that lead to the same place again and again: stop and say so.
+              this.truncated = true;
+              continue;
+            }
+            walk(target.real, path, depth + 1, true);
           } else if (target?.kind === 'file') {
             if (!isCandidate(path)) continue;
             if (target.size > MAX_FILE_BYTES) {

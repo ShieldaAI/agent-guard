@@ -3,6 +3,8 @@ import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
+import { agentCalls, type AgentCli } from './shell.js';
+import { parse as parseYaml } from 'yaml';
 
 export type AgentAction =
   'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli' | 'copilot-cli' | 'gemini-cli';
@@ -12,6 +14,8 @@ export interface WorkflowAgent {
   readonly path: string;
   readonly job: string;
   readonly step: string;
+  /** The step's index in its job (and, for a script with several agent calls, which call). */
+  readonly stepIndex: string;
   readonly action: AgentAction;
   /** The `uses:` of the step, when the agent runs as an action. */
   readonly uses?: string;
@@ -71,6 +75,8 @@ export const UNTRUSTED_TRIGGERS = new Set([
   'discussion',
   'discussion_comment',
   'workflow_run',
+  // A reusable workflow with no caller in this repository: whoever calls it decides the event.
+  'workflow_call from outside this repository',
 ]);
 /** Scopes whose write access lets an agent publish text: comments, issues, commits, discussions. */
 export const PUBLISHING_SCOPES = new Set(['issues', 'pull-requests', 'contents', 'discussions']);
@@ -116,7 +122,7 @@ interface Flags {
   disallowedTools: string[];
   skip: boolean;
   maxTurns: boolean;
-  mcpConfig?: string;
+  mcpConfig: string[];
   model?: string;
   /** Codex sandbox from `--sandbox`, `-s`, `-c sandbox_mode=...` or `--full-auto`. */
   sandbox?: string;
@@ -146,18 +152,51 @@ export function widerSandbox(a: string | undefined, b: string | undefined): stri
   return rank(b) > rank(a) ? b : a;
 }
 
-function readFlags(text: string): Flags {
-  const args = splitArgs(text.replace(/\\\r?\n/g, ' '));
-  const flags: Flags = { allowedTools: [], disallowedTools: [], skip: false, maxTurns: false };
+/** Flags that take a value that does not change what the agent may do. */
+const HARMLESS_VALUE_FLAGS = new Set([
+  '--model',
+  '-m',
+  '--fallback-model',
+  '--max-turns',
+  '--system-prompt',
+  '--append-system-prompt',
+  '--output-format',
+  '--input-format',
+  '--session-id',
+  '--resume',
+  '-r',
+]);
+
+/**
+ * The arguments that hold a GitHub expression where it could be a flag: `${{ inputs.args }}` may
+ * expand to anything. An expression as the value of a harmless flag (`--model ${{ vars.MODEL }}`)
+ * or inside a longer quoted text (a prompt) is not counted.
+ */
+export function expressionFlags(args: readonly string[]): string[] {
+  return args.filter(
+    // splitArgs breaks `${{ inputs.args }}` at its spaces: the word that opens it is the one counted.
+    (arg, i) => /^\s*\$\{\{/.test(arg) && !HARMLESS_VALUE_FLAGS.has(args[i - 1] ?? ''),
+  );
+}
+
+function readFlags(args: readonly string[]): Flags {
+  const flags: Flags = { allowedTools: [], disallowedTools: [], skip: false, maxTurns: false, mcpConfig: [] };
   for (let i = 0; i < args.length; i += 1) {
     const arg = args[i]!;
     const [name, inline] =
       arg.includes('=') && arg.startsWith('--') ? (arg.split(/=(.*)/s, 2) as [string, string]) : [arg, undefined];
     const value = () => inline ?? args[++i] ?? '';
+    // Claude Code list flags are variadic: `--allowedTools Bash Edit` takes every value up to the next flag.
+    const values = (): string[] => {
+      if (inline !== undefined) return [inline];
+      const out: string[] = [];
+      while (i + 1 < args.length && !args[i + 1]!.startsWith('-')) out.push(args[++i]!);
+      return out;
+    };
     if (name === '--allowedTools' || name === '--allowed-tools') {
-      flags.allowedTools.push(...toolList(value()));
+      flags.allowedTools.push(...values().flatMap(toolList));
     } else if (name === '--disallowedTools' || name === '--disallowed-tools') {
-      flags.disallowedTools.push(...toolList(value()));
+      flags.disallowedTools.push(...values().flatMap(toolList));
     } else if (
       name === '--dangerously-skip-permissions' ||
       name === '--dangerously-bypass-approvals-and-sandbox' ||
@@ -193,7 +232,7 @@ function readFlags(text: string): Flags {
     } else if (name === '--settings') {
       flags.settings = value();
     } else if (name === '--mcp-config') {
-      flags.mcpConfig = value();
+      flags.mcpConfig.push(...values());
     } else if (name === '--model' || name === '-m') {
       flags.model = value();
     }
@@ -201,23 +240,75 @@ function readFlags(text: string): Flags {
   return flags;
 }
 
-// Action names match regardless of case, as GitHub matches owner and repository names.
-const CLAUDE_ACTION = /^anthropics\/claude-code(-base)?-action(\/[^@]*)?@/i;
-const CODEX_ACTION = /^openai\/codex-action(\/[^@]*)?@/i;
-const GEMINI_ACTION = /^google-github-actions\/run-gemini-cli(\/[^@]*)?@/i;
+// Action names match regardless of case, as GitHub matches owner and repository names, and under
+// any owner: a fork of the action runs the same agent.
+const CLAUDE_ACTION = /^[^/@\s]+\/claude-code(-base)?-action(\/[^@]*)?@/i;
+const CODEX_ACTION = /^[^/@\s]+\/codex-action(\/[^@]*)?@/i;
+const GEMINI_ACTION = /^[^/@\s]+\/run-gemini-cli(\/[^@]*)?@/i;
+const CLI_ACTION: Record<AgentCli, AgentAction> = {
+  claude: 'claude-cli',
+  codex: 'codex-cli',
+  copilot: 'copilot-cli',
+  gemini: 'gemini-cli',
+};
+
+/** The agent action a `uses:` names, if any. */
+function actionOf(uses: string): AgentAction | undefined {
+  return CLAUDE_ACTION.test(uses)
+    ? 'claude-code-action'
+    : GEMINI_ACTION.test(uses)
+      ? 'gemini-cli'
+      : CODEX_ACTION.test(uses)
+        ? 'codex-action'
+        : undefined;
+}
+
+/** The repository path of a local action's metadata file (`./`, `./.github/actions/x`). */
+function localActionText(uses: string, readFile: (path: string) => string | undefined): string | undefined {
+  const folder = uses.replace(/^\.\//, '').replace(/\/+$/, '');
+  if (folder.split('/').includes('..') || folder.includes('${{')) return undefined;
+  const base = folder ? `${folder}/` : '';
+  return readFile(`${base}action.yml`) ?? readFile(`${base}action.yaml`);
+}
+
+/**
+ * The agent a local composite action runs, looking through its steps (agent actions and CLI
+ * calls) and the local actions those use, three levels deep. `unknown` when the file names an
+ * agent the scan could not place in a step.
+ */
+function compositeAgent(
+  uses: string,
+  readFile: (path: string) => string | undefined,
+  depth = 0,
+): AgentAction | 'unknown' | undefined {
+  if (depth > 3) return 'unknown';
+  const text = localActionText(uses, readFile);
+  if (text === undefined) return undefined;
+  let data: unknown;
+  try {
+    data = parseYaml(text, { maxAliasCount: 50 });
+  } catch {
+    return AGENT_ACTION_TEXT.test(text) ? 'unknown' : undefined;
+  }
+  const runs = isRecord(data) && isRecord(data['runs']) ? data['runs'] : {};
+  const steps = Array.isArray(runs['steps']) ? runs['steps'] : [];
+  for (const step of steps) {
+    if (!isRecord(step)) continue;
+    const inner = asString(step['uses']) ?? '';
+    const found =
+      actionOf(inner) ??
+      (/^\.\//.test(inner) ? compositeAgent(inner, readFile, depth + 1) : undefined) ??
+      (() => {
+        const call = agentCalls(asString(step['run']) ?? '')[0];
+        return call ? CLI_ACTION[call.cli] : undefined;
+      })();
+    if (found) return found;
+  }
+  return AGENT_ACTION_TEXT.test(text) ? 'unknown' : undefined;
+}
 /** An agent action, by name, anywhere in a local composite action's text. */
 export const AGENT_ACTION_TEXT =
-  /anthropics\/claude-code(-base)?-action|openai\/codex-action|google-github-actions\/run-gemini-cli|\bclaude\s+(-p|--print)\b|\bcodex\s+exec\b/i;
-// The CLI may be started by path or through npx (`npx -y @anthropic-ai/claude-code -p`, `@openai/codex exec`).
-const CLAUDE_CLI = /(^|[\s;&|(/])claude(-code(@\S*)?)?\s(?:[^\n]*\s)?(-p|--print)\b/;
-const CODEX_CLI = /(^|[\s;&|(/])codex(@\S*)?\s+(exec|e)\b/;
-/** GitHub Copilot CLI and Gemini CLI run headless with a prompt. */
-const COPILOT_CLI = /(^|[\s;&|(/])copilot(@\S*)?\s[^\n]*?(-p|--prompt)\b/;
-// Gemini CLI runs headless with -p, with a prompt on stdin, or with a positional prompt: any call
-// in command position counts.
-const GEMINI_CLI =
-  /(^|[|;&(]\s*|\bnpx\s+(-y\s+)?|\bbunx\s+|\bpnpm\s+dlx\s+)(gemini|gemini-cli|@google\/gemini-cli)(@\S*)?(\s|$)/m;
-
+  /claude-code(-base)?-action|codex-action|run-gemini-cli|\bclaude\s+(-p|--print)\b|\bcodex\s+exec\b/i;
 /** Whether a workflow file says it was compiled by gh-aw. Only its name and a source make it a lock. */
 export function isAgenticLock(text: string): boolean {
   return /^# gh-aw-metadata:/.test(text);
@@ -258,14 +349,90 @@ export const HARNESS_SECRET_VARIABLES = new Set([
  */
 export function isHarnessCredential(name: string, value: unknown): boolean {
   if (!HARNESS_SECRET_VARIABLES.has(name)) return false;
-  const secrets = [...JSON.stringify(value ?? '').matchAll(SECRET_REF)].map(match => match[1]!);
-  // Telemetry headers carry the telemetry service's own token.
-  const credential =
-    name === 'OTEL_EXPORTER_OTLP_HEADERS' ? /(TOKEN|KEY|HEADERS?)$/ : /(_API_KEY|_AUTH_TOKEN|_OAUTH_TOKEN)$/;
-  return secrets.every(secret => MODEL_SECRETS.test(secret) || credential.test(secret));
+  const secrets = secretNames(JSON.stringify(value ?? ''));
+  // Telemetry headers carry the telemetry service's own token; any other harness variable holds a
+  // model key, named for a model provider. A value with no secret in it hides nothing either way.
+  const credential = name === 'OTEL_EXPORTER_OTLP_HEADERS' ? TELEMETRY_SECRET : MODEL_PROVIDER_SECRET;
+  return secrets.length > 0 && secrets.every(secret => credential.test(secret));
 }
 
+/** A secret named for a model provider and holding a key or token (`ZAI_API_KEY`, `OPENROUTER_TOKEN`). */
+const MODEL_PROVIDER_SECRET = new RegExp(
+  `^(${MODEL_SECRETS.source.replace(/^\^\(|\)\$$/g, '')})$|^([A-Z0-9]+_)*(ANTHROPIC|CLAUDE|OPENAI|CODEX|GEMINI|VERTEX|BEDROCK|AZURE_OPENAI|ZAI|Z_AI|GLM|DEEPSEEK|MOONSHOT|KIMI|OPENROUTER|MISTRAL|GROQ|TOGETHER|FIREWORKS|XAI|GROK|COHERE|PERPLEXITY|LITELLM|COPILOT|MINIMAX|QWEN|DASHSCOPE|CEREBRAS|OPENCODE)(_[A-Z0-9]+)*_(API_KEY|KEY|TOKEN|AUTH_TOKEN|OAUTH_TOKEN)$`,
+);
+/** A secret named for a telemetry service (`LOGFIRE_TOKEN`, `HONEYCOMB_API_KEY`). */
+const TELEMETRY_SECRET =
+  /^([A-Z0-9]+_)*(OTEL|OTLP|TELEMETRY|LOGFIRE|HONEYCOMB|DATADOG|DD|GRAFANA|NEW_RELIC|NEWRELIC|LANGFUSE|LANGSMITH|BRAINTRUST|AXIOM)(_[A-Z0-9]+)*$/;
+
 export const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
+/** Stands for every secret of the repository: `toJSON(secrets)`, `secrets[inputs.name]`. */
+export const ALL_SECRETS = '*';
+const EXPRESSION = /\$\{\{([\s\S]*?)\}\}/g;
+
+/**
+ * The secrets a text reads in its `${{ }}` expressions: `secrets.NAME`, `secrets['NAME']`, and
+ * `*` (ALL_SECRETS) for any other use of the `secrets` context, such as `toJSON(secrets)`.
+ */
+export function secretNames(text: string): string[] {
+  const out = new Set<string>();
+  for (const expression of text.matchAll(EXPRESSION)) {
+    const body = expression[1]!.replace(/\\(["'])/g, '$1');
+    let rest = body;
+    for (const match of body.matchAll(/\bsecrets\s*(?:\.\s*([A-Za-z0-9_-]+)|\[\s*(['"])([A-Za-z0-9_-]+)\2\s*\])/gi)) {
+      out.add((match[1] ?? match[3]!).toUpperCase());
+      rest = rest.replace(match[0], '');
+    }
+    if (/\bsecrets\b/i.test(rest)) out.add(ALL_SECRETS);
+  }
+  return [...out];
+}
+
+/** claude-code-action and codex-action inputs that carry the harness's own credentials. */
+const HARNESS_INPUTS =
+  /^(anthropic_api_key|claude_code_oauth_token|github_token|openai[-_]api[-_]key|codex[-_]api[-_]key|gemini_api_key|google_api_key|gcp_workload_identity_provider|gcp_service_account)$/;
+
+/** Stands for the callers of a reusable workflow that are not in this repository: anyone's event. */
+export const UNKNOWN_CALLER = 'workflow_call from outside this repository';
+
+/** A workflow's triggers and the reusable workflows in this repository its jobs call. */
+export function workflowCalls(text: string): { triggers: string[]; callees: string[] } {
+  try {
+    const data = parseYaml(text, { maxAliasCount: 50 }) as unknown;
+    if (!isRecord(data)) return { triggers: [], callees: [] };
+    const jobs = isRecord(data['jobs']) ? Object.values(data['jobs']) : [];
+    const callees = jobs
+      .map(job => (isRecord(job) ? asString(job['uses']) : undefined))
+      .filter((uses): uses is string => uses !== undefined && /^\.\/\.github\/workflows\/[^/]+\.ya?ml$/.test(uses))
+      .map(uses => uses.slice(2));
+    return { triggers: triggerNames(data['on']), callees };
+  } catch {
+    return { triggers: [], callees: [] };
+  }
+}
+
+/**
+ * The events that can start a reusable workflow: the triggers of its callers in this repository,
+ * through callers that are reusable themselves. With no caller here, any repository may call it
+ * (UNKNOWN_CALLER).
+ */
+export function inheritedTriggers(
+  path: string,
+  calls: ReadonlyMap<string, { readonly triggers: readonly string[]; readonly callees: readonly string[] }>,
+  seen = new Set<string>(),
+): string[] {
+  seen.add(path);
+  const out = new Set<string>();
+  let callers = 0;
+  for (const [caller, info] of calls) {
+    if (!info.callees.includes(path)) continue;
+    callers += 1;
+    for (const trigger of info.triggers) if (trigger !== 'workflow_call') out.add(trigger);
+    if (info.triggers.includes('workflow_call') && !seen.has(caller))
+      for (const trigger of inheritedTriggers(caller, calls, seen)) out.add(trigger);
+  }
+  if (!callers) out.add(UNKNOWN_CALLER);
+  return [...out];
+}
 
 /** Reads a workflow file and returns its agent steps. Throws on invalid YAML. */
 export function parseWorkflow(
@@ -290,6 +457,21 @@ export function parseWorkflow(
   const triggerLocation: Location = { file: path, line: nodeLine(onNode?.key, 1) };
   const workflowPermissions = writeScopes(data['permissions']);
   const workflowEnv = isRecord(data['env']) ? data['env'] : {};
+  const workingDirectoryOf = (value: unknown): string | undefined =>
+    isRecord(value) && isRecord(value['run']) ? asString(value['run']['working-directory']) : undefined;
+  const workflowDirectory = workingDirectoryOf(data['defaults']);
+  // Line numbers of each secret, found once rather than per step.
+  const secretLines = new Map<string, number>();
+  const secretLine = (name: string): number => {
+    if (!secretLines.has(name))
+      secretLines.set(
+        name,
+        name === ALL_SECRETS
+          ? lineOf(text, 'secrets') || 1
+          : lineOf(text, `secrets.${name}`) || lineOf(text, name) || 1,
+      );
+    return secretLines.get(name)!;
+  };
   const agents: WorkflowAgent[] = [];
   for (const [jobName, job] of Object.entries(data['jobs'])) {
     if (!isRecord(job) || !Array.isArray(job['steps'])) continue;
@@ -308,8 +490,15 @@ export function parseWorkflow(
           PR_CHECKOUT_RUN.test(joinLines(asString(step['run']) ?? ''))),
     );
     const jobEnv = isRecord(job['env']) ? job['env'] : {};
+    const jobDirectory = workingDirectoryOf(job['defaults']) ?? workflowDirectory;
+    // Secrets an earlier step wrote to $GITHUB_ENV: every later step of the job has them in its environment.
+    const exported = new Set<string>();
     steps.forEach((step, index) => {
       if (!isRecord(step)) return;
+      const exportedBefore = [...exported];
+      const rawRun = asString(step['run']) ?? '';
+      if (/GITHUB_ENV/.test(rawRun))
+        for (const name of secretNames(JSON.stringify([rawRun, step['env'] ?? {}]))) exported.add(name);
       const uses = asString(step['uses']) ?? '';
       // Workflow, job and step `env` values are static text: resolve ${{ env.X }} before reading flags.
       const stepEnv = isRecord(step['env']) ? step['env'] : {};
@@ -323,310 +512,362 @@ export function parseWorkflow(
       };
       const resolveEnv = (text: string): string =>
         text.replace(ENV_REF, (match, name: string) => envValue(name) ?? match);
-      const run = resolveEnv(joinLines(asString(step['run']) ?? ''));
+      const run = resolveEnv(joinLines(rawRun));
+      // Shell variables the script can expand: static env values of the step, job and workflow.
+      const shellVars = new Map<string, string>();
+      for (const env of [workflowEnv, jobEnv, stepEnv])
+        for (const [name, value] of Object.entries(env))
+          if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean')
+            if (!String(value).includes('${{')) shellVars.set(name, String(value));
       // A local composite action (`uses: ./.github/actions/x`) that wraps an agent is an agent
       // whose settings are in a file the scan does not model: unknown reach.
-      const localAction = /^\.\//.test(uses)
-        ? (readFile(`${uses.replace(/^\.\//, '').replace(/\/$/, '')}/action.yml`) ??
-          readFile(`${uses.replace(/^\.\//, '').replace(/\/$/, '')}/action.yaml`))
-        : undefined;
-      const wrapsAgent = localAction !== undefined && AGENT_ACTION_TEXT.test(localAction);
-      const action: AgentAction | undefined = wrapsAgent
-        ? 'claude-cli'
-        : CLAUDE_ACTION.test(uses)
-          ? 'claude-code-action'
-          : GEMINI_ACTION.test(uses)
-            ? 'gemini-cli'
-            : CODEX_ACTION.test(uses)
-              ? 'codex-action'
-              : CLAUDE_CLI.test(run)
-                ? 'claude-cli'
-                : CODEX_CLI.test(run)
-                  ? 'codex-cli'
-                  : COPILOT_CLI.test(run)
-                    ? 'copilot-cli'
-                    : GEMINI_CLI.test(run)
-                      ? 'gemini-cli'
-                      : undefined;
-      if (!action) return;
-      const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
-      const line = nodeLine(stepNode, 1);
-      const inputs = isRecord(step['with']) ? step['with'] : {};
-      // Arguments may be given as a YAML list or a JSON array as well as one string.
-      const quote = (word: string) => `"${word.replace(/["\\]/g, '\\$&')}"`;
-      const input = (key: string): string | undefined => {
-        const value = inputs[key];
-        if (Array.isArray(value)) return resolveEnv(value.map(item => quote(String(item))).join(' '));
-        if (typeof value === 'string' && /^\s*\[/.test(value)) {
-          try {
-            const list = JSON.parse(value) as unknown;
-            if (Array.isArray(list)) return resolveEnv(list.map(item => quote(String(item))).join(' '));
-          } catch {
-            // Not JSON: read it as one string below.
+      const wrapped = /^\.\//.test(uses) ? compositeAgent(uses, readFile) : undefined;
+      const calls = uses ? [] : agentCalls(run, shellVars);
+      const detections: { action: AgentAction; args: readonly string[]; unresolved: readonly string[] }[] = wrapped
+        ? [{ action: wrapped === 'unknown' ? 'claude-cli' : wrapped, args: [], unresolved: [] }]
+        : actionOf(uses)
+          ? [{ action: actionOf(uses)!, args: [], unresolved: [] }]
+          : calls.map(call => ({ action: CLI_ACTION[call.cli], args: call.args, unresolved: call.unresolved }));
+      detections.forEach((detected, callIndex) => {
+        const action = detected.action;
+        const wrapsAgent = wrapped !== undefined;
+        const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
+        const line = nodeLine(stepNode, 1);
+        const inputs = isRecord(step['with']) ? step['with'] : {};
+        // Arguments may be given as a YAML list or a JSON array as well as one string.
+        const quote = (word: string) => `"${word.replace(/["\\]/g, '\\$&')}"`;
+        const input = (key: string): string | undefined => {
+          const value = inputs[key];
+          if (Array.isArray(value)) return resolveEnv(value.map(item => quote(String(item))).join(' '));
+          if (typeof value === 'string' && /^\s*\[/.test(value)) {
+            try {
+              const list = JSON.parse(value) as unknown;
+              if (Array.isArray(list)) return resolveEnv(list.map(item => quote(String(item))).join(' '));
+            } catch {
+              // Not JSON: read it as one string below.
+            }
           }
-        }
-        return typeof value === 'string' ? resolveEnv(value) : typeof value === 'number' ? String(value) : undefined;
-      };
-      const inputLine = (key: string): number =>
-        nodeLine(doc.getIn(['jobs', jobName, 'steps', index, 'with', key], true), line);
-      const flagText = [
-        input('claude_args'),
-        input('codex-args'),
-        input('codex_args'),
-        action.endsWith('cli') ? run : undefined,
-      ]
-        .filter(Boolean)
-        .join(' ');
-      const flags = readFlags(flagText);
-      const legacyTools = (input('allowed_tools') ?? '')
-        .split(/[,\n]/)
-        .map(item => item.trim())
-        .filter(Boolean);
-      const toolsLine =
-        input('claude_args') !== undefined
-          ? inputLine('claude_args')
-          : input('allowed_tools') !== undefined
-            ? inputLine('allowed_tools')
-            : line;
-      // claude-code-action's `settings` input, given inline as JSON: its permissions apply to the step.
-      // Settings for the step: claude-code-action's `settings` input (inline JSON, a YAML mapping or a
-      // path to a file in the repository) and `--settings` (JSON or a path). One that cannot be read
-      // is unknown: the step may then do anything.
-      let settingsUnreadable: string | undefined = wrapsAgent ? `local action ${uses}` : undefined;
-      const settingsEnv: Record<string, unknown>[] = [];
-      const readSettings = (value: unknown): Record<string, unknown> | undefined => {
-        if (value === undefined) return undefined;
-        let data: unknown = value;
-        if (typeof value === 'string') {
-          const trimmed = resolveEnv(value).trim();
-          // Inline JSON (comments allowed) starts with `{`, `//` or `/*`; anything else is a path.
-          const content = /^(\{|\/\/|\/\*)/.test(trimmed)
-            ? trimmed
-            : /\$\{\{/.test(trimmed)
-              ? undefined
-              : readFile(trimmed.replace(/^\.\//, ''));
-          if (content === undefined) {
-            settingsUnreadable = trimmed;
-            return undefined;
+          return typeof value === 'string' ? resolveEnv(value) : typeof value === 'number' ? String(value) : undefined;
+        };
+        const inputLine = (key: string): number =>
+          nodeLine(doc.getIn(['jobs', jobName, 'steps', index, 'with', key], true), line);
+        const inputArgs = ['claude_args', 'codex-args', 'codex_args'].flatMap(key => {
+          const value = input(key);
+          return value === undefined ? [] : splitArgs(value.replace(/\\\r?\n/g, ' '));
+        });
+        const flags = readFlags([...inputArgs, ...detected.args]);
+        // Arguments the scan cannot read (`$FLAGS`, `${{ inputs.args }}`) could be any flag.
+        const unknownArgs = [...detected.unresolved, ...expressionFlags(inputArgs)];
+        // A CLI started in another folder reads relative settings and MCP paths from there.
+        const directory =
+          action.endsWith('cli') && !wrapsAgent ? (asString(step['working-directory']) ?? jobDirectory) : undefined;
+        const fromDirectory = (named: string): string | undefined => {
+          if (directory === undefined || named.startsWith('/')) return named;
+          if (directory.includes('${{') || directory.startsWith('/')) return undefined;
+          const parts: string[] = [];
+          for (const part of `${directory}/${named}`.split('/')) {
+            if (part === '' || part === '.') continue;
+            if (part === '..') {
+              if (!parts.length) return undefined;
+              parts.pop();
+            } else parts.push(part);
           }
-          try {
-            data = parseJsonc(content);
-          } catch {
-            settingsUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
-            return undefined;
-          }
-        }
-        if (!isRecord(data)) {
-          settingsUnreadable = typeof value === 'string' ? value : JSON.stringify(value);
-          return undefined;
-        }
-        if (isRecord(data['env'])) settingsEnv.push(data['env']);
-        return isRecord(data['permissions']) ? data['permissions'] : {};
-      };
-      const settingsSources = [readSettings(inputs['settings']), readSettings(flags.settings)].filter(
-        (item): item is Record<string, unknown> => item !== undefined,
-      );
-      const inlineSettings = settingsSources.length
-        ? {
-            allow: settingsSources.flatMap(item => asStringArray(item['allow'] ?? [])),
-            deny: settingsSources.flatMap(item => asStringArray(item['deny'] ?? [])),
-            defaultMode: settingsSources.map(item => asString(item['defaultMode'])).find(Boolean),
-          }
-        : undefined;
-      const settingsAllow = inlineSettings ? asStringArray(inlineSettings['allow'] ?? []) : [];
-      const settingsDeny = inlineSettings ? asStringArray(inlineSettings['deny'] ?? []) : [];
-      const settingsMode = inlineSettings ? asString(inlineSettings['defaultMode']) : undefined;
-      if (settingsMode === 'acceptEdits') settingsAllow.push('Edit');
-      const settingsLine = input('settings') !== undefined ? inputLine('settings') : toolsLine;
-      const allowedTools = [
-        ...[...flags.allowedTools, ...legacyTools].map(raw => parseRule(raw, { file: path, line: toolsLine })),
-        ...settingsAllow.map(raw => parseRule(raw, { file: path, line: settingsLine })),
-      ];
-      const disallowedTools = [
-        ...[...flags.disallowedTools, ...toolList((input('disallowed_tools') ?? '').replace(/\n/g, ','))].map(raw =>
-          parseRule(raw, { file: path, line: toolsLine }),
-        ),
-        ...settingsDeny.map(raw => parseRule(raw, { file: path, line: settingsLine })),
-      ];
-      const sandbox = input('sandbox') ?? input('safety-strategy') ?? '';
-      // Copilot CLI and Gemini CLI flags that run every tool without asking.
-      const cliAllowAll =
-        (action === 'copilot-cli' && /\s--(allow-all-tools|allow-all|yolo)\b/.test(` ${run}`)) ||
-        (action === 'gemini-cli' &&
-          (/\s(--yolo|-y|--approval-mode[= ]yolo)(\s|$)/.test(` ${run} `) ||
-            (GEMINI_ACTION.test(uses) &&
-              /approval_?mode\\?"?\s*:\s*\\?"?yolo|--yolo\b|approval-mode[= ]yolo/i.test(
-                JSON.stringify(Object.fromEntries(Object.entries(inputs).filter(([key]) => key !== 'prompt'))),
-              ))));
-      const skip =
-        cliAllowAll ||
-        flags.skip ||
-        sandbox === 'danger-full-access' ||
-        sandbox === 'unsafe' ||
-        settingsMode === 'bypassPermissions';
-      const skipLine =
-        sandbox === 'danger-full-access' || sandbox === 'unsafe'
-          ? inputLine(input('sandbox') !== undefined ? 'sandbox' : 'safety-strategy')
-          : input('claude_args') !== undefined
+          return parts.join('/');
+        };
+        const legacyTools = (input('allowed_tools') ?? '')
+          .split(/[,\n]/)
+          .map(item => item.trim())
+          .filter(Boolean);
+        const toolsLine =
+          input('claude_args') !== undefined
             ? inputLine('claude_args')
-            : line;
-      const secretText = JSON.stringify([step['with'] ?? {}, step['env'] ?? {}, job['env'] ?? {}, workflowEnv]);
-      const secrets: { name: string; location: Location }[] = [];
-      for (const match of secretText.matchAll(SECRET_REF)) {
-        const name = match[1]!;
-        if (MODEL_SECRETS.test(name) || secrets.some(item => item.name === name)) continue;
-        secrets.push({ name, location: { file: path, line: lineOf(text, `secrets.${name}`) } });
-      }
-      // Environment variables the harness itself reads (telemetry, model and Claude Code settings) are not
-      // handed to the agent as data. Inputs that configure tools (MCP servers, settings) are.
-      const agentText = JSON.stringify([
-        ...[step['env'], job['env'], workflowEnv].flatMap(env =>
-          isRecord(env) ? Object.entries(env).filter(([key, value]) => !isHarnessCredential(key, value)) : [],
-        ),
-        ...['mcp_config', 'settings', 'claude_args'].map(key => inputs[key] ?? ''),
-      ]);
-      const agentSecrets = secrets.filter(secret => agentText.includes(`secrets.${secret.name}`));
-      const mcpText = input('mcp_config') ?? flags.mcpConfig;
-      const mcpKey = input('mcp_config') !== undefined ? 'mcp_config' : 'claude_args';
-      let servers: McpServer[] = [];
-      let mcpUnreadable: string | undefined;
-      if (mcpText !== undefined && mcpText.trim()) {
-        // Inline JSON, or a path to a file in the repository, as `--settings` is read.
-        const trimmed = mcpText.trim();
-        const inline = /^(\{|\/\/|\/\*)/.test(trimmed);
-        const content = inline ? trimmed : /\$\{\{/.test(trimmed) ? undefined : readFile(trimmed.replace(/^\.\//, ''));
-        try {
-          if (content === undefined) throw new Error('not read');
-          servers = inline
-            ? serversFromObject(parseJsonc(content), path, content, 'workflow', inputLine(mcpKey) - 1, declared)
-            : serversFromObject(parseJsonc(content), trimmed.replace(/^\.\//, ''), content, 'workflow', 0, declared);
-        } catch {
-          mcpUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
-        }
-      }
-      if (mcpUnreadable !== undefined && settingsUnreadable === undefined)
-        settingsUnreadable = `MCP config ${mcpUnreadable}`;
-      const tokenInput = asString(inputs['github_token']);
-      const tokenEnvValue = ['GH_TOKEN', 'GITHUB_TOKEN']
-        .map(name => envValue(name))
-        .find(value => value !== undefined && TOKEN_SECRET.test(value.trim()));
-      const tokenText = (tokenInput && TOKEN_SECRET.test(tokenInput.trim()) ? tokenInput : tokenEnvValue)?.trim();
-      const tokenName = tokenText ? TOKEN_SECRET.exec(tokenText)?.[1] : undefined;
-      const customToken =
-        tokenName && tokenName !== 'GITHUB_TOKEN'
+            : input('allowed_tools') !== undefined
+              ? inputLine('allowed_tools')
+              : line;
+        // claude-code-action's `settings` input, given inline as JSON: its permissions apply to the step.
+        // Settings for the step: claude-code-action's `settings` input (inline JSON, a YAML mapping or a
+        // path to a file in the repository) and `--settings` (JSON or a path). One that cannot be read
+        // is unknown: the step may then do anything.
+        let settingsUnreadable: string | undefined = wrapsAgent
+          ? `local action ${uses}`
+          : unknownArgs.length
+            ? `arguments ${unknownArgs.join(' ')}`
+            : undefined;
+        const settingsEnv: Record<string, unknown>[] = [];
+        const readSettings = (value: unknown, relative = false): Record<string, unknown> | undefined => {
+          if (value === undefined) return undefined;
+          let data: unknown = value;
+          if (typeof value === 'string') {
+            const trimmed = resolveEnv(value).trim();
+            // Inline JSON (comments allowed) starts with `{`, `//` or `/*`; anything else is a path.
+            const content = /^(\{|\/\/|\/\*)/.test(trimmed)
+              ? trimmed
+              : /\$\{\{/.test(trimmed)
+                ? undefined
+                : (() => {
+                    const named = relative ? fromDirectory(trimmed.replace(/^\.\//, '')) : trimmed.replace(/^\.\//, '');
+                    return named === undefined ? undefined : readFile(named);
+                  })();
+            if (content === undefined) {
+              settingsUnreadable ??= trimmed;
+              return undefined;
+            }
+            try {
+              data = parseJsonc(content);
+            } catch {
+              settingsUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+              return undefined;
+            }
+          }
+          if (!isRecord(data)) {
+            settingsUnreadable = typeof value === 'string' ? value : JSON.stringify(value);
+            return undefined;
+          }
+          if (isRecord(data['env'])) settingsEnv.push(data['env']);
+          return isRecord(data['permissions']) ? data['permissions'] : {};
+        };
+        const settingsSources = [readSettings(inputs['settings']), readSettings(flags.settings, true)].filter(
+          (item): item is Record<string, unknown> => item !== undefined,
+        );
+        const inlineSettings = settingsSources.length
           ? {
-              name: tokenName,
-              location: {
-                file: path,
-                line:
-                  tokenInput && tokenText === tokenInput.trim()
-                    ? inputLine('github_token')
-                    : lineOf(text, `secrets.${tokenName}`),
-              },
+              allow: settingsSources.flatMap(item => asStringArray(item['allow'] ?? [])),
+              deny: settingsSources.flatMap(item => asStringArray(item['deny'] ?? [])),
+              defaultMode: settingsSources.map(item => asString(item['defaultMode'])).find(Boolean),
             }
           : undefined;
-      const modelValue = input('model') ?? flags.model;
-      const nonWrite = input('allowed_non_write_users');
-      const literalInputs = Object.entries(inputs)
-        .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !entry[1].includes('${{'))
-        .map(([key, value]) => ({ key, value, location: { file: path, line: inputLine(key) } }));
-      agents.push({
-        path,
-        job: jobName,
-        step: asString(step['name']) ?? asString(step['id']) ?? `step ${index + 1}`,
-        action,
-        ...(uses ? { uses } : {}),
-        location: { file: path, line },
-        triggers,
-        triggerLocation,
-        permissions: { ...jobPermissions, location: { file: path, line: permissionsLine } },
-        appToken:
-          action === 'claude-code-action' &&
-          input('github_token') === undefined &&
-          grantsIdToken(job['permissions'] ?? data['permissions']),
-        ...(customToken ? { customToken } : {}),
-        allowedTools,
-        disallowedTools,
-        ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),
-        ...(settingsUnreadable !== undefined
-          ? { settingsUnreadable: { value: settingsUnreadable, location: { file: path, line: settingsLine } } }
-          : {}),
-        ...(!skip && (flags.autoMode || settingsMode === 'auto')
-          ? {
-              autoMode: {
-                file: path,
-                line:
-                  settingsMode === 'auto'
-                    ? settingsLine
-                    : input('claude_args') !== undefined
-                      ? inputLine('claude_args')
-                      : line,
-              },
-            }
-          : {}),
-        endpoints: [step['env'], job['env'], workflowEnv, ...settingsEnv].flatMap(env =>
-          isRecord(env)
-            ? Object.entries(env).flatMap(([name, value]) =>
-                /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS)$/i.test(
-                  name,
-                )
-                  ? [{ name, value: String(value), location: { file: path, line: lineOf(text, `${name}:`) || line } }]
-                  : [],
-              )
-            : [],
-        ),
-        githubToken:
-          action === 'claude-code-action' ||
-          tokenInput !== undefined ||
-          ['GH_TOKEN', 'GITHUB_TOKEN'].some(name => envValue(name) !== undefined),
-        ...(action.startsWith('codex')
-          ? {
-              codex: {
-                ...(widerSandbox(input('sandbox'), flags.sandbox) !== undefined
-                  ? { sandbox: widerSandbox(input('sandbox'), flags.sandbox)! }
-                  : {}),
-                ...(input('permission-profile') !== undefined ? { profile: input('permission-profile')! } : {}),
+        const settingsAllow = inlineSettings ? asStringArray(inlineSettings['allow'] ?? []) : [];
+        const settingsDeny = inlineSettings ? asStringArray(inlineSettings['deny'] ?? []) : [];
+        const settingsMode = inlineSettings ? asString(inlineSettings['defaultMode']) : undefined;
+        if (settingsMode === 'acceptEdits') settingsAllow.push('Edit');
+        const settingsLine = input('settings') !== undefined ? inputLine('settings') : toolsLine;
+        const allowedTools = [
+          ...[...flags.allowedTools, ...legacyTools].map(raw => parseRule(raw, { file: path, line: toolsLine })),
+          ...settingsAllow.map(raw => parseRule(raw, { file: path, line: settingsLine })),
+        ];
+        const disallowedTools = [
+          ...[...flags.disallowedTools, ...toolList((input('disallowed_tools') ?? '').replace(/\n/g, ','))].map(raw =>
+            parseRule(raw, { file: path, line: toolsLine }),
+          ),
+          ...settingsDeny.map(raw => parseRule(raw, { file: path, line: settingsLine })),
+        ];
+        const sandbox = input('sandbox') ?? input('safety-strategy') ?? '';
+        // Copilot CLI and Gemini CLI flags that run every tool without asking.
+        const cliArgs = detected.args;
+        const cliAllowAll =
+          (action === 'copilot-cli' && cliArgs.some(arg => /^--(allow-all-tools|allow-all|yolo)(=|$)/.test(arg))) ||
+          (action === 'gemini-cli' &&
+            (cliArgs.some(
+              (arg, i) =>
+                /^(--yolo|-[a-z]*y[a-z]*)$/.test(arg) ||
+                /^--approval-mode=yolo$/.test(arg) ||
+                (arg === '--approval-mode' && cliArgs[i + 1] === 'yolo'),
+            ) ||
+              (GEMINI_ACTION.test(uses) &&
+                /approval_?mode\\?"?\s*:\s*\\?"?yolo|--yolo\b|approval-mode[= ]yolo/i.test(
+                  JSON.stringify(Object.fromEntries(Object.entries(inputs).filter(([key]) => key !== 'prompt'))),
+                ))));
+        const skip =
+          cliAllowAll ||
+          flags.skip ||
+          sandbox === 'danger-full-access' ||
+          sandbox === 'unsafe' ||
+          settingsMode === 'bypassPermissions';
+        const skipLine =
+          sandbox === 'danger-full-access' || sandbox === 'unsafe'
+            ? inputLine(input('sandbox') !== undefined ? 'sandbox' : 'safety-strategy')
+            : input('claude_args') !== undefined
+              ? inputLine('claude_args')
+              : line;
+        const secretText = JSON.stringify([
+          step['with'] ?? {},
+          step['env'] ?? {},
+          job['env'] ?? {},
+          workflowEnv,
+          action.endsWith('cli') && !wrapsAgent ? rawRun : '',
+        ]);
+        const secrets: { name: string; location: Location }[] = [];
+        for (const name of new Set([...secretNames(secretText), ...exportedBefore])) {
+          if (MODEL_SECRETS.test(name)) continue;
+          secrets.push({ name, location: { file: path, line: secretLine(name) } });
+        }
+        // Environment variables the harness itself reads (telemetry, model and Claude Code settings) are not
+        // handed to the agent as data. Inputs that configure tools (MCP servers, settings) are.
+        // Every input but the harness's own credentials reaches the agent: its prompt, settings, tools.
+        // A script that starts a CLI puts its secrets in the agent's process too.
+        const agentText = JSON.stringify([
+          ...[step['env'], job['env'], workflowEnv].flatMap(env =>
+            isRecord(env) ? Object.entries(env).filter(([key, value]) => !isHarnessCredential(key, value)) : [],
+          ),
+          ...Object.entries(inputs).filter(([key]) => !HARNESS_INPUTS.test(key)),
+          action.endsWith('cli') && !wrapsAgent ? rawRun : '',
+        ]);
+        const reaching = new Set([...secretNames(agentText), ...exportedBefore]);
+        const agentSecrets = secrets.filter(secret => reaching.has(secret.name));
+        const mcpText = input('mcp_config') ?? flags.mcpConfig[0];
+        const extraMcp = input('mcp_config') !== undefined ? flags.mcpConfig : flags.mcpConfig.slice(1);
+        const mcpKey = input('mcp_config') !== undefined ? 'mcp_config' : 'claude_args';
+        let servers: McpServer[] = [];
+        let mcpUnreadable: string | undefined;
+        if (mcpText !== undefined && mcpText.trim()) {
+          // Inline JSON, or a path to a file in the repository, as `--settings` is read.
+          const trimmed = mcpText.trim();
+          const inline = /^(\{|\/\/|\/\*)/.test(trimmed);
+          const named = inline || /\$\{\{/.test(trimmed) ? undefined : fromDirectory(trimmed.replace(/^\.\//, ''));
+          const content = inline ? trimmed : named === undefined ? undefined : readFile(named);
+          try {
+            if (content === undefined) throw new Error('not read');
+            servers = inline
+              ? serversFromObject(parseJsonc(content), path, content, 'workflow', inputLine(mcpKey) - 1, declared)
+              : serversFromObject(parseJsonc(content), named!, content, 'workflow', 0, declared);
+          } catch {
+            mcpUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+          }
+        }
+        // `--mcp-config a.json b.json`: every file adds servers.
+        for (const extra of extraMcp) {
+          const trimmed = extra.trim();
+          const inline = /^(\{|\/\/|\/\*)/.test(trimmed);
+          const named = inline || /\$\{\{/.test(trimmed) ? undefined : fromDirectory(trimmed.replace(/^\.\//, ''));
+          const content = inline ? trimmed : named === undefined ? undefined : readFile(named);
+          try {
+            if (content === undefined) throw new Error('not read');
+            servers = [
+              ...servers,
+              ...serversFromObject(parseJsonc(content), inline ? path : named!, content, 'workflow', 0, declared),
+            ];
+          } catch {
+            mcpUnreadable ??= trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+          }
+        }
+        if (mcpUnreadable !== undefined && settingsUnreadable === undefined)
+          settingsUnreadable = `MCP config ${mcpUnreadable}`;
+        const tokenInput = asString(inputs['github_token']);
+        const tokenEnvValue = ['GH_TOKEN', 'GITHUB_TOKEN']
+          .map(name => envValue(name))
+          .find(value => value !== undefined && TOKEN_SECRET.test(value.trim()));
+        const tokenText = (tokenInput && TOKEN_SECRET.test(tokenInput.trim()) ? tokenInput : tokenEnvValue)?.trim();
+        const tokenName = tokenText ? TOKEN_SECRET.exec(tokenText)?.[1] : undefined;
+        const customToken =
+          tokenName && tokenName !== 'GITHUB_TOKEN'
+            ? {
+                name: tokenName,
                 location: {
                   file: path,
                   line:
-                    input('sandbox') !== undefined
-                      ? inputLine('sandbox')
-                      : input('permission-profile') !== undefined
-                        ? inputLine('permission-profile')
+                    tokenInput && tokenText === tokenInput.trim() ? inputLine('github_token') : secretLine(tokenName),
+                },
+              }
+            : undefined;
+        const modelValue = input('model') ?? flags.model;
+        const nonWrite = input('allowed_non_write_users');
+        const literalInputs = Object.entries(inputs)
+          .filter((entry): entry is [string, string] => typeof entry[1] === 'string' && !entry[1].includes('${{'))
+          .map(([key, value]) => ({ key, value, location: { file: path, line: inputLine(key) } }));
+        agents.push({
+          path,
+          job: jobName,
+          step: asString(step['name']) ?? asString(step['id']) ?? `step ${index + 1}`,
+          stepIndex: detections.length > 1 ? `${index + 1}.${callIndex + 1}` : String(index + 1),
+          action,
+          ...(uses ? { uses } : {}),
+          location: { file: path, line },
+          triggers,
+          triggerLocation,
+          permissions: { ...jobPermissions, location: { file: path, line: permissionsLine } },
+          appToken:
+            action === 'claude-code-action' &&
+            input('github_token') === undefined &&
+            grantsIdToken(job['permissions'] ?? data['permissions']),
+          ...(customToken ? { customToken } : {}),
+          allowedTools,
+          disallowedTools,
+          ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),
+          ...(settingsUnreadable !== undefined
+            ? { settingsUnreadable: { value: settingsUnreadable, location: { file: path, line: settingsLine } } }
+            : {}),
+          ...(!skip && (flags.autoMode || settingsMode === 'auto')
+            ? {
+                autoMode: {
+                  file: path,
+                  line:
+                    settingsMode === 'auto'
+                      ? settingsLine
+                      : input('claude_args') !== undefined
+                        ? inputLine('claude_args')
                         : line,
                 },
-              },
-            }
-          : {}),
-        maxTurns: flags.maxTurns || input('max_turns') !== undefined,
-        timeout: job['timeout-minutes'] !== undefined || step['timeout-minutes'] !== undefined,
-        secrets,
-        agentSecrets,
-        ...(nonWrite
-          ? { nonWriteUsers: { value: nonWrite, location: { file: path, line: inputLine('allowed_non_write_users') } } }
-          : {}),
-        ...(checkout && triggers.includes('pull_request_target')
-          ? {
-              checksOutPullRequest: {
-                file: path,
-                line: nodeLine(doc.getIn(['jobs', jobName, 'steps', steps.indexOf(checkout)], true), line),
-              },
-            }
-          : {}),
-        servers,
-        ...(modelValue
-          ? {
-              model: {
-                value: modelValue,
-                location: {
-                  file: path,
-                  line: input('model') !== undefined ? inputLine('model') : inputLine('claude_args'),
+              }
+            : {}),
+          endpoints: [step['env'], job['env'], workflowEnv, ...settingsEnv].flatMap(env =>
+            isRecord(env)
+              ? Object.entries(env).flatMap(([name, value]) =>
+                  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS)$/i.test(
+                    name,
+                  )
+                    ? [{ name, value: String(value), location: { file: path, line: lineOf(text, `${name}:`) || line } }]
+                    : [],
+                )
+              : [],
+          ),
+          githubToken:
+            action === 'claude-code-action' ||
+            tokenInput !== undefined ||
+            ['GH_TOKEN', 'GITHUB_TOKEN'].some(name => envValue(name) !== undefined),
+          ...(action.startsWith('codex')
+            ? {
+                codex: {
+                  ...(widerSandbox(input('sandbox'), flags.sandbox) !== undefined
+                    ? { sandbox: widerSandbox(input('sandbox'), flags.sandbox)! }
+                    : {}),
+                  ...(input('permission-profile') !== undefined ? { profile: input('permission-profile')! } : {}),
+                  location: {
+                    file: path,
+                    line:
+                      input('sandbox') !== undefined
+                        ? inputLine('sandbox')
+                        : input('permission-profile') !== undefined
+                          ? inputLine('permission-profile')
+                          : line,
+                  },
                 },
-              },
-            }
-          : {}),
-        environment: job['environment'] !== undefined,
-        literalInputs,
+              }
+            : {}),
+          maxTurns: flags.maxTurns || input('max_turns') !== undefined,
+          timeout: job['timeout-minutes'] !== undefined || step['timeout-minutes'] !== undefined,
+          secrets,
+          agentSecrets,
+          ...(nonWrite
+            ? {
+                nonWriteUsers: {
+                  value: nonWrite,
+                  location: { file: path, line: inputLine('allowed_non_write_users') },
+                },
+              }
+            : {}),
+          ...(checkout && triggers.includes('pull_request_target')
+            ? {
+                checksOutPullRequest: {
+                  file: path,
+                  line: nodeLine(doc.getIn(['jobs', jobName, 'steps', steps.indexOf(checkout)], true), line),
+                },
+              }
+            : {}),
+          servers,
+          ...(modelValue
+            ? {
+                model: {
+                  value: modelValue,
+                  location: {
+                    file: path,
+                    line: input('model') !== undefined ? inputLine('model') : inputLine('claude_args'),
+                  },
+                },
+              }
+            : {}),
+          environment: job['environment'] !== undefined,
+          literalInputs,
+        });
       });
     });
   }
