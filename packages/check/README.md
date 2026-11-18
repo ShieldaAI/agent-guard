@@ -134,12 +134,16 @@ import pinned to a commit of another repository is a note. Folders named `~` or 
 the repository are never read.
 
 Amp and Goose keep their permissions outside the repository, so they are not read. Configuration
-of agents the scanner does not model (Cursor hooks, Kiro hooks and agents, Gemini CLI commands and
-extensions, OpenCode plugins, Roo Code, Continue, Junie, Amazon Q, Crush, Qwen Code) is reported
-as AGC-CFG-001: high when it can run code (servers, hooks, plugins), medium otherwise. VS Code's
+of agents the scanner does not model (Kiro hooks and agents, Gemini CLI commands, extensions and
+`.env`, OpenCode plugins, Roo Code, Continue, Junie, Amazon Q, Crush, Qwen Code, Cursor's
+background agent) is reported as AGC-CFG-001: high when it can run code (servers, hooks, plugins),
+medium otherwise. Unknown gh-aw front matter keys are reported too (high for ones that run code,
+such as `safe-inputs`). Cursor's `hooks.json` is judged like Claude Code's hooks. VS Code's
 `chat.tools.autoApprove`, Zed's `always_allow_tool_actions` and Aider's `yes-always` are read as
-bypasses (AGC-PERM-001); VS Code terminal auto-approve patterns beyond fixed project commands,
-Zed context servers and Aider test and lint commands are high. A setting
+bypasses (AGC-PERM-001), in `.vscode/settings.json`, `*.code-workspace` and
+`.devcontainer/devcontainer.json`; VS Code terminal and URL auto-approve patterns beyond fixed
+project commands, Zed context servers and Aider test and lint commands are high. `.env` is never
+read, since it holds secrets: Aider settings there are not seen. A setting
 the scanner does not model, such as a permission mode or Copilot tool name it does not know, a
 gh-aw engine key or tool it does not know, or the domains Claude Code's Bash sandbox allows, is
 reported as AGC-CFG-001 with what the scan assumed instead, and the reach it could give is
@@ -154,12 +158,19 @@ and each is sorted as a Bash rule is (see shell commands below); a script from t
 the plugin (`"$CLAUDE_PROJECT_DIR"/.claude/hooks/x.sh`, `python3 scripts/x.py`) is project code,
 read for the scripts it runs, unless it pipes a download into a shell. A hook that can reach the
 network or run arbitrary code, an HTTP hook, or one that runs a program outside the repository
-is AGC-PERM-003. A `PreToolUse` or `PermissionRequest` hook that answers "allow" approves calls
-instead of a person: the tools it matches run without asking, it is AGC-PERM-001 (critical), and
-it is not a runtime check. One whose decisions cannot be read (a script that is missing or
-outside the repository, an HTTP or prompt hook) may approve: high, and not a runtime check
-either. Settings `env` values that run code with every command (`BASH_ENV`,
-`CLAUDE_CODE_SHELL_PREFIX`, `PATH`, `LD_PRELOAD`, `PYTHONPATH`, ...) are high.
+is AGC-PERM-003. A `PreToolUse` or `PermissionRequest` hook (or a Cursor `beforeShellExecution` /
+`beforeMCPExecution` hook) that answers "allow" approves calls instead of a person: the tools it
+matches run without asking, it is AGC-PERM-001 (critical), and it is not a runtime check. The
+decision is read from the hook's command, the scripts it runs, the files it prints and the local
+modules a script imports. A hook may approve (high, and not a runtime check either) when it
+builds a decision the scan cannot read (`"permissionDecision": "al" + "low"`, `D=allow`), when
+a decision key's value is anything but a literal deny or ask, or when its text cannot be read (a
+script that is missing or outside the repository, an HTTP or prompt hook). Settings `env`
+values that run code or change where packages come from are high: shell startup and prefix
+variables (`BASH_ENV`, `CLAUDE_CODE_SHELL_PREFIX`, `PATH`), loaders (`LD_PRELOAD`, `NODE_OPTIONS`,
+`PYTHONPATH`, `JAVA_TOOL_OPTIONS`, `DOTNET_STARTUP_HOOKS`), git hooks into commands
+(`GIT_CONFIG_*`, `GIT_ASKPASS`, `GIT_SSH_COMMAND`), build wrappers (`RUSTC_WRAPPER`, `GOFLAGS`)
+and package sources (`npm_config_*`, `PIP_INDEX_URL`, ...).
 
 ### Your own settings
 
@@ -446,20 +457,20 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
   Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 187 agents.
-  Every critical, high and medium finding, 148 in all, was reviewed by hand: 147 true positives
-  and 1 false positive (a low-confidence text rule), precision 99.3%. "True" follows the
+  Every critical, high and medium finding, 158 in all, was reviewed by hand: 157 true positives
+  and 1 false positive (a low-confidence text rule), precision 99.4%. "True" follows the
   fail-closed reading above: `Bash(git *)` or `Bash(rg:*)` is reported because an option can run
   any program, and a local MCP server the scanner cannot identify is reported when its tools run
   without asking.
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
   configuration files (`bench/recall-labels.json`). The scanner finds 68 of the 70 agents
-  (97%). Of the 300 capabilities labelled yes it reports 83% (as yes or unknown), and 66% at the
+  (97%). Of the 300 capabilities labelled yes it reports 84% (as yes or unknown), and 67% at the
   labelled approval level or wider:
 
   | Capability | Labelled yes | Reported | At level |
   | --- | --- | --- | --- |
-  | untrustedInput | 64 | 89% | 78% |
+  | untrustedInput | 64 | 92% | 81% |
   | write | 58 | 93% | 71% |
   | egress | 56 | 96% | 73% |
   | exec | 48 | 98% | 79% |
@@ -500,13 +511,18 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   read-only commands; commands that bring in remote text (`git clone`, `git pull`); commands that
   change files (`cp`, `mv`, `tee`, `git reset`); commands that publish to the repository itself
   (`gh pr comment`, `git push`); and everything else, counted as commands that can reach any host
-  or run arbitrary code (AGC-PERM-003). The sort fails closed: a rule is narrower only when it
-  matches a known command shape. An unknown program, an absolute path to one, a wrapper that runs
+  or run arbitrary code (AGC-PERM-003). The sort fails closed: a rule is narrower only when
+  every command in it matches a known command shape. An exact rule is split the way a shell
+  would (`ls && curl … | sh` is as wide as `curl` and `sh`), a redirect writes a file, and options
+  that run a program are read (`awk 'BEGIN{system(…)}'`, `sed e`, `find -exec`, `git -c`,
+  `rg --pre`, `sort --compress-program`, `tar --to-command`). Prefix rules for `git fetch`,
+  `pull`, `clone` and `remote` reach the network (`--upload-pack` runs a program), and ones for
+  `git diff`, `log` and `show` write files (`--output`). An unknown program, an absolute path to one, a wrapper that runs
   another command (`sudo`, `timeout`, `xargs`, `env`, `eval`), a wildcard inside the command
   (`c*`, `*url`) and a prefix rule for a command whose options run programs (`git:*`, `find:*`,
   `rg:*`, `sort:*`, `sed:*`, `awk:*`, `git rebase:*`, `git grep:*`) all count as running code;
   so do prefix rules that choose what to install or run (`npm install:*`, `npm exec:*`,
-  `uv run:*`), and prefix rules for build tools whose options run any program (`make:*`,
+  `uv run:*`, `bun run:*`, `mvn:*`, `tox:*`, `nx:*`, `yarn plugin:*`, `pnpm up:*`), and prefix rules for build tools whose options run any program (`make:*`,
   `go test:*`, `cargo:*`, `just:*`). A rule for a repository script is read: a script that runs
   its arguments as a command (`exec "$@"`, `eval "$*"`, `sys.argv` handed to a process) allows
   any command. Variable assignments before a command are dropped unless they load code
@@ -538,8 +554,10 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   step runs (`./ci/agent.sh`, `bash x.sh`, `source x.sh`), files run by an interpreter
   (`python3 ci/x.py`, `node x.js`, `ruby x.rb`, `uv run python x.py`: a process call there that
   starts an agent CLI, such as `subprocess.run(["claude", "-p", ...])`, is an agent of unknown
-  reach), `npm run` / `pnpm` scripts from `package.json`, `make` and `just` targets, `find -exec`,
-  a custom `shell:`, the agent CLI inside `docker run`,
+  reach, and so are local modules they import), `npm run` / `pnpm` scripts from `package.json`
+  (with their `pre` and `post` scripts, `npm test` / `start` and install lifecycle scripts),
+  `make`, `just` and Taskfile targets, Dockerfile `RUN` lines for `docker build`, `find -exec`,
+  aliases and symlinks to an agent CLI, a custom `shell:`, the agent CLI inside `docker run`,
   and Claude Code started as `node .../cli.js` or by path (`"$(which claude)"`). Shell variables
   set in the script or in `env` are expanded; an unquoted variable the scan cannot resolve
   (`$FLAGS`, `"$@"`, `"${ARGS[@]}"`), a quoted one not named for a prompt (`"$MODE"`), or a GitHub expression
@@ -547,7 +565,15 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   chose, such as `--model ${{ github.event.comment.body }}`) makes the step unknown reach. An
   agent named in text the scan cannot follow (piped into a shell, `python -c` code that starts a
   process, a command taken from the job's matrix, a non-shell `shell:`, a `github-script` that
-  starts a process) is an agent of unknown reach. OpenCode, Cursor's CLI, Aider, Amp, Goose, Qwen
+  starts a process, decoded text piped into a shell such as `base64 -d | bash`, a step in a job
+  container named for an agent) is an agent of unknown reach. So is a remote action or reusable
+  workflow handed agent flags or a model key. Flags of the Claude Code and Codex CLIs the scan
+  does not know (`--plugin-dir`, `--chrome`, `--add-dir` outside the checkout, Codex
+  `-c mcp_servers.…`) make the step unknown reach; Codex's attached `-sdanger-full-access` is read,
+  and a `CODEX_HOME` in the repository is read (elsewhere, unknown). A step that writes agent
+  settings or adds servers before the agent runs (`> ~/.claude/settings.json`,
+  `claude mcp add`) makes the agent unknown reach, and so do gh-aw front matter steps that do.
+  `claude-code-base-action` does not check who starts it. OpenCode, Cursor's CLI, Aider, Amp, Goose, Qwen
   Code and Crush, and actions that run them, are agents of unknown reach too. `claude --version`,
   `npm i -g @anthropic-ai/claude-code`, `claude mcp add`, `command -v claude` or an `echo` that
   mentions an agent are not agents. Claude Code's list flags are variadic
@@ -617,6 +643,17 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   secret named for a model provider (`ZAI_API_KEY`) or, for telemetry headers, a telemetry
   service. The same variable carrying another secret (`ANTHROPIC_API_KEY:
   ${{ secrets.PROD_DB_API_KEY }}`) is counted.
+- **The gate and computed reach.** An agent that can both run code and send data out without
+  approval, with no runtime check that sees those calls, is AGC-COV-001 at high, whichever
+  setting gave it that reach (a Codex `danger-full-access` sandbox, a Bash rule, a mode). An
+  agent that can edit any file and run a project command without asking can rewrite that
+  command's code, so its network reach is counted as unknown.
+- **What the scan does not see.** It reads files; it does not run anything. Code that builds an
+  agent's name at run time (`os.system("cla" + "ude …")` without agent flags on that line), a
+  container image's own entry point, a program installed outside the repository, a remote
+  action or reusable workflow that gets neither agent flags nor a model key, and settings an
+  earlier step writes somewhere other than the agent's settings files are not seen. Recompiling
+  gh-aw workflows in CI is the complete check for lock files.
 - **Runtime checks.** A runtime check counts only for the calls it sees. A hook matcher is a
   regular expression from the repository, so the scanner never runs it: it reads the matcher's
   `|` alternatives, and credits only exact tool names (`Bash`), name prefixes (`Web.*`,

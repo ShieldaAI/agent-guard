@@ -1,3 +1,4 @@
+import { parse as parseYaml } from 'yaml';
 /**
  * Just enough shell to find agent CLIs in a workflow `run:` script: simple commands split on
  * `;`, `&&`, `||`, `|`, `&`, new lines and parentheses, words with their quotes removed, variable
@@ -438,13 +439,13 @@ function runsAgent(cli: AgentCli, args: readonly Word[], program = ''): boolean 
 export const AGENT_MENTION =
   /(^|[\s"'`;&|(/=[,])(claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen)(?=[\s"'`;&|),\]]|$)|@anthropic-ai\/claude-code|@openai\/codex|@google\/gemini-cli/m;
 const AGENT_PROGRAM =
-  '(?:(?:npx|bunx|pnpx)\\s+(?:-y\\s+)?)?(?:[^"\'`\\s]*/)?(?:claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen|@anthropic-ai/claude-code|@openai/codex|@google/gemini-cli)(?:@[^"\'`\\s]*)?';
+  '(?:(?:npx|bunx|pnpx)\\s+(?:-y\\s+)?)?(?:[./~$][^"\'`\\s]*/|[^"\'`\\s]*\\bbin/)?(?:claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen|@anthropic-ai/claude-code|@openai/codex|@google/gemini-cli)(?:@[^"\'`\\s]*)?';
 /** A process started with a command string that begins with an agent CLI: `execSync("claude -p ...")`. */
 const SPAWNED_AGENT = new RegExp(
   `(?:subprocess\\.\\w+|os\\.system|os\\.popen|Popen|execSync|execFileSync|spawnSync|execa|Bun\\.spawn|Deno\\.Command|Start-Process|(?<![.\\w])(?:system|exec|spawn))\\s*\\(\\s*\\[?\\s*["'\`]${AGENT_PROGRAM}(?=["'\`\\s,])`,
 );
 /** An agent CLI as a list element followed by a flag: `["claude", "-p", ...]`. */
-const AGENT_ARGV = new RegExp(`["'\`]${AGENT_PROGRAM}["'\`]\\s*,\\s*["'\`]-`);
+const AGENT_ARGV = new RegExp(`["'\`]${AGENT_PROGRAM}["'\`]\\s*,\\s*["'\`]-(?!-?(version|help|v|V|h)["'\`])`);
 
 /**
  * Whether code in another language starts an agent: a process call whose command begins with an
@@ -452,7 +453,15 @@ const AGENT_ARGV = new RegExp(`["'\`]${AGENT_PROGRAM}["'\`]\\s*,\\s*["'\`]-`);
  * package path (`npm run build -w @google/gemini-cli-core`) or a management command is not one.
  */
 export function spawnsAgent(text: string): boolean {
-  return SPAWNS.test(text) && (SPAWNED_AGENT.test(text) || AGENT_ARGV.test(text));
+  const code = withoutComments(text);
+  // `codex --version` and `["claude", "--help"]` look a program up; they do not run the agent.
+  const runs = code.replace(/(claude|codex|gemini|copilot)\s+(--version|-v|-V|--help|-h)(?=["'`\s])/g, '$1_info');
+  return SPAWNS.test(code) && (SPAWNED_AGENT.test(runs) || AGENT_ARGV.test(code));
+}
+
+/** Code without line comments (`#`, `//`) and block comments: a comment that names a call runs nothing. */
+function withoutComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|\s)(#|\/\/).*$/gm, '$1');
 }
 /** Commands that install or look up an agent CLI rather than run it. */
 const INSTALL_LINE =
@@ -469,11 +478,50 @@ export function namesAgent(text: string): boolean {
 export const SPAWNS =
   /\b(subprocess|os\.system|os\.popen|os\.exec\w*|Popen|child_process|execSync|execFileSync|spawnSync|execa|Bun\.spawn|Deno\.Command|Start-Process|Invoke-Expression)\b|(?<![.\w])(system|exec|spawn)\(/;
 
+/** A process call whose line carries agent permission flags, however the program name is built. */
+export function spawnsWithAgentFlags(text: string): boolean {
+  return text
+    .split('\n')
+    .some(
+      line =>
+        !/^\s*(#|\/\/)/.test(line) &&
+        SPAWNS.test(line) &&
+        /--dangerously-skip-permissions|--dangerously-bypass|--yolo|--allow-all-tools|bypassPermissions|--allowedTools|--allowed-tools|--permission-mode|danger-full-access/.test(
+          line,
+        ),
+    );
+}
+
+/** Local modules a Python or JavaScript file imports. */
+export function localImports(path: string, text: string, readFile: (path: string) => string | undefined): string[] {
+  const folder = path.split('/').slice(0, -1).join('/');
+  const join = (name: string) => (folder ? `${folder}/${name}` : name);
+  const names = new Set<string>();
+  if (/\.py$/.test(path))
+    for (const match of text.matchAll(/^\s*(?:from\s+\.?([\w]+)\s+import|import\s+([\w]+))/gm))
+      names.add(`${match[1] ?? match[2]}.py`);
+  if (/\.(m?js|cjs|ts|mts)$/.test(path))
+    for (const match of text.matchAll(/(?:require\(|from\s+|import\s*\()\s*["']\.\/([^"']+)["']/g))
+      for (const ext of ['', '.js', '.mjs', '.cjs', '.ts']) names.add(`${match[1]}${ext}`);
+  const out: string[] = [];
+  for (const name of [...names].slice(0, 20)) {
+    const content = readFile(join(name));
+    if (content !== undefined) out.push(content);
+  }
+  return out;
+}
+
+function importsSpawnAgent(path: string, text: string, readFile: (path: string) => string | undefined): boolean {
+  return localImports(path, text, readFile).some(module => spawnsAgent(module) || spawnsWithAgentFlags(module));
+}
+
 /** Where agent calls can read files a script runs: package.json scripts, Makefile targets, shell scripts. */
 export interface ScriptContext {
   readonly readFile?: (path: string) => string | undefined;
   /** The folder the script runs in, relative to the repository root. */
   readonly cwd?: string;
+  /** Texts already followed in this scan: a script reached by many paths is read once. */
+  readonly seen?: Set<string>;
 }
 
 function joinRepo(cwd: string, path: string): string | undefined {
@@ -517,10 +565,14 @@ export function agentCalls(
   context: ScriptContext = {},
 ): AgentCall[] {
   const out: AgentCall[] = [];
+  if (!context.seen) context = { ...context, seen: new Set() };
   const cwd = context.cwd ?? '';
   const unknown = (program: string, why: string) =>
     out.push({ cli: 'other', program, args: [], unresolved: [], unknown: why });
   const follow = (text: string, why: string, shell: boolean) => {
+    const key = `${shell ? 'sh' : 'code'}\0${text}`;
+    if (context.seen!.has(key)) return;
+    context.seen!.add(key);
     // Too deep to follow: a shell script that names an agent, or code that starts one, is unknown.
     if (nesting >= MAX_NESTING) {
       if (shell ? namesAgent(text) : spawnsAgent(text)) unknown('agent', why);
@@ -530,12 +582,46 @@ export function agentCalls(
     // language runs one only through a process call that names the agent.
     const found = shell ? agentCalls(text, vars, nesting + 1, context) : [];
     if (found.length) out.push(...found);
-    else if (!shell && spawnsAgent(text)) unknown('agent', why);
+    else if (
+      !shell &&
+      (spawnsAgent(text) ||
+        spawnsWithAgentFlags(text) ||
+        (context.readFile && importsSpawnAgent(why, text, context.readFile)))
+    )
+      unknown('agent', why);
   };
+  // Names that stand for an agent CLI: `alias ai='claude ...'`, `ln -s "$(which claude)" bin/cc`.
+  const aliases = new Map<string, string>();
   for (const words of commands(script, vars)) {
     const call = unwrap(words);
     if (!call) continue;
     const args = call.args.map(arg => arg.text);
+    if (call.name === 'alias') {
+      for (const arg of args) {
+        const [name, value] = arg.split(/=(.*)/s, 2);
+        if (name && value !== undefined && AGENT_MENTION.test(` ${value}`)) aliases.set(name, value);
+      }
+      continue;
+    }
+    if (call.name === 'ln' && args.some(arg => /^-[a-zA-Z]*s/.test(arg))) {
+      const paths = args.filter(arg => !arg.startsWith('-'));
+      const [from, to] = [paths[0] ?? '', paths[1] ?? ''];
+      const named = /(claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen)\b/.exec(from)?.[1];
+      if (named && to) aliases.set(commandName(to), named);
+      continue;
+    }
+    const alias = aliases.get(call.name);
+    if (alias !== undefined && nesting < MAX_NESTING) {
+      out.push(
+        ...agentCalls(
+          `${alias} ${args.map(arg => `'${arg.replace(/'/g, `'\\''`)}'`).join(' ')}`,
+          vars,
+          nesting + 1,
+          context,
+        ),
+      );
+      continue;
+    }
     if (SHELLS.has(call.name) || call.name === 'eval') {
       // `bash -c "script"`, `sh -ec 'script'`, `eval "..."`, `bash ./ci/x.sh`.
       const at = call.args.findIndex(arg => /^-[a-zA-Z]*c[a-zA-Z]*$/.test(arg.text));
@@ -592,13 +678,29 @@ export function agentCalls(
     }
     // `npm run agent`, `pnpm agent`, `yarn agent`, `make agent`, `just agent`.
     if (/^(npm|pnpm|yarn|bun)$/.test(call.name) && context.readFile) {
-      const name = args[0] === 'run' || args[0] === 'run-script' ? args[1] : call.name === 'npm' ? undefined : args[0];
+      // `npm run x`, `pnpm x`, `npm test` / `start` / `stop` / `restart`, and the lifecycle scripts
+      // `npm install` / `ci` run; each with its `pre` and `post` scripts.
+      const sub = args[0];
+      const name =
+        sub === 'run' || sub === 'run-script'
+          ? args[1]
+          : sub && /^(test|t|tst|start|stop|restart)$/.test(sub)
+            ? (({ t: 'test', tst: 'test' } as Record<string, string>)[sub] ?? sub)
+            : call.name === 'npm'
+              ? undefined
+              : sub;
+      const lifecycle =
+        sub && /^(i|install|ci|add)$/.test(sub)
+          ? ['preinstall', 'install', 'postinstall', 'prepublish', 'prepare']
+          : [];
       const manifest = context.readFile(joinRepo(cwd, 'package.json') ?? 'package.json');
-      if (name && manifest) {
+      if ((name || lifecycle.length) && manifest) {
         try {
           const scripts = (JSON.parse(manifest) as { scripts?: Record<string, unknown> }).scripts ?? {};
-          const body = scripts[name];
-          if (typeof body === 'string') follow(body, `${call.name} run ${name}`, true);
+          for (const script of name ? [`pre${name}`, name, `post${name}`] : lifecycle) {
+            const body = scripts[script];
+            if (typeof body === 'string') follow(body, `${call.name} run ${script}`, true);
+          }
         } catch {
           // An unreadable package.json names no script.
         }
@@ -611,6 +713,59 @@ export function agentCalls(
       if (file !== undefined && target !== undefined) {
         const body = makeTarget(file, target);
         if (body !== undefined) follow(body, `${call.name} ${target}`, true);
+      }
+      continue;
+    }
+    // `task x` (Taskfile): the task's commands.
+    if (call.name === 'task' && context.readFile) {
+      const file = ['Taskfile.yml', 'Taskfile.yaml', 'taskfile.yml', 'taskfile.yaml']
+        .map(name => context.readFile!(joinRepo(cwd, name) ?? name))
+        .find(text => text !== undefined);
+      const target = args.find(arg => !arg.startsWith('-')) ?? 'default';
+      if (file !== undefined) {
+        try {
+          const data = parseYaml(file, { maxAliasCount: 50 }) as { tasks?: Record<string, unknown> };
+          const task = data?.tasks?.[target];
+          const cmds = Array.isArray(task)
+            ? task
+            : typeof task === 'object' && task !== null
+              ? (task as { cmds?: unknown }).cmds
+              : undefined;
+          const text = (Array.isArray(cmds) ? cmds : [])
+            .map(item =>
+              typeof item === 'string'
+                ? item
+                : typeof item === 'object' && item !== null
+                  ? String((item as { cmd?: unknown }).cmd ?? '')
+                  : '',
+            )
+            .join('\n');
+          if (text) follow(text, `task ${target}`, true);
+        } catch {
+          if (namesAgent(file)) unknown('agent', 'Taskfile');
+        }
+      }
+      continue;
+    }
+    // `docker build`: the Dockerfile's RUN lines run on the runner's Docker daemon.
+    if (
+      (call.name === 'docker' || call.name === 'podman') &&
+      (args[0] === 'build' || (args[0] === 'buildx' && args[1] === 'build'))
+    ) {
+      const at = args.findIndex(arg => arg === '-f' || arg === '--file');
+      const file = at >= 0 ? args[at + 1] : 'Dockerfile';
+      const text = file === undefined ? undefined : context.readFile?.(joinRepo(cwd, file) ?? file);
+      if (text !== undefined) {
+        const runs = text
+          .replace(/\\\r?\n/g, ' ')
+          .split('\n')
+          .filter(line => /^\s*RUN\s/i.test(line))
+          .map(line =>
+            line
+              .replace(/^\s*RUN\s+(--\S+\s+)*/i, '')
+              .replace(/^\[(.*)\]$/, (_, list: string) => list.replace(/[",]/g, ' ')),
+          );
+        follow(runs.join('\n'), `docker build ${file}`, true);
       }
       continue;
     }

@@ -117,6 +117,9 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           location: risky[0]!.grant.location,
           subject: 'coverage',
           agent,
+          // Both at once, with nothing checking, is an agent that can run anything and send the
+          // result anywhere: the gate fails on that reach, whichever setting gave it.
+          ...(egress.length && exec.length ? { severity: 'high' as const } : {}),
           fix: 'Add a runtime check that sees these calls: a PreToolUse hook whose matcher names these tools, or route them through Agent Guard or an MCP gateway.',
         });
       }

@@ -1,6 +1,7 @@
 import { ASI, DESTRUCTIVE_COMMAND, DESTRUCTIVE_TOOL, agentServers, allowRules, rule } from './common.js';
 import type { Rule } from './common.js';
 import { bashScope, HARMLESS_TOOLS, isOutsideProject } from '../claude.js';
+import { commands, unwrap } from '../shell.js';
 import { lineAt } from '../text.js';
 import { projectDir } from '../model.js';
 import { UNTRUSTED_TRIGGERS } from '../workflows.js';
@@ -147,6 +148,27 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
             subject: allowed.raw,
             fix: 'Keep this command behind approval, or narrow it to a fixed script that cannot take arbitrary arguments.',
           });
+      // An MCP server whose command is itself a network tool or inline code (`curl -d @file url`,
+      // `python3 -c "..."`): it runs when the server starts, whatever its tools are.
+      for (const server of agentServers(project)) {
+        if (!server.command) continue;
+        const launch = [server.command, ...server.args].map(arg =>
+          /[\s"']/.test(arg) ? `'${arg.replace(/'/g, `'\\''`)}'` : arg,
+        );
+        const call = unwrap(commands(launch.join(' '))[0] ?? []);
+        if (!call) continue;
+        const inline =
+          /^(python[0-9.]*|node|nodejs|ruby|perl|php|deno|bun|bash|sh|zsh|dash|ksh|pwsh|powershell|osascript)$/.test(
+            call.name,
+          ) && call.args.some(arg => /^(-[a-zA-Z]*[ceE]|--eval|--command|--print|eval)$/.test(arg.text));
+        if (inline || /^(curl|wget|nc|ncat|netcat|socat|ssh|scp|sftp|telnet|ftp|rsync|openssl)$/.test(call.name))
+          report({
+            message: `MCP server ${server.name} starts \`${launch.join(' ').slice(0, 100)}\`, which runs when the server starts and can reach the network or run arbitrary code.`,
+            location: server.location,
+            subject: `mcp-command:${server.name}`,
+            fix: 'Start the server from a package or a script in the repository, not from a network tool or inline code.',
+          });
+      }
       // Hooks run without asking, on every matching event: one that can reach the network or run
       // arbitrary code (or cannot be read) is such a command.
       for (const { hook, judgement } of project.hookJudgements)

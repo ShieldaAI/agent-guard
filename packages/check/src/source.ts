@@ -215,7 +215,6 @@ export function unmodelledAgentFile(path: string): { readonly tool: string; read
   const name = parts.at(-1) ?? '';
   const parent = parts.at(-2);
   const grand = parts.at(-3);
-  if (parent === '.cursor' && name === 'hooks.json') return { tool: 'Cursor hooks', runsCode: true };
   if (parts.includes('.kiro') && parent === 'hooks') return { tool: 'Kiro hooks', runsCode: true };
   if (grand === '.kiro' && parent === 'agents' && name.endsWith('.json'))
     return { tool: 'Kiro agents', runsCode: true };
@@ -232,6 +231,9 @@ export function unmodelledAgentFile(path: string): { readonly tool: string; read
   if (parts.includes('.amazonq') && name.endsWith('.json')) return { tool: 'Amazon Q', runsCode: true };
   if (name === '.crush.json' || (name === 'crush.json' && parts.length === 1)) return { tool: 'Crush', runsCode: true };
   if (parent === '.qwen' && name === 'settings.json') return { tool: 'Qwen Code', runsCode: true };
+  // Its install and start commands run in Cursor's remote machine, not on a developer's: medium.
+  if (parent === '.cursor' && name === 'environment.json') return { tool: 'Cursor background agent', runsCode: false };
+  if (parent === '.gemini' && name === '.env') return { tool: 'Gemini CLI environment', runsCode: false };
   return undefined;
 }
 
@@ -243,7 +245,12 @@ export function isCandidate(path: string): boolean {
     const name = parts.at(-1);
     const parent = parts.at(-2);
     if ((parent === '.vscode' || parent === '.zed') && name === 'settings.json') return true;
+    if (parent === '.cursor' && name === 'hooks.json') return true;
     if (name === '.aider.conf.yml') return true;
+    // VS Code settings also live in workspace files and dev container definitions. `.env` is never
+    // read: it holds secrets.
+    if ((name ?? '').endsWith('.code-workspace') || (parent === '.devcontainer' && name === 'devcontainer.json'))
+      return true;
   }
   // `~` and `<managed>` stand for settings outside the repository in reports; a repository folder
   // with that name is never read, so it cannot pose as someone's own or managed settings.

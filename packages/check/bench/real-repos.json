@@ -15,7 +15,9 @@
       "commit": "89e2b9090f4142944efff32be147ea17a69b5f08",
       "agents": 5,
       "expected": {
-        "AGC-COV-001:medium": 2,
+        "AGC-CFG-001:medium": 1,
+        "AGC-COV-001:high": 1,
+        "AGC-COV-001:medium": 1,
         "AGC-PERM-003:high": 2,
         "AGC-SUP-004:medium": 1,
         "AGC-TXT-002:medium": 1
@@ -68,7 +70,7 @@
       "commit": "b5b01ac4f889fec0c4c6bb89f27ca7c8574473f6",
       "agents": 63,
       "expected": {
-        "AGC-COV-001:medium": 2,
+        "AGC-COV-001:high": 2,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-003:high": 3
       }
@@ -84,6 +86,7 @@
       "commit": "d5c3f174417418c24ec3c276e01b0f62b961b13c",
       "agents": 10,
       "expected": {
+        "AGC-CFG-001:high": 3,
         "AGC-COV-001:medium": 10
       }
     },
@@ -92,7 +95,7 @@
       "commit": "47fecddd8f3e6c80e92d7963bbffa28c40254820",
       "agents": 1,
       "expected": {
-        "AGC-COV-001:medium": 1,
+        "AGC-COV-001:high": 1,
         "AGC-LIM-001:medium": 1,
         "AGC-PERM-003:high": 4,
         "AGC-PERM-005:medium": 1,
@@ -129,7 +132,7 @@
       "commit": "e7b39ebd55c85aaf6a29290c1f5a99e2e21e09dd",
       "agents": 1,
       "expected": {
-        "AGC-COV-001:medium": 1,
+        "AGC-COV-001:high": 1,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-003:high": 5,
         "AGC-PERM-005:medium": 1
@@ -140,10 +143,11 @@
       "commit": "cfd76ae6cd79f8c0ad5f9aa32b4f8270ab386d3a",
       "agents": 7,
       "expected": {
-        "AGC-CFG-001:high": 6,
+        "AGC-CFG-001:high": 5,
         "AGC-CFG-001:medium": 1,
-        "AGC-COV-001:medium": 2,
-        "AGC-PERM-003:high": 21,
+        "AGC-COV-001:high": 1,
+        "AGC-COV-001:medium": 1,
+        "AGC-PERM-003:high": 27,
         "AGC-PERM-005:medium": 3,
         "AGC-SUP-004:medium": 1,
         "AGC-TRI-001:critical": 1,
@@ -164,6 +168,7 @@
       "commit": "4ed06ed0ddc523a6d356a4ad35ddfea331041888",
       "agents": 9,
       "expected": {
+        "AGC-CFG-001:high": 1,
         "AGC-CFG-001:medium": 5,
         "AGC-SUP-004:medium": 2,
         "AGC-TRG-001:high": 1,
@@ -197,8 +202,6 @@
       "commit": "9893f280efbceb0dd54b0327120977223e49af93",
       "agents": 2,
       "expected": {
-        "AGC-CFG-001:high": 2,
-        "AGC-COV-001:medium": 1,
         "AGC-SUP-004:medium": 1
       }
     },
@@ -221,6 +224,7 @@
       "commit": "c46e2579d1bec17921583174d3106745ab70565f",
       "agents": 2,
       "expected": {
+        "AGC-CFG-001:high": 1,
         "AGC-TXT-004:medium": 1
       }
     },
@@ -237,7 +241,8 @@
       "commit": "d85aed4f0987fde4192fbc4f448538fb022f8918",
       "agents": 1,
       "expected": {
-        "AGC-PERM-003:high": 4
+        "AGC-CFG-001:medium": 1,
+        "AGC-PERM-003:high": 6
       }
     },
     {
@@ -246,7 +251,8 @@
       "agents": 17,
       "expected": {
         "AGC-CFG-001:medium": 12,
-        "AGC-COV-001:medium": 6,
+        "AGC-COV-001:high": 5,
+        "AGC-COV-001:medium": 1,
         "AGC-PERM-002:high": 1,
         "AGC-PERM-003:high": 9,
         "AGC-PERM-005:medium": 1,
@@ -270,9 +276,7 @@
       "repo": "vercel/ai",
       "commit": "8ba3940d3dd1f3cd3c4365bbaec505c6ef0eb1e3",
       "agents": 1,
-      "expected": {
-        "AGC-CFG-001:high": 1
-      }
+      "expected": {}
     },
     {
       "repo": "zed-industries/zed",

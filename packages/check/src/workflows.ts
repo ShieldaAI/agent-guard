@@ -161,6 +161,141 @@ export function widerSandbox(a: string | undefined, b: string | undefined): stri
   return rank(b) > rank(a) ? b : a;
 }
 
+/** Claude Code CLI flags the scan reads or that change nothing it judges: no value, then with a value. */
+const CLAUDE_FLAGS = new Set([
+  '-p',
+  '--print',
+  '--verbose',
+  '--debug',
+  '-d',
+  '--continue',
+  '-c',
+  '--dangerously-skip-permissions',
+  '--allow-dangerously-skip-permissions',
+  '--strict-mcp-config',
+  '--include-partial-messages',
+  '--replay-user-messages',
+  '--no-session-persistence',
+  '--mcp-debug',
+  '--version',
+  '-v',
+  '--help',
+  '-h',
+]);
+const CLAUDE_VALUE_FLAGS = new Set([
+  '--output-format',
+  '--input-format',
+  '--model',
+  '--fallback-model',
+  '--max-turns',
+  '--allowedTools',
+  '--allowed-tools',
+  '--disallowedTools',
+  '--disallowed-tools',
+  '--permission-mode',
+  '--mcp-config',
+  '--settings',
+  '--setting-sources',
+  '--append-system-prompt',
+  '--system-prompt',
+  '--system-prompt-file',
+  '--append-system-prompt-file',
+  '-r',
+  '--resume',
+  '--session-id',
+  '--agents',
+  '--permission-prompt-tool',
+  '--json-schema',
+  '--max-budget-usd',
+  '--betas',
+  '--tools',
+  '--add-dir',
+]);
+const CODEX_FLAGS = new Set([
+  'exec',
+  'e',
+  'resume',
+  '--full-auto',
+  '--dangerously-bypass-approvals-and-sandbox',
+  '--skip-git-repo-check',
+  '--json',
+  '--experimental-json',
+  '--oss',
+  '--include-plan-tool',
+  '--version',
+  '--help',
+  '-h',
+  '-V',
+]);
+const CODEX_VALUE_FLAGS = new Set([
+  '-m',
+  '--model',
+  '-s',
+  '--sandbox',
+  '-a',
+  '--ask-for-approval',
+  '-c',
+  '--config',
+  '-p',
+  '--profile',
+  '-C',
+  '--cd',
+  '-i',
+  '--image',
+  '-o',
+  '--output-last-message',
+  '--output-schema',
+  '--color',
+  '--local-provider',
+]);
+/** Codex `-c` keys the scan reads; any other override is unknown. */
+const CODEX_CONFIG_KEYS =
+  /^(sandbox_mode|model|model_reasoning_effort|model_verbosity|approval_policy|web_search|hide_agent_reasoning|show_raw_agent_reasoning|sandbox_workspace_write\.network_access|sandbox_workspace_write\.writable_roots)$/;
+
+/**
+ * Flags of the Claude Code or Codex CLI that the scan does not model (`--plugin-dir`, `--add-dir`,
+ * `--chrome`, a Codex `-c mcp_servers...` override): what they change is unknown, so the step is
+ * unknown reach.
+ */
+export function unknownFlags(action: AgentAction, args: readonly string[]): string[] {
+  const claude = action === 'claude-cli' || action === 'claude-code-action';
+  const codex = action === 'codex-cli' || action === 'codex-action';
+  if (!claude && !codex) return [];
+  const plain = claude ? CLAUDE_FLAGS : CODEX_FLAGS;
+  const valued = claude ? CLAUDE_VALUE_FLAGS : CODEX_VALUE_FLAGS;
+  const out: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i]!;
+    if (arg === '--') break;
+    if (!arg.startsWith('-') || arg === '-') continue;
+    const [name, inline] = arg.startsWith('--') && arg.includes('=') ? arg.split(/=(.*)/s, 2) : [arg, undefined];
+    // Codex short options take their value attached too: `-sdanger-full-access`.
+    if (codex && /^-[smacpCio]./.test(arg) && !arg.startsWith('--')) {
+      if (arg.startsWith('-c') && !CODEX_CONFIG_KEYS.test(arg.slice(2).split('=')[0]!.trim())) out.push(arg);
+      continue;
+    }
+    if (plain.has(name!)) continue;
+    if (valued.has(name!)) {
+      const value = inline ?? args[i + 1] ?? '';
+      if (inline === undefined) i += 1;
+      // A folder outside the checkout gives the agent files beyond the repository.
+      if (
+        name === '--add-dir' &&
+        /^(\/|~|\$HOME|\.\.)/.test(value.trim()) &&
+        !/^\$\{?(GITHUB_WORKSPACE|RUNNER_TEMP)/.test(value.trim())
+      )
+        out.push(`--add-dir ${value}`);
+      if (codex && (name === '-c' || name === '--config') && !CODEX_CONFIG_KEYS.test(value.split('=')[0]!.trim()))
+        out.push(`${name} ${value}`);
+      continue;
+    }
+    // Claude Code's short flags may be clustered: `-cp`.
+    if (claude && /^-[a-zA-Z]+$/.test(arg) && [...arg.slice(1)].every(char => plain.has(`-${char}`))) continue;
+    out.push(arg);
+  }
+  return out;
+}
+
 /** Flags that take a value that does not change what the agent may do. */
 const HARMLESS_VALUE_FLAGS = new Set([
   '--model',
@@ -233,6 +368,10 @@ function readFlags(args: readonly string[]): Flags {
       if (mode === 'bypassPermissions') flags.skip = true;
       else if (mode === 'auto') flags.autoMode = true;
       else if (mode === 'acceptEdits') flags.allowedTools.push('Edit');
+    } else if (/^-s[a-z]/.test(arg) && !arg.startsWith('--')) {
+      // Codex's attached form: `-sdanger-full-access`.
+      flags.sandbox = widerSandbox(flags.sandbox, arg.slice(2));
+      if (flags.sandbox === 'danger-full-access') flags.skip = true;
     } else if (name === '--sandbox' || name === '-s') {
       flags.sandbox = widerSandbox(flags.sandbox, value());
       if (flags.sandbox === 'danger-full-access') flags.skip = true;
@@ -284,9 +423,22 @@ function namesAgentAnywhere(text: string): boolean {
   return AGENT_MENTION.test(text);
 }
 
+/** Agent permission flags or agent settings named in action inputs. */
+const AGENT_FLAG_TEXT =
+  /--dangerously-skip-permissions|--dangerously-bypass|--allow-all-tools|--yolo|bypassPermissions|--allowedTools|--allowed-tools|--permission-mode|claude_args|allowed_tools|danger-full-access/;
+/** A container image named for an agent CLI. */
+const AGENT_IMAGE = /(claude|codex|gemini-cli|copilot-cli|opencode|aider|qwen-code)/i;
+
 /** Actions that leave cloud credentials for every later step of the job. */
 const CREDENTIAL_ACTION =
   /^(aws-actions\/configure-aws-credentials|google-github-actions\/auth|azure\/login|azure\/aks-set-context|docker\/login-action|hashicorp\/vault-action)@/i;
+/** A write (redirect, tee, cp, mv, sed -i, jq into a file) to agent settings or MCP config. */
+export const AGENT_CONFIG_WRITE =
+  /(>>?|\btee\b|\bcp\b|\bmv\b|\bln\b|\binstall\b|\bsed\s+-i|\bdd\b)[^\n;&|]*(\.claude\/(settings(\.local)?\.json|agents|commands|skills|hooks)|\.claude\.json|\.mcp\.json|managed-settings\.json|managed-mcp\.json|\.codex\/config\.toml|\.gemini\/settings\.json|\.cursor\/(mcp|cli)\.json|opencode\.jsonc?)/;
+/** CLI commands that add servers or change settings for a later agent run. */
+export const AGENT_CONFIG_COMMAND =
+  /\b(claude\s+(mcp\s+(add|add-json|add-from-claude-desktop)|config\s+(set|add)|plugin\s+(install|marketplace\s+add))|codex\s+mcp\s+add|gemini\s+(mcp\s+add|extensions?\s+install))\b/;
+
 /** Untrusted text in an expression: whoever opened the issue or pull request chose it. */
 const UNTRUSTED_EXPRESSION =
   /github\.event\.[\w.]*(title|body|message|name|ref|label|comment|description|text|login|email|head_commit|pages)|github\.head_ref|inputs\.|steps\.[^.]+\.outputs\.[^}]*(body|title|comment|message|text|prompt)/i;
@@ -305,8 +457,8 @@ const CLI_ACTION: Record<AgentCli, AgentAction> = {
 /** The agent action a `uses:` names, if any. */
 function actionOf(uses: string): AgentAction | undefined {
   // A container image of an agent action runs that action.
-  if (/^docker:\/\/.*(claude-code|codex|gemini-cli|opencode|aider|goose|qwen)/i.test(uses))
-    return /claude-code/i.test(uses) ? 'claude-code-action' : 'other-cli';
+  if (/^docker:\/\/.*(claude|codex|gemini|copilot|opencode|aider|goose|qwen)/i.test(uses))
+    return /claude-code-action/i.test(uses) ? 'claude-code-action' : 'other-cli';
   if (OTHER_AGENT_ACTION.test(uses)) return 'other-cli';
   return CLAUDE_ACTION.test(uses)
     ? 'claude-code-action'
@@ -478,22 +630,32 @@ export function workflowCalls(text: string): { triggers: string[]; callees: stri
  * through callers that are reusable themselves. With no caller here, any repository may call it
  * (UNKNOWN_CALLER).
  */
+/** Callers of each reusable workflow, built once per call map. */
+const callerIndex = new WeakMap<object, Map<string, string[]>>();
+
 export function inheritedTriggers(
   path: string,
   calls: ReadonlyMap<string, { readonly triggers: readonly string[]; readonly callees: readonly string[] }>,
   seen = new Set<string>(),
 ): string[] {
+  let callers = callerIndex.get(calls);
+  if (!callers) {
+    callers = new Map();
+    for (const [caller, info] of calls)
+      for (const callee of new Set(info.callees)) callers.set(callee, [...(callers.get(callee) ?? []), caller]);
+    callerIndex.set(calls, callers);
+  }
+  // `seen` is shared by the whole walk: each caller is visited once, however many paths lead to it.
   seen.add(path);
   const out = new Set<string>();
-  let callers = 0;
-  for (const [caller, info] of calls) {
-    if (!info.callees.includes(path)) continue;
-    callers += 1;
+  const direct = callers.get(path) ?? [];
+  for (const caller of direct) {
+    const info = calls.get(caller)!;
     for (const trigger of info.triggers) if (trigger !== 'workflow_call') out.add(trigger);
     if (info.triggers.includes('workflow_call') && !seen.has(caller))
       for (const trigger of inheritedTriggers(caller, calls, seen)) out.add(trigger);
   }
-  if (!callers) out.add(UNKNOWN_CALLER);
+  if (!direct.length) out.add(UNKNOWN_CALLER);
   return [...out];
 }
 
@@ -534,6 +696,57 @@ export function parseWorkflow(
   };
   const agents: WorkflowAgent[] = [];
   for (const [jobName, job] of Object.entries(data['jobs'])) {
+    // A reusable workflow from another repository, handed agent flags, a model key, or every secret
+    // (for one named for an agent): it runs an agent the scan cannot read.
+    if (isRecord(job) && typeof job['uses'] === 'string' && !/^\.\//.test(job['uses'])) {
+      const remote = job['uses'];
+      const given = JSON.stringify([job['with'] ?? {}, job['secrets'] ?? {}]);
+      if (
+        AGENT_FLAG_TEXT.test(given) ||
+        secretNames(given).some(name => MODEL_PROVIDER_SECRET.test(name) && name !== 'GITHUB_TOKEN') ||
+        (job['secrets'] === 'inherit' && AGENT_IMAGE.test(remote))
+      ) {
+        const line = nodeLine(doc.getIn(['jobs', jobName], true), 1);
+        const location = { file: path, line };
+        const secrets =
+          job['secrets'] === 'inherit'
+            ? [{ name: ALL_SECRETS, location }]
+            : secretNames(given).map(name => ({ name, location }));
+        agents.push({
+          path,
+          job: jobName,
+          step: `reusable workflow ${remote}`,
+          stepIndex: '0',
+          action: 'other-cli',
+          uses: remote,
+          location,
+          triggers,
+          triggerLocation,
+          permissions: {
+            ...(job['permissions'] === undefined ? workflowPermissions : writeScopes(job['permissions'])),
+            location,
+          },
+          appToken: false,
+          allowedTools: [],
+          disallowedTools: [],
+          ...(AGENT_FLAG_TEXT.test(given) &&
+          /dangerously|yolo|bypassPermissions|allow-all|danger-full-access/.test(given)
+            ? { skipPermissions: location }
+            : {}),
+          settingsUnreadable: { value: `reusable workflow ${remote} runs an agent the scan cannot read`, location },
+          maxTurns: false,
+          timeout: job['timeout-minutes'] !== undefined,
+          secrets,
+          agentSecrets: secrets,
+          servers: [],
+          environment: false,
+          literalInputs: [],
+          githubToken: true,
+          endpoints: [],
+        });
+      }
+      continue;
+    }
     if (!isRecord(job) || !Array.isArray(job['steps'])) continue;
     const jobPermissions = job['permissions'] === undefined ? workflowPermissions : writeScopes(job['permissions']);
     const permissionsLine =
@@ -553,8 +766,19 @@ export function parseWorkflow(
     const jobDirectory = workingDirectoryOf(job['defaults']) ?? workflowDirectory;
     // Secrets an earlier step wrote to $GITHUB_ENV: every later step of the job has them in its environment.
     const exported = new Set<string>();
+    // An earlier step that writes the agent's settings or adds servers: the agent step's reach then
+    // depends on what that step wrote.
+    let configuredBefore: string | undefined;
     steps.forEach((step, index) => {
       if (!isRecord(step)) return;
+      const configuredByEarlier = configuredBefore;
+      const ownRun = asString(step['run']) ?? '';
+      const configuredHere =
+        AGENT_CONFIG_WRITE.test(ownRun) || AGENT_CONFIG_COMMAND.test(ownRun)
+          ? `step ${index + 1} changes agent settings`
+          : undefined;
+      const configured = configuredByEarlier ?? configuredHere;
+      configuredBefore ??= configuredHere;
       const exportedBefore = [...exported];
       const rawRun = asString(step['run']) ?? '';
       // Secrets an earlier step leaves for later ones: through $GITHUB_ENV or $GITHUB_OUTPUT, in a
@@ -635,7 +859,26 @@ export function parseWorkflow(
         ...(!posixShell && spawnsAgent(rawRun) ? [rawRun] : []),
         ...(/^actions\/github-script@/i.test(uses) && spawnsAgent(scriptText) ? [scriptText] : []),
       ].join('\n');
-      const hidden = !calls.length && dynamicText !== '' && namesAgentAnywhere(dynamicText);
+      // Text decoded and piped into a shell (`base64 -d | bash`) is code no one can read here.
+      const opaque =
+        !calls.length &&
+        /\b(base64\s+(-d|--decode|-D)|xxd\s+-r|openssl\s+(enc\s+)?[^|\n]*-d|gunzip|zcat|uudecode|rev)\b[^\n]*\|\s*(sudo\s+)?(ba|z|da)?sh\b/.test(
+          rawRun,
+        );
+      // A remote action (or one in a container) handed agent flags or a model key: it runs an agent
+      // the scan cannot read.
+      const withText = isRecord(step['with']) ? JSON.stringify(step['with']) : '';
+      const remoteAgent =
+        uses !== '' &&
+        !/^\.\//.test(uses) &&
+        !actionOf(uses) &&
+        (AGENT_FLAG_TEXT.test(withText) ||
+          secretNames(withText).some(name => MODEL_PROVIDER_SECRET.test(name) && !/^GITHUB_TOKEN$/.test(name)) ||
+          (/^docker:\/\//.test(uses) &&
+            agentCalls(asString((step['with'] as Record<string, unknown> | undefined)?.['args']) ?? '').length > 0));
+      const containerAgent = !uses && AGENT_IMAGE.test(JSON.stringify(job['container'] ?? ''));
+      const hidden =
+        !calls.length && (opaque || containerAgent || (dynamicText !== '' && namesAgentAnywhere(dynamicText)));
       const detections: {
         action: AgentAction;
         args: readonly string[];
@@ -652,36 +895,49 @@ export function parseWorkflow(
                 ...(actionOf(uses) === 'other-cli' ? { unknown: `action ${uses}` } : {}),
               },
             ]
-          : hidden
+          : remoteAgent
             ? [
                 {
                   action: 'other-cli',
                   args: [],
                   unresolved: [],
-                  unknown: 'an agent named in a script the scan cannot follow',
+                  unknown: `action ${uses} runs an agent the scan cannot read`,
                 },
               ]
-            : calls.map(call => ({
-                action: CLI_ACTION[call.cli],
-                args: call.args,
-                // A quoted variable may still be one flag, unless it is named for a prompt.
-                unresolved: [
-                  ...call.unresolved,
-                  ...call.args.filter(
-                    arg =>
-                      /^\$|\$\{?[A-Za-z_]/.test(arg) &&
-                      !call.unresolved.includes(arg) &&
-                      !PROMPT_VARIABLE.test(arg) &&
-                      !/\s/.test(arg) &&
-                      arg.startsWith('$'),
-                  ),
-                ],
-                ...(call.unknown
-                  ? { unknown: `${call.unknown}` }
-                  : call.cli === 'other'
-                    ? { unknown: `agent CLI ${call.program}` }
-                    : {}),
-              }));
+            : hidden
+              ? [
+                  {
+                    action: 'other-cli',
+                    args: [],
+                    unresolved: [],
+                    unknown: opaque
+                      ? 'decoded text piped into a shell'
+                      : containerAgent
+                        ? 'a step in an agent container'
+                        : 'an agent named in a script the scan cannot follow',
+                  },
+                ]
+              : calls.map(call => ({
+                  action: CLI_ACTION[call.cli],
+                  args: call.args,
+                  // A quoted variable may still be one flag, unless it is named for a prompt.
+                  unresolved: [
+                    ...call.unresolved,
+                    ...call.args.filter(
+                      arg =>
+                        /^\$|\$\{?[A-Za-z_]/.test(arg) &&
+                        !call.unresolved.includes(arg) &&
+                        !PROMPT_VARIABLE.test(arg) &&
+                        !/\s/.test(arg) &&
+                        arg.startsWith('$'),
+                    ),
+                  ],
+                  ...(call.unknown
+                    ? { unknown: `${call.unknown}` }
+                    : call.cli === 'other'
+                      ? { unknown: `agent CLI ${call.program}` }
+                      : {}),
+                }));
       detections.forEach((detected, callIndex) => {
         const action = detected.action;
         const wrapsAgent = wrapped !== undefined;
@@ -714,7 +970,34 @@ export function parseWorkflow(
         });
         const flags = readFlags([...inputArgs, ...detected.args]);
         // Arguments the scan cannot read (`$FLAGS`, `${{ inputs.args }}`) could be any flag.
-        const unknownArgs = [...detected.unresolved, ...expressionFlags(inputArgs)];
+        let codexHomeBypass = false;
+        const codexHomeUnknown = (): string[] => {
+          if (!action.startsWith('codex')) return [];
+          const raw = resolveEnv(
+            envValue('CODEX_HOME') ??
+              /\bCODEX_HOME=("?)([^\s";]+)\1/.exec(rawRun)?.[2] ??
+              String(inputs['codex-home'] ?? ''),
+          ).trim();
+          if (!raw) return [];
+          const inRepo = raw
+            .replace(/^(\$\{\{\s*github\.workspace\s*\}\}|\$\{?GITHUB_WORKSPACE\}?|\.)(\/|$)/, '')
+            .replace(/\/+$/, '');
+          const config =
+            /^\/|\$|~/.test(inRepo) || inRepo.includes('..') ? undefined : readFile(`${inRepo}/config.toml`);
+          if (config === undefined) return [`CODEX_HOME ${raw}`];
+          // Read: a config that turns the sandbox off is a bypass, as the flag would be.
+          if (/^\s*sandbox_mode\s*=\s*["']danger-full-access["']/m.test(config)) codexHomeBypass = true;
+          return [];
+        };
+        const unknownArgs = [
+          ...detected.unresolved,
+          ...expressionFlags(inputArgs),
+          ...unknownFlags(action, [...inputArgs, ...detected.args]),
+          // Codex reads its config from CODEX_HOME (or the action's codex-home): a folder in the
+          // repository is read; one elsewhere is unknown.
+          ...codexHomeUnknown(),
+          ...(configured ? [configured] : []),
+        ];
         // A CLI started in another folder reads relative settings and MCP paths from there.
         const directory =
           action.endsWith('cli') && !wrapsAgent ? (asString(step['working-directory']) ?? jobDirectory) : undefined;
@@ -862,6 +1145,7 @@ export function parseWorkflow(
                   JSON.stringify(Object.fromEntries(Object.entries(inputs).filter(([key]) => key !== 'prompt'))),
                 ))));
         const skip =
+          codexHomeBypass ||
           cliAllowAll ||
           flags.skip ||
           sandbox === 'danger-full-access' ||

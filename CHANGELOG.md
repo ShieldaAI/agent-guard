@@ -4,6 +4,20 @@
 
 ### Check
 
+- Fix (eleventh review, root causes): exact Bash rules are split like a shell and options that
+  run programs are read; network-scope commands bring in untrusted input. Hooks fail closed: a
+  deciding hook whose decision cannot be read may approve, and files it prints and modules it
+  imports are read. MCP servers that start a network tool or inline code are AGC-PERM-003. Unknown
+  Claude Code and Codex flags, Codex `-s`/`-c`/`CODEX_HOME` forms, earlier steps that write agent
+  settings, remote actions and reusable workflows handed agent flags or model keys, decoded text
+  piped into a shell, `npm test`/lifecycle scripts, Taskfile, Dockerfile, aliases and symlinks
+  are followed or made unknown reach. `claude-code-base-action` is not write-gated. AGC-COV-001
+  is high when an agent can both run code and send data out without approval and nothing checks
+  it. VS Code settings in workspace files and dev containers, URL and edit auto-approve, Cursor
+  hooks, more settings `env` loaders, unknown gh-aw keys, gh-aw write tokens and risky safe
+  outputs on outsider events, OpenCode `lsp` and provider URLs, and Codex and Gemini telemetry
+  are read. Script chains, gh-aw import graphs, reusable-workflow call graphs and long quoted
+  rules are scanned in linear time.
 - Fix (tenth review): gh-aw lock tool lists are read as Claude Code reads them (spaces,
   several arguments), and an agent CLI other than the source's engine is a hand edit. A Bash
   rule for a repository script that runs its arguments as a command, and prefix rules for

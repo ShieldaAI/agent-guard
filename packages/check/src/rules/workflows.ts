@@ -25,7 +25,10 @@ export const WORKFLOWS_RULES: readonly Rule[] = [
         const agent = project.agents.find(item => item.id === `workflow:${step.path}#${step.job}/${step.step}`);
         const open = step.nonWriteUsers?.value.trim() === '*';
         // claude-code-action only answers people with write access unless allowed_non_write_users widens it.
-        const gated = step.action === 'claude-code-action' && !step.nonWriteUsers;
+        // claude-code-action checks that whoever starts it can write to the repository; its base
+        // action does not.
+        const gated =
+          step.action === 'claude-code-action' && !step.nonWriteUsers && !/base-action/i.test(step.uses ?? '');
         const broad =
           step.skipPermissions !== undefined ||
           step.allowedTools.some(

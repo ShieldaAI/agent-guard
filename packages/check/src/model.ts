@@ -248,6 +248,38 @@ function acceptEditsGrants(at: Location): Grant[] {
 /** An MCP server that names Agent Guard; not this scanner's own read-only MCP server, which guards nothing. */
 const AGENT_GUARD_SERVER = /agent-guard(?!-check)/;
 
+/**
+ * An agent that can edit any file without asking and run a project command without asking can
+ * rewrite that command's code and run it: what it then reaches is unknown, not behind approval.
+ */
+function editThenRun(grants: Grant[]): Grant[] {
+  const edits = grants.find(
+    grant =>
+      grant.capability === 'selfModify' &&
+      grant.approval === 'auto' &&
+      ['Edit', 'Write', 'MultiEdit', '*'].includes(grant.tool ?? ''),
+  );
+  const runs = grants.find(
+    grant =>
+      grant.capability === 'exec' &&
+      grant.approval === 'auto' &&
+      grant.tool === 'Bash' &&
+      bashScope(parseRule(grant.via, grant.location).specifier) === 'project',
+  );
+  if (!edits || !runs) return grants;
+  return [
+    ...grants,
+    {
+      capability: 'egress',
+      via: `${runs.via} after ${edits.via} (edited code runs without asking)`,
+      tool: 'Bash',
+      approval: 'auto',
+      certainty: 'unknown',
+      location: runs.location,
+    },
+  ];
+}
+
 /** The hooks that run for these settings: none with disableAllHooks, managed only with allowManagedHooksOnly. */
 function activeHooks(settings: readonly ClaudeSettings[]): Hook[] {
   const hooksOff = settings.some(file => file.disableAllHooks);
@@ -345,11 +377,51 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
     return;
   }
   if (!isRecord(data)) return;
-  if (path.endsWith('.vscode/settings.json')) {
+  let record: Record<string, unknown> = data;
+  // A workspace file keeps its settings under `settings`; a dev container under
+  // `customizations.vscode.settings`.
+  if (path.endsWith('.code-workspace') || path.endsWith('devcontainer.json')) {
+    const nested = path.endsWith('.code-workspace')
+      ? record['settings']
+      : isRecord(record['customizations']) && isRecord(record['customizations']['vscode'])
+        ? record['customizations']['vscode']['settings']
+        : undefined;
+    if (!isRecord(nested)) return;
+    record = nested;
+  }
+  if (
+    path.endsWith('.vscode/settings.json') ||
+    path.endsWith('.code-workspace') ||
+    path.endsWith('devcontainer.json')
+  ) {
+    // URL fetches and edits approved by pattern: a wildcard sends data anywhere, or edits any file.
+    for (const [key, capability] of [
+      ['chat.tools.urls.autoApprove', 'fetches to any matching URL'],
+      ['chat.tools.edits.autoApprove', 'edits to any matching file'],
+    ] as const) {
+      const rules = record[key];
+      const wild =
+        rules === true ||
+        (isRecord(rules) &&
+          Object.entries(rules).some(
+            ([pattern, value]) =>
+              (value === true || (isRecord(value) && Object.values(value).includes(true))) && /\*/.test(pattern),
+          ));
+      if (wild)
+        unrecognized.push({
+          agent: 'VS Code agent',
+          setting: key,
+          value: JSON.stringify(rules).slice(0, 120),
+          assumed: `${capability} run without asking`,
+          location: at(`"${key}"`),
+          severity: key.includes('urls') ? 'high' : 'medium',
+        });
+    }
     for (const key of ['chat.tools.autoApprove', 'chat.tools.global.autoApprove'])
-      if (data[key] === true) bypasses.push({ agent: 'VS Code agent', what: `${key}: true`, location: at(`"${key}"`) });
+      if (record[key] === true)
+        bypasses.push({ agent: 'VS Code agent', what: `${key}: true`, location: at(`"${key}"`) });
     for (const key of ['chat.tools.terminal.autoApprove', 'chat.agent.terminal.autoApprove']) {
-      const rules = data[key];
+      const rules = record[key];
       // A command approved as written is judged like a Bash rule; a pattern (`/.../`) may match anything.
       const wide = (command: string) =>
         command.startsWith('/') || !['local', 'read', 'fetch', 'edit', 'project'].includes(bashScope(command));
@@ -371,18 +443,18 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
     return;
   }
   // Zed: `agent.always_allow_tool_actions`, and context servers (MCP) it starts.
-  const agent = isRecord(data['agent']) ? data['agent'] : isRecord(data['assistant']) ? data['assistant'] : {};
+  const agent = isRecord(record['agent']) ? record['agent'] : isRecord(record['assistant']) ? record['assistant'] : {};
   if (agent['always_allow_tool_actions'] === true)
     bypasses.push({
       agent: 'Zed agent',
       what: 'always_allow_tool_actions: true',
       location: at('always_allow_tool_actions'),
     });
-  if (isRecord(data['context_servers']) && Object.keys(data['context_servers']).length)
+  if (isRecord(record['context_servers']) && Object.keys(record['context_servers']).length)
     unrecognized.push({
       agent: 'Zed agent',
       setting: 'context_servers',
-      value: Object.keys(data['context_servers']).join(', '),
+      value: Object.keys(record['context_servers']).join(', '),
       assumed: 'these MCP servers may run code and send data out',
       location: at('context_servers'),
       severity: 'high',
@@ -391,7 +463,7 @@ function approvalSettings(path: string, text: string, unrecognized: Unrecognized
 
 /** Environment variables that run code with every shell command or every program start. */
 const SHELL_LOADER =
-  /^(BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|CLAUDE_CODE_SHELL_PREFIX|CLAUDE_ENV_FILE|PATH|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|PYTHONSTARTUP|PYTHONPATH|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_CONFIG_GLOBAL|EDITOR|VISUAL|PAGER)$/;
+  /^(BASH_ENV|ENV|ZDOTDIR|PROMPT_COMMAND|CLAUDE_CODE_SHELL_PREFIX|CLAUDE_ENV_FILE|PATH|SHELL|LD_\w+|DYLD_\w+|PYTHONSTARTUP|PYTHONPATH|PYTHONHOME|PYTHONUSERBASE|PERL5OPT|PERL5LIB|RUBYOPT|RUBYLIB|NODE_PATH|NODE_OPTIONS|GIT_\w*(SSH|ASKPASS|EXTERNAL_DIFF|EDITOR|PAGER|EXEC_PATH|TEMPLATE_DIR|PROXY_COMMAND)\w*|GIT_CONFIG\w*|SSH_ASKPASS|SUDO_ASKPASS|EDITOR|VISUAL|PAGER|MANPAGER|LESSOPEN|JAVA_TOOL_OPTIONS|_JAVA_OPTIONS|JDK_JAVA_OPTIONS|MAVEN_OPTS|GRADLE_OPTS|RUSTC_WRAPPER|RUSTC|RUSTC_WORKSPACE_WRAPPER|CARGO_\w*(RUSTC|RUNNER|WRAPPER|LINKER)\w*|GOFLAGS|GOTOOLCHAIN|CC|CXX|LD|MAKEFLAGS|npm_config_\w+|NPM_CONFIG_\w+|YARN_\w*(REGISTRY|PATH|PLUGINS)\w*|PIP_\w*(INDEX|FIND_LINKS|TRUSTED)\w*|UV_\w*(INDEX|FIND_LINKS)\w*|PIPX_\w*INDEX\w*|BUNDLE_\w+|GEM_\w+|DOTNET_STARTUP_HOOKS|DOTNET_ADDITIONAL_DEPS|CORECLR_\w+|COMPlus_\w+)$/i;
 
 /**
  * Whether a file the scanner could not read is agent configuration. `mcp.json` and `plugin.json`
@@ -437,6 +509,8 @@ export function buildProject(
   const unrecognized: Unrecognized[] = [];
   const editorBypasses: Bypass[] = [];
   const pluginHooks: Hook[] = [];
+  /** Cursor's hooks: judged and reported, never applied to Claude Code's grants. */
+  const cursorHooks: Hook[] = [];
   const plugins = new Map<string, { name: string; location: Location }>();
   /** Plugins whose server file could not be read: their reach is unknown. */
   const pluginUnknown = new Map<string, Location>();
@@ -558,6 +632,24 @@ export function buildProject(
       // Package-source files feed identification only (first pass), and a package.json below the root
       // only names local packages: neither holds agent settings.
       if (PACKAGE_SOURCE_FILES.has(name) || (name === 'package.json' && path !== 'package.json')) continue;
+      // Cursor hooks (`{"hooks": {"afterFileEdit": [{"command": "..."}]}}`): judged as hooks are.
+      if (path.endsWith('.cursor/hooks.json')) {
+        const data = parseJsonc(text);
+        const events = isRecord(data) && isRecord(data['hooks']) ? data['hooks'] : {};
+        for (const [event, list] of Object.entries(events))
+          for (const entry of Array.isArray(list) ? list : []) {
+            const command = isRecord(entry) ? asString(entry['command']) : undefined;
+            if (command)
+              cursorHooks.push({
+                event,
+                matcher: '',
+                command,
+                type: 'command',
+                location: { file: path, line: lineOf(text, JSON.stringify(command)) || 1 },
+              });
+          }
+        continue;
+      }
       // Agents the scanner does not model: reported, never judged.
       const unmodelled = unmodelledAgentFile(path);
       if (unmodelled) {
@@ -577,7 +669,13 @@ export function buildProject(
           });
         continue;
       }
-      if (path.endsWith('.vscode/settings.json') || path.endsWith('.zed/settings.json') || name === '.aider.conf.yml') {
+      if (
+        path.endsWith('.vscode/settings.json') ||
+        path.endsWith('.zed/settings.json') ||
+        name === '.aider.conf.yml' ||
+        name.endsWith('.code-workspace') ||
+        path.endsWith('.devcontainer/devcontainer.json')
+      ) {
         approvalSettings(path, text, unrecognized, editorBypasses);
         continue;
       }
@@ -1081,7 +1179,7 @@ export function buildProject(
       name,
       location: anchor,
       grants: approvedByHooks(
-        inSandbox(withoutDenied(grants, deny)),
+        editThenRun(inSandbox(withoutDenied(grants, deny))),
         [
           ...activeHooks([...local, ...userLevel]),
           ...(local.concat(userLevel).some(file => file.disableAllHooks)
@@ -1161,11 +1259,17 @@ export function buildProject(
       .filter(input => input.text !== undefined && /^\.github\/workflows\/[^/]+\.ya?ml$/.test(input.path))
       .map(input => [input.path, workflowCalls(input.text!)] as const),
   );
+  // Once per reusable workflow, not once per step: callers of callers are walked a single time.
+  const inheritedCache = new Map<string, string[]>();
+  const inherited = (path: string) => {
+    if (!inheritedCache.has(path)) inheritedCache.set(path, inheritedTriggers(path, calls));
+    return inheritedCache.get(path)!;
+  };
   for (const [index, step] of workflows.entries())
     if (step.triggers.includes('workflow_call'))
       workflows[index] = {
         ...step,
-        triggers: [...new Set([...step.triggers, ...inheritedTriggers(step.path, calls)])],
+        triggers: [...new Set([...step.triggers, ...inherited(step.path)])],
       };
 
   const stepNames = new Map<string, number>();
@@ -1518,7 +1622,7 @@ export function buildProject(
     pluginSources,
     unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
     pluginHooks,
-    hookJudgements: [...settings.flatMap(file => file.hooks), ...pluginHooks].map(hook => ({
+    hookJudgements: [...settings.flatMap(file => file.hooks), ...pluginHooks, ...cursorHooks].map(hook => ({
       hook,
       judgement: judgeOf(hook),
     })),

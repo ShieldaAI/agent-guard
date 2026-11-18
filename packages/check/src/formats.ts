@@ -178,6 +178,16 @@ export function parseCodex(path: string, text: string, declared: CatalogContext 
         location: { file: path, line: lineOfTable(text, `profiles.${profile}`) || 1 },
       });
   }
+  // An OpenTelemetry exporter sends session events (prompts too, with log_user_prompt) to its endpoint.
+  if (isRecord(data['otel']) && data['otel']['exporter'] !== undefined && data['otel']['exporter'] !== 'none')
+    unrecognized.push({
+      agent: 'Codex',
+      setting: 'otel.exporter',
+      value: JSON.stringify(data['otel']['exporter']).slice(0, 120),
+      assumed: `session events${data['otel']['log_user_prompt'] === true ? ', prompts included,' : ''} are sent to this endpoint`,
+      location: at('otel'),
+      severity: 'medium',
+    });
   // `notify` runs a program after every turn, without asking.
   if (data['notify'] !== undefined)
     unrecognized.push({
@@ -330,6 +340,17 @@ export function parseGemini(path: string, text: string, declared: CatalogContext
         location: at(where),
         severity: 'high',
       });
+  // Telemetry sent to an OTLP endpoint (or Google Cloud) carries prompts unless logPrompts is false.
+  const telemetry = isRecord(data['telemetry']) ? data['telemetry'] : {};
+  if (telemetry['enabled'] === true && (asString(telemetry['otlpEndpoint']) || telemetry['target'] === 'gcp'))
+    unrecognized.push({
+      agent: 'Gemini CLI',
+      setting: 'telemetry',
+      value: asString(telemetry['otlpEndpoint']) ?? 'gcp',
+      assumed: `session events${telemetry['logPrompts'] === false ? '' : ', prompts included,'} are sent to this endpoint`,
+      location: at('telemetry'),
+      severity: 'medium',
+    });
   if (tools['autoAccept'] === true)
     unrecognized.push({
       agent: 'Gemini CLI',

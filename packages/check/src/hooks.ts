@@ -1,5 +1,5 @@
 import { bashScope, type Hook } from './claude.js';
-import { commands, unwrap } from './shell.js';
+import { commands, localImports, unwrap } from './shell.js';
 import { PIPE_TO_SHELL } from './rules/common.js';
 
 /**
@@ -25,13 +25,31 @@ export interface HookJudgement {
 
 /** Events whose hook output can decide a tool call. */
 export const DECIDING_EVENTS = new Set(['PreToolUse', 'PermissionRequest']);
+/** Cursor hook events whose output can allow a shell command or MCP call. */
+export const CURSOR_DECIDING_EVENTS = new Set(['beforeShellExecution', 'beforeMCPExecution', 'beforeReadFile']);
 
 /**
  * Text that answers "allow" or "approve": `permissionDecision: "allow"`, `"behavior": "allow"`,
  * `"decision": "approve"` (the older form), in JSON, in a heredoc or in code that builds it.
  */
 const APPROVES =
-  /permissionDecision["'\s:=\\]*(allow|approve)|["']?(behavior|decision)["']?\s*[:=]\s*\\?["'](allow|approve)/i;
+  /permissionDecision["'\s:=\\]*(allow|approve)|["']?(behavior|decision|permission)["']?\s*[:=]\s*\\?["'](allow|approve)/i;
+/** A decision key: the hook output fields that answer for a tool call. */
+const DECISION_KEY = /["'`]?(permissionDecision|decision|behavior|permission)["'`]?\s*[:=]\s*/gi;
+
+/**
+ * Whether text may answer "allow" in a way the scan cannot read: a decision key whose value is not
+ * a literal deny, ask or block, or `allow` / `approve` written as a value (`D=allow`, `"allow"`, a
+ * `printf` argument). Words such as "allowed" or "allowlist" in prose are not counted.
+ */
+function mayApprove(text: string): boolean {
+  for (const match of text.matchAll(DECISION_KEY)) {
+    const value = text.slice(match.index! + match[0].length, match.index! + match[0].length + 40);
+    if (!/^\\?["'`]?\s*(deny|ask|block)\b/i.test(value)) return true;
+  }
+  return /(["'`]\s*|=\s*|\bprintf\b[^\n]*\s)(allow|approve)(?![\w-])/i.test(text);
+}
+
 /** Interpreters whose first argument is the script they run. */
 const INTERPRETERS = new Set(['python', 'python3', 'node', 'bash', 'sh', 'zsh', 'ruby', 'perl', 'deno', 'bun', 'tsx']);
 const RANK = { local: 0, project: 1, network: 2 } as const;
@@ -64,7 +82,7 @@ export function judgeHook(
   projectDir: string,
   pluginRoot: string,
 ): HookJudgement {
-  const deciding = DECIDING_EVENTS.has(hook.event);
+  const deciding = DECIDING_EVENTS.has(hook.event) || CURSOR_DECIDING_EVENTS.has(hook.event);
   if (hook.type !== 'command')
     // An HTTP hook sends the event (the tool's input) to its URL; a prompt or agent hook lets a
     // model decide. Neither can be read here.
@@ -97,11 +115,19 @@ export function judgeHook(
       const inline = INTERPRETERS.has(call.name) && call.args.some(arg => /^-[a-zA-Z]*[ce]$/.test(arg.text));
       const path = target && !inline ? repoPath(target, projectDir, pluginRoot) : undefined;
       const text = path === undefined ? undefined : readFile(path);
+      // Files the hook prints or fills in (`cat ok.json`, `jq -f x.jq`, `envsubst < t.json`) are its output.
+      if (/^(cat|jq|head|tail|envsubst|tac|less|more)$/.test(call.name))
+        for (const arg of call.args) {
+          const file =
+            /[/.]/.test(arg.text) && !arg.text.startsWith('-') ? repoPath(arg.text, projectDir, pluginRoot) : undefined;
+          const content = file === undefined ? undefined : readFile(file);
+          if (content !== undefined) texts.push(content);
+        }
       if (call.dynamic && !projectPath) {
         found = 'network';
         readable = false;
       } else if (text !== undefined && depth < 2) {
-        texts.push(text);
+        texts.push(text, ...localImports(path!, text, readFile));
         // A script from the repository is project code, like `npm test`, unless it pipes a download
         // into a shell. A shell script is read for the scripts it runs and for approvals.
         found = PIPE_TO_SHELL.test(text) ? 'network' : 'project';
@@ -135,12 +161,16 @@ export function judgeHook(
     }
   };
   visit(hook.command, 0);
+  // Fail closed: a deciding hook approves for certain when it says "allow" as written, and may
+  // approve when it builds a decision the scan cannot read (`"permissionDecision": "al" + "low"`,
+  // `D=allow`), or when its text cannot be read at all. Only a hook whose decisions are all
+  // literal deny or ask, or that decides nothing, is a check.
   const approves: HookJudgement['approves'] = !deciding
     ? 'no'
     : texts.some(text => APPROVES.test(text))
       ? 'yes'
-      : readable
-        ? 'no'
-        : 'unknown';
+      : !readable || texts.some(text => mayApprove(text))
+        ? 'unknown'
+        : 'no';
   return { reach, approves, why: why.length > 120 ? `${why.slice(0, 117)}...` : why };
 }

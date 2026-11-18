@@ -180,13 +180,7 @@ test('front matter with spaces after the delimiter and space-separated tools is 
 });
 
 test('agents the scanner does not model are reported; editor auto-approve is a bypass', () => {
-  for (const path of [
-    '.cursor/hooks.json',
-    '.roo/mcp.json',
-    '.continue/config.yaml',
-    '.qwen/settings.json',
-    '.kiro/hooks/h.kiro.hook',
-  ])
+  for (const path of ['.roo/mcp.json', '.continue/config.yaml', '.qwen/settings.json', '.kiro/hooks/h.kiro.hook'])
     assert.ok(
       findingsFor(scanFiles({ [path]: '{}' }), 'AGC-CFG-001').some(item => item.severity === 'high'),
       path,

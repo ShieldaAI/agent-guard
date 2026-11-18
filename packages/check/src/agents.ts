@@ -6,7 +6,15 @@ import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } fr
 import { parse as parseYaml } from 'yaml';
 import { MODEL_ENDPOINT, endpointSeverity } from './endpoints.js';
 import { agentCalls } from './shell.js';
-import { isHarnessCredential, MODEL_SECRETS, PUBLISHING_SCOPES, secretNames, UNTRUSTED_TRIGGERS } from './workflows.js';
+import {
+  AGENT_CONFIG_COMMAND,
+  AGENT_CONFIG_WRITE,
+  isHarnessCredential,
+  MODEL_SECRETS,
+  PUBLISHING_SCOPES,
+  secretNames,
+  UNTRUSTED_TRIGGERS,
+} from './workflows.js';
 
 /**
  * More agents, each reduced to the grants the rules use: OpenCode (`opencode.json`), the Cursor
@@ -91,7 +99,7 @@ export function parseOpenCode(
 
   // Settings that run code of their own: plugins (npm packages or files loaded into OpenCode) and
   // formatter commands run after every edit, without asking.
-  for (const key of ['plugin', 'formatter'])
+  for (const key of ['plugin', 'formatter', 'lsp'])
     if (data[key] !== undefined && data[key] !== false && !(Array.isArray(data[key]) && !data[key].length))
       unrecognized.push({
         agent: name,
@@ -101,6 +109,20 @@ export function parseOpenCode(
         location: at(key),
         severity: 'high',
       });
+  // A provider with its own base URL receives everything the agent reads.
+  if (isRecord(data['provider']))
+    for (const [provider, raw] of Object.entries(data['provider'])) {
+      const url = isRecord(raw) && isRecord(raw['options']) ? asString(raw['options']['baseURL']) : undefined;
+      if (url)
+        unrecognized.push({
+          agent: name,
+          setting: `provider.${provider}.options.baseURL`,
+          value: url,
+          assumed: 'model traffic, with everything the agent reads, goes to this endpoint',
+          location: at('baseURL'),
+          severity: endpointSeverity('OPENAI_BASE_URL', url),
+        });
+    }
   // `share: "auto"` publishes every session (with what the agent read) to a public link.
   if (data['share'] === 'auto')
     unrecognized.push({
@@ -496,9 +518,16 @@ export function parseCopilotAgent(path: string, text: string, declared: CatalogC
   const toolsLine = { file: path, line: lineOf(text, 'tools:') || 1 };
   const anchor = { file: path, line: 1 };
   const at = toolsLine.line > 1 ? toolsLine : anchor;
-  const ide = asString(data['target'])?.toLowerCase() === 'vscode';
-  const prompt: Approval = ide ? 'ask' : 'auto';
   const rawTools = data['tools'];
+  // `target: vscode`, or no target with tools only VS Code has (`vscode/extensions`, an extension's
+  // `<publisher>.<extension>/<tool>`): VS Code asks first.
+  const target = asString(data['target'])?.toLowerCase();
+  const ide =
+    target === 'vscode' ||
+    (target === undefined &&
+      Array.isArray(rawTools) &&
+      rawTools.some(tool => typeof tool === 'string' && /^(vscode\/|[a-z0-9-]+\.[a-z0-9-]+\/)/i.test(tool)));
+  const prompt: Approval = ide ? 'ask' : 'auto';
   // Left out means every tool. A value that is not a list (`tools:` with nothing after it is null)
   // says nothing about which tools: judge it as every tool, and report it.
   const oddTools = rawTools !== undefined && !Array.isArray(rawTools) && typeof rawTools !== 'string';
@@ -664,6 +693,65 @@ export function parseKiroMcp(path: string, text: string, declared: CatalogContex
 // ---------------------------------------------------------------------------------------------
 // GitHub Agentic Workflows (gh-aw)
 
+/** gh-aw front matter keys the scan reads, or that only describe the workflow. */
+const AGENTIC_KEYS = new Set([
+  'on',
+  'permissions',
+  'engine',
+  'tools',
+  'safe-outputs',
+  'imports',
+  'network',
+  'sandbox',
+  'roles',
+  'bots',
+  'steps',
+  'pre-steps',
+  'post-steps',
+  'pre-agent-steps',
+  'jobs',
+  'runs-on',
+  'timeout-minutes',
+  'timeout_minutes',
+  'concurrency',
+  'env',
+  'if',
+  'name',
+  'description',
+  'source',
+  'mcp-servers',
+  'cache',
+  'cache-memory',
+  'repo-memory',
+  'strict',
+  'features',
+  'github-token',
+  'secrets',
+  'runtimes',
+  'environment',
+  'tracker-id',
+  'stop-after',
+  'run-name',
+  'labels',
+  'emoji',
+  'metadata',
+  'max-turns',
+  'max-ai-credits',
+  'max-daily-ai-credits',
+  'inlined-imports',
+  'checkout',
+  'threat-detection-suppress',
+  'observability',
+  'models',
+  'import-schema',
+  'command',
+  'reaction',
+  'manual-approval',
+  'skip-if-match',
+  'skip-if-no-match',
+  'rate-limit',
+]);
+
 /** gh-aw keys whose jobs and steps compile into the lock. */
 const STEP_KEYS = ['jobs', 'steps', 'pre-steps', 'post-steps', 'pre-agent-steps'] as const;
 const AGENT_USES = /^[^/@\s]+\/(claude-code(-base)?-action|codex-action|run-gemini-cli)(\/[^@]*)?@/i;
@@ -758,6 +846,8 @@ export function parseAgenticWorkflow(
     }
     return out.join('/');
   };
+  // Each file is merged once: an import graph with many paths to one file is read once.
+  const seenImports = new Set<string>();
   const visit = (list: unknown, depth: number, base: string) => {
     const items = Array.isArray(list) ? list : list === undefined ? [] : [list];
     for (const item of items) {
@@ -773,6 +863,8 @@ export function parseAgenticWorkflow(
       }
       // An import from another repository (owner/repo/path@ref) is not in this one.
       const local = resolve(base, target.split('#')[0]!);
+      if (seenImports.has(local)) continue;
+      seenImports.add(local);
       const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(target) ? undefined : readImport(local);
       if (content === undefined) {
         // Only an import from another repository pinned to a commit is fixed content; anything
@@ -935,6 +1027,57 @@ export function parseAgenticWorkflow(
       unknownReach(key, 'runs an agent', at(key.replace(/ \(imported\)$/, '')));
       unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
     }
+  // Steps that write the agent's settings or add servers before it runs: unknown reach, high.
+  for (const { key, value } of [
+    ...STEP_KEYS.filter(key => own[key] !== undefined).map(key => ({ key, value: own[key] })),
+    ...importedSteps.map(item => ({ key: `${item.key} (imported)`, value: item.value })),
+  ])
+    if (AGENT_CONFIG_WRITE.test(JSON.stringify(value)) || AGENT_CONFIG_COMMAND.test(JSON.stringify(value))) {
+      unknownReach(key, 'changes agent settings before the agent runs', at(key.replace(/ \(imported\)$/, '')));
+      unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
+    }
+  const outsiders = triggerNamesOf(data['on']).filter(trigger => AGENTIC_UNTRUSTED.has(trigger));
+  if (outsiders.length) {
+    // A token that can write, on an event outsiders start: high when the agent can use it (the
+    // GitHub tool with read-only off, or a shell), medium otherwise.
+    const permissions = data['permissions'];
+    const writes =
+      permissions === 'write-all' ||
+      (isRecord(permissions) &&
+        // Billing and identity scopes are not repository write access.
+        Object.entries(permissions).some(
+          ([scope, level]) => level === 'write' && !/^(copilot-requests|id-token|models|attestations)$/.test(scope),
+        ));
+    if (writes) {
+      const usable =
+        (isRecord(github) && github['read-only'] === false) || (tools['bash'] !== undefined && tools['bash'] !== false);
+      unrecognized.push({
+        agent: name,
+        setting: 'permissions',
+        value: typeof permissions === 'string' ? permissions : JSON.stringify(permissions),
+        assumed: `${outsiders.join(', ')} lets outsiders start it, and its token can write${usable ? ', which the agent can use' : ''}`,
+        location: at('permissions'),
+        severity: usable ? 'high' : 'medium',
+      });
+    }
+    // Safe outputs that change code, releases or other workflows, with threat detection off.
+    if (safeOutputs['threat-detection'] === false) {
+      const risky = Object.keys(safeOutputs).filter(kind =>
+        /^(create-pull-request|push-to-pull-request-branch|push-to-branch|update-release|create-release|upload-assets?|dispatch-workflow|create-agent-task|merge-pull-request|autofix-code-scanning-alert)$/.test(
+          kind,
+        ),
+      );
+      if (risky.length)
+        unrecognized.push({
+          agent: name,
+          setting: 'safe-outputs',
+          value: risky.join(', '),
+          assumed: `outsiders start it (${outsiders.join(', ')}) and its output changes code, releases or workflows with no threat detection`,
+          location: at('threat-detection'),
+          severity: 'high',
+        });
+    }
+  }
   // Secrets the workflow maps for the agent are data it holds.
   if (own['secrets'] !== undefined)
     for (const secret of secretNames(JSON.stringify(own['secrets'])))
@@ -946,6 +1089,18 @@ export function parseAgenticWorkflow(
           'yes',
           'secret',
         );
+  // Front matter keys gh-aw compiles that the scan does not model: reported (fail closed). Ones that
+  // run code of their own (`safe-inputs`, `mcp-scripts` with a run script) are high.
+  for (const key of Object.keys(own)) {
+    if (AGENTIC_KEYS.has(key)) continue;
+    unknownReach(key, JSON.stringify(own[key]).slice(0, 80), at(key));
+    if (
+      /^(safe-inputs|mcp-scripts|scripts|services|container|runtimes-scripts)$/.test(key) ||
+      /"run"\s*:/.test(JSON.stringify(own[key]))
+    )
+      unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'high' };
+    else unrecognized[unrecognized.length - 1] = { ...unrecognized.at(-1)!, severity: 'medium' };
+  }
   // Engine settings beyond these (args, command, steps, ...) change how the agent runs.
   if (isRecord(data['engine']))
     for (const key of Object.keys(data['engine']))

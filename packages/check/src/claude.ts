@@ -1,4 +1,5 @@
 import type { Approval, Capability, Grant, Location } from './types.js';
+import { commands } from './shell.js';
 import type { McpServer } from './mcp.js';
 import { asString, isRecord, lineOf, parseJsonc } from './text.js';
 
@@ -190,7 +191,7 @@ const PROJECT_FIXED_ARGS = /^((npm|pnpm|yarn|bun) (install|i|add)|poetry install
  * project command. `-c`, `-e`, `-` or an absolute path would not be.
  */
 const SCRIPT_COMMAND =
-  /^((python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run( python3?)?|tsx) +("[^"\s;&|`$]*[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'\-/][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))|\.\/[^\s;&|`$]+|[\w.-]+\/[\w./-]+\.(sh|bat|cmd|ps1|py|js|mjs|ts))(?=\s|$)/;
+  /^((python3?|node|bash|sh|zsh|ruby|perl|deno run|bun run|uv run( python3?)?|tsx) +("[^"\s]*\.(py|js|mjs|cjs|ts|sh|rb|pl)"|[^\s"'\-/][^\s;&|`]*\.(py|js|mjs|cjs|ts|sh|rb|pl))|\.\/[^\s;&|`$]+|[\w.-]+\/[\w./-]+\.(sh|bat|cmd|ps1|py|js|mjs|ts))(?=\s|$)/;
 /** Commands that read from the network (issue and pull-request text) without sending anything. */
 const READ_COMMANDS =
   /^gh (pr|issue|run|repo|release|search|workflow) (view|list|diff|checks|status|logs|watch|checkout)(?=\s|$)|^gh search(?=\s|$)|^gh api (-X GET |--method GET )?repos\/\S*\/(contents|commits|compare)\b/;
@@ -240,15 +241,75 @@ export type BashScope = 'any' | 'network' | 'publish' | 'read' | 'fetch' | 'edit
  * prefix rule for a command whose options run programs (`git:*`, `find:*`, `rg:*`) can run
  * anything, so they count as running code that may reach the network.
  */
-export function bashScope(specifier: string | undefined): BashScope {
-  if (specifier === undefined) return 'any';
-  const raw = specifier.trim();
-  let command = raw
-    .replace(/:\*$/, '')
-    .replace(/\s*\*$/, '')
-    .trim();
-  if (command === '' || command === '*') return 'any';
-  const prefix = command !== raw;
+/** Scopes from narrowest to widest: a rule is as wide as its widest command. */
+const SCOPE_ORDER: readonly BashScope[] = [
+  'local',
+  'read',
+  'fetch',
+  'project',
+  'edit',
+  'publish',
+  'other',
+  'network',
+  'any',
+];
+
+/**
+ * Options that make an otherwise local command run a program or write a file, read from an exact
+ * command: `awk 'BEGIN{system(...)}'`, `sed e`, `find -exec`, `git -c`, `rg --pre`, `sort
+ * --compress-program`, `tar --to-command`. Undefined when the command has none.
+ */
+function riskyOptions(command: string): BashScope | undefined {
+  const words = command.split(/\s+/);
+  const name = words[0] ?? '';
+  const rest = command.slice(name.length);
+  if (/^g?awk$/.test(name) && /system\s*\(|\|\s*getline|\|&|print[^;}]*[|>]/.test(rest)) return 'network';
+  if (/^g?sed$/.test(name)) {
+    // The script is the first argument that is not an option (or the value of -e / --expression).
+    const args = words.slice(1);
+    const at = args.findIndex(
+      (word, k) =>
+        (!word.startsWith('-') && !/^-(e|f)$/.test(args[k - 1] ?? '')) || /^-(e|-expression)$/.test(args[k - 1] ?? ''),
+    );
+    const script = (at >= 0 ? (args[at] ?? '') : '').replace(/^['"]|['"]$/g, '');
+    const substitution = /(?:^|[;{\s])s(.)(?:\\.|(?!\1).)*\1(?:\\.|(?!\1).)*\1([a-zA-Z0-9]*)/.exec(script);
+    // The `e` command (with an address: `1e id`) runs a command; so does the `e` flag of `s`.
+    if (/(^|[\s;{'"])([0-9$,]+|\/[^/]*\/)?e(\s|$|['";])/.test(rest) || (substitution && substitution[2]!.includes('e')))
+      return 'network';
+    if (
+      /(^|\s)(-i\S*|--in-place)(\s|$)/.test(rest) ||
+      /(^|[;{]\s*)w\s/.test(script) ||
+      (substitution && substitution[2]!.includes('w'))
+    )
+      return 'edit';
+  }
+  if (name === 'find') {
+    if (/\s-(exec|execdir|ok|okdir)\b/.test(rest)) return 'network';
+    if (/\s-(delete|fprint0?|fprintf|fls)\b/.test(rest)) return 'edit';
+  }
+  if (name === 'git') {
+    if (
+      /\s(-c|--config-env|--upload-pack|--receive-pack|--exec|-O|--open-files-in-pager|--ext-diff|--textconv|-x|--exec-path)(\s|=|$)/.test(
+        rest,
+      )
+    )
+      return 'network';
+    if (/\s--output(\s|=|$)/.test(rest)) return 'edit';
+  }
+  if (name === 'rg' && /\s(--pre|--pre-glob)(\s|=|$)/.test(rest)) return 'network';
+  if (name === 'sort' && /\s--compress-program/.test(rest)) return 'network';
+  if (
+    name === 'tar' &&
+    /\s(--to-command|--use-compress-program|-I|--checkpoint-action|--info-script|-F)(\s|=|$)/.test(rest)
+  )
+    return 'network';
+  if ((name === 'zip' || name === 'unzip') && /\s(-TT|--unzip-command)(\s|=|$)/.test(rest)) return 'network';
+  return undefined;
+}
+
+function commandScope(simple: string, prefix: boolean): BashScope {
+  let command = simple.trim();
+  if (command === '') return 'local';
   // Variable assignments before the command (`GIT_TERMINAL_PROMPT=0 git ...`) are dropped, unless
   // they load code or change what runs.
   while (/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/.test(command)) {
@@ -273,6 +334,21 @@ export function bashScope(specifier: string | undefined): BashScope {
   command = command.replace(/^pnpm( (-w|-r|--workspace-root|--recursive))+(?=\s)/, 'pnpm');
   // Package managers' read-only commands.
   if (/^(pnpm|npm|yarn|bun) (why|list|ls|outdated|view|info|explain|audit)(?=\s|$)/.test(command)) return 'local';
+  // Prefix rules for tools whose arguments choose what runs or what is installed.
+  if (
+    prefix &&
+    /^(mvn|mvnw|\.\/mvnw|gradle|tox|nox|nx|npx nx|pnpm nx|bun run|bun a|bun add|yarn plugin|yarn dlx|pnpm (up|update|add|dlx|create)|npm (update|exec|x|create|init))(?=\s|$)/.test(
+      command,
+    )
+  )
+    return 'network';
+  // git: prefix rules for commands that fetch (`--upload-pack` runs a program), change remotes
+  // (`remote add -f` fetches from any URL) or write any file (`diff --output`).
+  if (prefix && /^git (fetch|pull|clone|remote|submodule|ls-remote|archive)(?=\s|$)/.test(command)) return 'network';
+  if (prefix && /^git (diff|log|show|format-patch|blame|shortlog)(?=\s|$)/.test(command)) return 'edit';
+  // Exact commands whose options run a program or write a file are read option by option.
+  const risky = riskyOptions(command);
+  if (risky) return risky;
   if (WRAPPERS.test(command)) return 'network';
   // A path that climbs out of the project (`./../../usr/bin/curl`) is not a project script.
   if (/(^|\/)\.\.(\/|\s|$)/.test(command.split(/\s/)[0] ?? '')) return 'network';
@@ -283,7 +359,7 @@ export function bashScope(specifier: string | undefined): BashScope {
   // A package script by name (`pnpm fix`, `yarn lint`, `bun run dev`): project code. Arguments
   // after the script name go to the script, so a prefix rule is still that script.
   if (
-    /^(pnpm|yarn|bun)( run)? (?!(dlx|exec|x|add|install|i|create|link|global|publish|node|why)(\s|$))[a-z][\w:.-]*$/.test(
+    /^(pnpm|yarn|bun)( run)? (?!(dlx|exec|x|a|add|install|i|create|init|link|global|publish|node|why|up|update|upgrade|plugin|patch|run)(\s|$))[a-z][\w:.-]*$/.test(
       command,
     )
   )
@@ -300,6 +376,44 @@ export function bashScope(specifier: string | undefined): BashScope {
   if (LOCAL_COMMANDS.test(command)) return 'local';
   if (LOCAL_FIXED_ARGS.test(command)) return prefix ? 'network' : 'local';
   return 'network';
+}
+
+/**
+ * How much a `Bash(...)` rule lets the agent do. Fail closed: a rule is narrower than "any network
+ * command" only when every command in it matches a known shape. An exact rule is split the way a
+ * shell would (`ls && curl … | sh` is as wide as `curl` and `sh`); a redirect writes a file. An
+ * unknown command, a wrapper that runs another command (`sudo`, `timeout`, `xargs`), a wildcard
+ * inside the command (`c*`, `*url`) and a prefix rule for a command whose options run programs
+ * (`git:*`, `find:*`, `rg:*`) can run anything, so they count as running code that may reach the
+ * network.
+ */
+export function bashScope(specifier: string | undefined): BashScope {
+  if (specifier === undefined) return 'any';
+  const raw = specifier.trim();
+  const command = raw
+    .replace(/:\*$/, '')
+    .replace(/\s*\*$/, '')
+    .trim();
+  if (command === '' || command === '*') return 'any';
+  const prefix = command !== raw;
+  if (command.length > 4096) return 'network';
+  // Shell operators outside quotes: judge every command in the rule.
+  const unquoted = command.replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, '""');
+  if (!/&&|\|\||[;|\n`]|\$\(|>/.test(unquoted.replace(/[0-9]?>&[0-9-]+|[0-9&]?>>?\s*\/dev\/null/g, '')))
+    return commandScope(command, prefix);
+  const parts = commands(command);
+  if (!parts.length) return commandScope(command, prefix);
+  // A redirect writes a file, except to /dev/null or another descriptor.
+  const redirects = unquoted.replace(/[0-9]?>&[0-9-]+|[0-9&]?>>?\s*\/dev\/null/g, '');
+  let widest: BashScope = /[<>]/.test(redirects.replace(/<(?!<)/g, '')) ? 'edit' : 'local';
+  parts.forEach((words, index) => {
+    const text = words
+      .map(word => (/[\s"']/.test(word.text) ? `'${word.text.replace(/'/g, `'\\''`)}'` : word.text))
+      .join(' ');
+    const scope = commandScope(text, prefix && index === parts.length - 1);
+    if (SCOPE_ORDER.indexOf(scope) > SCOPE_ORDER.indexOf(widest)) widest = scope;
+  });
+  return widest;
 }
 
 /** Paths an agent reads its own instructions or permissions from. */
@@ -343,12 +457,14 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
     case 'Bash': {
       const scope = bashScope(rule.specifier);
       // A shell that can write any file can rewrite the agent's own settings and instructions.
+      // A command that can reach any host can also bring in text from it.
       if (scope === 'any' || scope === 'network')
         return [
           make('exec', 'yes', 'Bash'),
           make('egress', 'yes', 'Bash'),
           make('write', 'yes', 'Bash'),
           make('selfModify', 'yes', 'Bash'),
+          make('untrustedInput', 'yes', 'Bash'),
         ];
       if (scope === 'publish') return [make('egress', 'yes', 'Bash'), make('write', 'yes', 'Bash')];
       if (scope === 'project') return [make('exec', 'yes', 'Bash')];
