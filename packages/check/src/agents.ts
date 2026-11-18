@@ -4,7 +4,13 @@ import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } fr
 import type { Bypass, ModelChoice, OtherAgent } from './formats.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
 import { parse as parseYaml } from 'yaml';
-import { MODEL_SECRETS, PUBLISHING_SCOPES, SECRET_REF, UNTRUSTED_TRIGGERS } from './workflows.js';
+import {
+  HARNESS_SECRET_VARIABLES,
+  MODEL_SECRETS,
+  PUBLISHING_SCOPES,
+  SECRET_REF,
+  UNTRUSTED_TRIGGERS,
+} from './workflows.js';
 
 /**
  * More agents, each reduced to the grants the rules use: OpenCode (`opencode.json`), the Cursor
@@ -652,7 +658,7 @@ const AGENTIC_TOOLS = new Set(['github', 'bash', 'edit', 'web-fetch', 'web-searc
 /** Settings imports add to the workflow. */
 const AGENTIC_MERGED = ['engine', 'tools', 'safe-outputs', 'mcp-servers', 'env', 'github-token', 'network'] as const;
 /** Engine variables that configure the model or telemetry rather than hand data to the agent. */
-const HARNESS_VARIABLE = /^(ANTHROPIC_|OPENAI_|CLAUDE_CODE_|CODEX_|COPILOT_|GEMINI_|GOOGLE_|OTEL_|GH_AW_|LOGFIRE_)/;
+
 /** How deep imports of imports are read; anything deeper is unknown reach. */
 const MAX_IMPORT_DEPTH = 3;
 
@@ -700,7 +706,7 @@ export function parseAgenticWorkflow(
   const ownParsed = frontmatter(text);
   const own = ownParsed.data;
   const data: Record<string, unknown> = { ...own };
-  const unreadImports: string[] = [];
+  const unreadImports: { what: string; pinned: boolean }[] = [];
   const merge = (imported: Record<string, unknown>) => {
     for (const key of AGENTIC_MERGED) {
       if (imported[key] === undefined) continue;
@@ -727,19 +733,21 @@ export function parseAgenticWorkflow(
             ? (asString(item['path']) ?? asString(item['uses']))
             : undefined;
       if (target === undefined) {
-        unreadImports.push(JSON.stringify(item) ?? String(item));
+        unreadImports.push({ what: JSON.stringify(item) ?? String(item), pinned: false });
         continue;
       }
       // An import from another repository (owner/repo/path@ref) is not in this one.
       const local = resolve(base, target.split('#')[0]!);
       const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(target) ? undefined : readImport(local);
       if (content === undefined) {
-        unreadImports.push(target);
+        // Only an import from another repository pinned to a commit is fixed content; anything
+        // else unread (missing, outside the repository, too large, a moving ref) could hide tools.
+        unreadImports.push({ what: target, pinned: /^[\w.-]+\/[\w.-]+\/.+@[0-9a-f]{40}$/.test(target) });
         continue;
       }
       const importedParsed = frontmatter(content);
       if (importedParsed.error) {
-        unreadImports.push(target);
+        unreadImports.push({ what: target, pinned: false });
         continue;
       }
       const imported = importedParsed.data;
@@ -747,7 +755,7 @@ export function parseAgenticWorkflow(
       const nested = [...asList(imported['imports']), ...bodyImports(importedParsed.body)];
       if (!nested.length) continue;
       if (depth < MAX_IMPORT_DEPTH) visit(nested, depth + 1, local.split('/').slice(0, -1).join('/'));
-      else unreadImports.push(`imports of ${target}`);
+      else unreadImports.push({ what: `imports of ${target}`, pinned: false });
     }
   };
   // Imports in the front matter, and `{{#import ...}}` / `@include` lines in the body.
@@ -843,7 +851,7 @@ export function parseAgenticWorkflow(
   // and telemetry. The safe-output jobs run apart from the agent.
   const engineEnv = isRecord(data['engine']) && isRecord(data['engine']['env']) ? data['engine']['env'] : {};
   const agentEnv = Object.fromEntries(
-    Object.entries(engineEnv).filter(([variable]) => !HARNESS_VARIABLE.test(variable)),
+    Object.entries(engineEnv).filter(([variable]) => !HARNESS_SECRET_VARIABLES.has(variable)),
   );
   const agentData = [data['env'], data['mcp-servers'], data['tools'], agentEnv];
   const secrets = new Set<string>();
@@ -884,7 +892,13 @@ export function parseAgenticWorkflow(
     for (const key of Object.keys(data['engine']))
       if (!['id', 'version', 'model', 'env', 'concurrency', 'max-turns', 'user-agent'].includes(key))
         unknownReach('engine', key, at(key));
-  if (unreadImports.length) unknownReach('imports', unreadImports.join(', '), at('imports'));
+  if (unreadImports.length) {
+    unknownReach('imports', unreadImports.map(item => item.what).join(', '), at('imports'));
+    if (unreadImports.some(item => !item.pinned)) {
+      const last = unrecognized.at(-1)!;
+      unrecognized[unrecognized.length - 1] = { ...last, severity: 'high' };
+    }
+  }
   if (ownParsed.error) {
     unknownReach('front matter', ownParsed.error, anchor);
     add('untrustedInput', 'front matter not readable', anchor, 'unknown', 'trigger');

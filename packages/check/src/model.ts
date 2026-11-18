@@ -373,6 +373,13 @@ export function buildProject(
     localPackages,
     redirected,
   };
+  const inputText = new Map(inputs.map(input => [input.path, input.text]));
+  const sourceOf = (lock: string) => inputText.get(lock.replace(/\.lock\.ya?ml$/, '.md'));
+  const compiledFromSource = (path: string, text: string) => {
+    if (!/^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) || !isAgenticLock(text)) return false;
+    const md = sourceOf(path);
+    return md !== undefined && isAgenticWorkflow(md);
+  };
   const roots = pluginRoots(inputs.filter(input => !USER_DIRS.has(projectDir(input.path))).map(input => input.path));
   const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
   for (const { path, text } of inputs) {
@@ -548,14 +555,17 @@ export function buildProject(
         servers.push(...parseMcpConfig(path, text, 'vscode', declaredServers));
       else if (path.endsWith('.cursor/mcp.json') && (ideFiles.cursor ??= path))
         servers.push(...parseMcpConfig(path, text, 'cursor', declaredServers));
-      else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name))
+      else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name)) {
+        // A gh-aw lock file is judged from its source: only a `.lock.yml` with the gh-aw header and
+        // a gh-aw `.md` beside it. Any other file is a workflow, whatever its first line says.
+        if (compiledFromSource(path, text)) continue;
         workflows.push(
           ...parseWorkflow(path, text, declaredServers, named => {
             const relative = safeRelative(named);
             return relative === undefined ? undefined : source.readNamed(relative);
           }),
         );
-      else if (name === 'CODEOWNERS') codeowners ??= { path, text };
+      } else if (name === 'CODEOWNERS') codeowners ??= { path, text };
       else if (path === 'package.json') {
         const data = JSON.parse(text) as unknown;
         if (isRecord(data)) {
@@ -694,6 +704,8 @@ export function buildProject(
             assumed:
               'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
             location: entry.location,
+            // In the repository's own settings it sends every developer's key and context there.
+            ...(local.includes(file) ? { severity: 'high' as const } : {}),
           });
     // Claude Code's Bash sandbox: sandboxed commands run and write without asking unless
     // autoAllowBashIfSandboxed is false. Network reach is left as the rules give it: a command can
@@ -920,6 +932,8 @@ export function buildProject(
         value,
         assumed: 'they could not be read, so the step may run any tool without asking',
         location,
+        // Settings outside the repository (written at run time, or an expression) can grant anything.
+        severity: 'high',
       });
       for (const capability of ['exec', 'write', 'egress'] as const)
         add({ capability, via: `settings ${value} (not read)`, certainty: 'unknown', location });
@@ -1037,7 +1051,7 @@ export function buildProject(
       text !== undefined &&
       /^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) &&
       isAgenticLock(text) &&
-      !inputPaths.has(path.replace(/\.lock\.ya?ml$/, '.md'))
+      !compiledFromSource(path, text)
     )
       others.push(parseAgenticLockAlone(path, text));
 

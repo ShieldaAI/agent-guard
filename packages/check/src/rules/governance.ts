@@ -139,6 +139,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
           message: `${item.agent}: ${item.setting} = "${item.value}" is not modelled; the scan assumed ${item.assumed}.`,
           location: item.location,
           subject: `${item.setting}:${item.value}`,
+          ...(item.severity ? { severity: item.severity, confidence: 'high' as const } : {}),
           fix: 'Check this capability by hand. If the value is valid, report it so the scanner can model it.',
         });
     },
@@ -150,7 +151,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.tools, ASI.supply],
-      help: 'A file over 1 MiB, a symbolic link (never followed), or a walk that stopped early leaves configuration unread, so nothing in it is judged. Agent settings are small regular files; padding one, or committing it as a link, would otherwise hide what it grants.',
+      help: 'A file over 1 MiB, a symbolic link that leaves the repository or cannot be resolved, invalid front matter, or a walk that stopped early leaves configuration unread, so nothing in it is judged. Padding a settings file, or linking it out of the repository, would otherwise hide what it grants.',
     },
     (project, report) => {
       // Instructions and repository metadata hide less than settings that grant tools. Agent
@@ -174,7 +175,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
         });
       for (const path of project.linkedFiles)
         report({
-          message: `${path} is a symbolic link, which the scanner never follows, so nothing it points to was judged.`,
+          message: `${path} is a symbolic link that leaves the repository or cannot be resolved, so the scanner did not follow it and nothing it points to was judged.`,
           location: { file: path, line: 1 },
           subject: `link:${path}`,
           severity: severityOf(path),

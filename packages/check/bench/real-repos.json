@@ -45,7 +45,7 @@
     {
       "repo": "anthropics/claude-code-action",
       "commit": "9fa68854da5fadef4ed3dce240325a0dfe251880",
-      "agents": 5,
+      "agents": 10,
       "expected": {
         "AGC-LIM-001:medium": 1,
         "AGC-TRG-001:high": 1,
@@ -146,9 +146,11 @@
     {
       "repo": "google-gemini/gemini-cli",
       "commit": "4ed06ed0ddc523a6d356a4ad35ddfea331041888",
-      "agents": 1,
+      "agents": 9,
       "expected": {
-        "AGC-SUP-004:medium": 2
+        "AGC-SUP-004:medium": 2,
+        "AGC-TRG-001:high": 1,
+        "AGC-TRG-002:medium": 1
       }
     },
     {

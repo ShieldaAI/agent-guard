@@ -36,7 +36,7 @@ export interface FileSource {
   readonly skipped: number;
   /** Candidate files left out because they are larger than MAX_FILE_BYTES. */
   readonly skippedFiles?: readonly string[];
-  /** Candidate files that are symbolic links: never followed, so never read. */
+  /** Links where configuration lives that were not followed (they leave the root or do not resolve). */
   readonly linkedFiles?: readonly string[];
   /** Whether the walk stopped at MAX_ENTRIES, so later files were never looked at. */
   readonly truncated?: boolean;
@@ -52,21 +52,53 @@ export function safeRelative(path: string): string | undefined {
 }
 
 /**
- * The repository path a link points to, when it stays inside the repository: `target` is the
- * link's text, resolved against the link's own folder. Undefined for absolute targets or ones
- * that climb out of the root.
+ * The repository path a link in a git tree points to, when it can be resolved without following
+ * other links: `target` is the link's text, resolved against the link's folder. Undefined for
+ * absolute targets, ones that climb out of the root, and ones with `..` after a folder name (that
+ * folder could itself be a link, and the operating system would resolve it before the `..`).
  */
 export function linkTarget(linkPath: string, target: string): string | undefined {
   if (target.startsWith('/') || /^[A-Za-z]:/.test(target) || target.includes('\\')) return undefined;
   const out = linkPath.split('/').slice(0, -1);
+  let named = false;
   for (const part of target.split('/')) {
     if (part === '' || part === '.') continue;
     if (part === '..') {
-      if (!out.length) return undefined;
+      if (named || !out.length) return undefined;
       out.pop();
-    } else out.push(part);
+    } else {
+      named = true;
+      out.push(part);
+    }
   }
   return out.length ? out.join('/') : undefined;
+}
+
+/** Instruction files: text an agent reads, as opposed to settings or agent definitions that grant tools. */
+export function isInstructionPath(path: string): boolean {
+  return /(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL|copilot-instructions)\.md$|\.(instructions|prompt)\.md$|\.mdc$|(^|\/)\.(cursorrules|windsurfrules)$|(^|\/)(\.claude\/commands|\.kiro\/steering|\.windsurf\/rules|\.cursor\/rules)\//.test(
+    path,
+  );
+}
+
+/** Folders that hold agent configuration: a link there that cannot be followed is reported. */
+const CONFIG_FOLDER =
+  /(^|\/)(\.claude|\.codex|\.gemini|\.cursor|\.vscode|\.kiro|\.opencode|\.windsurf|\.github|\.claude-plugin|skills|hooks|agents|commands|workflows|rules|steering|settings)(\/|$)/;
+
+/**
+ * Removes instruction files reached through a link whose target the scan also reads at its own
+ * path, so the same text is judged once. Settings and agent definitions stay: they apply where
+ * the link sits.
+ */
+function dedupeLinked(found: string[], aliases: Map<string, string>): string[] {
+  const direct = new Set(found.filter(path => !aliases.has(path)));
+  return found.filter(path => {
+    const target = aliases.get(path);
+    if (target === undefined || !isInstructionPath(path) || !isInstructionPath(target) || !direct.has(target))
+      return true;
+    aliases.delete(path);
+    return false;
+  });
 }
 
 const SKILL_SCRIPT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|ps1)$/;
@@ -158,7 +190,10 @@ export function isCandidate(path: string): boolean {
   return false;
 }
 
-/** Files in a directory on disk. Symbolic links are never followed. */
+/**
+ * Files in a directory on disk. A link is followed only as the operating system resolves it and
+ * only inside the root; any other link where configuration lives is reported, never followed.
+ */
 export class DirectorySource implements FileSource {
   readonly label: string;
   skipped = 0;
@@ -179,7 +214,16 @@ export class DirectorySource implements FileSource {
     if (this.#paths) return this.#paths;
     const found: string[] = [];
     let entries = 0;
-    const walk = (directory: string, depth: number): void => {
+    const root = (() => {
+      try {
+        return realpathSync.native(this.#root);
+      } catch {
+        return this.#root;
+      }
+    })();
+    // `directory` is a real folder; `prefix` is the repository path it is seen at (a folder link
+    // inside the root is walked at the link's own path, as the agent sees it).
+    const walk = (directory: string, prefix: string, depth: number, linked = false): void => {
       if (depth > MAX_DEPTH || entries > MAX_ENTRIES) return;
       let names: string[];
       try {
@@ -195,6 +239,7 @@ export class DirectorySource implements FileSource {
           return;
         }
         const full = join(directory, name);
+        const path = prefix ? `${prefix}/${name}` : name;
         let info;
         try {
           info = lstatSync(full);
@@ -202,40 +247,41 @@ export class DirectorySource implements FileSource {
           continue;
         }
         if (info.isSymbolicLink()) {
-          // A link where configuration belongs is read through its target when that is a regular
-          // file inside the root (as the agent itself would read it); otherwise it is reported.
-          const linked = relative(this.#root, full).split(sep).join('/');
-          if (!isCandidate(linked)) continue;
-          const target = this.#insideTarget(full);
-          // Instructions linked to a file the scan reads at its own path are judged there once.
-          // A settings file is read through the link too: it applies where the link sits.
-          if (target !== undefined && /\.mdc?$/.test(linked) && isCandidate(target.path)) continue;
-          if (target === undefined) this.linkedFiles.push(linked);
-          else if (target.size > MAX_FILE_BYTES) {
-            this.skipped += 1;
-            this.skippedFiles.push(linked);
-          } else {
-            this.#aliases.set(linked, target.path);
-            found.push(linked);
-          }
+          // Resolved by the operating system itself, so `..` after a linked folder lands where the
+          // agent would land. Inside the root it is read (a file) or walked (a folder) at the
+          // link's path; anything else where configuration lives is reported, never followed.
+          const target = this.#resolve(root, full);
+          if (target?.kind === 'folder') {
+            if (!SKIPPED_DIRECTORIES.has(name)) walk(target.real, path, depth + 1, true);
+          } else if (target?.kind === 'file') {
+            if (!isCandidate(path)) continue;
+            if (target.size > MAX_FILE_BYTES) {
+              this.skipped += 1;
+              this.skippedFiles.push(path);
+            } else {
+              this.#aliases.set(path, target.path);
+              found.push(path);
+            }
+          } else if (isCandidate(path) || CONFIG_FOLDER.test(path)) this.linkedFiles.push(path);
           continue;
         }
         if (info.isDirectory()) {
-          if (!SKIPPED_DIRECTORIES.has(name)) walk(full, depth + 1);
+          if (!SKIPPED_DIRECTORIES.has(name)) walk(full, path, depth + 1, linked);
           continue;
         }
-        if (!info.isFile()) continue;
-        const path = relative(this.#root, full).split(sep).join('/');
-        if (!isCandidate(path)) continue;
+        if (!info.isFile() || !isCandidate(path)) continue;
         if (info.size > MAX_FILE_BYTES) {
           this.skipped += 1;
           this.skippedFiles.push(path);
           continue;
         }
+        // Inside a linked folder, the file is read at its real place.
+        if (linked) this.#aliases.set(path, relative(root, full).split(sep).join('/'));
         found.push(path);
       }
     };
-    walk(this.#root, 0);
+    walk(this.#root, '', 0);
+    found.splice(0, found.length, ...dedupeLinked(found, this.#aliases));
     this.#paths = found;
     return found;
   }
@@ -251,16 +297,19 @@ export class DirectorySource implements FileSource {
     }
   }
 
-  /** A link's final target, when it is a regular file inside the root, as a root-relative path. */
-  #insideTarget(full: string): { path: string; size: number } | undefined {
+  /** A link's final target, as the operating system resolves it, when it is inside the root. */
+  #resolve(
+    root: string,
+    full: string,
+  ): { kind: 'file'; path: string; size: number } | { kind: 'folder'; real: string } | undefined {
     try {
-      const root = realpathSync(this.#root);
-      const real = realpathSync(full);
+      const real = realpathSync.native(full);
       const rel = relative(root, real);
       if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
       const info = lstatSync(real);
+      if (info.isDirectory()) return { kind: 'folder', real };
       if (!info.isFile()) return undefined;
-      return { path: rel.split(sep).join('/'), size: info.size };
+      return { kind: 'file', path: rel.split(sep).join('/'), size: info.size };
     } catch {
       return undefined;
     }
@@ -344,18 +393,25 @@ export class GitSource implements FileSource {
       if (tab < 0) continue;
       const [mode, type, object] = record.slice(0, tab).trim().split(/\s+/);
       const path = record.slice(tab + 1);
-      if (type === 'blob' && mode && object) tree.set(path, { mode, object });
-      if (type !== 'blob' || !object || !isCandidate(path)) continue;
+      if (type !== 'blob' || !mode || !object) continue;
+      tree.set(path, { mode, object });
       const parts = path.split('/');
       if (parts.slice(0, -1).some(part => SKIPPED_DIRECTORIES.has(part))) continue;
       if (mode === '120000') links.push({ path, object });
-      else candidates.push({ path, object });
+      else if (isCandidate(path)) candidates.push({ path, object });
     }
-    // A link is read through its target when the target is a regular file in the tree.
+    // Links are read through their target when it is in the tree and reached without passing
+    // through another link: a file at the link's path, or a folder walked at the link's path.
     if (links.length) {
       const texts = this.#git(['cat-file', '--batch'], links.map(link => link.object).join('\n') + '\n').toString(
         'utf8',
       );
+      const passesLink = (path: string) => {
+        const parts = path.split('/');
+        for (let depth = 1; depth <= parts.length; depth += 1)
+          if (tree.get(parts.slice(0, depth).join('/'))?.mode === '120000') return true;
+        return false;
+      };
       let offset = 0;
       for (const link of links) {
         const header = texts.indexOf('\n', offset);
@@ -363,13 +419,26 @@ export class GitSource implements FileSource {
         const target = texts.slice(header + 1, header + 1 + size);
         offset = header + 1 + size + 1;
         const resolved = linkTarget(link.path, target);
-        const entry = resolved === undefined ? undefined : tree.get(resolved);
-        if (entry && entry.mode !== '120000' && /\.mdc?$/.test(link.path) && isCandidate(resolved!)) continue;
-        if (!entry || entry.mode === '120000') this.linkedFiles.push(link.path);
-        else {
-          this.#aliases.set(link.path, resolved!);
-          candidates.push({ path: link.path, object: entry.object });
+        const usable = resolved !== undefined && !passesLink(resolved);
+        const entry = usable ? tree.get(resolved!) : undefined;
+        if (entry) {
+          if (isCandidate(link.path)) {
+            this.#aliases.set(link.path, resolved!);
+            candidates.push({ path: link.path, object: entry.object });
+          }
+          continue;
         }
+        const below = usable ? [...tree].filter(([path]) => path.startsWith(`${resolved}/`)) : [];
+        if (below.length) {
+          for (const [path, item] of below) {
+            const seen = `${link.path}${path.slice(resolved!.length)}`;
+            if (item.mode === '120000' || !isCandidate(seen)) continue;
+            this.#aliases.set(seen, path);
+            candidates.push({ path: seen, object: item.object });
+          }
+          continue;
+        }
+        if (isCandidate(link.path) || CONFIG_FOLDER.test(link.path)) this.linkedFiles.push(link.path);
       }
     }
     const sizes = candidates.length
@@ -385,9 +454,9 @@ export class GitSource implements FileSource {
         this.skippedFiles.push(item.path);
       } else found.push(item.path);
     });
-    found.sort();
-    this.#paths = found;
-    return found;
+    const kept = dedupeLinked(found, this.#aliases).sort();
+    this.#paths = kept;
+    return kept;
   }
 
   read(path: string): string | undefined {

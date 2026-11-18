@@ -68,6 +68,11 @@ export interface Unrecognized {
   readonly value: string;
   readonly assumed: string;
   readonly location: Location;
+  /**
+   * Set when the gap is one a change could use to hide authority (a file outside the repository,
+   * an import at a moving ref, a model endpoint redirect): reported at this severity, not as a note.
+   */
+  readonly severity?: Severity;
 }
 
 /**

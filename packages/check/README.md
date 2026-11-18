@@ -108,18 +108,24 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Repository | `CODEOWNERS`, `package.json` files (names and dependencies) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml` |
 | Your own settings | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings |
 
-`node_modules`, build output and `.git` are skipped. A configuration file committed as a
-symbolic link is read through its target when that is a regular file inside the repository, as
-the agent reads it; a link that leaves the repository is never followed. A configuration file the
-scan could not read is reported as AGC-CFG-002: one over 1 MiB, a link that leaves the
-repository, front matter of an agent definition that is not valid YAML (Claude Code subagents
+`node_modules`, build output and `.git` are skipped. Links are resolved the way the operating
+system resolves them (a `..` after a linked folder included), and followed only when they stay
+inside the repository: a linked file is read through its target, and a linked folder is walked
+at the link's own path, so `.claude -> tools/agentcfg` is read as `.claude`. In a git tree, a link
+whose target passes through another link, or has `..` after a folder name, is not followed. A
+link that is not followed is never read. A configuration file the scan could not read is
+reported as AGC-CFG-002: one over 1 MiB, a link (to a file or a folder where configuration lives)
+that leaves the repository or cannot be resolved, front matter of an agent definition that is not valid YAML (Claude Code subagents
 are first read the lenient way Claude Code reads them), or a repository so large the walk
 stopped. For settings and agent definitions (including subagents, Copilot, OpenCode and gh-aw
 agents written in Markdown) it is high and fails the default gate, so padding or linking one
 cannot hide what it grants; for instruction files it is medium. An agent whose definition could
 not be read, or a file a configuration names (a gh-aw import, a plugin's server or hook file, a
-workflow's settings file) that could not be read, counts as unknown reach. Folders named `~` or
-`<managed>` in the repository are never read.
+workflow's settings file) that could not be read, counts as unknown reach. A workflow settings
+file or a gh-aw import that is not in the repository (or is at a moving ref of another
+repository) is reported at high, so moving the risky part out of view fails the gate; a gh-aw
+import pinned to a commit of another repository is a note. Folders named `~` or `<managed>` in
+the repository are never read.
 
 Amp and Goose keep their permissions outside the repository, so they are not read. A setting
 the scanner does not model, such as a permission mode or Copilot tool name it does not know, a
@@ -413,8 +419,8 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   one look-alike it must not (`bench/cases.mjs`). Precision 100%, recall 100%. The test suite
   fails if a rule loses its cases or any case changes outcome.
 - **Public repositories.** 32 repositories at pinned commits (Anthropic, OpenAI, Google,
-  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 167 agents.
-  Every critical, high and medium finding, 58 in all, was reviewed by hand: 57 true positives
+  Microsoft, Sentry, PostHog, Supabase, Vercel and others; `bench/real-repos.json`), 180 agents.
+  Every critical, high and medium finding, 60 in all, was reviewed by hand: 59 true positives
   and 1 false positive (a low-confidence text rule), precision 98.3%.
 - **Recall against independent labels.** For 8 of those repositories, a reviewer who saw neither
   the scanner's output nor its source labelled every agent and its seven capabilities from the
@@ -487,7 +493,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   different Codex sandboxes (`--sandbox read-only --full-auto`), the wider one is judged.
   `claude-code-action`'s `settings` (inline JSON with comments, a mapping or a file in the
   repository), `--settings`, and `claude -p --permission-mode` are read; settings that cannot be
-  read make the step unknown reach. Copilot CLI and Gemini CLI steps are unknown reach, or run
+  read make the step unknown reach. Copilot CLI steps and Gemini CLI steps (`gemini`,
+  `npx @google/gemini-cli`, or the `google-github-actions/run-gemini-cli` action) are unknown
+  reach, or run
   every tool without asking with `--allow-all-tools` / `--yolo`. A GitHub
   Agentic Workflow is unattended; its `safe-outputs` are posted by a separate job that checks
   them, which counts as a runtime check for them unless `threat-detection` is off. Imported tool
@@ -496,7 +504,9 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   or custom safe-output `jobs` are unknown reach, as are engine settings it does not model
   (`args`, `command`, ...) and container MCP servers with an entrypoint, mounts or arguments.
   Secrets in the agent's `env`, its MCP servers, its tools and its engine's environment (which its
-  shell inherits) are private data, except the engine's model keys and telemetry. With
+  shell inherits) are private data, except the model credentials the harness itself reads, matched
+  by exact variable name (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...) or secret name, never by
+  prefix. With
   `network: { allowed: ["*"] }` the firewall is open, so outbound reach is yes. The repository a
   workflow runs in is not counted as private data.
 - **Model endpoints.** `ANTHROPIC_BASE_URL` and similar variables send model traffic, with
@@ -559,8 +569,10 @@ accept kinds they do not know.
 
 ## Security
 
-The scanner treats every file as hostile input. It never executes repository content, never
-follows symbolic links, caps file sizes and counts, validates git refs before passing them to
+The scanner treats every file as hostile input. It never executes repository content or runs a
+regular expression taken from it, follows a symbolic link only when the operating system
+resolves it to a place inside the repository (and reads named files only through paths with no
+link in them), caps file sizes and counts, validates git refs before passing them to
 `git`, writes reports and baselines with owner-only permissions, masks secrets in messages,
 escapes untrusted text in Markdown (including line breaks, mentions and links) and keeps it on
 one line in text output, so a name in a repository file cannot start a GitHub workflow command. Network access happens only for live evidence you ask for,

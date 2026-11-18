@@ -76,20 +76,22 @@ test('only agent configuration paths are read', () => {
     assert.ok(!isCandidate(path), path);
 });
 
-test('node_modules, symbolic links and oversized files are skipped', t => {
+test('node_modules and oversized files are skipped; a folder link inside the root is walked at its path', t => {
   const dir = repo({
     'node_modules/pkg/.mcp.json': '{"mcpServers":{"x":{"command":"npx","args":["y"]}}}',
     'outside/.mcp.json': '{}',
     'CLAUDE.md': `${'a'.repeat(1_100_000)}`,
   });
   t.after(() => rmSync(dir, { recursive: true, force: true }));
+  let linked = true;
   try {
     symlinkSync(join(dir, 'outside'), join(dir, 'linked'), 'dir');
   } catch (error) {
     if (error.code !== 'EPERM') throw error; // Windows without symlink privilege: the rest still applies.
+    linked = false;
   }
   const source = new DirectorySource(dir);
-  assert.deepEqual(source.list(), ['outside/.mcp.json']);
+  assert.deepEqual(source.list(), linked ? ['linked/.mcp.json', 'outside/.mcp.json'] : ['outside/.mcp.json']);
   assert.equal(source.skipped, 1);
 });
 

@@ -46,6 +46,13 @@
   what they post unless threat detection is off), secrets, tokens, permissions, MCP servers
   (including containers) and repository imports three levels deep. A custom engine, an import
   that cannot be read, an unmodelled tool or custom safe-output jobs are unknown reach.
+- Fix (fifth review): links are resolved as the operating system resolves them and folder links
+  inside the repository are walked at their path; a gh-aw header hides nothing unless the file is
+  a `.lock.yml` with a gh-aw source beside it; linked agent definitions are kept; harness secrets
+  are matched by exact name; settings files and gh-aw imports outside the repository (or at a
+  moving ref) are high; Gemini through `npx` and `run-gemini-cli`, mixed-case action names, and
+  model endpoints in action settings are read; an endpoint redirect in the repository's Claude
+  Code settings is high.
 - Fix (fourth review): fail closed on what is not read. A configuration file committed as a link
   is read through a target inside the repository and otherwise reported; front matter that is not
   valid YAML, a settings file that cannot be read, and a walk that stopped early are reported as
