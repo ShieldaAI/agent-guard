@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
 import { mediates } from './authority.js';
 import { DECIDING_EVENTS, judgeHook, type HookJudgement } from './hooks.js';
@@ -704,7 +705,15 @@ export function buildProject(
         if (isRecord(data)) {
           userServers.push(...serversFromObject(data, path, text, 'claude-code', 0, declaredServers));
           const projects = isRecord(data['projects']) ? data['projects'] : {};
-          const own = options.root === undefined ? undefined : projects[options.root];
+          // Keys are folder paths as Claude Code wrote them: compare them resolved, as the scan's
+          // root is (on Windows `/repo` resolves to `D:\\repo`, and case does not matter there).
+          const same = (a: string, b: string) =>
+            process.platform === 'win32'
+              ? resolve(a).toLowerCase() === resolve(b).toLowerCase()
+              : resolve(a) === resolve(b);
+          const ownKey =
+            options.root === undefined ? undefined : Object.keys(projects).find(key => same(key, options.root!));
+          const own = ownKey === undefined ? undefined : projects[ownKey];
           if (isRecord(own))
             localScopeServers.push(...serversFromObject(own, path, text, 'claude-code', 0, declaredServers));
         }

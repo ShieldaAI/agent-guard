@@ -113,7 +113,9 @@ function joinPath(base: string, path: string): string | undefined {
 const dirOf = (path: string) => path.split('/').slice(0, -1).join('/');
 
 /** `{{#runtime-import path}}` and `{{#import path}}`: files whose expressions the hash includes. */
-const RUNTIME_IMPORT = /\{\{#(?:runtime-import|import)\??(?:[ \t]+|[ \t]*:[ \t]*)([^{}]+?)\}\}/g;
+// The target starts at its first character that is not a space or colon, so the separator and the
+// target never compete for the same characters (no backtracking on long runs of tabs).
+const RUNTIME_IMPORT = /\{\{#(?:runtime-import|import)\??(?=[ \t:])[ \t:]*([^{}\s:][^{}]*)\}\}/g;
 
 function runtimeCandidates(path: string, base: string): string[] {
   let name = path.trim().replace(/\\/g, '/');

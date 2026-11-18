@@ -243,7 +243,8 @@ export function lenientFrontmatter(text: string): Record<string, unknown> | unde
   if (!match) return undefined;
   const out: Record<string, unknown> = {};
   for (const line of match[1]!.split(/\r?\n/)) {
-    const pair = /^([A-Za-z][\w-]*):[ \t]*(.*)$/.exec(line);
+    // The value is trimmed below, so the spaces after the colon need no pattern of their own.
+    const pair = /^([A-Za-z][\w-]*):(.*)$/.exec(line);
     if (!pair) continue;
     const value = pair[2]!.trim().replace(/^(["'])(.*)\1$/, '$2');
     if (pair[1]! in out) return undefined; // A key set twice: which one wins is not clear.

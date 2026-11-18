@@ -504,8 +504,8 @@ export class DirectorySource implements FileSource {
         if (lstatSync(current).isSymbolicLink()) return undefined;
       }
       const target = join(current, parts.at(-1)!);
-      // Check the type before opening: opening a FIFO would block. O_NONBLOCK covers a swap after the check.
-      if (!lstatSync(target).isFile()) return undefined;
+      // Opened without blocking (a FIFO returns at once) and judged on the descriptor, so nothing is
+      // checked on the path before it is opened.
       fd = openSync(target, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
       const info = fstatSync(fd);
       if (!info.isFile() || info.size > MAX_FILE_BYTES) return undefined;
