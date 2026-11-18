@@ -421,8 +421,10 @@ export function runnerSpecs(
     const line = splitShell(words);
     return runnerSpecs(line[0], line.slice(1));
   }
-  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args.includes('-c')) {
-    const script = args[args.indexOf('-c') + 1] ?? '';
+  // `-c`, or combined short flags ending in c (`-lc`, `-ic`), takes the script.
+  const scriptFlag = args.findIndex(arg => /^-[a-z]*c$/.test(arg));
+  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && scriptFlag >= 0) {
+    const script = args[scriptFlag + 1] ?? '';
     if (/[;&|`$<>(){}\n\r]/.test(script)) return { specs: [], unverifiable: true };
     const line = splitShell(script);
     return runnerSpecs(line[0], line.slice(1));
@@ -518,9 +520,22 @@ const SAFE_RUNNER_FLAGS = new Set([
 ]);
 /** Environment variables that change what a runner fetches, or what code an interpreter loads. */
 const LOADER_ENV =
-  /^(NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|npm_config_.*|YARN_.*|PNPM_.*|BUN_.*|DENO_.*|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|PYTHONUSERBASE|PIP_.*|PIPX_.*|UV_.*|LD_.*|DYLD_.*|PATH|JAVA_TOOL_OPTIONS|RUBYOPT|PERL5OPT)$/i;
+  /^(DOCKER_HOST|DOCKER_CONFIG|DOCKER_CONTEXT|DOCKER_CERT_PATH|CONTAINER_HOST|NODE_OPTIONS|NODE_PATH|NODE_EXTRA_CA_CERTS|npm_config_.*|YARN_.*|PNPM_.*|BUN_.*|DENO_.*|PYTHONPATH|PYTHONSTARTUP|PYTHONHOME|PYTHONUSERBASE|PIP_.*|PIPX_.*|UV_.*|LD_.*|DYLD_.*|PATH|JAVA_TOOL_OPTIONS|RUBYOPT|PERL5OPT)$/i;
 /** Shell syntax that runs more than one command, or substitutes one. */
 const SHELL_SYNTAX = /[;&|`$<>(){}\n\r]/;
+
+/**
+ * Whether a command is found on the system rather than in the repository: a bare name, or an
+ * absolute path in a system folder. `./bin/npx` or `tools\\npx.cmd` is a file the change chose.
+ */
+function systemCommand(command: string): boolean {
+  if (!/[\\/]/.test(command)) return /^[A-Za-z0-9_.-]+$/.test(command);
+  return (
+    /^\/(usr\/(local\/)?)?s?bin\/[A-Za-z0-9_.-]+$/.test(command) ||
+    /^\/opt\/homebrew\/bin\/[A-Za-z0-9_.-]+$/.test(command) ||
+    /^[A-Za-z]:\\(Program Files( \(x86\))?|Windows)\\/i.test(command)
+  );
+}
 
 function baseName(command: string): string {
   return (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
@@ -536,8 +551,8 @@ function catalogPackage(
   command: string | undefined,
   args: readonly string[],
   env: Readonly<Record<string, string>>,
-): string | undefined {
-  if (!command || Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
+): { readonly name: string; readonly ecosystem: 'npm' | 'python' } | undefined {
+  if (!command || !systemCommand(command) || Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
   const base = baseName(command);
   if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
     const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
@@ -555,13 +570,15 @@ function catalogPackage(
   else if (base === 'pipx' && rest[0] === 'run') rest = rest.slice(1);
   else if (base === 'npm' && rest[0] === 'exec') rest = rest.slice(1);
   else if (!RUNNERS.has(base)) return undefined;
+  const ecosystem = base === 'uvx' || base === 'pipx' ? 'python' : 'npm';
   for (const arg of rest) {
     if (arg === '--') continue;
     if (arg.startsWith('-')) {
       if (SAFE_RUNNER_FLAGS.has(arg)) continue;
       return undefined;
     }
-    return registryName(arg);
+    const name = registryName(arg);
+    return name === undefined ? undefined : { name, ecosystem };
   }
   return undefined;
 }
@@ -634,8 +651,14 @@ const DOCKER_FLAGS = new Set([
  * an unknown flag might take the next word as its value, and `--entrypoint`, `--env-file` or an
  * environment variable that changes what is loaded means the image name says nothing about what runs.
  */
-function catalogImage(command: string | undefined, args: readonly string[]): string | undefined {
-  if (!command || !['docker', 'podman'].includes(baseName(command)) || args[0] !== 'run') return undefined;
+function catalogImage(
+  command: string | undefined,
+  args: readonly string[],
+  env: Readonly<Record<string, string>>,
+): string | undefined {
+  if (!command || !systemCommand(command) || !['docker', 'podman'].includes(baseName(command)) || args[0] !== 'run')
+    return undefined;
+  if (Object.keys(env).some(name => LOADER_ENV.test(name))) return undefined;
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i]!;
     if (!arg.startsWith('-')) return arg.split('@')[0]!.replace(/:[^/:]+$/, '');
@@ -668,15 +691,27 @@ export interface DeclaredServer {
  */
 export interface CatalogContext {
   readonly declared: readonly DeclaredServer[];
+  /** Package names the repository provides or depends on anywhere: a runner may resolve those locally. */
   readonly localPackages: ReadonlySet<string>;
-  readonly packageSources: boolean;
+  /**
+   * Folders ('' for the root) whose package-source files redirect npm-family or Python runners.
+   * A redirect applies to servers configured in that folder or below.
+   */
+  readonly redirected: { readonly npm: ReadonlySet<string>; readonly python: ReadonlySet<string> };
 }
 
 export const NO_CONTEXT: CatalogContext = Object.freeze({
   declared: Object.freeze([]),
   localPackages: new Set<string>(),
-  packageSources: false,
+  redirected: { npm: new Set<string>(), python: new Set<string>() },
 });
+
+/** Whether a folder or one above it is in a set of folders ('' for the root). */
+function underAny(folders: ReadonlySet<string>, path: string): boolean {
+  const parts = path.split('/').slice(0, -1);
+  for (let depth = 0; depth <= parts.length; depth += 1) if (folders.has(parts.slice(0, depth).join('/'))) return true;
+  return false;
+}
 
 /** What a server runs: its package, image or host, each only for an exact command shape. */
 function identityOf(
@@ -685,13 +720,19 @@ function identityOf(
   url: string | undefined,
   env: Readonly<Record<string, string>>,
   context: CatalogContext,
+  path: string,
 ): { package?: string; image?: string; host?: string; installed?: readonly [string, string] } {
   // A server with both a command and a URL is ambiguous: which one runs depends on the client.
   if (command !== undefined && url !== undefined) return {};
   const found = catalogPackage(command, args, env);
-  // The repository decides what a dependency or a configured registry resolves to.
-  const pkg = found !== undefined && !context.packageSources && !context.localPackages.has(found) ? found : undefined;
-  const image = catalogImage(command, args);
+  // The repository decides what a dependency, or a registry configured for that runner, resolves to.
+  const pkg =
+    found !== undefined &&
+    !context.localPackages.has(found.name) &&
+    !underAny(context.redirected[found.ecosystem], path)
+      ? found.name
+      : undefined;
+  const image = catalogImage(command, args, env);
   // A bare command name (no path, so not a file in the repository) and its first argument.
   const installed: readonly [string, string] | undefined =
     command !== undefined && /^[A-Za-z0-9_-]+$/.test(command) && !Object.keys(env).some(name => LOADER_ENV.test(name))
@@ -780,10 +821,12 @@ export function serversFromObject(
     const command = asString(raw['command']);
     const args = asStringArray(Array.isArray(raw['args']) ? raw['args'] : []);
     const url = asString(raw['url']) ?? asString(raw['serverUrl']) ?? asString(raw['httpUrl']);
-    // `envFile` loads variables the scanner cannot see, which may change what is loaded.
+    // `envFile` loads variables the scanner cannot see, and `cwd` changes what resolves locally.
     const env =
-      'envFile' in raw ? { ...stringRecord(raw['env']), NODE_OPTIONS: '(from envFile)' } : stringRecord(raw['env']);
-    const identity = identityOf(command, args, url, env, declared);
+      'envFile' in raw || 'cwd' in raw
+        ? { ...stringRecord(raw['env']), NODE_OPTIONS: '(envFile or cwd)' }
+        : stringRecord(raw['env']);
+    const identity = identityOf(command, args, url, env, declared, path);
     const catalog = identify(identity, declared);
     servers.push({
       name,

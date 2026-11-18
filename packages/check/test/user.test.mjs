@@ -139,7 +139,7 @@ test('--include-user reads the home folder; it is refused in CI and with --fix',
 });
 
 test('--include-user refuses --write-baseline and warns about a file it cannot read', async t => {
-  const home = fakeHome({ '.claude.json': `{"x":"${'a'.repeat(1_100_000)}"}` });
+  const home = fakeHome({ '.claude/settings.json': `{"x":"${'a'.repeat(1_100_000)}"}` });
   const repo = mkdtempSync(join(tmpdir(), 'agc-repo-'));
   t.after(() => {
     rmSync(home, { recursive: true, force: true });
@@ -150,7 +150,7 @@ test('--include-user refuses --write-baseline and warns about a file it cannot r
   assert.equal(await runCli(['--include-user', '--write-baseline', 'b.json'], io), 2);
   stderr = '';
   await runCli(['--include-user'], io);
-  assert.match(stderr, /~\/\.claude\.json was not read/);
+  assert.match(stderr, /~\/\.claude\/settings\.json was not read/);
 });
 
 test('user-scope servers are judged by the server rules, and managed servers apply', () => {

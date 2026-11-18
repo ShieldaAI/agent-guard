@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process';
-import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync } from 'node:fs';
-import { join, relative, sep } from 'node:path';
+import { closeSync, constants, fstatSync, lstatSync, openSync, readdirSync, readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative, sep } from 'node:path';
 
 /** Files larger than this are skipped: agent config is small, and a huge file is not worth parsing. */
 export const MAX_FILE_BYTES = 1_048_576;
@@ -36,6 +36,10 @@ export interface FileSource {
   readonly skipped: number;
   /** Candidate files left out because they are larger than MAX_FILE_BYTES. */
   readonly skippedFiles?: readonly string[];
+  /** Candidate files that are symbolic links: never followed, so never read. */
+  readonly linkedFiles?: readonly string[];
+  /** Whether the walk stopped at MAX_ENTRIES, so later files were never looked at. */
+  readonly truncated?: boolean;
 }
 
 /** A repo-relative path with no `..`, no absolute prefix and no empty segment; undefined otherwise. */
@@ -47,10 +51,28 @@ export function safeRelative(path: string): string | undefined {
   return clean;
 }
 
+/**
+ * The repository path a link points to, when it stays inside the repository: `target` is the
+ * link's text, resolved against the link's own folder. Undefined for absolute targets or ones
+ * that climb out of the root.
+ */
+export function linkTarget(linkPath: string, target: string): string | undefined {
+  if (target.startsWith('/') || /^[A-Za-z]:/.test(target) || target.includes('\\')) return undefined;
+  const out = linkPath.split('/').slice(0, -1);
+  for (const part of target.split('/')) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') {
+      if (!out.length) return undefined;
+      out.pop();
+    } else out.push(part);
+  }
+  return out.length ? out.join('/') : undefined;
+}
+
 const SKILL_SCRIPT = /\.(sh|bash|zsh|py|js|mjs|cjs|ts|rb|ps1)$/;
 
-/** Files at the repository root that change where package runners fetch from. */
-const PACKAGE_SOURCE_FILES = new Set([
+/** Files that can change where package runners fetch from. */
+export const PACKAGE_SOURCE_FILES = new Set([
   '.npmrc',
   '.yarnrc',
   '.yarnrc.yml',
@@ -61,13 +83,22 @@ const PACKAGE_SOURCE_FILES = new Set([
 ]);
 
 /**
- * Whether a root file points package runners at another source: any `.npmrc`, `.yarnrc`,
- * `bunfig.toml`, `uv.toml` or `pip.conf`, or a `pyproject.toml` with a uv index or source.
+ * Which runners a package-source file redirects: `npm` (npx, pnpm, yarn, bun) for a registry,
+ * scope registry or other config file in `.npmrc`, `.yarnrc(.yml)` or `bunfig.toml`; `python`
+ * (uvx, pipx) for an index in `uv.toml`, `pip.conf` or a `pyproject.toml` uv index. Settings that
+ * do not change where packages come from (`engine-strict`, hoisting) redirect nothing.
  */
-export function isPackageSource(path: string, text: string): boolean {
-  if (path.includes('/') || !PACKAGE_SOURCE_FILES.has(path)) return false;
-  if (path === 'pyproject.toml') return /\[\[?tool\.uv\.(index|sources)|index-url/.test(text);
-  return true;
+export function packageSourceEcosystem(path: string, text: string): 'npm' | 'python' | undefined {
+  const name = path.split('/').at(-1)!;
+  if (!PACKAGE_SOURCE_FILES.has(name)) return undefined;
+  if (name === '.npmrc' || name === '.yarnrc')
+    return /^\s*((@[^:\s]+:)?registry|userconfig|globalconfig|globalignorefile|prefix)\s*[=\s]/m.test(text)
+      ? 'npm'
+      : undefined;
+  if (name === '.yarnrc.yml') return /^\s*(npmRegistryServer|npmScopes|yarnPath)\s*:/m.test(text) ? 'npm' : undefined;
+  if (name === 'bunfig.toml') return /\bregistry\b|scopes/.test(text) ? 'npm' : undefined;
+  if (name === 'pyproject.toml') return /\[\[?tool\.uv\.index|index-url/.test(text) ? 'python' : undefined;
+  return /index-url|index\b|find-links/.test(text) ? 'python' : undefined;
 }
 
 /** Whether a path can hold agent configuration that the scanner reads. */
@@ -120,8 +151,8 @@ export function isCandidate(path: string): boolean {
     (parts.length === 1 || (parts.length === 2 && (parent === '.github' || parent === 'docs')))
   )
     return true;
-  if (path === 'package.json' || path === '.agc.yaml') return true;
-  if (PACKAGE_SOURCE_FILES.has(path)) return true;
+  if (name === 'package.json' || path === '.agc.yaml') return true;
+  if (PACKAGE_SOURCE_FILES.has(name)) return true;
   // Agent Guard records: describe() output, inventory snapshots, host manifests.
   if (/^agent-guard[\w.-]*\.json$/.test(name) && parts.length <= 6) return true;
   return false;
@@ -132,6 +163,10 @@ export class DirectorySource implements FileSource {
   readonly label: string;
   skipped = 0;
   readonly skippedFiles: string[] = [];
+  readonly linkedFiles: string[] = [];
+  truncated = false;
+  /** Candidate links that point to a regular file inside the root: read through their target. */
+  readonly #aliases = new Map<string, string>();
   readonly #root: string;
   #paths: string[] | undefined;
 
@@ -156,6 +191,7 @@ export class DirectorySource implements FileSource {
         entries += 1;
         if (entries > MAX_ENTRIES) {
           this.skipped += 1;
+          this.truncated = true;
           return;
         }
         const full = join(directory, name);
@@ -165,7 +201,25 @@ export class DirectorySource implements FileSource {
         } catch {
           continue;
         }
-        if (info.isSymbolicLink()) continue;
+        if (info.isSymbolicLink()) {
+          // A link where configuration belongs is read through its target when that is a regular
+          // file inside the root (as the agent itself would read it); otherwise it is reported.
+          const linked = relative(this.#root, full).split(sep).join('/');
+          if (!isCandidate(linked)) continue;
+          const target = this.#insideTarget(full);
+          // Instructions linked to a file the scan reads at its own path are judged there once.
+          // A settings file is read through the link too: it applies where the link sits.
+          if (target !== undefined && /\.mdc?$/.test(linked) && isCandidate(target.path)) continue;
+          if (target === undefined) this.linkedFiles.push(linked);
+          else if (target.size > MAX_FILE_BYTES) {
+            this.skipped += 1;
+            this.skippedFiles.push(linked);
+          } else {
+            this.#aliases.set(linked, target.path);
+            found.push(linked);
+          }
+          continue;
+        }
         if (info.isDirectory()) {
           if (!SKIPPED_DIRECTORIES.has(name)) walk(full, depth + 1);
           continue;
@@ -188,8 +242,25 @@ export class DirectorySource implements FileSource {
 
   read(path: string): string | undefined {
     if (!this.list().includes(path)) return undefined;
+    const alias = this.#aliases.get(path);
+    if (alias !== undefined) return this.readNamed(alias);
     try {
       return readFileSync(join(this.#root, ...path.split('/')), 'utf8');
+    } catch {
+      return undefined;
+    }
+  }
+
+  /** A link's final target, when it is a regular file inside the root, as a root-relative path. */
+  #insideTarget(full: string): { path: string; size: number } | undefined {
+    try {
+      const root = realpathSync(this.#root);
+      const real = realpathSync(full);
+      const rel = relative(root, real);
+      if (!rel || rel.startsWith('..') || isAbsolute(rel)) return undefined;
+      const info = lstatSync(real);
+      if (!info.isFile()) return undefined;
+      return { path: rel.split(sep).join('/'), size: info.size };
     } catch {
       return undefined;
     }
@@ -234,6 +305,9 @@ export class GitSource implements FileSource {
   readonly label: string;
   skipped = 0;
   readonly skippedFiles: string[] = [];
+  readonly linkedFiles: string[] = [];
+  /** Candidate links whose target is a regular file in the tree: read as that file. */
+  readonly #aliases = new Map<string, string>();
   readonly #root: string;
   readonly #ref: string;
   #paths: string[] | undefined;
@@ -262,16 +336,41 @@ export class GitSource implements FileSource {
     // clone does not fetch every blob in the tree.
     const out = this.#git(['ls-tree', '-r', '-z', this.#ref]).toString('utf8');
     const candidates: { path: string; object: string }[] = [];
+    const tree = new Map<string, { mode: string; object: string }>();
+    const links: { path: string; object: string }[] = [];
     for (const record of out.split('\0')) {
       if (!record) continue;
       const tab = record.indexOf('\t');
       if (tab < 0) continue;
       const [mode, type, object] = record.slice(0, tab).trim().split(/\s+/);
       const path = record.slice(tab + 1);
-      if (type !== 'blob' || mode === '120000' || !object || !isCandidate(path)) continue;
+      if (type === 'blob' && mode && object) tree.set(path, { mode, object });
+      if (type !== 'blob' || !object || !isCandidate(path)) continue;
       const parts = path.split('/');
       if (parts.slice(0, -1).some(part => SKIPPED_DIRECTORIES.has(part))) continue;
-      candidates.push({ path, object });
+      if (mode === '120000') links.push({ path, object });
+      else candidates.push({ path, object });
+    }
+    // A link is read through its target when the target is a regular file in the tree.
+    if (links.length) {
+      const texts = this.#git(['cat-file', '--batch'], links.map(link => link.object).join('\n') + '\n').toString(
+        'utf8',
+      );
+      let offset = 0;
+      for (const link of links) {
+        const header = texts.indexOf('\n', offset);
+        const size = Number(texts.slice(offset, header).split(' ')[2]);
+        const target = texts.slice(header + 1, header + 1 + size);
+        offset = header + 1 + size + 1;
+        const resolved = linkTarget(link.path, target);
+        const entry = resolved === undefined ? undefined : tree.get(resolved);
+        if (entry && entry.mode !== '120000' && /\.mdc?$/.test(link.path) && isCandidate(resolved!)) continue;
+        if (!entry || entry.mode === '120000') this.linkedFiles.push(link.path);
+        else {
+          this.#aliases.set(link.path, resolved!);
+          candidates.push({ path: link.path, object: entry.object });
+        }
+      }
     }
     const sizes = candidates.length
       ? this.#git(['cat-file', '--batch-check=%(objectsize)'], candidates.map(item => item.object).join('\n') + '\n')
@@ -293,6 +392,7 @@ export class GitSource implements FileSource {
 
   read(path: string): string | undefined {
     if (!this.list().includes(path)) return undefined;
+    path = this.#aliases.get(path) ?? path;
     try {
       // `./` makes the path relative to the scanned directory, matching ls-tree run from there.
       return this.#git(['show', `${this.#ref}:./${path}`]).toString('utf8');

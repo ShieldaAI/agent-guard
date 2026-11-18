@@ -146,30 +146,54 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
   rule(
     {
       id: 'AGC-CFG-002',
-      title: 'Agent configuration file too large to read',
+      title: 'Agent configuration file the scanner could not read',
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.tools, ASI.supply],
-      help: 'Files over 1 MiB are not read, so nothing in them is judged. Agent settings are small; padding a settings file past the limit would otherwise hide what it grants.',
+      help: 'A file over 1 MiB, a symbolic link (never followed), or a walk that stopped early leaves configuration unread, so nothing in it is judged. Agent settings are small regular files; padding one, or committing it as a link, would otherwise hide what it grants.',
     },
     (project, report) => {
-      for (const path of project.skippedFiles) {
+      // Instructions and repository metadata hide less than settings that grant tools. Agent
+      // definitions written in Markdown (subagents, Copilot, OpenCode and gh-aw agents) grant tools.
+      const severityOf = (path: string) => {
         const name = path.split('/').at(-1) ?? path;
-        // Instructions and repository metadata hide less than settings that grant tools. Agent
-        // definitions written in Markdown (subagents, Copilot, OpenCode and gh-aw agents) grant tools.
         const instructions =
           /(^|\/)(CLAUDE(\.local)?|AGENTS|GEMINI|SKILL|copilot-instructions)\.md$|\.(instructions|prompt)\.md$|\.mdc$|(^|\/)\.(cursorrules|windsurfrules)$|(^|\/)(\.claude\/commands|\.kiro\/steering|\.windsurf\/rules|\.cursor\/rules)\//.test(
             path,
           );
-        const severity = name === 'package.json' || name === 'CODEOWNERS' ? 'low' : instructions ? 'medium' : 'high';
+        // An unread package.json only stops identification (the scan then assumes the worst).
+        return name === 'CODEOWNERS' ? 'low' : instructions || name === 'package.json' ? 'medium' : 'high';
+      };
+      for (const path of project.skippedFiles)
         report({
           message: `${path} is larger than 1 MiB, so it was not read and nothing in it was judged.`,
           location: { file: path, line: 1 },
           subject: path,
-          severity,
+          severity: severityOf(path),
           fix: 'Keep agent configuration small, or split it; check this file by hand.',
         });
-      }
+      for (const path of project.linkedFiles)
+        report({
+          message: `${path} is a symbolic link, which the scanner never follows, so nothing it points to was judged.`,
+          location: { file: path, line: 1 },
+          subject: `link:${path}`,
+          severity: severityOf(path),
+          fix: 'Commit the configuration as a regular file.',
+        });
+      for (const item of project.unparsed)
+        report({
+          message: `The settings in ${item.path} could not be parsed (${item.error}), so the scan assumed the agent may do anything.`,
+          location: { file: item.path, line: 1 },
+          subject: `unparsed:${item.path}`,
+          fix: 'Fix the front matter: valid YAML, no duplicate keys, no more than 50 aliases.',
+        });
+      if (project.truncated)
+        report({
+          message: 'The repository has more than 200,000 entries, so the scan stopped before it looked at all of them.',
+          location: { file: '.', line: 1 },
+          subject: 'truncated',
+          fix: 'Scan the folder that holds the agents, or check the rest by hand.',
+        });
     },
   ),
 ];

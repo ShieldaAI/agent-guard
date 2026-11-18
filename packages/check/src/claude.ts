@@ -242,8 +242,11 @@ export function grantsForRule(rule: PermissionRule, approval: Approval, servers:
     case 'mcp': {
       const server = servers.find(item => item.name === rule.server);
       const tool = `mcp__${rule.server ?? ''}`;
+      // A server the scanner cannot identify may be anything, including code from the repository.
       if (!server?.catalog) {
-        return (['privateData', 'untrustedInput', 'egress'] as const).map(c => make(c, 'unknown', tool));
+        return (['privateData', 'untrustedInput', 'egress', 'write', 'exec'] as const).map(c =>
+          make(c, 'unknown', tool),
+        );
       }
       const readOnly = rule.mcpTool !== undefined && READ_ONLY_TOOL.test(rule.mcpTool);
       const out: Grant[] = [];

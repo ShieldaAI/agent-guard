@@ -24,7 +24,8 @@
   image). `-p`, `--call`, other runner flags, shell lines with a second command,
   `--entrypoint`, `--env-file`, unknown docker flags, loader environment variables
   (`NODE_OPTIONS`, `npm_config_*`, `LD_PRELOAD`, ...) and command-plus-URL servers stay unknown.
-- Add: AGC-CFG-002 reports an agent configuration file too large to read: high for settings and
+- Add: AGC-CFG-002 reports an agent configuration file the scan could not read (too large, a
+  link out of the repository, unparseable front matter): high for settings and
   agent definitions (subagents, Copilot, OpenCode and gh-aw agents in Markdown), so padding one
   past 1 MiB fails the gate instead of hiding it; medium for instruction files.
 - Fix: identification also gives up for project dependencies, repository package sources
@@ -45,6 +46,20 @@
   what they post unless threat detection is off), secrets, tokens, permissions, MCP servers
   (including containers) and repository imports three levels deep. A custom engine, an import
   that cannot be read, an unmodelled tool or custom safe-output jobs are unknown reach.
+- Fix (fourth review): fail closed on what is not read. A configuration file committed as a link
+  is read through a target inside the repository and otherwise reported; front matter that is not
+  valid YAML, a settings file that cannot be read, and a walk that stopped early are reported as
+  AGC-CFG-002 and counted as unknown reach. `claude-code-action` `settings` as a file, a mapping or
+  JSONC, and `--settings`, are read. Runners and `docker` from the repository, `cwd`, docker daemon
+  variables and nested package sources stop identification, and package sources are scoped to
+  their ecosystem and folder (an `.npmrc` with only `engine-strict` changes nothing). Unidentified
+  servers may also write and run code (unknown). gh-aw container servers with an entrypoint,
+  mounts or arguments, engine `args`, body imports, nested imports relative to their file, engine
+  environment secrets and an open network are modelled. Copilot CLI and Gemini CLI steps, and
+  gh-aw lock files with no source, are agents. Auto mode's review covers only the calls the mode
+  lets through, and project `defaultMode: auto` is AGC-PERM-001 (medium). AGC-POL-001 can allow a
+  remote server by host. Model endpoints and proxies in workflow `env` and Codex providers are
+  reported.
 - Fix: `codex-args` given as a JSON array or YAML list is read, and the wider Codex sandbox wins
   when flags and inputs disagree. `claude-code-action`'s inline `settings` and
   `claude -p --permission-mode acceptEdits|auto` are read. Wide edit patterns (`Edit(**/*.md)`,

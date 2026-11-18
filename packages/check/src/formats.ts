@@ -31,6 +31,8 @@ export interface OtherAgent {
   readonly bypasses: readonly Bypass[];
   readonly models: readonly ModelChoice[];
   readonly unrecognized: readonly Unrecognized[];
+  /** Agent definitions whose settings could not be parsed: reported as unread (AGC-CFG-002). */
+  readonly unparsed?: readonly { readonly path: string; readonly error: string }[];
 }
 
 const CODEX_POLICIES = new Set(['untrusted', 'on-failure', 'on-request', 'never']);
@@ -165,6 +167,20 @@ export function parseCodex(path: string, text: string, declared: CatalogContext 
   const models: ModelChoice[] = [];
   const model = asString(data['model']);
   if (model) models.push({ agent: name, model, location: at('model') });
+  // A model provider with its own endpoint receives everything the agent reads.
+  const providers = isRecord(data['model_providers']) ? data['model_providers'] : {};
+  for (const [provider, raw] of Object.entries(providers)) {
+    const url = isRecord(raw) ? asString(raw['base_url']) : undefined;
+    if (url)
+      unrecognized.push({
+        agent: name,
+        setting: `model_providers.${provider}.base_url`,
+        value: url,
+        assumed:
+          'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
+        location: { file: path, line: lineOfKey(text, 'base_url') || 1 },
+      });
+  }
   const dir = path.split('/').slice(0, -2).join('/');
   return {
     agent: {

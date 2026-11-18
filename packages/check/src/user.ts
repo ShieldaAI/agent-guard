@@ -22,12 +22,12 @@ export function managedMcpPath(platform: NodeJS.Platform): string {
  * One regular file of at most 1 MiB. A link the user made in their own home is followed.
  * `missing` when there is no such file; `skipped` when it exists but cannot be used.
  */
-function readSmall(path: string): { readonly text: string } | 'missing' | 'skipped' {
+function readSmall(path: string, limit = MAX_FILE_BYTES): { readonly text: string } | 'missing' | 'skipped' {
   let fd: number | undefined;
   try {
     fd = openSync(path, constants.O_RDONLY);
     const info = fstatSync(fd);
-    if (!info.isFile() || info.size > MAX_FILE_BYTES) return 'skipped';
+    if (!info.isFile() || info.size > limit) return 'skipped';
     return { text: readFileSync(fd, 'utf8') };
   } catch (error) {
     return (error as NodeJS.ErrnoException).code === 'ENOENT' ? 'missing' : 'skipped';
@@ -57,7 +57,8 @@ export function readUserConfig(
   ];
   const out: TextFile[] = [];
   for (const [shown, real] of files) {
-    const read = readSmall(real);
+    // ~/.claude.json keeps history and grows past 1 MiB; it is the user's own file, so allow more.
+    const read = readSmall(real, shown === '~/.claude.json' ? 32 * MAX_FILE_BYTES : MAX_FILE_BYTES);
     if (read === 'skipped') onSkip(shown);
     else if (read !== 'missing') out.push({ path: shown, text: read.text });
   }

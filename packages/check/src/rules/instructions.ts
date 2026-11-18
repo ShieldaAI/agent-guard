@@ -8,7 +8,10 @@ import { findHiddenCharacter, lineAt } from '../text.js';
  */
 function quotedOrAdvice(text: string, match: RegExpMatchArray): boolean {
   const before = text[match.index! - 1] ?? '';
-  if (/["'“‘`«]/.test(before)) return true;
+  const end = match.index! + match[0].length;
+  // Quoted as an example only when the quotes wrap the phrase itself (`"ignore previous
+  // instructions"`, `'Ignore previous instructions...'`), not when they open a longer instruction.
+  if (/["'“‘`«]/.test(before) && /^(\.\.\.|…)?[.,]?["'”’`»]/.test(text.slice(end, end + 5))) return true;
   const after = text.slice(match.index! + match[0].length, match.index! + match[0].length + 4);
   return /^(tell|inform)/i.test(match[0].replace(/^do not /i, '')) && /^\s+to\s/i.test(after);
 }

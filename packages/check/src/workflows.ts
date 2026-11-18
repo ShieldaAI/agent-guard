@@ -2,9 +2,10 @@ import { LineCounter, parseDocument, isMap, type Node } from 'yaml';
 import type { Location } from './types.js';
 import { parseRule, type PermissionRule } from './claude.js';
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
-import { asString, asStringArray, isRecord, lineOf } from './text.js';
+import { asString, asStringArray, isRecord, lineOf, parseJsonc } from './text.js';
 
-export type AgentAction = 'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli';
+export type AgentAction =
+  'claude-code-action' | 'claude-cli' | 'codex-action' | 'codex-cli' | 'copilot-cli' | 'gemini-cli';
 
 /** One step of a GitHub workflow that runs an AI agent. */
 export interface WorkflowAgent {
@@ -51,6 +52,10 @@ export interface WorkflowAgent {
   readonly githubToken: boolean;
   /** Where auto mode is set: tools run when Claude Code's safety review passes them, not a person. */
   readonly autoMode?: Location;
+  /** Settings named for the step that could not be read: what the step may do is unknown. */
+  readonly settingsUnreadable?: { readonly value: string; readonly location: Location };
+  /** Model endpoint or proxy variables set for the step (ANTHROPIC_BASE_URL, HTTPS_PROXY, ...). */
+  readonly endpoints: readonly { readonly name: string; readonly value: string; readonly location: Location }[];
 }
 
 /**
@@ -115,6 +120,8 @@ interface Flags {
   sandbox?: string;
   /** `--permission-mode auto`: Claude Code's safety review, not a person, approves each call. */
   autoMode?: boolean;
+  /** `--settings`: inline JSON or a path to a settings file. */
+  settings?: string;
 }
 
 function toolList(value: string): string[] {
@@ -181,6 +188,8 @@ function readFlags(text: string): Flags {
     } else if (name === '--max-turns') {
       flags.maxTurns = true;
       value();
+    } else if (name === '--settings') {
+      flags.settings = value();
     } else if (name === '--mcp-config') {
       flags.mcpConfig = value();
     } else if (name === '--model' || name === '-m') {
@@ -195,6 +204,14 @@ const CODEX_ACTION = /^openai\/codex-action@/;
 // The CLI may be started by path or through npx (`npx -y @anthropic-ai/claude-code -p`, `@openai/codex exec`).
 const CLAUDE_CLI = /(^|[\s;&|(/])claude(-code(@\S*)?)?\s(?:[^\n]*\s)?(-p|--print)\b/;
 const CODEX_CLI = /(^|[\s;&|(/])codex(@\S*)?\s+(exec|e)\b/;
+/** GitHub Copilot CLI and Gemini CLI run headless with a prompt. */
+const COPILOT_CLI = /(^|[\s;&|(/])copilot(@\S*)?\s[^\n]*?(-p|--prompt)\b/;
+const GEMINI_CLI = /(^|[\s;&|(/])gemini(@\S*)?\s[^\n]*?(-p|--prompt)\b/;
+
+/** Whether a workflow file is a lock file compiled by gh-aw (judged from its `.md` source). */
+export function isAgenticLock(text: string): boolean {
+  return /^# gh-aw-metadata:/.test(text);
+}
 /** Steps that put the pull request's own code in the workspace. */
 const PR_REF = /github\.event\.pull_request\.(head\.(sha|ref)|number|merge_commit_sha)|github\.head_ref|refs\/pull\//;
 const PR_CHECKOUT_RUN =
@@ -210,7 +227,14 @@ const HARNESS_ENV = /^(OTEL_|CLAUDE_CODE_|ANTHROPIC_|CLAUDE_|DISABLE_|MCP_TIMEOU
 export const SECRET_REF = /\$\{\{\s*secrets\.([A-Za-z0-9_]+)\s*\}\}/g;
 
 /** Reads a workflow file and returns its agent steps. Throws on invalid YAML. */
-export function parseWorkflow(path: string, text: string, declared: CatalogContext = NO_CONTEXT): WorkflowAgent[] {
+export function parseWorkflow(
+  path: string,
+  text: string,
+  declared: CatalogContext = NO_CONTEXT,
+  readFile: (path: string) => string | undefined = () => undefined,
+): WorkflowAgent[] {
+  // A gh-aw lock file is judged from its source (parseAgenticWorkflow), or as a lock (model.ts).
+  if (isAgenticLock(text)) return [];
   const counter = new LineCounter();
   const doc = parseDocument(text, { lineCounter: counter, uniqueKeys: false });
   if (doc.errors.length) throw new Error(doc.errors[0]!.message);
@@ -269,7 +293,11 @@ export function parseWorkflow(path: string, text: string, declared: CatalogConte
             ? 'claude-cli'
             : CODEX_CLI.test(run)
               ? 'codex-cli'
-              : undefined;
+              : COPILOT_CLI.test(run)
+                ? 'copilot-cli'
+                : GEMINI_CLI.test(run)
+                  ? 'gemini-cli'
+                  : undefined;
       if (!action) return;
       const stepNode = doc.getIn(['jobs', jobName, 'steps', index], true);
       const line = nodeLine(stepNode, 1);
@@ -311,16 +339,48 @@ export function parseWorkflow(path: string, text: string, declared: CatalogConte
             ? inputLine('allowed_tools')
             : line;
       // claude-code-action's `settings` input, given inline as JSON: its permissions apply to the step.
-      const inlineSettings = (() => {
-        const text = input('settings');
-        if (!text || !/^\s*\{/.test(text)) return undefined;
-        try {
-          const data = JSON.parse(text) as unknown;
-          return isRecord(data) && isRecord(data['permissions']) ? data['permissions'] : undefined;
-        } catch {
+      // Settings for the step: claude-code-action's `settings` input (inline JSON, a YAML mapping or a
+      // path to a file in the repository) and `--settings` (JSON or a path). One that cannot be read
+      // is unknown: the step may then do anything.
+      let settingsUnreadable: string | undefined;
+      const readSettings = (value: unknown): Record<string, unknown> | undefined => {
+        if (value === undefined) return undefined;
+        let data: unknown = value;
+        if (typeof value === 'string') {
+          const trimmed = resolveEnv(value).trim();
+          // Inline JSON (comments allowed) starts with `{`, `//` or `/*`; anything else is a path.
+          const content = /^(\{|\/\/|\/\*)/.test(trimmed)
+            ? trimmed
+            : /\$\{\{/.test(trimmed)
+              ? undefined
+              : readFile(trimmed.replace(/^\.\//, ''));
+          if (content === undefined) {
+            settingsUnreadable = trimmed;
+            return undefined;
+          }
+          try {
+            data = parseJsonc(content);
+          } catch {
+            settingsUnreadable = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+            return undefined;
+          }
+        }
+        if (!isRecord(data)) {
+          settingsUnreadable = typeof value === 'string' ? value : JSON.stringify(value);
           return undefined;
         }
-      })();
+        return isRecord(data['permissions']) ? data['permissions'] : {};
+      };
+      const settingsSources = [readSettings(inputs['settings']), readSettings(flags.settings)].filter(
+        (item): item is Record<string, unknown> => item !== undefined,
+      );
+      const inlineSettings = settingsSources.length
+        ? {
+            allow: settingsSources.flatMap(item => asStringArray(item['allow'] ?? [])),
+            deny: settingsSources.flatMap(item => asStringArray(item['deny'] ?? [])),
+            defaultMode: settingsSources.map(item => asString(item['defaultMode'])).find(Boolean),
+          }
+        : undefined;
       const settingsAllow = inlineSettings ? asStringArray(inlineSettings['allow'] ?? []) : [];
       const settingsDeny = inlineSettings ? asStringArray(inlineSettings['deny'] ?? []) : [];
       const settingsMode = inlineSettings ? asString(inlineSettings['defaultMode']) : undefined;
@@ -337,8 +397,16 @@ export function parseWorkflow(path: string, text: string, declared: CatalogConte
         ...settingsDeny.map(raw => parseRule(raw, { file: path, line: settingsLine })),
       ];
       const sandbox = input('sandbox') ?? input('safety-strategy') ?? '';
+      // Copilot CLI and Gemini CLI flags that run every tool without asking.
+      const cliAllowAll =
+        (action === 'copilot-cli' && /\s--(allow-all-tools|allow-all|yolo)\b/.test(` ${run}`)) ||
+        (action === 'gemini-cli' && /\s(--yolo|-y|--approval-mode[= ]yolo)(\s|$)/.test(` ${run} `));
       const skip =
-        flags.skip || sandbox === 'danger-full-access' || sandbox === 'unsafe' || settingsMode === 'bypassPermissions';
+        cliAllowAll ||
+        flags.skip ||
+        sandbox === 'danger-full-access' ||
+        sandbox === 'unsafe' ||
+        settingsMode === 'bypassPermissions';
       const skipLine =
         sandbox === 'danger-full-access' || sandbox === 'unsafe'
           ? inputLine(input('sandbox') !== undefined ? 'sandbox' : 'safety-strategy')
@@ -412,6 +480,9 @@ export function parseWorkflow(path: string, text: string, declared: CatalogConte
         allowedTools,
         disallowedTools,
         ...(skip ? { skipPermissions: { file: path, line: skipLine } } : {}),
+        ...(settingsUnreadable !== undefined
+          ? { settingsUnreadable: { value: settingsUnreadable, location: { file: path, line: settingsLine } } }
+          : {}),
         ...(!skip && (flags.autoMode || settingsMode === 'auto')
           ? {
               autoMode: {
@@ -425,6 +496,17 @@ export function parseWorkflow(path: string, text: string, declared: CatalogConte
               },
             }
           : {}),
+        endpoints: [step['env'], job['env'], workflowEnv].flatMap(env =>
+          isRecord(env)
+            ? Object.entries(env).flatMap(([name, value]) =>
+                /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS)$/i.test(
+                  name,
+                )
+                  ? [{ name, value: String(value), location: { file: path, line: lineOf(text, `${name}:`) || line } }]
+                  : [],
+              )
+            : [],
+        ),
         githubToken:
           action === 'claude-code-action' ||
           tokenInput !== undefined ||

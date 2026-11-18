@@ -58,6 +58,8 @@ test('only agent configuration paths are read', () => {
     'plugin.json',
     'mcp.json',
     'skills/pdf/SKILL.md',
+    'sub/package.json',
+    'app/.npmrc',
   ])
     assert.ok(isCandidate(path), path);
   for (const path of [
@@ -66,7 +68,6 @@ test('only agent configuration paths are read', () => {
     '.claude/notes.txt',
     'docs/workflows/a.yml',
     '.github/workflows/sub/a.yml',
-    'sub/package.json',
     '.github/agents/notes.txt',
     '.cursor/settings.json',
     'skills/pdf/helper.py',

@@ -19,8 +19,8 @@ import {
   type DeclaredServer,
   type McpServer,
 } from './mcp.js';
-import { isPackageSource } from './source.js';
-import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
+import { PACKAGE_SOURCE_FILES, packageSourceEcosystem } from './source.js';
+import { asString, asStringArray, frontmatter, isRecord, lenientFrontmatter, lineOf, parseJsonc } from './text.js';
 import {
   parseCodex,
   parseGemini,
@@ -34,13 +34,20 @@ import {
 import { MANAGED_DIR } from './user.js';
 import {
   isAgenticWorkflow,
+  parseAgenticLockAlone,
   parseAgenticWorkflow,
   parseCopilotAgent,
   parseCursorCli,
   parseKiroMcp,
   parseOpenCode,
 } from './agents.js';
-import { parseWorkflow, PUBLISHING_SCOPES, UNTRUSTED_TRIGGERS, type WorkflowAgent } from './workflows.js';
+import {
+  isAgenticLock,
+  parseWorkflow,
+  PUBLISHING_SCOPES,
+  UNTRUSTED_TRIGGERS,
+  type WorkflowAgent,
+} from './workflows.js';
 
 export interface Subagent {
   readonly path: string;
@@ -97,6 +104,12 @@ export interface Project {
   readonly pluginHooks: readonly Hook[];
   /** Candidate files that were not read because they are too large. */
   readonly skippedFiles: readonly string[];
+  /** Candidate files that are symbolic links, which are never followed. */
+  readonly linkedFiles: readonly string[];
+  /** Whether the directory walk stopped early, so some files were never looked at. */
+  readonly truncated: boolean;
+  /** Agent definitions whose settings could not be parsed (invalid front matter or YAML). */
+  readonly unparsed: readonly { readonly path: string; readonly error: string }[];
 }
 
 /**
@@ -245,7 +258,26 @@ export interface BuildOptions {
 
 /** Variables that send an agent's model traffic to another endpoint. */
 export const MODEL_ENDPOINT =
-  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL)$/;
+  /^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL|HTTPS?_PROXY|ALL_PROXY|NODE_EXTRA_CA_CERTS)$/i;
+
+/**
+ * Whether a file the scanner could not read is agent configuration. `mcp.json` and `plugin.json`
+ * are only configuration in a tool folder or a plugin (beside the other one or a `skills/` folder);
+ * elsewhere they are unrelated files that happen to share the name.
+ */
+function isConfigPath(path: string, inputs: readonly { readonly path: string }[]): boolean {
+  const parts = path.split('/');
+  const name = parts.at(-1)!;
+  if (name !== 'mcp.json' && name !== 'plugin.json') return true;
+  if (['.vscode', '.cursor', '.claude-plugin', 'settings'].includes(parts.at(-2) ?? '')) return true;
+  const folder = parts.slice(0, -1).join('/');
+  const prefix = folder ? `${folder}/` : '';
+  return inputs.some(
+    input =>
+      input.path === `${prefix}${name === 'mcp.json' ? 'plugin.json' : 'mcp.json'}` ||
+      input.path.startsWith(`${prefix}skills/`),
+  );
+}
 
 /** Folders that hold settings for every project rather than one: the user's and the managed ones. */
 const USER_DIRS = new Set(['~', MANAGED_DIR]);
@@ -278,6 +310,7 @@ export function buildProject(
   /** Plugins whose hook file could not be read: they may run any command. */
   const pluginUnknownHooks = new Map<string, Location>();
   const cursorCli: TextFile[] = [];
+  const unparsed: { path: string; error: string }[] = [];
   /** The first VS Code and Cursor MCP files: the IDE agent exists even when they list no server. */
   const ideFiles: { vscode?: string; cursor?: string } = {};
   const openCode: TextFile[] = [];
@@ -302,28 +335,43 @@ export function buildProject(
   const userServers: McpServer[] = [];
   const localScopeServers: McpServer[] = [];
   let managedDisablesBypass = false;
-  // First pass: what identification needs. The root package.json's dependencies resolve locally, and
-  // package-source files change where npm, yarn, bun, uv or pip fetch from.
+  // First pass: what identification needs. Every package.json in the repository names packages a
+  // runner may resolve locally (its own name and its dependencies), and package-source files
+  // redirect the runners of their ecosystem for their folder and below. One that is too large or a
+  // link could not be read, so it is assumed to redirect.
   const localPackages = new Set<string>();
-  let packageSources = false;
+  const redirected = { npm: new Set<string>(), python: new Set<string>() };
+  const folderOf = (path: string) => path.split('/').slice(0, -1).join('/');
   for (const { path, text } of inputs) {
     if (text === undefined) continue;
-    if (path === 'package.json') {
+    const name = path.split('/').at(-1)!;
+    if (name === 'package.json') {
       try {
         const data = JSON.parse(text) as unknown;
-        if (isRecord(data))
-          for (const key of ['dependencies', 'devDependencies', 'optionalDependencies'])
+        if (isRecord(data)) {
+          if (typeof data['name'] === 'string') localPackages.add(data['name']);
+          for (const key of ['dependencies', 'devDependencies', 'optionalDependencies', 'peerDependencies'])
             if (isRecord(data[key])) for (const dep of Object.keys(data[key])) localPackages.add(dep);
+        }
       } catch {
         // Reported when the file is parsed below.
       }
     }
-    if (isPackageSource(path, text)) packageSources = true;
+    const ecosystem = packageSourceEcosystem(path, text);
+    if (ecosystem) redirected[ecosystem].add(folderOf(path));
+  }
+  for (const path of [...(source.skippedFiles ?? []), ...(source.linkedFiles ?? [])]) {
+    const name = path.split('/').at(-1)!;
+    // Unread: it may redirect runners, or name local packages, so identification stops below it.
+    if (PACKAGE_SOURCE_FILES.has(name) || name === 'package.json') {
+      redirected.npm.add(folderOf(path));
+      redirected.python.add(folderOf(path));
+    }
   }
   const declaredServers: CatalogContext = {
     declared: options.declaredServers ?? [],
     localPackages,
-    packageSources,
+    redirected,
   };
   const roots = pluginRoots(inputs.filter(input => !USER_DIRS.has(projectDir(input.path))).map(input => input.path));
   const rootOf = (path: string, levels: number) => path.split('/').slice(0, -levels).join('/');
@@ -333,12 +381,9 @@ export function buildProject(
     const name = path.split('/').at(-1)!;
     const parent = path.split('/').at(-2);
     try {
-      // Package-source files only feed identification (first pass); they hold no agent settings.
-      if (
-        isPackageSource(path, text) ||
-        ['.npmrc', '.yarnrc', '.yarnrc.yml', 'bunfig.toml', 'uv.toml', 'pip.conf', 'pyproject.toml'].includes(path)
-      )
-        continue;
+      // Package-source files feed identification only (first pass), and a package.json below the root
+      // only names local packages: neither holds agent settings.
+      if (PACKAGE_SOURCE_FILES.has(name) || (name === 'package.json' && path !== 'package.json')) continue;
       if (path === '~/.claude.json') {
         const data = parseJsonc(text);
         if (isRecord(data)) {
@@ -504,7 +549,12 @@ export function buildProject(
       else if (path.endsWith('.cursor/mcp.json') && (ideFiles.cursor ??= path))
         servers.push(...parseMcpConfig(path, text, 'cursor', declaredServers));
       else if (path.startsWith('.github/workflows/') && /\.ya?ml$/.test(name))
-        workflows.push(...parseWorkflow(path, text, declaredServers));
+        workflows.push(
+          ...parseWorkflow(path, text, declaredServers, named => {
+            const relative = safeRelative(named);
+            return relative === undefined ? undefined : source.readNamed(relative);
+          }),
+        );
       else if (name === 'CODEOWNERS') codeowners ??= { path, text };
       else if (path === 'package.json') {
         const data = JSON.parse(text) as unknown;
@@ -524,7 +574,15 @@ export function buildProject(
       else if (name.endsWith('.md')) {
         prompts.push({ path, text });
         if (path.split('/').includes('agents') && path.includes('.claude/agents/')) {
-          const { data } = frontmatter(text);
+          const parsed = frontmatter(text);
+          // Claude Code reads subagent front matter leniently (top-level `key: value` lines), so
+          // that is the fallback; front matter that cannot be read either way hides the subagent's
+          // settings: assume the worst.
+          const lenient = parsed.error ? lenientFrontmatter(text) : undefined;
+          if (parsed.error && !lenient) unparsed.push({ path, error: parsed.error });
+          const data: Record<string, unknown> = parsed.error
+            ? (lenient ?? { permissionMode: '(front matter not readable)' })
+            : parsed.data;
           const tools = data['tools'] === undefined ? undefined : asStringArray(data['tools']);
           const description = asString(data['description']);
           // The line of a top-level frontmatter key (never a match in the body or a description).
@@ -845,6 +903,27 @@ export function buildProject(
       if (!publishes || canPublish) grants.push(grant);
       else if (!step.permissions.known) grants.push({ ...grant, certainty: 'unknown' });
     }
+    for (const endpoint of step.endpoints)
+      unrecognized.push({
+        agent: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
+        setting: `env.${endpoint.name}`,
+        value: endpoint.value,
+        assumed:
+          'model traffic, with everything the agent reads, goes to this endpoint; it is not counted as sending data out',
+        location: endpoint.location,
+      });
+    if (step.settingsUnreadable) {
+      const { value, location } = step.settingsUnreadable;
+      unrecognized.push({
+        agent: `Workflow ${step.path.split('/').at(-1)} › ${step.job}`,
+        setting: 'settings',
+        value,
+        assumed: 'they could not be read, so the step may run any tool without asking',
+        location,
+      });
+      for (const capability of ['exec', 'write', 'egress'] as const)
+        add({ capability, via: `settings ${value} (not read)`, certainty: 'unknown', location });
+    }
     if (step.skipPermissions) grants.push(...baselineGrants('auto', step.skipPermissions, reachable, [], [], true));
     else if (step.autoMode)
       grants.push(
@@ -853,7 +932,16 @@ export function buildProject(
           via: `${grant.via} (permission-mode auto)`,
         })),
       );
-    else if (step.codex) {
+    else if (step.action === 'copilot-cli' || step.action === 'gemini-cli') {
+      // Their tool settings are not read: what they may run, write and reach is unknown.
+      for (const capability of ['exec', 'write', 'egress'] as const)
+        add({
+          capability,
+          via: `${step.action === 'copilot-cli' ? 'Copilot CLI' : 'Gemini CLI'} (tools not read)`,
+          certainty: 'unknown',
+          location: at,
+        });
+    } else if (step.codex) {
       // Codex in a workflow runs commands without asking, inside its sandbox. What the commands can
       // write and reach is the sandbox's: read-only writes nothing; workspace-write writes the
       // checkout; the network is off unless the config or a permission profile turns it on.
@@ -941,6 +1029,17 @@ export function buildProject(
       fail(configs[0]?.path ?? mine[0]!.path, error);
     }
   }
+
+  // A gh-aw lock file is judged from its source; one with no source beside it, as unknown reach.
+  const inputPaths = new Set(inputs.map(input => input.path));
+  for (const { path, text } of inputs)
+    if (
+      text !== undefined &&
+      /^\.github\/workflows\/[^/]+\.lock\.ya?ml$/.test(path) &&
+      isAgenticLock(text) &&
+      !inputPaths.has(path.replace(/\.lock\.ya?ml$/, '.md'))
+    )
+      others.push(parseAgenticLockAlone(path, text));
 
   for (const file of cursorCli) {
     const dir = file.path.split('/').slice(0, -2).join('/');
@@ -1039,6 +1138,9 @@ export function buildProject(
     pluginSources,
     unrecognized: [...unrecognized, ...others.flatMap(other => other.unrecognized)],
     pluginHooks,
-    skippedFiles: [...(source.skippedFiles ?? [])],
+    skippedFiles: (source.skippedFiles ?? []).filter(path => isConfigPath(path, inputs)),
+    linkedFiles: (source.linkedFiles ?? []).filter(path => isConfigPath(path, inputs)),
+    truncated: source.truncated ?? false,
+    unparsed: [...unparsed, ...others.flatMap(other => other.unparsed ?? [])],
   };
 }

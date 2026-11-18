@@ -110,8 +110,15 @@ export function mediates(mediator: Mediator, tool: string | undefined): boolean 
 
 /** Whether any of an agent's runtime checks sees this grant's calls. */
 export function isMediated(agent: Agent, grant: Grant): boolean {
-  return agent.mediators.some(mediator => mediates(mediator, grant.tool));
+  return agent.mediators.some(mediator =>
+    // Calls that match an allow rule are resolved before auto mode's safety review: it sees only
+    // the calls the mode itself lets through.
+    mediator.kind === 'auto-mode' ? AUTO_MODE_GRANT.test(grant.via) : mediates(mediator, grant.tool),
+  );
 }
+
+/** The `via` of a grant that auto mode approves (rather than an allow rule). */
+const AUTO_MODE_GRANT = /\((defaultMode|permissionMode): auto\)$|\(permission-mode auto\)$/;
 
 /** What an agent can do for one capability, after headless agents lose their prompt-only paths. */
 export function capabilityState(agent: Agent, capability: Capability): CapabilityState {

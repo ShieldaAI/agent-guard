@@ -43,7 +43,7 @@ benchmark that the test suite runs.
 | [AGC-COV-001](#agc-cov-001) | medium | repository files | Risky actions with no runtime check |
 | [AGC-GOV-003](#agc-gov-003) | info | repository files | Agent model is a moving alias |
 | [AGC-CFG-001](#agc-cfg-001) | info | repository files | Agent setting the scanner does not model |
-| [AGC-CFG-002](#agc-cfg-002) | high | repository files | Agent configuration file too large to read |
+| [AGC-CFG-002](#agc-cfg-002) | high | repository files | Agent configuration file the scanner could not read |
 | [AGC-POL-001](#agc-pol-001) | high | repository files | MCP server not on the approved list |
 | [AGC-POL-002](#agc-pol-002) | high | repository files | Remote MCP server on a host not on the approved list |
 | [AGC-POL-003](#agc-pol-003) | high | repository files | Agent holds a forbidden capability combination |

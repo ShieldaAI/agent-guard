@@ -25,6 +25,17 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
             agent: project.agents.find(agent => agent.kind === 'claude-code'),
             fix: 'Remove defaultMode or set it to "default", and allow only the tools the agent needs.',
           });
+        else if (file.defaultMode?.value === 'auto')
+          // A safety review approves calls instead of a person: less than a bypass, still no person.
+          report({
+            message:
+              'Claude Code runs tools without a person approving them (defaultMode: auto); a safety review decides.',
+            location: file.defaultMode.location,
+            subject: 'defaultMode',
+            severity: 'medium',
+            agent: project.agents.find(agent => agent.kind === 'claude-code'),
+            fix: 'Set defaultMode to "default" in shared settings; choose auto per session where it is wanted.',
+          });
       for (const step of project.workflows)
         if (step.skipPermissions) {
           const untrusted = step.triggers.some(trigger => UNTRUSTED_TRIGGERS.has(trigger));

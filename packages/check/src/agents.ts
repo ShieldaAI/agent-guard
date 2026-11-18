@@ -3,6 +3,7 @@ import { deniesWholeTool, grantsForRule, parseRule, type PermissionRule } from '
 import { serversFromObject, type CatalogContext, NO_CONTEXT, type McpServer } from './mcp.js';
 import type { Bypass, ModelChoice, OtherAgent } from './formats.js';
 import { asString, asStringArray, frontmatter, isRecord, lineOf, parseJsonc } from './text.js';
+import { parse as parseYaml } from 'yaml';
 import { MODEL_SECRETS, PUBLISHING_SCOPES, SECRET_REF, UNTRUSTED_TRIGGERS } from './workflows.js';
 
 /**
@@ -199,8 +200,12 @@ export function parseOpenCode(
           ...(isRecord(raw['tools']) ? { tools: raw['tools'] } : {}),
           at: at(label),
         });
+  const unparsed: { path: string; error: string }[] = [];
   for (const file of agentFiles) {
-    const { data: front } = frontmatter(file.text);
+    const parsed = frontmatter(file.text);
+    // An agent file that cannot be parsed may allow anything.
+    if (parsed.error) unparsed.push({ path: file.path, error: parsed.error });
+    const front: Record<string, unknown> = parsed.error ? { permission: { '*': 'allow' } } : parsed.data;
     overrides.push({
       label: file.path.split('/').at(-1)!.replace(/\.md$/, ''),
       ...(isRecord(front['permission']) ? { permission: front['permission'] } : {}),
@@ -297,6 +302,7 @@ export function parseOpenCode(
     bypasses,
     models,
     unrecognized,
+    unparsed,
   };
 }
 
@@ -457,7 +463,9 @@ const COPILOT_TOOLS: Readonly<Record<string, 'execute' | 'edit' | 'web' | 'read'
  * fetches and MCP tools. A tool name it does not know is reported, and counted as unknown reach.
  */
 export function parseCopilotAgent(path: string, text: string, declared: CatalogContext = NO_CONTEXT): OtherAgent {
-  const { data } = frontmatter(text);
+  const parsed = frontmatter(text);
+  // Front matter that cannot be parsed: every tool, as when tools is left out.
+  const data = parsed.data;
   const file = path.split('/').at(-1)!;
   const label = asString(data['name']) ?? file.replace(/(\.agent)?\.md$/, '');
   const name = `Copilot agent ${label}`;
@@ -572,6 +580,7 @@ export function parseCopilotAgent(path: string, text: string, declared: CatalogC
     ),
     models,
     unrecognized,
+    ...(parsed.error ? { unparsed: [{ path, error: parsed.error }] } : {}),
   };
 }
 
@@ -641,7 +650,9 @@ const AGENTIC_ENGINES = new Set(['copilot', 'claude', 'codex', 'gemini']);
 /** Tools whose reach the scanner models. Any other tool is reported, and counted as unknown reach. */
 const AGENTIC_TOOLS = new Set(['github', 'bash', 'edit', 'web-fetch', 'web-search', 'playwright']);
 /** Settings imports add to the workflow. */
-const AGENTIC_MERGED = ['engine', 'tools', 'safe-outputs', 'mcp-servers', 'env', 'github-token'] as const;
+const AGENTIC_MERGED = ['engine', 'tools', 'safe-outputs', 'mcp-servers', 'env', 'github-token', 'network'] as const;
+/** Engine variables that configure the model or telemetry rather than hand data to the agent. */
+const HARNESS_VARIABLE = /^(ANTHROPIC_|OPENAI_|CLAUDE_CODE_|CODEX_|COPILOT_|GEMINI_|GOOGLE_|OTEL_|GH_AW_|LOGFIRE_)/;
 /** How deep imports of imports are read; anything deeper is unknown reach. */
 const MAX_IMPORT_DEPTH = 3;
 
@@ -650,7 +661,9 @@ const MAX_IMPORT_DEPTH = 3;
  * engine defaults to Copilot), so any frontmatter with `on:` is one; other notes stay instructions.
  */
 export function isAgenticWorkflow(text: string): boolean {
-  return frontmatter(text).data['on'] !== undefined;
+  const parsed = frontmatter(text);
+  // Unparseable front matter that looks like a workflow is judged as one, with unknown reach.
+  return parsed.data['on'] !== undefined || (parsed.error !== undefined && /^on\s*:/m.test(text));
 }
 
 /**
@@ -684,7 +697,8 @@ export function parseAgenticWorkflow(
   declared: CatalogContext = NO_CONTEXT,
   readImport: (path: string) => string | undefined = () => undefined,
 ): OtherAgent {
-  const own = frontmatter(text).data;
+  const ownParsed = frontmatter(text);
+  const own = ownParsed.data;
   const data: Record<string, unknown> = { ...own };
   const unreadImports: string[] = [];
   const merge = (imported: Record<string, unknown>) => {
@@ -693,7 +707,17 @@ export function parseAgenticWorkflow(
       data[key] = key === 'engine' ? (data[key] ?? imported[key]) : widen(data[key], imported[key]);
     }
   };
-  const visit = (list: unknown, depth: number) => {
+  // An import path is relative to the file that names it (the workflow's own folder at the top).
+  const resolve = (base: string, target: string): string => {
+    const out: string[] = [];
+    for (const part of [...base.split('/'), ...target.split('/')]) {
+      if (part === '' || part === '.') continue;
+      if (part === '..' && out.length && out.at(-1) !== '..') out.pop();
+      else out.push(part);
+    }
+    return out.join('/');
+  };
+  const visit = (list: unknown, depth: number, base: string) => {
     const items = Array.isArray(list) ? list : list === undefined ? [] : [list];
     for (const item of items) {
       const target =
@@ -707,19 +731,27 @@ export function parseAgenticWorkflow(
         continue;
       }
       // An import from another repository (owner/repo/path@ref) is not in this one.
-      const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(target) ? undefined : readImport(target.split('#')[0]!);
+      const local = resolve(base, target.split('#')[0]!);
+      const content = /^[\w.-]+\/[\w.-]+\/.+@/.test(target) ? undefined : readImport(local);
       if (content === undefined) {
         unreadImports.push(target);
         continue;
       }
-      const imported = frontmatter(content).data;
+      const importedParsed = frontmatter(content);
+      if (importedParsed.error) {
+        unreadImports.push(target);
+        continue;
+      }
+      const imported = importedParsed.data;
       merge(imported);
-      if (imported['imports'] === undefined) continue;
-      if (depth < MAX_IMPORT_DEPTH) visit(imported['imports'], depth + 1);
+      const nested = [...asList(imported['imports']), ...bodyImports(importedParsed.body)];
+      if (!nested.length) continue;
+      if (depth < MAX_IMPORT_DEPTH) visit(nested, depth + 1, local.split('/').slice(0, -1).join('/'));
       else unreadImports.push(`imports of ${target}`);
     }
   };
-  visit(own['imports'], 1);
+  // Imports in the front matter, and `{{#import ...}}` / `@include` lines in the body.
+  visit([...asList(own['imports']), ...bodyImports(ownParsed.body)], 1, '');
   const file = path.split('/').at(-1)!;
   const name = `Agentic workflow ${asString(data['name']) ?? file}`;
   const anchor = { file: path, line: 1 };
@@ -748,6 +780,9 @@ export function parseAgenticWorkflow(
     if (AGENTIC_UNTRUSTED.has(trigger)) add('untrustedInput', `trigger ${trigger}`, at('on'), 'yes', 'trigger');
   const tools = isRecord(data['tools']) ? data['tools'] : {};
   const allow: PermissionRule[] = [];
+  // `network: { allowed: ["*"] }` opens gh-aw's firewall to every host.
+  const network = data['network'];
+  const openNetwork = network === '*' || (isRecord(network) && asStringArray(network['allowed'] ?? []).includes('*'));
   // The GitHub tool is on unless set to false: issue and pull-request text from anyone. Reading the
   // repository it runs in is not counted as private data, as for other workflow agents. With
   // read-only off it can also write and post.
@@ -769,10 +804,10 @@ export function parseAgenticWorkflow(
     for (const raw of rules) {
       const rule = parseRule(raw, at('bash'));
       allow.push(rule);
-      // Behind the firewall: what a command can reach is unknown, not yes.
+      // Behind the firewall what a command can reach is unknown; with the firewall open, it is yes.
       grants.push(
         ...grantsForRule(rule, 'auto', []).map(item =>
-          item.capability === 'egress' ? { ...item, certainty: 'unknown' as const } : item,
+          item.capability === 'egress' && !openNetwork ? { ...item, certainty: 'unknown' as const } : item,
         ),
       );
     }
@@ -781,7 +816,13 @@ export function parseAgenticWorkflow(
   for (const key of ['web-fetch', 'web-search', 'playwright'])
     if (tools[key] !== undefined && tools[key] !== false) {
       add('untrustedInput', `${key} tool`, at(key), 'yes', key);
-      add('egress', `${key} tool (behind the gh-aw firewall)`, at(key), 'unknown', key);
+      add(
+        'egress',
+        openNetwork ? `${key} tool (network open to every host)` : `${key} tool (behind the gh-aw firewall)`,
+        at(key),
+        openNetwork ? 'yes' : 'unknown',
+        key,
+      );
     }
   for (const [key, value] of Object.entries(tools))
     if (!AGENTIC_TOOLS.has(key) && value !== false) unknownReach('tools', key, at(key));
@@ -797,9 +838,14 @@ export function parseAgenticWorkflow(
   }
   if (isRecord(safeOutputs['jobs']) && Object.keys(safeOutputs['jobs']).length)
     unknownReach('safe-outputs.jobs', Object.keys(safeOutputs['jobs']).join(', '), at('jobs'));
-  // Secrets given to the agent's environment, its MCP servers or its tools are data it holds. The
-  // engine's own environment (model keys, telemetry) and the safe-output jobs run apart from it.
-  const agentData = [data['env'], data['mcp-servers'], data['tools']];
+  // Secrets given to the agent's environment, its MCP servers, its tools or its engine (the agent's
+  // shell inherits the engine's environment) are data it holds, except the engine's model keys
+  // and telemetry. The safe-output jobs run apart from the agent.
+  const engineEnv = isRecord(data['engine']) && isRecord(data['engine']['env']) ? data['engine']['env'] : {};
+  const agentEnv = Object.fromEntries(
+    Object.entries(engineEnv).filter(([variable]) => !HARNESS_VARIABLE.test(variable)),
+  );
+  const agentData = [data['env'], data['mcp-servers'], data['tools'], agentEnv];
   const secrets = new Set<string>();
   for (const match of JSON.stringify(agentData).matchAll(SECRET_REF)) {
     const secret = match[1]!;
@@ -833,8 +879,16 @@ export function parseAgenticWorkflow(
   // not in this file.
   const engine = isRecord(data['engine']) ? asString(data['engine']['id']) : asString(data['engine']);
   if (engine !== undefined && !AGENTIC_ENGINES.has(engine)) unknownReach('engine', engine, at('engine'));
+  // Engine settings beyond these (args, command, steps, ...) change how the agent runs.
+  if (isRecord(data['engine']))
+    for (const key of Object.keys(data['engine']))
+      if (!['id', 'version', 'model', 'env', 'concurrency', 'max-turns', 'user-agent'].includes(key))
+        unknownReach('engine', key, at(key));
   if (unreadImports.length) unknownReach('imports', unreadImports.join(', '), at('imports'));
-  const engineEnv = isRecord(data['engine']) && isRecord(data['engine']['env']) ? data['engine']['env'] : {};
+  if (ownParsed.error) {
+    unknownReach('front matter', ownParsed.error, anchor);
+    add('untrustedInput', 'front matter not readable', anchor, 'unknown', 'trigger');
+  }
   for (const [variable, value] of Object.entries(engineEnv))
     if (/^(ANTHROPIC_BASE_URL|ANTHROPIC_BEDROCK_BASE_URL|ANTHROPIC_VERTEX_BASE_URL|OPENAI_BASE_URL)$/.test(variable))
       unrecognized.push({
@@ -864,9 +918,18 @@ export function parseAgenticWorkflow(
     for (const [server, raw] of Object.entries(data['mcp-servers'])) {
       if (!isRecord(raw)) continue;
       const container = asString(raw['container']);
+      // Keys beyond the image and its environment (entrypoint, mounts, args, ...) change what the
+      // container runs: keep them as an unknown docker flag, so the image is never identified.
+      const plain = Object.keys(raw).every(key =>
+        ['container', 'env', 'allowed', 'version', 'type', 'mode'].includes(key),
+      );
       block[server] =
         container && raw['command'] === undefined
-          ? { ...raw, command: 'docker', args: ['run', '-i', '--rm', container, ...asStringArray(raw['args'] ?? [])] }
+          ? {
+              ...raw,
+              command: 'docker',
+              args: ['run', '-i', '--rm', ...(plain ? [] : ['--unmodelled-gh-aw-settings']), container],
+            }
           : raw;
     }
   const servers = serversFromObject({ mcpServers: block }, path, text, 'workflow', 0, declared);
@@ -891,7 +954,20 @@ export function parseAgenticWorkflow(
     bypasses: [],
     models,
     unrecognized,
+    ...(ownParsed.error ? { unparsed: [{ path, error: ownParsed.error }] } : {}),
   };
+}
+
+function asList(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : value === undefined || value === null ? [] : [value];
+}
+
+/** `{{#import path}}`, `{{#import? path}}` and `@include path` lines in a gh-aw body. */
+function bodyImports(body: string): string[] {
+  const out: string[] = [];
+  for (const match of body.matchAll(/\{\{#import\??\s+([^\s}]+)\s*\}\}|^@include\??\s+(\S+)/gm))
+    out.push((match[1] ?? match[2])!);
+  return out;
 }
 
 function triggerNamesOf(value: unknown): string[] {
@@ -899,4 +975,50 @@ function triggerNamesOf(value: unknown): string[] {
   if (Array.isArray(value)) return asStringArray(value);
   if (isRecord(value)) return Object.keys(value);
   return [];
+}
+
+/**
+ * A gh-aw lock file (`<name>.lock.yml`) with no `<name>.md` source beside it. Its compiled steps
+ * are not modelled, so it is judged as an unattended agent of unknown reach, started by its triggers.
+ */
+export function parseAgenticLockAlone(path: string, text: string): OtherAgent {
+  let triggers: string[] = [];
+  try {
+    const data = parseYaml(text, { maxAliasCount: 50 }) as unknown;
+    if (isRecord(data)) triggers = triggerNamesOf(data['on']);
+  } catch {
+    triggers = [];
+  }
+  const name = `Compiled agentic workflow ${path.split('/').at(-1)}`;
+  const anchor = { file: path, line: 1 };
+  const grants: Grant[] = [];
+  for (const trigger of triggers)
+    if (AGENTIC_UNTRUSTED.has(trigger))
+      grants.push(grantOf('untrustedInput', `trigger ${trigger}`, 'auto', anchor, 'yes', 'trigger'));
+  for (const capability of ['exec', 'write', 'egress'] as const)
+    grants.push(grantOf(capability, 'compiled steps (no source to judge)', 'auto', anchor, 'unknown', 'engine'));
+  return {
+    agent: {
+      id: `agentic-lock:${path}`,
+      kind: 'workflow',
+      name,
+      location: anchor,
+      grants,
+      mediators: [],
+      headless: true,
+    },
+    servers: [],
+    allow: [],
+    bypasses: [],
+    models: [],
+    unrecognized: [
+      {
+        agent: name,
+        setting: 'source',
+        value: path.replace(/\.lock\.yml$/, '.md'),
+        assumed: 'the compiled workflow has no source in the repository, so it may run code, write and send data out',
+        location: anchor,
+      },
+    ],
+  };
 }

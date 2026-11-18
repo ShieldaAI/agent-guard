@@ -10,7 +10,7 @@ import { CAPABILITY_LABELS, type Capability } from '../types.js';
  * server called `github` that runs `node evil.js` is not the GitHub server.
  */
 export function serverIdentities(server: McpServer): string[] {
-  const names = [server.catalog?.id, server.identity?.package, server.identity?.image];
+  const names = [server.catalog?.id, server.identity?.package, server.identity?.image, server.identity?.host];
   return names.filter((name): name is string => typeof name === 'string' && name.length > 0);
 }
 

@@ -92,22 +92,32 @@ export interface Frontmatter {
   readonly body: string;
   /** Lines before the body starts, so body offsets can be turned into file lines. */
   readonly bodyLine: number;
+  /** Set when the front matter is there but could not be read (invalid YAML, too many aliases, a duplicate key). */
+  readonly error?: string;
 }
 
 /** Splits `---` YAML front matter from a Markdown file. Invalid YAML yields empty data. */
 export function frontmatter(text: string): Frontmatter {
-  const source = text.replace(/^﻿/, '');
+  const source = text.replace(/^\uFEFF/, '');
   const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(source);
   if (!match) return { data: {}, body: source, bodyLine: 1 };
-  let data: Record<string, unknown> = {};
+  const body = source.slice(match[0].length);
+  const bodyLine = lineAt(source, match[0].length);
   try {
     // Merge keys (`<<: *defaults`) are read, so settings they bring in are seen.
     const parsed = parseYaml(match[1]!, { maxAliasCount: 50, merge: true });
-    if (isRecord(parsed)) data = parsed;
-  } catch {
-    data = {};
+    if (parsed === null || parsed === undefined) return { data: {}, body, bodyLine };
+    if (!isRecord(parsed)) return { data: {}, body, bodyLine, error: 'front matter is not a mapping' };
+    return { data: parsed, body, bodyLine };
+  } catch (error) {
+    // Never treated as empty: a caller that grants tools from it must assume the worst.
+    return {
+      data: {},
+      body,
+      bodyLine,
+      error: (error instanceof Error ? error.message : String(error)).split('\n')[0]!,
+    };
   }
-  return { data, body: source.slice(match[0].length), bodyLine: lineAt(source, match[0].length) };
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -177,4 +187,23 @@ const UNSAFE_IN_LINE =
  */
 export function oneLine(text: string): string {
   return text.replace(UNSAFE_IN_LINE, ' ').replace(/^(\s*):(?=:)/, '$1: ');
+}
+
+/**
+ * Top-level `key: value` lines of front matter, read the way Claude Code reads a subagent file when
+ * the block is not valid YAML (an unquoted `Examples: ...` inside a description, for example).
+ * Undefined when there is no front matter block or no such line.
+ */
+export function lenientFrontmatter(text: string): Record<string, unknown> | undefined {
+  const match = /^\uFEFF?---\r?\n([\s\S]*?)\r?\n---[ \t]*(\r?\n|$)/.exec(text);
+  if (!match) return undefined;
+  const out: Record<string, unknown> = {};
+  for (const line of match[1]!.split(/\r?\n/)) {
+    const pair = /^([A-Za-z][\w-]*):[ \t]*(.*)$/.exec(line);
+    if (!pair) continue;
+    const value = pair[2]!.trim().replace(/^(["'])(.*)\1$/, '$2');
+    if (pair[1]! in out) return undefined; // A key set twice: which one wins is not clear.
+    out[pair[1]!] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
 }

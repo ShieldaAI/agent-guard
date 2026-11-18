@@ -205,9 +205,13 @@ test('auto mode: no person approves, and its safety review is a runtime check', 
   assert.ok(!step.agents[0].grants.some(grant => grant.tool === 'WebFetch'), 'disallowed tools stay out');
 });
 
-test('gh-aw: secrets of the engine and of safe-output jobs are not the agent’s', () => {
+test('gh-aw: engine model keys and safe-output job secrets are not the agent’s; other engine secrets are', () => {
   const result = agentic(
-    'on: workflow_dispatch\nengine:\n  id: claude\n  env:\n    KEY: ${{ secrets.MODEL_KEY }}\nsafe-outputs:\n  threat-detection:\n    env:\n      K: ${{ secrets.DETECT_KEY }}\n  create-issue:',
+    'on: workflow_dispatch\nengine:\n  id: claude\n  env:\n    ANTHROPIC_API_KEY: ${{ secrets.MODEL_KEY }}\nsafe-outputs:\n  threat-detection:\n    env:\n      K: ${{ secrets.DETECT_KEY }}\n  create-issue:',
   );
   assert.equal(level(wf(result), 'privateData'), 'no');
+  const prod = agentic(
+    'on: issues\nengine:\n  id: claude\n  env:\n    PROD_TOKEN: ${{ secrets.PROD_DEPLOY_TOKEN }}\ntools:\n  bash: true',
+  );
+  assert.equal(level(wf(prod), 'privateData'), 'yes/auto', 'the agent’s shell inherits the engine environment');
 });
