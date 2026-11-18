@@ -4,6 +4,10 @@
 
 ### Check
 
+- Fix (ninth review): files run by an interpreter (`python3 ci/x.py`, `node`, `ruby`, `uv run
+  python`) are read for a process that starts an agent; `"${ARGS[@]}"` counts as unresolved
+  flags; `find -exec` commands are read; a `./` path that climbs out of the project is not a
+  project script.
 - Fix (eighth review): fail-closed defaults. A Bash rule is narrower than "any network command"
   only when it matches a known command shape: unknown programs, wrappers (`sudo`, `timeout`,
   `xargs`), wildcards inside the command and prefix rules for commands whose options run programs

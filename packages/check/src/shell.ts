@@ -146,6 +146,8 @@ export function commands(script: string, vars: ReadonlyMap<string, string> = new
           else {
             word += text.slice(i, i + length);
             dynamic = true;
+            // `"$@"` and `"${ARGS[@]}"` become several words even inside quotes.
+            if (/^\$(@|\*|\{[^}]*\[[@*]\]\})$/.test(text.slice(i, i + length))) splits = true;
           }
           i += length - 1;
         } else word += text[i];
@@ -290,6 +292,23 @@ export function unwrap(
   return { name: commandName(head.text), head: head.text, dynamic: head.dynamic, args: words.slice(i + 1) };
 }
 
+/** Interpreters whose first file argument is the program they run. */
+const INTERPRETER_NAMES = new Set([
+  'python',
+  'python2',
+  'python3',
+  'node',
+  'ruby',
+  'perl',
+  'php',
+  'tsx',
+  'ts-node',
+  'deno',
+  'bun',
+  'uv',
+  'pwsh',
+  'powershell',
+]);
 const SHELL_KEYWORDS = new Set(['if', 'then', 'else', 'elif', 'do', 'while', 'until', '!', '{', 'coproc']);
 
 /**
@@ -418,9 +437,22 @@ function runsAgent(cli: AgentCli, args: readonly Word[], program = ''): boolean 
 /** An agent CLI named in text: a program name on its own, or the Claude Code package. */
 export const AGENT_MENTION =
   /(^|[\s"'`;&|(/=[,])(claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen)(?=[\s"'`;&|),\]]|$)|@anthropic-ai\/claude-code|@openai\/codex|@google\/gemini-cli/m;
-/** A line that starts a process and names an agent CLI on that same line. */
+const AGENT_PROGRAM =
+  '(?:(?:npx|bunx|pnpx)\\s+(?:-y\\s+)?)?(?:[^"\'`\\s]*/)?(?:claude|codex|copilot|gemini|opencode|cursor-agent|aider|qwen|@anthropic-ai/claude-code|@openai/codex|@google/gemini-cli)(?:@[^"\'`\\s]*)?';
+/** A process started with a command string that begins with an agent CLI: `execSync("claude -p ...")`. */
+const SPAWNED_AGENT = new RegExp(
+  `(?:subprocess\\.\\w+|os\\.system|os\\.popen|Popen|execSync|execFileSync|spawnSync|execa|Bun\\.spawn|Deno\\.Command|Start-Process|(?<![.\\w])(?:system|exec|spawn))\\s*\\(\\s*\\[?\\s*["'\`]${AGENT_PROGRAM}(?=["'\`\\s,])`,
+);
+/** An agent CLI as a list element followed by a flag: `["claude", "-p", ...]`. */
+const AGENT_ARGV = new RegExp(`["'\`]${AGENT_PROGRAM}["'\`]\\s*,\\s*["'\`]-`);
+
+/**
+ * Whether code in another language starts an agent: a process call whose command begins with an
+ * agent CLI, or an agent CLI as an argument list's program next to a process call. A name in a
+ * package path (`npm run build -w @google/gemini-cli-core`) or a management command is not one.
+ */
 export function spawnsAgent(text: string): boolean {
-  return text.split('\n').some(line => SPAWNS.test(line) && AGENT_MENTION.test(line));
+  return SPAWNS.test(text) && (SPAWNED_AGENT.test(text) || AGENT_ARGV.test(text));
 }
 /** Commands that install or look up an agent CLI rather than run it. */
 const INSTALL_LINE =
@@ -489,8 +521,9 @@ export function agentCalls(
   const unknown = (program: string, why: string) =>
     out.push({ cli: 'other', program, args: [], unresolved: [], unknown: why });
   const follow = (text: string, why: string, shell: boolean) => {
+    // Too deep to follow: a shell script that names an agent, or code that starts one, is unknown.
     if (nesting >= MAX_NESTING) {
-      if (namesAgent(text)) unknown('agent', why);
+      if (shell ? namesAgent(text) : spawnsAgent(text)) unknown('agent', why);
       return;
     }
     // A shell script is read command by command: if no call is found, it runs no agent. Another
@@ -516,6 +549,33 @@ export function agentCalls(
         else if (file !== undefined && /\.(sh|bash)$/.test(file)) follow(file, `script ${file}`, false);
       }
       continue;
+    }
+    // `find . -exec claude -p {} \;`: the command after -exec runs.
+    if (call.name === 'find') {
+      const at = args.findIndex(arg => /^-(exec|execdir|ok|okdir)$/.test(arg));
+      if (at >= 0) {
+        const end = args.findIndex((arg, i) => i > at && (arg === ';' || arg === '+'));
+        const inner = args.slice(at + 1, end < 0 ? undefined : end);
+        out.push(
+          ...agentCalls(inner.map(arg => `'${arg.replace(/'/g, `'\\''`)}'`).join(' '), vars, nesting + 1, context),
+        );
+      }
+      continue;
+    }
+    // An interpreter running a file from the repository (`python3 ci/triage.py`, `node x.js`,
+    // `uv run python x.py`): the file is read, and a process it starts that names an agent is one.
+    if (INTERPRETER_NAMES.has(call.name)) {
+      let rest = args;
+      if ((call.name === 'uv' || call.name === 'deno' || call.name === 'bun') && rest[0] === 'run')
+        rest = rest.slice(1);
+      if (call.name === 'uv' && /^python/.test(rest[0] ?? '')) rest = rest.slice(1);
+      const file = rest.includes('-m')
+        ? undefined
+        : rest.find(arg => !arg.startsWith('-') && /\.(py|js|mjs|cjs|ts|mts|rb|pl|php|ps1)$/.test(arg));
+      const path = file === undefined ? undefined : joinRepo(cwd, file);
+      const text = path === undefined ? undefined : context.readFile?.(path);
+      // Claude Code's own entry point is handled below, as the CLI with its flags.
+      if (text !== undefined && !/claude-code\/cli\.m?js$/.test(path!)) follow(text, path!, false);
     }
     // `source x.sh`, `. x.sh`, `./ci/agent.sh`.
     const scriptPath =

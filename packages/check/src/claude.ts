@@ -244,6 +244,8 @@ export function bashScope(specifier: string | undefined): BashScope {
   // Package managers' read-only commands.
   if (/^(pnpm|npm|yarn|bun) (why|list|ls|outdated|view|info|explain|audit)(?=\s|$)/.test(command)) return 'local';
   if (WRAPPERS.test(command)) return 'network';
+  // A path that climbs out of the project (`./../../usr/bin/curl`) is not a project script.
+  if (/(^|\/)\.\.(\/|\s|$)/.test(command.split(/\s/)[0] ?? '')) return 'network';
   // `gh api PATH` reads only as written: a prefix rule also allows `-X PUT`, `-f` or `--input`.
   if (READ_COMMANDS.test(command) && !(prefix && /^gh api(?=\s|$)/.test(command))) return 'read';
   if (PUBLISH_COMMANDS.test(command)) return 'publish';

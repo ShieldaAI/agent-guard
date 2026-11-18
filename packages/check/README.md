@@ -532,11 +532,14 @@ Three measurements, all reproducible with `npm run bench:check` (and `--real` fo
   shell keywords (`if`, `then`, `do`, `!`), variable assignments, `env`, `time`, `sudo`,
   `timeout`, `xargs`, `npx` and other wrappers skipped, and `bash -c "..."`, `eval "..."`,
   `$(...)` and back quotes read as commands of their own. The scan follows repository scripts the
-  step runs (`./ci/agent.sh`, `bash x.sh`, `source x.sh`), `npm run` / `pnpm` scripts from
-  `package.json`, `make` and `just` targets, a custom `shell:`, the agent CLI inside `docker run`,
+  step runs (`./ci/agent.sh`, `bash x.sh`, `source x.sh`), files run by an interpreter
+  (`python3 ci/x.py`, `node x.js`, `ruby x.rb`, `uv run python x.py`: a process call there that
+  starts an agent CLI, such as `subprocess.run(["claude", "-p", ...])`, is an agent of unknown
+  reach), `npm run` / `pnpm` scripts from `package.json`, `make` and `just` targets, `find -exec`,
+  a custom `shell:`, the agent CLI inside `docker run`,
   and Claude Code started as `node .../cli.js` or by path (`"$(which claude)"`). Shell variables
   set in the script or in `env` are expanded; an unquoted variable the scan cannot resolve
-  (`$FLAGS`, `"$@"`), a quoted one not named for a prompt (`"$MODE"`), or a GitHub expression
+  (`$FLAGS`, `"$@"`, `"${ARGS[@]}"`), a quoted one not named for a prompt (`"$MODE"`), or a GitHub expression
   where a flag could be (`claude_args: ${{ inputs.args }}`, any argument holding text an outsider
   chose, such as `--model ${{ github.event.comment.body }}`) makes the step unknown reach. An
   agent named in text the scan cannot follow (piped into a shell, `python -c` code that starts a
