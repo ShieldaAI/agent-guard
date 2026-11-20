@@ -107,8 +107,12 @@ def _manifest_hash(manifest: Mapping[str, Any]) -> str:
     normalized["taskBindings"].sort(key=lambda item: item["taskId"])
     for binding in normalized["resourceBindings"]:
         binding["actions"].sort()
-    if normalized["schemaVersion"] == 3:
+    if normalized["schemaVersion"] >= 3:
         normalized["directAccess"].sort(key=lambda item: item["id"])
+    if normalized["schemaVersion"] >= 4:
+        normalized["networkIsolation"].sort(key=lambda item: item["deploymentId"])
+        for entry in normalized["networkIsolation"]:
+            entry["egressTargets"].sort()
     if normalized["schemaVersion"] >= 2:
         for field in ("owners", "credentialReferences"):
             normalized[field].sort(key=lambda item: item["id"])
@@ -452,6 +456,24 @@ def _catalog_rows(
         )
 
 
+def _network_properties(
+    network: list[Mapping[str, Any]] | None, entry: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    """A deployment's declared network isolation. Absent before manifest v4 (unknown);
+    "not_declared" when a v4 host said nothing for it, which is not a check either."""
+    if network is None:
+        return {}
+    if entry is None:
+        return {"network_status": "not_declared"}
+    return {
+        "network_status": "declared",
+        "network_segment": entry["segmentId"],
+        "network_egress": entry["egress"],
+        "network_egress_targets": sorted(entry["egressTargets"]),
+        "sandbox_kind": entry["sandbox"],
+    }
+
+
 def _deployment_rows(
     rows: _Projection, manifest: Mapping[str, Any], evidence: Mapping[str, Any]
 ) -> None:
@@ -460,6 +482,9 @@ def _deployment_rows(
     # claim of none, not a check; v1/v2 manifests leave the status absent (unknown).
     direct = manifest.get("directAccess")
     declared = {entry["deploymentId"] for entry in direct or []}
+    # Manifest v4 declares network isolation per deployment; v1-v3 leave it absent (unknown).
+    network = manifest.get("networkIsolation")
+    isolation = {entry["deploymentId"]: entry for entry in network or []}
     for entry in direct or []:
         rows.make(
             "GuardDirectAccess",
@@ -496,6 +521,7 @@ def _deployment_rows(
                 if direct is not None
                 else {}
             ),
+            **_network_properties(network, isolation.get(deployment["id"])),
             **evidence,
         )
 

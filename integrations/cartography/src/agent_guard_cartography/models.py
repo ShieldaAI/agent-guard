@@ -170,6 +170,13 @@ class DeploymentProperties(HostProperties):
     binding_authority: PropertyRef = PropertyRef("binding_authority")
     # Manifest v3 only: "found" or "none_declared". Absent means unknown.
     direct_access_status: PropertyRef = PropertyRef("direct_access_status")
+    # Manifest v4 only: "declared" or "not_declared". Absent means unknown. The other four
+    # are set only when declared; a null segment (no shared segment) is stored as absent.
+    network_status: PropertyRef = PropertyRef("network_status")
+    network_segment: PropertyRef = PropertyRef("network_segment")
+    network_egress: PropertyRef = PropertyRef("network_egress")
+    network_egress_targets: PropertyRef = PropertyRef("network_egress_targets")
+    sandbox_kind: PropertyRef = PropertyRef("sandbox_kind")
 
 
 @dataclass(frozen=True)

@@ -560,7 +560,7 @@ def test_operations_are_exactly_the_ones_the_map_service_defines():
     assert len(declarations) == 1
     assert "MAP_OPERATIONS" in (source / "service.ts").read_text()
     defined = re.findall(r"'([a-z_]+)'", declarations[0])
-    assert len(defined) == 12 and len(set(defined)) == 12
+    assert len(defined) == 13 and len(set(defined)) == 13
     assert report.MAP_OPERATIONS == tuple(defined)
     assert report.OPERATIONS == frozenset(defined)
 

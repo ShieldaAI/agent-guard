@@ -16,6 +16,7 @@ export const MAP_OPERATIONS = [
   'get_agent_inventory',
   'list_undeclared_activity',
   'list_unclaimed_identities',
+  'get_agent_topology',
 ] as const;
 export type MapOperation = (typeof MAP_OPERATIONS)[number];
 export type QueryArguments = Readonly<Record<string, JsonValue>>;
@@ -45,6 +46,8 @@ export const MAP_OPERATION_DESCRIPTIONS: Readonly<Record<MapOperation, string>> 
     'Lists tasks or caller principals that ran through an enrolled executor but belong to no declared agent; it answers only for readers with all-teams visibility.',
   list_unclaimed_identities:
     'Lists IAM roles and users in enrolled AWS accounts that no declared agent names, as candidates to review; it answers only for readers with all-teams visibility.',
+  get_agent_topology:
+    'Shows the visible agents as one graph: the MCP servers, cloud identities, principals, credentials and resources two or more of them share, the delegations, handoffs, dependencies and recipients that link them, and for each agent its isolation summary and what changed in its latest snapshot. Links are declared evidence that agents could exchange data, not that they did.',
 });
 
 /** A parameter schema with the sentence MCP clients show for it. */
@@ -223,6 +226,17 @@ export const MAP_INPUT_SCHEMAS: Readonly<Record<MapOperation, JsonObject>> = Obj
   ),
   /** IAM roles and users of the enrolled AWS accounts that no declared agent names; all-teams readers. */
   list_unclaimed_identities: schema({ offset: offset('identities'), limit: limit('identities') }),
+  get_agent_topology: schema({
+    sourceId: source('Draw only agents of this source; every agent in your view still counts toward sharing.'),
+    teamId: described(
+      idSchema,
+      'Draw only agents of exactly this team ID; every agent in your view still counts toward sharing.',
+    ),
+    environment: described(
+      idSchema,
+      'Draw only agents with a deployment in exactly this environment; every agent in your view still counts toward sharing.',
+    ),
+  }),
 });
 
 const invalid = (): never => fail('MAP_REQUEST_INVALID');

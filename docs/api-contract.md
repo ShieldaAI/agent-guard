@@ -1131,7 +1131,7 @@ It can change in a minor release.
 | --- | --- |
 | `executor.inventorySnapshot({ tenantId })` | One tenant's tasks, grants and tools. Needs the `inventory` constructor option. |
 | `startInventoryServer`, `createInventoryObserverToken` | A separate loopback listener with one route, `POST /v1/inventory/snapshot`, and its own tokens. |
-| `validateInventoryManifest`, `loadInventoryManifestFile`, `composeInventorySnapshot` | Add a host manifest: the agents, owners and deployments a person declared. |
+| `validateInventoryManifest`, `loadInventoryManifestFile`, `composeInventorySnapshot` | Add a host manifest: the agents, owners and deployments a person declared. Manifest v3 adds declared paths around the guard (`directAccess`); v4 adds each deployment's declared network isolation (`networkIsolation`). Types: `InventoryManifestV4`, `InventoryNetworkIsolation`. |
 | `validateMcpConnectionInventory`, `validateMcpInventorySources`, `composeMcpInventorySnapshot` | Add observations from `ManagedMcpConnection.inventory()`. |
 
 A snapshot is complete or it fails; it is never truncated. Reading it runs no

@@ -1,6 +1,7 @@
 // Generates schemas/agent-guard-inventory-v2.schema.json as a $ref envelope over v1.
 // Only the task and tool records change (outside-content fields); everything else refers
-// to the v1 definitions, so v1 stays the single source for the shared shapes.
+// to the v1 definitions, so v1 stays the single source for the shared shapes. With --write it
+// also writes manifest v3 (a $ref envelope over manifest v2) and v4 (over v3).
 // Usage: node scripts/inventory-v2-schema.mjs [--write]
 import { readFileSync, writeFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
@@ -8,9 +9,11 @@ import { pathToFileURL } from 'node:url';
 const root = new URL('../schemas/', import.meta.url);
 export const v2Path = new URL('agent-guard-inventory-v2.schema.json', root);
 export const manifestV3Path = new URL('agent-guard-inventory-manifest-v3.schema.json', root);
+export const manifestV4Path = new URL('agent-guard-inventory-manifest-v4.schema.json', root);
 const V1 = 'agent-guard-inventory-v1.schema.json';
 const MANIFEST_V2 = 'agent-guard-inventory-manifest-v2.schema.json';
 const MANIFEST_V3 = 'agent-guard-inventory-manifest-v3.schema.json';
+const MANIFEST_V4 = 'agent-guard-inventory-manifest-v4.schema.json';
 const LOCAL = new Set(['task', 'tool', 'manifest']);
 
 /** Points `#/$defs/x` at the base file, except the definitions this file restates. */
@@ -65,6 +68,53 @@ export function renderManifestV3Schema() {
   return JSON.stringify(schema, null, 2) + '\n';
 }
 
+/** Manifest v4: v3 plus a required host declaration of network isolation per deployment. */
+export function renderManifestV4Schema() {
+  const v3 = JSON.parse(renderManifestV3Schema());
+  const { $defs: _defs, $id: _id, title: _title, description: _description, ...envelope } = v3;
+  const schema = {
+    $schema: v3.$schema,
+    $id: v3.$id.replace('manifest-v3', 'manifest-v4'),
+    title: 'Agent Guard host inventory manifest v4',
+    description:
+      'Manifest v3 plus `networkIsolation`: the network segment, egress and sandbox the host declares per deployment. [] means the host declared nothing for any deployment; it is not a check. Shared shapes are $refs into v3 and v2.',
+    // v3 restates only directAccess; v4 points it back at v3, and v3's other refs already name v2.
+    ...rewrite(envelope, MANIFEST_V3, new Set(['networkIsolation'])),
+    $defs: {
+      networkIsolation: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['deploymentId', 'segmentId', 'egress', 'egressTargets', 'sandbox'],
+        properties: {
+          deploymentId: { $ref: `${MANIFEST_V2}#/$defs/identifier` },
+          segmentId: { anyOf: [{ $ref: `${MANIFEST_V2}#/$defs/opaque` }, { type: 'null' }] },
+          egress: { enum: ['none', 'allowlist', 'open'] },
+          egressTargets: {
+            type: 'array',
+            maxItems: 32,
+            uniqueItems: true,
+            items: { $ref: `${MANIFEST_V2}#/$defs/opaque` },
+          },
+          sandbox: { enum: ['none', 'process', 'container', 'vm'] },
+        },
+        // Targets list what an allowlist admits; any other egress has none.
+        if: { properties: { egress: { not: { const: 'allowlist' } } } },
+        then: { properties: { egressTargets: { maxItems: 0 } } },
+        description:
+          'At most one entry per deployment; deploymentId must name a declared deployment. segmentId null means no shared segment.',
+      },
+    },
+  };
+  schema.properties.schemaVersion = { const: 4 };
+  schema.required = [...schema.required, 'networkIsolation'];
+  schema.properties.networkIsolation = {
+    type: 'array',
+    maxItems: 1000,
+    items: { $ref: '#/$defs/networkIsolation' },
+  };
+  return JSON.stringify(schema, null, 2) + '\n';
+}
+
 export function renderInventoryV2Schema() {
   const v1 = JSON.parse(readFileSync(new URL(V1, root), 'utf8'));
   const task = rewrite(structuredClone(v1.$defs.task));
@@ -97,14 +147,20 @@ export function renderInventoryV2Schema() {
     $id: v1.$id.replace('inventory-v1', 'inventory-v2'),
     title: 'Agent Guard inventory snapshot v2',
     description:
-      'Same as v1 plus outside-content fields on tasks and tools, and manifest v3. Executors emit v2 only when a tool declares an outside-content label, a task family is untrusted, or the manifest is v3. Shared shapes are $refs into v1.',
+      'Same as v1 plus outside-content fields on tasks and tools, and manifests v3 and v4. Executors emit v2 only when a tool declares an outside-content label, a task family is untrusted, or the manifest is v3 or later. Shared shapes are $refs into v1.',
     ...rewrite(envelope),
     $defs: {
       task,
       tool,
-      // v2 snapshots also carry manifest v3 (directAccess); v1 and v2 manifests are unchanged.
+      // v2 snapshots also carry manifest v3 (directAccess) and v4 (networkIsolation); v1 and v2
+      // manifests are unchanged.
       manifest: {
-        oneOf: [{ $ref: `${V1}#/$defs/manifestV1` }, { $ref: `${V1}#/$defs/manifestV2` }, { $ref: MANIFEST_V3 }],
+        oneOf: [
+          { $ref: `${V1}#/$defs/manifestV1` },
+          { $ref: `${V1}#/$defs/manifestV2` },
+          { $ref: MANIFEST_V3 },
+          { $ref: MANIFEST_V4 },
+        ],
       },
     },
   };
@@ -112,7 +168,7 @@ export function renderInventoryV2Schema() {
   schema.properties.untrustedContextDefault = {
     enum: ['allow', 'require_approval', 'deny', null],
     description:
-      'The executor mode for tools that declare no untrustedContext; null when unknown (a v1 core lifted by a v3 manifest).',
+      'The executor mode for tools that declare no untrustedContext; null when unknown (a v1 core lifted by a v3 or v4 manifest).',
   };
   schema.required = [...schema.required, 'untrustedContextDefault'];
   return JSON.stringify(schema, null, 2) + '\n';
@@ -123,5 +179,6 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
   if (process.argv.includes('--write')) {
     writeFileSync(v2Path, text);
     writeFileSync(manifestV3Path, renderManifestV3Schema());
+    writeFileSync(manifestV4Path, renderManifestV4Schema());
   } else process.stdout.write(text);
 }

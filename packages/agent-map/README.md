@@ -173,7 +173,7 @@ second launcher, `agent-guard-map-identity`, which serves HTTPS with OIDC sign-i
 
 ## Operations
 
-Twelve read-only operations, the same over HTTP (`POST /v1/query` with
+Thirteen read-only operations, the same over HTTP (`POST /v1/query` with
 `{ "operation": "...", "args": {...} }`) and as MCP tools (`POST /mcp` on the loopback
 service). A result has `operation`, `observedAt`, `data` and, for `get_agent_access`
 only, an optional `graph`.
@@ -192,6 +192,7 @@ sees only agents assigned to its teams and what is attached to them.
 | `get_resource_access` | One resource (`sourceId`, `resourceId`), the agents with a declared grant mapped to it, and the declared direct paths and tool identities that reach it outside the guard. | Any reader |
 | `list_owners` | Which owners and teams hosts name, with how many visible agents and resources each one owns. | Any reader |
 | `get_changes` | What was added, removed or changed between a source's current snapshot and its previous one. See [Changes](#changes). | Any reader |
+| `get_agent_topology` | The visible agents as one graph: what two or more of them share, the delegations, handoffs, dependencies and recipients that link them, each agent's isolation summary and its last change. Filters: `sourceId`, `teamId`, `environment`. See [Topology](#topology). | Any reader |
 | `get_inventory_health` | When each part of the inventory was captured, whether it is stale and how complete it is. All-teams readers also get the count of undeclared activity per source. | Any reader |
 | `list_undeclared_activity` | Tasks or caller principals that ran through an enrolled executor but belong to no declared agent. See [Discovery](#discovery). | All-teams readers; others get a fixed "not visible" answer |
 | `list_unclaimed_identities` | IAM roles and users in enrolled AWS accounts that no declared agent names. Candidates, not findings. | All-teams readers; others get a fixed "not visible" answer |
@@ -255,6 +256,96 @@ one. Optional arguments: `since` (`previous` by default), `agentId`, `resourceId
 These are net differences between two snapshots, not an event log. They do not show that
 effective access was gained or lost, and policy history is not collected
 (`policyHistory: "not_collected"`).
+
+## Topology
+
+`get_agent_topology` draws the agents you may see as one graph. Optional arguments:
+`sourceId`, `teamId` and `environment`. All three only choose which agents are drawn: every
+agent in your view, in every source, still counts when deciding what is shared, so a filter
+never turns a shared item into a dedicated one. The read therefore always covers every source
+you may see, so `sourceId` narrows what is drawn and the answer's size, not the store read. A
+`sourceId` you may not see, or that does not exist, is `MAP_NOT_FOUND`. `agentsInView` gives
+how many agents were compared.
+
+- `agents` lists each drawn agent with its owner, team, lifecycle, environments and
+  `dangerousThree` flag, its `isolation` summary, its `lastChange` and
+  `delegationParentsNotShown`: how many of its tasks were delegated or handed off from a
+  task that is not a drawn agent's (outside your view, undeclared or filtered out). That
+  count names nothing.
+- `hubs` are items held by two or more agents: an MCP server (separately declared
+  connections with one `server_id` and one `transport_ref` are one hub), a cloud identity, a
+  credential, a resource binding, a caller principal that several live tasks use, or a
+  network segment that several deployments are declared on. `agentCount` counts every holder
+  in your view and `agentsNotDrawn` those the filters left out. Hubs stay within one source,
+  except a cloud identity: one IAM ARN used from several sources is one hub with
+  `sourceId: null` and the sources in `sourceIds`.
+- `links` start with agent-to-agent links: `delegates_to` and `hands_off_to` (parent to
+  child task), `depends_on` (a resource binding depends on one only the other agent holds)
+  and `can_send_to` (a task lists another agent's task principal as an allowed recipient; an
+  inferred string match, marked `match: "recipient_equals_principal"`). Each carries its
+  evidence in `via` (at most 5) and `viaTotal`. Then links from an agent to a hub
+  (`uses_mcp_server`, `uses_cloud_identity`, `uses_credential`, `uses_resource`,
+  `uses_principal`, `uses_network_segment`). Only live tasks (not revoked, not past their
+  deadline at capture) make links or caller principals.
+- `isolation` gives, for `mcp_server`, `cloud_identity`, `principal`, `credential` and
+  `resource`, a `status` with `total` and `shared`. `shared` always stands. `dedicated`
+  (all-teams readers) or `dedicated_in_view` (team readers) and `none_declared` need the
+  layer's collection to be complete (`mcp` coverage for servers, `tasks` for principals,
+  `manifest` for the rest); otherwise the status is `unknown`, or `not_collected` when the
+  source does not collect that layer and holds nothing of it.
+- `isolation.egress` lists the sending tools, the allowed recipients of live tasks and the
+  approved destinations (at most 10 each, with totals), and whether paths around the guard
+  are `found`, `none_declared` or `unknown`. Its `status` is `allowlisted` (a tool declares
+  external sending and recipients are listed), `refused` (sending tools, but no recipient
+  listed, so the executor refuses every external send), `none_declared` (every tool declares
+  it does not send) or `unknown` (`reason: "no_tools"` when no tool is recorded,
+  `"recipients_not_recorded"` when a live task has no recorded list); an `allowlisted` status
+  with `reason: "recipients_partly_recorded"` means some live task has no recorded list, so
+  the allowlist shown may be incomplete. Live means not
+  revoked and not past its deadline at capture. The
+  executor also checks every delegation ancestor's list, so the recipients are an upper
+  bound.
+- `isolation.network` is what the host declared in manifest v4 for the agent's deployments:
+  `status` (`declared`, `partial`, `not_declared`, or `unknown` for an older manifest),
+  `segment` (`shared`; `dedicated` or `dedicated_in_view`, or `none_declared` when no segment
+  is declared, only when every deployment in view of that source declared its network, since
+  an undeclared one may sit on the same segment; otherwise `unknown`), `egress` (the widest of `none`,
+  `allowlist`, `open`), `egressTargets` (at most 10, with the total) and `sandbox` (the
+  weakest of `vm`, `container`, `process`, `none`). One `open` deployment makes the agent
+  `open` and one without a sandbox makes it `none` even when others declared nothing;
+  otherwise an incomplete declaration, or a stored value outside these lists, reads
+  `unknown`. A segment hub has `entityId: null`: it is a declared name, not one node. It is a declaration, not an
+  observation of network traffic.
+- `lastChange` is `changed`, `unchanged`, `added` (the agent is not in the previous
+  snapshot) or `no_previous_snapshot`, with `categories` and `counts` as `get_changes`
+  reports them for that agent, at most 5 `items`, the `total` and the two snapshot times. A
+  node that existed before and only became reachable is judged by its own change, never
+  reported as added.
+- `removedAgents` lists, per source, the agents in the previous snapshot that are gone from
+  the current one (at most 100, `removedAgentsTotal` counts them all), under the same
+  filters.
+- Agent-to-agent links, hubs and hub links are each capped (2000, 1000 and 2000); `linksTotal`,
+  `agentLinksTotal` and `hubsTotal` count them all, and `hubsTruncated` and `linksTruncated`
+  say when a list was cut.
+- Boundary flags have their own work budget. When the fleet is too large to evaluate in
+  time, every flag reads `unknown` and `flagsUnavailable` says why; the rest still answers.
+
+Capacity: with the default store limits (`maxNodes` 2,000) the store's read limit binds
+first (see [Capacity](#capacity)). When the full answer would pass 90% of the response limit,
+it comes back with `compact: true`: every status, count and total, without the detail lists
+(change items, recipients, destinations, egress targets, link evidence). If that still does
+not fit, the links from agents to shared items are left out too (`hubLinksOmitted: true`);
+agent-to-agent links, every hub with its `agentCount`, and each agent's isolation stay. With
+the default 1 MiB response limit that holds roughly 500 agents of typical size; past it the
+answer fails with `MAP_LIMIT_EXCEEDED`. A store with raised read limits needs a raised
+`maxResponseBytes` (up to 8 MiB) too; `teamId` and `environment` narrow what is drawn. Every
+response also stays within 100,000 JSON values, about 1,200 agents at 8 MiB.
+
+Limits. Everything is declared evidence: a hub or a link shows that agents could exchange
+data, not that they did. Network isolation is the host's declaration; no traffic is
+observed. `lastChange` is a diff of the two retained snapshots of a source; changes in
+between and their exact time are not recorded. A team reader compares only the agents it
+may see (`visibility: "own_teams"`).
 
 ## Discovery
 
@@ -584,7 +675,7 @@ build does.
 | Nodes, edges and bytes per store read | 2,000 / 5,000 / 4 MiB | Across all of a reader's sources, and both snapshots for `get_changes`. Raise with `maxNodes`, `maxEdges`, `maxBytes`, up to 10,000 / 25,000 / 16 MiB; see the note on raised limits below. |
 | Sources per read | 64 | |
 | Store transaction and service deadline | 5 s each | Does not move when the read limits are raised. |
-| Service work per query | 200,000 units | One budget for the main answer. Four optional parts each count against a separate budget of the same size, so running out there degrades that part instead of failing the answer: the candidate search of `find_agents_with_access`, the page flags of `list_agents` with `includeFlags`, the flag of `get_agent_access`, and outside-guard reach in `list_resources` and `get_resource_access`. |
+| Service work per query | 200,000 units | One budget for the main answer. Five optional parts each count against a separate budget of the same size, so running out there degrades that part instead of failing the answer: the candidate search of `find_agents_with_access`, the page flags of `list_agents` with `includeFlags`, the flag of `get_agent_access`, the flags of `get_agent_topology`, and outside-guard reach in `list_resources` and `get_resource_access`. |
 | Response size | 1 MiB (service), 2 MiB (HTTP) | Past it, optional detail goes first (identity-scope bucket lists, then the graph); then the answer fails. |
 | Graph in `get_agent_access` | 500 nodes / 1,000 edges | Past it the evidence is returned without the graph. |
 | Rows per page | 50, at most 100 | |

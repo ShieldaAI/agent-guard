@@ -664,6 +664,75 @@ test('declared direct access attaches only through an authorized deployment and 
     });
 });
 
+test('declared network isolation is read from the deployment; a malformed declaration reads as unknown', async () => {
+  const opaque = digit => `opaque:${digit.repeat(64)}`;
+  const deployment = { ...agent, id: 'deployment', entity_id: 'deployment-entity', deployment_id: 'deployment' };
+  const declared = {
+    network_status: 'declared',
+    network_segment: opaque('a'),
+    network_egress: 'allowlist',
+    network_egress_targets: [opaque('b'), opaque('c')],
+    sandbox_kind: 'container',
+  };
+  // Neo4j map projections return null for a property the node does not have.
+  const absent = {
+    network_status: null,
+    network_segment: null,
+    network_egress: null,
+    network_egress_targets: null,
+    sandbox_kind: null,
+  };
+  const network = async properties => {
+    const backend = fake({
+      nodes: [
+        { label: 'GuardAgent', node: agent },
+        { label: 'GuardDeployment', node: { ...deployment, ...properties } },
+      ],
+    });
+    const nodes = (await new Neo4jMapStore(backend.driver).read(scope)).sources[0].current.nodes;
+    const found = nodes.find(node => node.label === 'GuardDeployment');
+    assert.ok(found, 'a bad declaration never hides the deployment');
+    return Object.fromEntries(
+      Object.entries(found.properties).filter(([key]) => key.startsWith('network_') || key === 'sandbox_kind'),
+    );
+  };
+  assert.deepEqual(await network(declared), declared);
+  assert.deepEqual(await network({ ...declared, network_segment: null }), { ...declared, network_segment: null });
+  const sealed = { ...absent, ...declared, network_segment: null, network_egress: 'none', network_egress_targets: [] };
+  assert.deepEqual(await network(sealed), sealed, 'no segment, no egress, no targets');
+  assert.deepEqual(await network({ ...absent, network_status: 'not_declared' }), {
+    ...absent,
+    network_status: 'not_declared',
+  });
+  assert.deepEqual(await network({}), {}, 'v1-v3: absent, unknown');
+  assert.deepEqual(await network(absent), absent);
+  for (const malformed of [
+    { network_status: 'safe' },
+    { network_status: true },
+    { network_segment: 'segment-a' },
+    { network_segment: `${opaque('a')}\n` },
+    { network_egress: 'restricted' },
+    { network_egress: null },
+    { network_egress: 'open' },
+    { network_egress_targets: null },
+    { network_egress_targets: 'opaque' },
+    { network_egress_targets: ['api.example.com'] },
+    { network_egress_targets: [opaque('b'), opaque('b')] },
+    { network_egress_targets: Array.from({ length: 33 }, (_, i) => `opaque:${i.toString(16).padStart(64, '0')}`) },
+    { sandbox_kind: 'jail' },
+    { sandbox_kind: null },
+  ])
+    assert.deepEqual(await network({ ...declared, ...malformed }), {}, `dropped whole: ${JSON.stringify(malformed)}`);
+  for (const stray of [
+    { network_status: 'not_declared', network_egress: 'open' },
+    { network_status: 'not_declared', sandbox_kind: 'vm' },
+    { network_status: 'not_declared', network_egress_targets: [] },
+    { network_status: null, network_egress: 'none' },
+    { sandbox_kind: 'vm' },
+  ])
+    assert.deepEqual(await network(stray), {}, `a field without a declaration: ${JSON.stringify(stray)}`);
+});
+
 test('a one-agent read finds delegation ancestors from its own tasks, after its own nodes', async () => {
   const backend = fake();
   await new Neo4jMapStore(backend.driver).read(scope, { agentId: 'agent', boundary: true });

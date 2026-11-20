@@ -57,7 +57,7 @@ function serviceWith(discovery, profile = 'host') {
 }
 
 test('the two discovery operations are registered with closed schemas', () => {
-  assert.deepEqual(MAP_OPERATIONS.slice(-2), ['list_undeclared_activity', 'list_unclaimed_identities']);
+  assert.deepEqual(MAP_OPERATIONS.slice(-3, -1), ['list_undeclared_activity', 'list_unclaimed_identities']);
   assert.equal(
     validateQueryArguments('list_undeclared_activity', { sourceId: 's', kind: 'principals' }).kind,
     'principals',

@@ -4,7 +4,7 @@ import { isRecord, lineLocator } from './text.js';
 /**
  * Agent Guard's own records, read from files: `guard.describe()` output, executor inventory
  * snapshots (`agent-guard-inventory-v1`/`-v2`) and host manifests (`agent-guard-inventory-manifest-v1`
- * to `-v3`). Files are recognised by content, not by name. Only the fields the rules use are
+ * to `-v4`). Files are recognised by content, not by name. Only the fields the rules use are
  * validated; a file that is recognised but malformed is reported, never guessed at.
  */
 
@@ -308,7 +308,7 @@ export function readAgentGuardFiles(
           out.directAccess.push(...embedded.directAccess);
         }
       } else {
-        if (![1, 2, 3].includes(data['schemaVersion'] as number))
+        if (![1, 2, 3, 4].includes(data['schemaVersion'] as number))
           throw new Malformed(`unsupported manifest schemaVersion ${String(data['schemaVersion'])}`);
         const manifest = readManifest(data, file.path, locate);
         out.agents.push(...manifest.agents);

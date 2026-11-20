@@ -20,6 +20,7 @@ import { ResourcesBrowse } from './views/resources.jsx';
 import { ChangesView } from './views/changes.jsx';
 import { Health, HealthUnavailable } from './views/health.jsx';
 import { DiscoveryView } from './discovery.jsx';
+import { TopologyView } from './views/topology.jsx';
 import './style.css';
 
 /** Shown in place of an agent until one is chosen. */
@@ -57,7 +58,7 @@ function Welcome({ listingFailed }) {
   );
 }
 
-/** The page: sign-in, or the open workspace with its six views. The state is in `useWorkspace`. */
+/** The page: sign-in, or the open workspace with its seven views. The state is in `useWorkspace`. */
 function App() {
   const view = useWorkspace();
   const {
@@ -205,6 +206,8 @@ function App() {
                 ownerFilter={resourceOwner}
                 initialResource={resourceSelection}
               />
+            ) : tab === 'topology' ? (
+              <TopologyView sources={sources} query={query} reportError={reportError} onAgent={selectAgent} />
             ) : tab === 'changes' ? (
               <ChangesView sources={sources} query={query} reportError={reportError} onAgent={selectAgent} />
             ) : tab === 'discovery' ? (

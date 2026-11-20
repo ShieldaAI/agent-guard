@@ -397,6 +397,9 @@ executor.close();
   deployments and resource bindings (`profile: 'host'`); `loadInventoryManifestFile()`
   reads the manifest from a private file. `composeMcpInventorySnapshot()` adds MCP
   connection state (`profile: 'host-mcp'`). A manifest can describe, never grant.
+  Manifest v3 adds declared paths around the guard (`directAccess`); v4 adds each
+  deployment's declared network isolation (`networkIsolation`: segment, egress and
+  sandbox). A host snapshot with a v3 or v4 manifest is inventory schema v2.
 - All listeners of one executor share one worker and must use the same `workerScheduling`
   and `reuseUnchangedMs`; a different value is refused with `INVENTORY_CONFIG_INVALID`.
 - After a restore, clone, key rotation or change of profile, use a new
@@ -695,6 +698,7 @@ except evicted receipts and recent events, as described under
 | Manifest size | 2 MiB, 200,000 JSON values |
 | Manifest agents, deployments | 1,000 each |
 | Manifest bindings | 10,000 of each kind, 128 actions per resource binding |
+| Manifest `directAccess`, `networkIsolation` | 1,000 each; 32 paths and one isolation entry (32 egress targets) per deployment |
 | Manifests per listener | 1,024 |
 | MCP readers, selected connections | 1,024, 128 |
 | MCP operations | 256 and 2 MiB per connection, 10,000 in total |

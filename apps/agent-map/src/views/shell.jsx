@@ -3,6 +3,7 @@ import { Icon, Notice, Status } from '../components/common.jsx';
 
 export const TABS = Object.freeze([
   ['inventory', 'Agent inventory', 'network'],
+  ['topology', 'Topology', 'fit'],
   ['owners', 'Owners', 'layers'],
   ['resources', 'Resources', 'search'],
   ['changes', 'Changes', 'clock'],
@@ -11,6 +12,7 @@ export const TABS = Object.freeze([
 ]);
 const HEADINGS = Object.freeze({
   inventory: 'Agent inventory',
+  topology: 'Agent topology',
   owners: 'Agent ownership',
   resources: 'Resource inventory',
   changes: 'What changed',

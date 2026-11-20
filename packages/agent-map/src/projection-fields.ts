@@ -42,6 +42,13 @@ export const MAP_PROPERTIES: Readonly<Record<GuardLabel, readonly string[]>> = O
     'binding_authority',
     // Manifest v3 only: 'found' | 'none_declared'; absent means unknown.
     'direct_access_status',
+    // Manifest v4 only: 'declared' | 'not_declared'; absent means unknown. The other four are
+    // present only when declared (a missing segment then means no shared segment).
+    'network_status',
+    'network_segment',
+    'network_egress',
+    'network_egress_targets',
+    'sandbox_kind',
     ...HOST_FIELDS,
   ],
   GuardTask: [

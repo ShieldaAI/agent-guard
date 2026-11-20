@@ -41,6 +41,7 @@ test('the demo answers every map operation through the real service, without the
     get_agent_inventory: { sourceId, agentId: 'agent-research' },
     list_undeclared_activity: { sourceId },
     list_unclaimed_identities: {},
+    get_agent_topology: {},
   };
   for (const operation of MAP_OPERATIONS) {
     const response = await queryDemo(operation, args[operation]);
@@ -253,30 +254,48 @@ test('potential access matches the exact reference and action, and says when the
     assert.deepEqual((await queryDemo('find_agents_with_access', { resourceRef, action })).data.candidates, []);
 });
 
-test('the snapshot comparison shows a new task, an owner transfer, a quarantined connection and a new direct path', async () => {
+test('the snapshot comparison shows new tasks, an owner transfer, a new recipient, a quarantined connection and a new direct path', async () => {
   const changes = (await queryDemo('get_changes', { sourceId, since: 'previous' })).data;
   assert.equal(changes.coverageGap, false);
   assert.deepEqual(
     changes.details.map(item => [item.name, item.kind, item.categories[0]]),
     [
       ['Direct S3 SDK client in the worker', 'added', 'outside_guard'],
+      ['Legacy exporter', 'removed', 'ownership'],
       ['Research assistant', 'changed', 'ownership'],
+      ['finance-review-handoff', 'added', 'permissions'],
+      ['legacy-staging', 'removed', 'bindings'],
       ['mail-eu', 'changed', 'bindings'],
+      ['release-assistant-task', 'changed', 'permissions'],
       ['research-followup', 'added', 'permissions'],
     ],
   );
-  const owner = changes.details.find(item => item.label === 'GuardAgent');
+  const owner = changes.details.find(item => item.label === 'GuardAgent' && item.kind === 'changed');
   assert.deepEqual(owner.changedFields, ['owner_id']);
   assert.deepEqual([owner.before.properties.owner_id, owner.after.properties.owner_id], ['sam.rivera', 'alex.chen']);
   const connection = changes.details.find(item => item.label === 'GuardMcpConnection');
   assert.deepEqual([connection.before.properties.state, connection.after.properties.state], ['ready', 'quarantined']);
-  assert.ok(changes.details.every(item => item.affectedAgents.some(agent => agent.name === 'Research assistant')));
+  const affected = Object.fromEntries(
+    changes.details.map(item => [item.name, item.affectedAgents.map(agent => agent.name).sort()]),
+  );
+  assert.deepEqual(affected['finance-review-handoff'], ['Finance reviewer']);
+  assert.deepEqual(affected['release-assistant-task'], ['Release assistant']);
+  assert.deepEqual(affected['Legacy exporter'], ['Legacy exporter']);
+  for (const name of ['Direct S3 SDK client in the worker', 'Research assistant', 'mail-eu', 'research-followup'])
+    assert.ok(affected[name].includes('Research assistant'), name);
   const outside = (await queryDemo('get_changes', { sourceId, changeKind: 'outside_guard' })).data.details;
-  assert.equal(outside.length, 1);
-  assert.equal(outside[0].evidenceKind, 'declared');
+  // The new SDK path, and the retired deployment whose direct-access declaration went with it.
+  assert.deepEqual(
+    outside.map(item => item.name),
+    ['Direct S3 SDK client in the worker', 'legacy-staging'],
+  );
+  assert.ok(outside.every(item => item.evidenceKind === 'declared'));
   // An agent's own changes tab: only what touches that agent.
   const release = (await queryDemo('get_changes', { sourceId, agentId: 'agent-release' })).data.details;
-  assert.deepEqual(release, []);
+  assert.deepEqual(
+    release.map(item => [item.name, item.changedFields]),
+    [['release-assistant-task', ['allowed_recipients']]],
+  );
 });
 
 test('the directory, sections and resource views page real service rows', async () => {
@@ -450,7 +469,8 @@ test('the demo is its own file with the service in it, and neither file has a No
   assert.equal(app.text.match(/import\(\s*["']([^"']+)["']\s*\)/g)?.length, 1);
   assert.match(app.text, /import\(\s*["']\.\/demo\.js["']\s*\)/);
   assert.equal(/\bimport\s*\(/.test(demo.text), false);
-  // The page's script was 809 KB before the demo existed; the bounds leave little room for more.
-  assert.ok(app.contents.byteLength < 820 * 1024, `app.js is ${app.contents.byteLength} bytes`);
+  // The page's script was 809 KB before the demo existed and about 830 KB with the Topology view
+  // (1.4.0); the bounds leave little room for more.
+  assert.ok(app.contents.byteLength < 850 * 1024, `app.js is ${app.contents.byteLength} bytes`);
   assert.ok(demo.contents.byteLength < 120 * 1024, `demo.js is ${demo.contents.byteLength} bytes`);
 });
