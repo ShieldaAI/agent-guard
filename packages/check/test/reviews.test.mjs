@@ -202,6 +202,73 @@ test('AGC-REV-006: owner absent from CODEOWNERS; case-insensitive; silent withou
   );
 });
 
+test('AGC-REV-008: a record that approves access the agent no longer has asks to be narrowed', () => {
+  const found = findingsFor(
+    run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ caps: '[write, selfModify, exec, egress]' })) }),
+    'AGC-REV-008',
+  );
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, 'low');
+  assert.match(
+    found[0].message,
+    /approves runs code, sends data out, which the agent can no longer do without asking\. A later change could restore/,
+  );
+  assert.match(found[0].fix, /Remove exec, egress from capabilities/);
+  // Exactly what it does: nothing to narrow.
+  assert.deepEqual(findingsFor(run({ ...AGENT, '.agc-reviews.yaml': reviews(record()) }), 'AGC-REV-008'), []);
+});
+
+test('AGC-REV-008 counts maybe as able, and asks about prompted access', () => {
+  const maybe = run({
+    '.claude/settings.json': settings({ allow: ['Edit', 'Bash(npm test)'] }),
+    '.agc-reviews.yaml': reviews(record({ caps: '[write, selfModify, exec, egress]' })),
+  });
+  assert.deepEqual(findingsFor(maybe, 'AGC-REV-008'), []);
+  // Behind a prompt is reviewed at each call, so approving it in the record is stale.
+  const prompted = run({
+    '.claude/settings.json': settings({ allow: ['Edit'], ask: ['Bash'] }),
+    '.agc-reviews.yaml': reviews(record({ caps: '[write, selfModify, exec]' })),
+  });
+  assert.match(findingsFor(prompted, 'AGC-REV-008')[0].message, /approves runs code/);
+});
+
+test('AGC-REV-008 judges a record by the agents it governs, not ones held to their own entry', () => {
+  const sub = tools => `---\nname: s\ndescription: d\ntools: ${tools}\n---\nx\n`;
+  const result = run({
+    '.claude/agents/a.md': sub('Read, Bash'),
+    '.agc-reviews.yaml': reviews(
+      record({ agent: '.claude/agents/a.md', caps: '[exec, spend]' }),
+      record({ agent: 'subagent:.claude/agents/a.md', caps: '[exec, untrustedInput, write, egress, selfModify]' }),
+    ),
+  });
+  const found = findingsFor(result, 'AGC-REV-008');
+  // The file entry governs nothing (the ID entry wins), so it is not judged; the ID entry is.
+  assert.deepEqual(
+    found.map(f => f.message.match(/review of (\S+) approves/)?.[1]),
+    found.length ? ['subagent:.claude/agents/a.md'] : [],
+  );
+  assert.ok(
+    found.every(f => !/spends money/.test(f.message)),
+    'the file entry approving spend is not judged',
+  );
+});
+
+test('a change that narrows access raises AGC-REV-008 as new, below the default gate', () => {
+  const base = run({
+    '.claude/settings.json': settings({ allow: ['Edit', 'Bash'] }),
+    '.agc-reviews.yaml': reviews(record({ caps: '[untrustedInput, write, exec, egress, selfModify]' })),
+  });
+  const head = run({
+    ...AGENT,
+    '.agc-reviews.yaml': reviews(record({ caps: '[untrustedInput, write, exec, egress, selfModify]' })),
+  });
+  const added = diffScans(base, head).added.filter(f => f.ruleId.startsWith('AGC-REV'));
+  assert.deepEqual(
+    added.map(f => [f.ruleId, f.severity]),
+    [['AGC-REV-008', 'low']],
+  );
+});
+
 test('AGC-REV-007: records that cannot be read are findings, never guesses', () => {
   const cases = [
     [record({ owner: '""' }), /owner is required/],

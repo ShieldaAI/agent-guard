@@ -264,4 +264,33 @@ export const REVIEW_RULES: readonly Rule[] = [
         });
     },
   ),
+  rule(
+    {
+      id: 'AGC-REV-008',
+      title: 'Review approves more than the agent can do',
+      severity: 'low',
+      confidence: 'high',
+      owasp: [ASI.tools],
+      help: `An entry in ${REVIEWS_PATH} approves a capability that none of the agents it speaks for can use without asking, usually because a change removed that access and left the record as it was. The approval then waits for the access to come back: a later change can restore it without touching the record, so AGC-REV-003 stays quiet and nobody looks again. Narrow the record to what the agents can do, so each review renews only access that exists. A capability the scanner calls unknown counts as one the agent can use.`,
+    },
+    (project, report) => {
+      const records = project.reviews?.records ?? [];
+      if (!records.length) return;
+      const agents = shipped(project);
+      for (const record of records) {
+        // Only the agents this record governs: one with its own entry by ID is held to that entry.
+        const governed = agents.filter(agent => recordFor(agent, records, agents) === record);
+        if (!governed.length) continue;
+        const able = new Set(governed.flatMap(currentCapabilities));
+        const unused = CAPABILITIES.filter(item => record.capabilities.includes(item) && !able.has(item));
+        if (!unused.length) continue;
+        report({
+          message: `The review of ${record.agent} approves ${unused.map(item => CAPABILITY_LABELS[item]).join(', ')}, which ${governed.length === 1 ? 'the agent can no longer do' : 'none of its agents can do any longer'} without asking. A later change could restore that access without changing the record.`,
+          location: record.location,
+          subject: `unused:${record.agent}:${unused.join(',')}`,
+          fix: `Remove ${unused.join(', ')} from capabilities in ${REVIEWS_PATH}.`,
+        });
+      }
+    },
+  ),
 ];

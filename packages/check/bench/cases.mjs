@@ -967,6 +967,27 @@ export const CASES = [
     now: REVIEW_NOW,
     files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review() },
   },
+  {
+    id: 'rev8-approves-removed-access',
+    rule: 'AGC-REV-008',
+    expect: true,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review({ caps: '[write, selfModify, exec]' }),
+    },
+  },
+  {
+    id: 'rev8-approves-what-it-uses',
+    rule: 'AGC-REV-008',
+    expect: false,
+    now: REVIEW_NOW,
+    files: {
+      // npm test may send data out, so approving egress is not stale.
+      '.claude/settings.json': settings({ allow: ['Edit', 'Bash(npm test)'] }),
+      '.agc-reviews.yaml': review({ caps: '[write, selfModify, exec, egress]' }),
+    },
+  },
 
   // ---- policy as code ----
   {

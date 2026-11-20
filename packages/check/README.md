@@ -330,9 +330,13 @@ A date on its own turns into a snooze button, so the check holds the record to i
   date, the owner, the capabilities it approves (and what it approved before) and what the agent
   can do now without asking. The reviewer approves access, not just a later date. A record
   removed by the change is listed too.
-- **The record must match the agent.** An agent that can do more without asking than its record
-  approves is a finding (AGC-REV-003). So a change that widens access also has to change the
-  record, where the reviewer sees it.
+- **The record must match the agent, both ways.** An agent that can do more without asking than
+  its record approves is a finding (AGC-REV-003). So a change that widens access also has to
+  change the record, where the reviewer sees it. A record that approves something the agent can
+  no longer do is reported too (AGC-REV-008, low): otherwise a later change could restore that
+  access without touching the record. Approvals are per capability, not per command: once a
+  review approves `exec`, another command that runs code does not change the record. The
+  permission rules (AGC-PERM-\*) judge those commands.
 - **The date cannot be pushed out of sight.** `review_by` may be at most
   `policy.max_review_days` ahead (default 365; AGC-REV-004).
 - **Every agent needs a record**, once `policy.require_reviews: true` is set (AGC-REV-002). A
@@ -520,6 +524,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-REV-005  | High                    | Review record matches no agent                                          | ASI10        |
 | AGC-REV-006  | Low                     | Review owner is not a code owner                                        | ASI10        |
 | AGC-REV-007  | High                    | Review record could not be read                                         | ASI10        |
+| AGC-REV-008  | Low                     | Review approves more than the agent can do                              | ASI02        |
 | AGC-POL-001  | High                    | MCP server not on the approved list                                     | ASI04        |
 | AGC-POL-002  | High                    | Remote MCP server on a host not on the approved list                    | ASI04, ASI02 |
 | AGC-POL-003  | High                    | Agent holds a forbidden capability combination                          | ASI02, ASI01 |
