@@ -194,7 +194,7 @@ export const REVIEW_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.rogue],
-      help: `An entry in ${REVIEWS_PATH} names no agent the scan found by ID, name or file, or names several agents by one name. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.`,
+      help: `An entry in ${REVIEWS_PATH} names no agent the scan found by ID, name or file, or uses a name that agents in several files share. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.`,
     },
     (project, report) => {
       const agents = shipped(project);
@@ -203,7 +203,7 @@ export const REVIEW_RULES: readonly Rule[] = [
         const shared = sameName(record, agents);
         if (shared > 1) {
           report({
-            message: `The review record for ${record.agent} names ${shared} agents by the same name, so it covers none of them: a name can be copied into a new agent's file.`,
+            message: `The review record for ${record.agent} names agents in ${shared} files by the same name, so it covers none of them: a name can be copied into a new agent's file.`,
             location: record.location,
             subject: `orphan:${record.agent}`,
             fix: 'Set agent to the file or ID of the one agent the review is for (agent-guard-check --format json lists them).',

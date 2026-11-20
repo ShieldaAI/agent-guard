@@ -28,6 +28,12 @@ export const REVIEWS_PATH = '.agc-reviews.yaml';
  */
 export const CLOCK_RULES: ReadonlySet<string> = new Set(['AGC-REV-001']);
 
+/**
+ * Rules an inline `agc-ignore` comment cannot silence: the lapsed date, and the unreadable record
+ * that would otherwise hide it (break the entry, then ignore the break). Fix the entry instead.
+ */
+export const NO_INLINE_RULES: ReadonlySet<string> = new Set(['AGC-REV-001', 'AGC-REV-007']);
+
 export interface ReviewRecord {
   /** What the entry names: an agent ID, an agent name, or the file that defines agents. */
   readonly agent: string;
@@ -59,13 +65,16 @@ export function parseDay(value: string): number | undefined {
   return new Date(time).toISOString().slice(0, 10) === value ? time : undefined;
 }
 
-/** The `YYYY-MM-DD` a YAML value stands for: a quoted or plain string, or a YAML 1.1 timestamp. */
-function dayText(value: unknown): string | undefined {
+/**
+ * The `YYYY-MM-DD` a YAML value stands for: a quoted or plain string, or a YAML 1.1 timestamp
+ * written as exactly that. A timestamp is judged by how it is written, not by the instant it parses
+ * to: `2026-11-19T24:00:00Z` or `2026-10-62` parse to another day than they appear to say.
+ */
+function dayText(value: unknown, written: string | undefined): string | undefined {
   if (typeof value === 'string') return value.trim();
-  // A timestamp with a time of day or an offset is not a day: reading it as UTC would move the date.
-  if (value instanceof Date && !Number.isNaN(value.getTime()) && value.getTime() % DAY === 0)
-    return value.toISOString().slice(0, 10);
-  return undefined;
+  if (!(value instanceof Date) || written === undefined) return undefined;
+  const match = /^(?:!!timestamp\s+)?(\d{4}-\d{2}-\d{2})$/.exec(written.trim());
+  return match && parseDay(match[1]!) !== undefined ? match[1] : undefined;
 }
 
 export function parseReviews(path: string, text: string): ReviewFile {
@@ -78,13 +87,22 @@ export function parseReviews(path: string, text: string): ReviewFile {
   });
   let data: unknown;
   let starts: (number | undefined)[] = [];
+  let written: (string | undefined)[] = [];
   try {
     const doc = parseDocument(text, { uniqueKeys: true });
     if (doc.errors.length) throw doc.errors[0];
     data = doc.toJS({ maxAliasCount: 20 });
     // Each entry's line comes from where the parser found it, not from searching for its text.
     const list = isMap(doc.contents) ? doc.contents.get('reviews', true) : undefined;
-    if (isSeq(list)) starts = list.items.map(item => (item as { range?: [number] } | null)?.range?.[0]);
+    if (isSeq(list)) {
+      starts = list.items.map(item => (item as { range?: [number] } | null)?.range?.[0]);
+      written = list.items.map(item => {
+        const node = isMap(item)
+          ? (item.get('review_by', true) as { range?: [number, number] } | undefined)
+          : undefined;
+        return node?.range ? text.slice(node.range[0], node.range[1]) : undefined;
+      });
+    }
   } catch (error) {
     return whole(
       `${path} is not valid YAML (${error instanceof Error ? error.message.split('\n')[0] : String(error)})`,
@@ -113,7 +131,7 @@ export function parseReviews(path: string, text: string): ReviewFile {
     if (!name) return fail('agent is required: an agent ID, an agent name, or the file that defines it');
     const owner = typeof entry['owner'] === 'string' ? entry['owner'].trim() : '';
     if (!owner) return fail('owner is required: the person or team who answers for this agent');
-    const reviewBy = dayText(entry['review_by']);
+    const reviewBy = dayText(entry['review_by'], written[i]);
     const reviewByTime = reviewBy === undefined ? undefined : parseDay(reviewBy);
     if (reviewBy === undefined || reviewByTime === undefined)
       return fail('review_by is required and must be a date written YYYY-MM-DD');
@@ -144,20 +162,19 @@ interface Named {
 }
 
 /**
- * Whether a record covers an agent: by ID, by the file that defines it, or by name when no other
- * agent in `agents` has that name. A name is chosen in the file (a subagent's front matter), so one
- * shared by several agents would let a new agent borrow another's review.
+ * Whether a record covers an agent: by ID, by the file that defines it, or by name while every
+ * agent with that name is defined in one file. A name can be written in a file (a subagent's front
+ * matter), so a copy in another file would otherwise borrow the review. Agents of one file sharing a
+ * name the scanner built (two agent steps in one workflow job) are still covered together.
  */
 export function covers(record: ReviewRecord, agent: Named, agents: readonly Named[]): boolean {
   if (record.agent === agent.id || record.agent === agent.location.file) return true;
-  return record.agent === agent.name && agents.filter(item => item.name === agent.name).length === 1;
+  return record.agent === agent.name && sameName(record, agents) === 1;
 }
 
-/** How many of `agents` a record's value names by name: more than one covers none of them. */
+/** How many files define an agent with the record's value as its name: more than one covers none. */
 export function sameName(record: ReviewRecord, agents: readonly Named[]): number {
-  return agents.filter(
-    item => item.name === record.agent && item.id !== record.agent && item.location.file !== record.agent,
-  ).length;
+  return new Set(agents.filter(item => item.name === record.agent).map(item => item.location.file)).size;
 }
 
 /** Agents defined outside the repository (your own or managed settings) are not shipped with it. */

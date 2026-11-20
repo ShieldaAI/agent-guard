@@ -302,7 +302,7 @@ by which someone looks again:
 reviews:
   - agent: .claude/settings.json # agent ID, agent name, or the file that defines it
     owner: '@acme/platform'
-    review_by: 2027-05-01 # YYYY-MM-DD, UTC
+    review_by: 2027-05-01 # YYYY-MM-DD, UTC; a timestamp with a time is not accepted
     capabilities: [write, selfModify] # what it may do without asking; [] for none
   - agent: .github/workflows/triage.yml
     owner: '@acme/support-tools'
@@ -312,8 +312,9 @@ reviews:
 
 `agent` matches an agent's ID, its name, or the file that defines it; `--format json` lists
 the ID and name of every agent the scan found. A name counts only while one agent has it: a
-name is written in the agent's own file, so a copy could otherwise borrow another agent's review.
-The file is the safest choice. `capabilities` lists what the agent may do
+name can be written in an agent's file, so a copy elsewhere could otherwise borrow another
+agent's review. Agents of one file that share a name the scanner built (two agent steps in one
+workflow job) are covered together. The file is the safest choice. `capabilities` lists what the agent may do
 without a person approving each use, using the
 seven capability names (`privateData`, `untrustedInput`, `write`, `exec`, `egress`, `spend`,
 `selfModify`). Something behind a per-call prompt is checked at every call, so it is left out.
@@ -336,11 +337,14 @@ A date on its own turns into a snooze button, so the check holds the record to i
   `policy.max_review_days` ahead (default 365; AGC-REV-004).
 - **Every agent needs a record**, once `policy.require_reviews: true` is set (AGC-REV-002). A
   record that names no agent (AGC-REV-005, high), usually left behind by a rename, and one that
-  cannot be read (AGC-REV-007) are findings too. A record is never guessed at. AGC-REV-005 is high
-  because the moved agent is no longer checked against what its review approved: the change that
-  moves it has to point the record at it. Without `require_reviews`, records are opt-in, so a
-  change that deletes a record makes its date stop counting; the deletion is listed in the
-  report, and `require_reviews` turns it into a failure.
+  cannot be read (AGC-REV-007) are findings too. A record is never guessed at, and neither of
+  those can be silenced with an inline comment. AGC-REV-005 is high because a moved agent is no
+  longer checked against what its review approved, so the change that moves it has to point the
+  record at it.
+- **Turn on `require_reviews` if records are to be a gate, not a habit.** Without it, records are
+  opt-in: a change that deletes a record, or moves an agent and leaves another agent at the old
+  path for the record to match, leaves the moved agent with no record and nothing fails. The report
+  still lists a deleted record. With `require_reviews`, both fail as a missing record (AGC-REV-002).
 - **The owner should be asked about changes.** When the repository has CODEOWNERS, an owner it
   does not name is reported (AGC-REV-006). That also catches an owner who left and was removed
   from it.

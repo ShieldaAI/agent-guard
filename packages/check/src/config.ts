@@ -2,7 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import type { Capability, Confidence, Finding, Severity, Suppressed } from './types.js';
 import { CAPABILITIES, SEVERITY_ORDER } from './types.js';
 import { isRecord } from './text.js';
-import { CLOCK_RULES } from './reviews.js';
+import { CLOCK_RULES, NO_INLINE_RULES } from './reviews.js';
 import type { DeclaredServer } from './mcp.js';
 
 export type FailOn = Severity | 'none';
@@ -327,7 +327,7 @@ export function applySuppressions(
       return inlineCache.get(key)!;
     };
     // A comment the change itself can add is no decision about a date that passes with no commit.
-    const inline = CLOCK_RULES.has(finding.ruleId)
+    const inline = NO_INLINE_RULES.has(finding.ruleId)
       ? undefined
       : [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
           match => match && match[1] === finding.ruleId,

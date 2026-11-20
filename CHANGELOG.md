@@ -12,10 +12,13 @@
   shipped agent (with `policy.require_reviews`). AGC-REV-003 flags an agent that can do more
   without asking than its record approves. AGC-REV-004 caps how far ahead the date may be
   (`policy.max_review_days`, default 365). AGC-REV-005 (high) flags a record that matches no
-  agent, so moving an agent cannot carry new access past its record, AGC-REV-006 an owner
-  CODEOWNERS does not name, and AGC-REV-007 a record that cannot be read. An inline `agc-ignore`
-  comment cannot silence AGC-REV-001. A record that names an agent by name covers it only while no
-  other agent has that name.
+  agent (usually a moved agent, which is then no longer checked against its record), AGC-REV-006
+  an owner CODEOWNERS does not name, and AGC-REV-007 a record that cannot be read. An inline
+  `agc-ignore` comment cannot silence AGC-REV-001 or AGC-REV-007. A record that names agents by
+  name covers them only while every agent with that name is defined in one file. A YAML 1.1
+  timestamp counts only when written as the day itself. Without `policy.require_reviews`, records
+  are opt-in: deleting one, or moving an agent and leaving another at the old path, leaves the
+  moved agent unrecorded without failing; `require_reviews` makes both fail.
 - Feature: with `--base`, a change to a review record is listed in the text, Markdown and JSON
   reports with its date, owner, the capabilities it approves (and what it approved before) and
   what the agent can do now without asking, marking what the record does not approve and what is

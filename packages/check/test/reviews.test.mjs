@@ -294,10 +294,51 @@ test('a name shared by several agents covers none of them, so a copied name borr
   );
   const orphan = findingsFor(result, 'AGC-REV-005');
   assert.equal(orphan.length, 1);
-  assert.match(orphan[0].message, /names 2 agents by the same name, so it covers none of them/);
+  assert.match(orphan[0].message, /names agents in 2 files by the same name, so it covers none of them/);
   // With one agent of that name, the name works.
   delete files['.claude/agents/copy.md'];
   assert.equal(run(files).reviews[0].agents.length, 1);
+});
+
+test('a name the scanner built for agents of one file still covers them all', () => {
+  const step = `      - uses: anthropics/claude-code-action@0123456789abcdef0123456789abcdef01234567\n        with:\n          prompt: Label this issue\n`;
+  const workflow = `name: triage\non: issues\npermissions:\n  contents: read\njobs:\n  triage:\n    runs-on: ubuntu-latest\n    timeout-minutes: 10\n    steps:\n${step}${step}`;
+  const result = run({
+    '.github/workflows/triage.yml': workflow,
+    '.agc-reviews.yaml': reviews(record({ agent: '"Workflow triage.yml › triage"', caps: '[untrustedInput]' })),
+  });
+  const workflows = result.agents.filter(agent => agent.kind === 'workflow');
+  assert.equal(workflows.length, 2);
+  assert.equal(new Set(workflows.map(agent => agent.name)).size, 1);
+  assert.deepEqual(result.reviews[0].agents.sort(), workflows.map(agent => agent.id).sort());
+  assert.deepEqual(findingsFor(result, 'AGC-REV-005'), []);
+});
+
+test('a YAML 1.1 timestamp counts only when written as the day itself', () => {
+  const v11 = entry => `%YAML 1.1\n---\n${reviews(entry)}`;
+  for (const date of ['2026-11-19T00:00:00-24:00', '2026-11-19T24:00:00Z', '2026-11-17T96:00:00Z', '2026-10-62']) {
+    const result = run({ ...AGENT, '.agc-reviews.yaml': v11(record({ date })) });
+    assert.equal(findingsFor(result, 'AGC-REV-007').length, 1, date);
+    assert.deepEqual(result.reviews, [], date);
+  }
+  const plain = run({ ...AGENT, '.agc-reviews.yaml': v11(record({ date: '2026-11-19' })) });
+  assert.equal(findingsFor(plain, 'AGC-REV-001')[0].severity, 'high');
+});
+
+test('an unreadable record cannot be silenced inline, so breaking a lapsed entry does not hide it', () => {
+  const broken = `reviews:\n  # agc-ignore AGC-REV-007: tidying later\n${record({ date: '"soon"' })}`;
+  const result = run({ ...AGENT, '.agc-reviews.yaml': broken });
+  assert.equal(findingsFor(result, 'AGC-REV-007').length, 1);
+  assert.deepEqual(result.suppressed, []);
+});
+
+test('a removed record is described the same way in text and Markdown', () => {
+  const base = run({ ...AGENT, '.agc-reviews.yaml': reviews(record()) });
+  const head = run(AGENT);
+  const diff = diffScans(base, head);
+  assert.match(formatText(head, diff), /\(removed\).*can do now without asking: write, selfModify$/m);
+  assert.match(formatMarkdown(head, diff), /\| write, selfModify \|$/m);
+  assert.doesNotMatch(formatMarkdown(head, diff), /not approved/);
 });
 
 test('each record is located at its own entry, even when its name appears earlier in the file', () => {

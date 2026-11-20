@@ -68,14 +68,12 @@ export function describeReviewChange(change: ReviewChange): {
   const currentItems = change.current.map(capability => ({
     capability,
     maybe: maybe.has(capability),
-    approved: Boolean(after?.capabilities.includes(capability)),
+    // A removed record approves nothing to compare with: its line shows what the agent can do.
+    approved: after ? after.capabilities.includes(capability) : true,
   }));
   const current = currentItems.length
     ? currentItems
-        .map(
-          item =>
-            `${item.capability}${item.maybe ? ' (maybe)' : ''}${after && !item.approved ? ' (not approved)' : ''}`,
-        )
+        .map(item => `${item.capability}${item.maybe ? ' (maybe)' : ''}${item.approved ? '' : ' (not approved)'}`)
         .join(', ')
     : 'nothing';
   if (!after)

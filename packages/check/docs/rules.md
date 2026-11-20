@@ -1571,7 +1571,7 @@ reviews:
 
 Severity: high. Confidence: high. Evidence: repository files. OWASP Agentic Top 10: ASI10.
 
-An entry in .agc-reviews.yaml names no agent the scan found by ID, name or file, or names several agents by one name. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.
+An entry in .agc-reviews.yaml names no agent the scan found by ID, name or file, or uses a name that agents in several files share. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.
 
 Flagged:
 
