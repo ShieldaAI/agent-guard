@@ -24,6 +24,8 @@ export {
   type InventoryManifestV2,
   type InventoryManifestV3,
   type InventoryDirectAccess,
+  type InventoryManifestV4,
+  type InventoryNetworkIsolation,
   type InventoryOwnershipStatus,
   type InventoryOwner,
   type InventoryCredentialReference,

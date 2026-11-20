@@ -16,6 +16,7 @@ const REPORT_ARN = 'arn:aws:s3:::company-reports/quarterly/summary.pdf';
 const ARCHIVE_HOST = opaque('7');
 const RECIPIENTS = opaque('5');
 const ACCOUNT = '111122223333';
+const SEGMENT = opaque('c');
 
 // One agent per "dangerous three" status. What differs is the tool each one may send with and
 // what its host declared about paths around the guard.
@@ -32,6 +33,8 @@ const AGENTS = [
     // Declares external sends and allows them with untrusted context: exposed.
     send: { name: 'mcp:mail:send', sends_external: true, untrusted_context: 'allow' },
     untrusted: false,
+    // Manifest v4: on the production segment, open egress, in a container.
+    network: { segment: SEGMENT, egress: 'open', targets: [], sandbox: 'container' },
   },
   {
     key: 'release',
@@ -45,6 +48,8 @@ const AGENTS = [
     // The same kind of send, but approval is required with untrusted context: mitigated.
     send: { name: 'mcp:announce:post', sends_external: true, untrusted_context: 'require_approval' },
     untrusted: false,
+    // The host's v4 manifest has no network entry for this deployment.
+    network: null,
   },
   {
     key: 'finance',
@@ -58,6 +63,8 @@ const AGENTS = [
     // The tool never says whether it sends externally: unknown.
     send: { name: 'mcp:ledger:export' },
     untrusted: true,
+    // The same production segment as research, but egress only to one allowlisted target, in a VM.
+    network: { segment: SEGMENT, egress: 'allowlist', targets: [opaque('0')], sandbox: 'vm' },
   },
 ];
 
@@ -109,7 +116,7 @@ function currentProjection(now) {
     manifest_revision: 7,
     manifest_observed_at: at(420),
     authority_id: 'company-catalog',
-    manifest_schema_version: 3,
+    manifest_schema_version: 4,
   };
   const cloud = {
     cloud_status: 'resolved',
@@ -262,6 +269,15 @@ function currentProjection(now) {
       binding_authority: 'company-catalog',
       // Manifest v3: absent means the host has not said, which reads as unknown.
       ...(agent.directAccess ? { direct_access_status: agent.directAccess } : {}),
+      ...(agent.network
+        ? {
+            network_status: 'declared',
+            network_segment: agent.network.segment,
+            network_egress: agent.network.egress,
+            network_egress_targets: agent.network.targets,
+            sandbox_kind: agent.network.sandbox,
+          }
+        : { network_status: 'not_declared' }),
     });
     link(id('deployment'), id('agent'), 'G_INSTANCE_OF');
     link(id('deployment'), 'credential', 'G_USES_CREDENTIAL');
@@ -273,7 +289,8 @@ function currentProjection(now) {
       derived: false,
       sensitive: false,
       untrusted: agent.untrusted,
-      allowed_recipients: [RECIPIENTS],
+      // The release assistant may also send to the finance reviewer's application.
+      allowed_recipients: agent.key === 'release' ? [RECIPIENTS, 'finance-application'] : [RECIPIENTS],
       allow_control_plane: false,
       max_calls: 100,
       max_concurrent: 2,
@@ -377,6 +394,29 @@ function currentProjection(now) {
   });
   link('task-research-followup', 'deployment-research', 'G_ASSIGNED_TO');
   link('task-research-followup', 'task-research', 'G_DELEGATED_FROM');
+  // Finance only: a review task handed off from the research assistant's task since the last
+  // snapshot. It holds no grant of its own; the handoff is what links the two agents.
+  add('task-finance-handoff', 'GuardTask', {
+    task_id: 'finance-review-handoff',
+    principal_id: 'finance-application',
+    revoked: false,
+    delegated: false,
+    derived: true,
+    sensitive: false,
+    untrusted: false,
+    allowed_recipients: [],
+    allow_control_plane: false,
+    max_calls: 10,
+    max_concurrent: 1,
+    max_cost: 10,
+    deadline: now + 3_600_000,
+    calls: 0,
+    concurrent: 0,
+    spent: 0,
+    reserved: 0,
+  });
+  link('task-finance-handoff', 'deployment-finance', 'G_ASSIGNED_TO');
+  link('task-finance-handoff', 'task-research', 'G_DERIVED_FROM');
   add('direct-sdk', 'GuardDirectAccess', {
     ...host,
     evidence_kind: 'declared',
@@ -524,11 +564,13 @@ function currentProjection(now) {
 }
 
 /**
- * The snapshot before: the follow-up task and the SDK path did not exist, the research agent
- * belonged to the platform team, and the mail connection was still ready.
+ * The snapshot before: a legacy exporter agent still existed, the follow-up task, the finance
+ * handoff and the SDK path did not exist,
+ * the research agent belonged to the platform team, the release assistant could not send to
+ * the finance application, and the mail connection was still ready.
  */
 function previousProjection(current, now) {
-  const added = new Set(['task-research-followup', 'direct-sdk']);
+  const added = new Set(['task-research-followup', 'task-finance-handoff', 'direct-sdk']);
   const rename = id => `previous:${id}`;
   const nodes = current.nodes
     .filter(node => !added.has(node.id))
@@ -541,7 +583,9 @@ function previousProjection(current, now) {
           ? { ...node.properties, owner_id: 'sam.rivera' }
           : node.id === 'connection-mail'
             ? { ...node.properties, state: 'ready', metadata_state: 'current' }
-            : node.properties,
+            : node.id === 'task-release'
+              ? { ...node.properties, allowed_recipients: [RECIPIENTS] }
+              : node.properties,
     }));
   const edges = current.edges
     .filter(edge => !added.has(edge.source) && !added.has(edge.target))
@@ -550,6 +594,26 @@ function previousProjection(current, now) {
         ? { ...edge, source: rename(edge.source), target: rename('owner-sam') }
         : { ...edge, source: rename(edge.source), target: rename(edge.target) },
     );
+  // An agent retired before the current snapshot: in the previous one only.
+  const legacy = current.nodes.find(node => node.id === 'agent-release');
+  const legacyDeployment = current.nodes.find(node => node.id === 'deployment-release');
+  nodes.push(
+    {
+      ...legacy,
+      id: rename('agent-legacy'),
+      entityId: 'agent-legacy',
+      projectionId: PREVIOUS_ID,
+      properties: { ...legacy.properties, agent_id: 'legacy-exporter', name: 'Legacy exporter', team_id: 'Platform' },
+    },
+    {
+      ...legacyDeployment,
+      id: rename('deployment-legacy'),
+      entityId: 'deployment-legacy',
+      projectionId: PREVIOUS_ID,
+      properties: { ...legacyDeployment.properties, deployment_id: 'legacy-staging' },
+    },
+  );
+  edges.push({ source: rename('deployment-legacy'), target: rename('agent-legacy'), kind: 'G_INSTANCE_OF' });
   return {
     id: PREVIOUS_ID,
     snapshotId: 'demo-previous',

@@ -56,7 +56,11 @@ Change these parts:
 
 The [data format reference](../agent-cartography-contract.md) lists every field and limit.
 To also record paths that act without the guard, such as an operations shell or a direct
-database connection, use manifest version 3 and its `directAccess` list.
+database connection, use manifest version 3 and its `directAccess` list. To also say how each
+deployment is isolated on the network (a shared segment, whether it may send traffic out and
+where, and its sandbox), use manifest version 4 and its `networkIsolation` list; `[]` declares
+nothing for any deployment. Both are your statements, which the map shows as declared, not
+as checked.
 
 Make the file private. The loader refuses a file that other users can read:
 
@@ -214,6 +218,20 @@ out of date reads `unknown`; it is never shown as an empty list.
 The operations behind these views are `get_inventory_health`,
 `list_undeclared_activity` and `list_unclaimed_identities`. The
 [Agent Map package README](../../packages/agent-map/README.md#discovery) documents their
+fields and limits.
+
+## See how agents connect
+
+`get_agent_topology` draws the agents you may see as one graph. It shows the MCP servers,
+cloud identities, credentials, resources and caller principals that two or more agents
+share, the delegations, handoffs, dependencies and allowed recipients that link one agent
+to another, and for each agent a short isolation summary and what changed in its latest
+snapshot. Hosts that use manifest v4 also declare each deployment's network isolation
+(segment, egress policy, sandbox); the map shows agents on one segment as sharing it, and
+open egress or a missing sandbox on any deployment. A shared item is declared evidence that
+agents could exchange data, not that they did; no network traffic is observed. A team reader
+sees sharing only among the agents it may see. The
+[Agent Map package README](../../packages/agent-map/README.md#topology) documents the
 fields and limits.
 
 ## Read the map

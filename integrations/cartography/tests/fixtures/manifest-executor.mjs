@@ -61,7 +61,8 @@ try {
         connectionId: 'declared-mcp-reference', identitySelection: 'dynamic', identity: null },
     ],
   };
-  const v3 = process.argv.includes('--v3');
+  const v4 = process.argv.includes('--v4');
+  const v3 = v4 || process.argv.includes('--v3');
   if (v3 || process.argv.includes('--v2')) {
     const opaque = character => `opaque:${character.repeat(64)}`;
     Object.assign(manifest, { schemaVersion: 2, authorityId: 'company-directory',
@@ -89,11 +90,14 @@ try {
     if (v3) Object.assign(manifest, { schemaVersion: 3, directAccess: [{ id: opaque('4'),
       deploymentId: 'deployment-static', kind: 'database', targetRef: opaque('3'),
       description: 'Reporting job connects to the records database directly' }] });
+    // v4: the static deployment declares its network isolation; the dynamic one declares nothing.
+    if (v4) Object.assign(manifest, { schemaVersion: 4, networkIsolation: [{ deploymentId: 'deployment-static',
+      segmentId: opaque('5'), egress: 'allowlist', egressTargets: [opaque('7'), opaque('6')], sandbox: 'container' }] });
   }
   const validated = validateInventoryManifest(manifest);
   assert.equal(Object.isFrozen(validated.resourceBindings[0].target), true);
   const composed = composeInventorySnapshot(core, validated);
-  // Manifest v3 lifts a v1 core to the v2 snapshot shape; nothing else changes.
+  // Manifest v3 and v4 lift a v1 core to the v2 snapshot shape; nothing else changes.
   const lifted = ({ untrusted: _u, readsUntrusted: _r, untrustedContext: _c, sendsExternal: _s, ...rest }) => rest;
   const plain = value => JSON.parse(JSON.stringify(value));
   assert.deepEqual(v3 ? plain(composed.tasks.map(lifted)) : composed.tasks, v3 ? plain(core.tasks) : core.tasks);

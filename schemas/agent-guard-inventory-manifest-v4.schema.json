@@ -1,0 +1,187 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://shielda.ai/schemas/agent-guard-inventory-manifest-v4.schema.json",
+  "title": "Agent Guard host inventory manifest v4",
+  "description": "Manifest v3 plus `networkIsolation`: the network segment, egress and sandbox the host declares per deployment. [] means the host declared nothing for any deployment; it is not a check. Shared shapes are $refs into v3 and v2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "evidenceKind",
+    "source",
+    "manifestId",
+    "revision",
+    "observedAt",
+    "agents",
+    "deployments",
+    "taskBindings",
+    "resourceBindings",
+    "executionBindings",
+    "authorityId",
+    "owners",
+    "credentialReferences",
+    "directAccess",
+    "networkIsolation"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": 4
+    },
+    "evidenceKind": {
+      "const": "host_asserted"
+    },
+    "source": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/source"
+    },
+    "manifestId": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+    },
+    "revision": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/safeInteger"
+    },
+    "observedAt": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/timestamp"
+    },
+    "agents": {
+      "type": "array",
+      "maxItems": 1000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestAgent"
+      }
+    },
+    "deployments": {
+      "type": "array",
+      "maxItems": 1000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestDeployment"
+      }
+    },
+    "taskBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestTaskBinding"
+      }
+    },
+    "resourceBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestResourceBinding"
+      }
+    },
+    "executionBindings": {
+      "type": "array",
+      "maxItems": 10000,
+      "minItems": 0,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/manifestExecutionBinding"
+      }
+    },
+    "authorityId": {
+      "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+    },
+    "owners": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/owner"
+      }
+    },
+    "credentialReferences": {
+      "type": "array",
+      "maxItems": 1000,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/credentialReference"
+      }
+    },
+    "directAccess": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "agent-guard-inventory-manifest-v3.schema.json#/$defs/directAccess"
+      }
+    },
+    "networkIsolation": {
+      "type": "array",
+      "maxItems": 1000,
+      "items": {
+        "$ref": "#/$defs/networkIsolation"
+      }
+    }
+  },
+  "$defs": {
+    "networkIsolation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deploymentId",
+        "segmentId",
+        "egress",
+        "egressTargets",
+        "sandbox"
+      ],
+      "properties": {
+        "deploymentId": {
+          "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/identifier"
+        },
+        "segmentId": {
+          "anyOf": [
+            {
+              "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/opaque"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "egress": {
+          "enum": [
+            "none",
+            "allowlist",
+            "open"
+          ]
+        },
+        "egressTargets": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "agent-guard-inventory-manifest-v2.schema.json#/$defs/opaque"
+          }
+        },
+        "sandbox": {
+          "enum": [
+            "none",
+            "process",
+            "container",
+            "vm"
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "egress": {
+            "not": {
+              "const": "allowlist"
+            }
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "egressTargets": {
+            "maxItems": 0
+          }
+        }
+      },
+      "description": "At most one entry per deployment; deploymentId must name a declared deployment. segmentId null means no shared segment."
+    }
+  }
+}

@@ -25,6 +25,7 @@ import { listOwners, listResources } from './service/operations/list-owners-reso
 import { getResourceAccess } from './service/operations/get-resource-access.js';
 import { getAgentInventory } from './service/operations/get-agent-inventory.js';
 import { listUnclaimedIdentities, listUndeclaredActivity } from './service/operations/discovery.js';
+import { getAgentTopology } from './service/operations/get-agent-topology.js';
 
 export {
   MAP_OPERATIONS,
@@ -67,6 +68,7 @@ const OPERATIONS: Readonly<Record<MapOperation, Operation>> = Object.freeze({
   get_agent_inventory: getAgentInventory,
   list_undeclared_activity: listUndeclaredActivity,
   list_unclaimed_identities: listUnclaimedIdentities,
+  get_agent_topology: getAgentTopology,
 });
 /** Store errors a caller may see as they are; anything else reads as unavailable. */
 const READ_ERRORS = ['MAP_NOT_FOUND', 'MAP_LIMIT_EXCEEDED', 'MAP_UNAVAILABLE', 'MAP_TIMEOUT', 'MAP_SCOPE_INVALID'];

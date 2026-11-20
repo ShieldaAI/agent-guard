@@ -133,6 +133,7 @@ export async function runBenchmark(agents, sources, tasks) {
     // Discovery is for all-teams readers: this team-scoped reader gets the fixed note, unread.
     list_undeclared_activity: { sourceId: 'source-0' },
     list_unclaimed_identities: {},
+    get_agent_topology: {},
   };
   const results = {};
   // The flagged index adds a second read of the returned page; this in-memory store has no

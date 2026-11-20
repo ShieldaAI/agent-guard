@@ -14,6 +14,7 @@ export const OPERATIONS = Object.freeze([
   'get_inventory_health',
   'list_undeclared_activity',
   'list_unclaimed_identities',
+  'get_agent_topology',
 ]);
 // The labels a focused graph may carry. The viewer's own outside-guard nodes have names too,
 // but are never accepted as graph input.

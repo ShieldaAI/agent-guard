@@ -180,7 +180,22 @@ export interface InventoryManifestV3 extends Omit<InventoryManifestV2, 'schemaVe
   readonly schemaVersion: 3;
   readonly directAccess: readonly InventoryDirectAccess[];
 }
-export type InventoryManifest = InventoryManifestV1 | InventoryManifestV2 | InventoryManifestV3;
+/** A deployment's host-declared network isolation; a declaration, not a check. */
+export interface InventoryNetworkIsolation {
+  readonly deploymentId: string;
+  /** Opaque segment the deployment shares with others; null when it shares none. */
+  readonly segmentId: string | null;
+  readonly egress: 'none' | 'allowlist' | 'open';
+  /** Opaque destinations an allowlist admits; [] unless `egress` is 'allowlist'. */
+  readonly egressTargets: readonly string[];
+  readonly sandbox: 'none' | 'process' | 'container' | 'vm';
+}
+/** v3 plus `networkIsolation`: at most one entry per deployment; [] means nothing declared for any. */
+export interface InventoryManifestV4 extends Omit<InventoryManifestV3, 'schemaVersion'> {
+  readonly schemaVersion: 4;
+  readonly networkIsolation: readonly InventoryNetworkIsolation[];
+}
+export type InventoryManifest = InventoryManifestV1 | InventoryManifestV2 | InventoryManifestV3 | InventoryManifestV4;
 export interface HostInventorySnapshot extends Omit<InventorySnapshot, 'profile' | 'coverage'> {
   readonly profile: 'host';
   readonly manifest: InventoryManifest;
@@ -273,9 +288,10 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
     copied !== null && typeof copied === 'object' && !Array.isArray(copied)
       ? (copied as Record<string, unknown>).schemaVersion
       : undefined;
-  // v3 is v2 plus a required directAccess declaration.
-  const v2 = version === 2 || version === 3;
-  const v3 = version === 3;
+  // v3 is v2 plus a required directAccess declaration; v4 is v3 plus networkIsolation.
+  const v2 = version === 2 || version === 3 || version === 4;
+  const v3 = version === 3 || version === 4;
+  const v4 = version === 4;
   const manifest = object(copied, [
     'schemaVersion',
     'evidenceKind',
@@ -290,8 +306,9 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
     'executionBindings',
     ...(v2 ? ['authorityId', 'owners', 'credentialReferences'] : []),
     ...(v3 ? ['directAccess'] : []),
+    ...(v4 ? ['networkIsolation'] : []),
   ]);
-  if (![1, 2, 3].includes(manifest.schemaVersion as number) || manifest.evidenceKind !== 'host_asserted') fail();
+  if (![1, 2, 3, 4].includes(manifest.schemaVersion as number) || manifest.evidenceKind !== 'host_asserted') fail();
   source(manifest.source);
   identifier(manifest.manifestId);
   integer(manifest.revision);
@@ -502,6 +519,22 @@ export function validateInventoryManifest(value: unknown): InventoryManifest {
     });
     unique(entries);
   }
+  if (v4) {
+    const declared = array(manifest.networkIsolation, 1000).map(value => {
+      const item = object(value, ['deploymentId', 'segmentId', 'egress', 'egressTargets', 'sandbox']);
+      const deploymentId = identifier(item.deploymentId);
+      if (!deploymentIds.has(deploymentId)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
+      if (item.segmentId !== null) opaque(item.segmentId);
+      choice(item.egress, ['none', 'allowlist', 'open']);
+      // Targets list what an allowlist admits; any other egress names none.
+      const targets = opaqueList(item.egressTargets, 32);
+      if (item.egress !== 'allowlist' && targets.length) fail();
+      choice(item.sandbox, ['none', 'process', 'container', 'vm']);
+      return deploymentId;
+    });
+    // At most one declaration per deployment.
+    unique(declared);
+  }
   return manifest as unknown as InventoryManifest;
 }
 
@@ -703,9 +736,9 @@ export function composeInventorySnapshot(core: InventorySnapshot, value: Invento
     if (!tools.has(binding.tool)) fail('INVENTORY_MANIFEST_REFERENCE_INVALID');
   const now = Date.now();
   if (!Number.isSafeInteger(now) || now < 0 || now > 253_402_300_799_999) fail('INVENTORY_CLOCK_INVALID');
-  // A v3 manifest only fits the v2 snapshot schema; give every task and tool the v2 fields.
+  // A v3 or v4 manifest only fits the v2 snapshot schema; give every task and tool the v2 fields.
   const shaped =
-    manifest.schemaVersion === 3 && snapshot.schemaVersion === 1
+    manifest.schemaVersion >= 3 && snapshot.schemaVersion === 1
       ? {
           ...snapshot,
           schemaVersion: 2 as const,

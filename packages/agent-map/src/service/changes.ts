@@ -30,6 +30,54 @@ export function nodeState(node: MapNode, projection: MapProjection, work: QueryW
     .sort((a, b) => compare(`${a.kind}:${a.target}`, `${b.kind}:${b.target}`));
   return canonicalJson({ properties, edges } as Json);
 }
+/** The change kinds of one changed node, from its label, changed fields and changed outgoing edge kinds. */
+export function changeCategories(label: string, fields: readonly string[], edgeKinds: readonly string[]): string[] {
+  const categories: string[] = [];
+  if (
+    label === 'GuardOwner' ||
+    fields.some(field => ['owner_id', 'team_id', 'ownership_status', 'ownership_source'].includes(field)) ||
+    edgeKinds.some(kind => ['G_OWNED_BY', 'G_RESOURCE_OWNED_BY'].includes(kind))
+  )
+    categories.push('ownership');
+  if (
+    ['GuardGrant', 'GuardTool', 'GuardTask'].includes(label) ||
+    edgeKinds.some(kind => ['G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS'].includes(kind))
+  )
+    categories.push('permissions');
+  if (
+    [
+      'GuardDeployment',
+      'GuardResourceBinding',
+      'GuardExecutionBinding',
+      'GuardExternalResource',
+      'GuardExternalIdentity',
+      'GuardCredentialReference',
+      'GuardMcpConnection',
+      'GuardMcpOperation',
+    ].includes(label) ||
+    edgeKinds.some(
+      kind =>
+        ![
+          'G_OWNED_BY',
+          'G_RESOURCE_OWNED_BY',
+          'G_HAS_GRANT',
+          'G_FOR_TOOL',
+          'G_TARGETS',
+          'G_DIRECT_ACCESS_FOR',
+        ].includes(kind),
+    )
+  )
+    categories.push('bindings');
+  // Host-declared paths around the guard, and a deployment's declaration status.
+  if (
+    label === 'GuardDirectAccess' ||
+    fields.includes('direct_access_status') ||
+    edgeKinds.includes('G_DIRECT_ACCESS_FOR')
+  )
+    categories.push('outside_guard');
+  if (!categories.length) categories.push('inventory');
+  return categories;
+}
 export function retainedChanges(
   source: MapSource,
   args: Readonly<Record<string, JsonValue>>,
@@ -174,49 +222,13 @@ export function retainedChanges(
         )
         .sort();
       const edgeChanges = changedOutgoing.get(id) ?? [];
-      const categories: string[] = [];
-      if (
-        display.label === 'GuardOwner' ||
-        fields.some(field => ['owner_id', 'team_id', 'ownership_status', 'ownership_source'].includes(field)) ||
-        edgeChanges.some(edge => ['G_OWNED_BY', 'G_RESOURCE_OWNED_BY'].includes(edge.kind as string))
-      )
-        categories.push('ownership');
-      if (
-        ['GuardGrant', 'GuardTool', 'GuardTask'].includes(display.label) ||
-        edgeChanges.some(edge => ['G_HAS_GRANT', 'G_FOR_TOOL', 'G_TARGETS'].includes(edge.kind as string))
-      )
-        categories.push('permissions');
-      if (
-        [
-          'GuardDeployment',
-          'GuardResourceBinding',
-          'GuardExecutionBinding',
-          'GuardExternalResource',
-          'GuardExternalIdentity',
-          'GuardCredentialReference',
-          'GuardMcpConnection',
-          'GuardMcpOperation',
-        ].includes(display.label) ||
-        edgeChanges.some(
-          edge =>
-            ![
-              'G_OWNED_BY',
-              'G_RESOURCE_OWNED_BY',
-              'G_HAS_GRANT',
-              'G_FOR_TOOL',
-              'G_TARGETS',
-              'G_DIRECT_ACCESS_FOR',
-            ].includes(edge.kind as string),
-        )
-      )
-        categories.push('bindings');
+      const categories = changeCategories(
+        display.label,
+        fields,
+        edgeChanges.map(edge => edge.kind as string),
+      );
       // Host-declared paths around the guard, and a deployment's declaration status.
-      const outsideGuard =
-        display.label === 'GuardDirectAccess' ||
-        fields.includes('direct_access_status') ||
-        edgeChanges.some(edge => edge.kind === 'G_DIRECT_ACCESS_FOR');
-      if (outsideGuard) categories.push('outside_guard');
-      if (!categories.length) categories.push('inventory');
+      const outsideGuard = categories.includes('outside_guard');
       const affected = uniqueAgents([
         ...(related.get(current)?.get(id) ?? []),
         ...(related.get(previous)?.get(id) ?? []),

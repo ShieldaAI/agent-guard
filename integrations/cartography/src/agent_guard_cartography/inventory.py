@@ -45,6 +45,8 @@ SCHEMA_V2_FILENAME = "agent-guard-inventory-v2.schema.json"
 MANIFEST_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v1.schema.json"
 MANIFEST_V2_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v2.schema.json"
 MANIFEST_V3_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v3.schema.json"
+# v4 is v3 plus a required networkIsolation declaration, one entry per deployment at most.
+MANIFEST_V4_SCHEMA_FILENAME = "agent-guard-inventory-manifest-v4.schema.json"
 # Manifest v3 directAccess: at most this many declared paths per deployment.
 MAX_DIRECT_ACCESS_PER_DEPLOYMENT = 32
 MCP_SCHEMA_FILENAME = "agent-guard-mcp-inventory-v1.schema.json"
@@ -98,10 +100,15 @@ def _schema(filename: str) -> dict[str, Any]:
 @lru_cache(maxsize=8)
 def _validator(filename: str = SCHEMA_FILENAME) -> Draft202012Validator:
     schema = _schema(filename)
-    # v2 schemas refer to v1 (and manifest v3 to manifest v2) by $id; resolve those
-    # from the bundled files, never the network.
+    # v2 schemas refer to v1 (manifest v3 to manifest v2, manifest v4 to v3) by $id;
+    # resolve those from the bundled files, never the network.
     registry = Registry()
-    for name in (SCHEMA_FILENAME, MANIFEST_V2_SCHEMA_FILENAME, MANIFEST_V3_SCHEMA_FILENAME):
+    for name in (
+        SCHEMA_FILENAME,
+        MANIFEST_V2_SCHEMA_FILENAME,
+        MANIFEST_V3_SCHEMA_FILENAME,
+        MANIFEST_V4_SCHEMA_FILENAME,
+    ):
         base = _schema(name)
         registry = registry.with_resource(base["$id"], Resource.from_contents(base))
     formats = FormatChecker()
@@ -359,7 +366,7 @@ def _check_manifest(manifest: dict[str, Any]) -> None:
         for binding in bindings.values():
             if any(ref not in bindings or ref == binding["id"] for ref in binding["dependsOn"]):
                 _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
-    if manifest["schemaVersion"] == 3:
+    if manifest["schemaVersion"] >= 3:
         _unique_records(manifest["directAccess"], "id")
         # A target names a declared host resource; anything else is declared with null.
         host_targets = {
@@ -377,6 +384,12 @@ def _check_manifest(manifest: dict[str, Any]) -> None:
             if count > MAX_DIRECT_ACCESS_PER_DEPLOYMENT:
                 _fail("INVENTORY_MANIFEST_LIMIT_EXCEEDED")
             per_deployment[entry["deploymentId"]] = count
+    if manifest["schemaVersion"] >= 4:
+        # At most one declaration per deployment; the schema checks each entry's shape,
+        # including that only an allowlist names egress targets.
+        _unique_records(manifest["networkIsolation"], "deploymentId")
+        if any(entry["deploymentId"] not in deployments for entry in manifest["networkIsolation"]):
+            _fail("INVENTORY_MANIFEST_REFERENCE_INVALID")
 
 
 def validate_manifest(value: Any) -> dict[str, Any]:
@@ -385,12 +398,13 @@ def validate_manifest(value: Any) -> dict[str, Any]:
     version = manifest.get("schemaVersion") if type(manifest) is dict else None
     # JSON Schema integer semantics include 1.0/2.0; JavaScript has the same
     # numeric values. Booleans must not dispatch as version 1 in Python.
-    if type(version) not in (int, float) or version not in (1, 2, 3):
+    if type(version) not in (int, float) or version not in (1, 2, 3, 4):
         _fail("INVENTORY_SCHEMA_INVALID")
     filename = {
         1: MANIFEST_SCHEMA_FILENAME,
         2: MANIFEST_V2_SCHEMA_FILENAME,
         3: MANIFEST_V3_SCHEMA_FILENAME,
+        4: MANIFEST_V4_SCHEMA_FILENAME,
     }[int(version)]
     if next(_validator(filename).iter_errors(manifest), None) is not None:
         _fail("INVENTORY_SCHEMA_INVALID")

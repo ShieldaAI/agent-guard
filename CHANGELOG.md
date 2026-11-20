@@ -1,5 +1,46 @@
 # Changelog
 
+## 1.4.0 — 2026-11-20
+
+### Agent Map
+
+- Feature: `get_agent_topology`, a thirteenth read-only operation, and a Topology view in the
+  viewer. It draws the agents you may see as one graph: the MCP servers, cloud identities,
+  caller principals, credentials, resources and network segments that two or more of them
+  share; the delegations, handoffs, dependencies and allowed recipients that link one agent to
+  another (live tasks only); and for each agent an isolation summary (coverage-aware, so an
+  incomplete collection reads unknown, never dedicated or none), what it may send out, its
+  declared network isolation, and its last change between the two retained snapshots. Agents
+  removed since the previous snapshot are listed. Filters choose what is drawn and never turn
+  a shared item into a dedicated one. One IAM ARN used from several sources is one hub. A fleet
+  too large for the full answer gets every status and count without the detail lists
+  (`compact: true`). Everything is declared evidence, not observed traffic.
+- Feature: the five network fields of manifest v4 are map properties of a deployment
+  (`network_status`, `network_segment`, `network_egress`, `network_egress_targets`,
+  `sandbox_kind`). A malformed stored declaration reads as unknown. Changes appear in
+  `get_changes` under `bindings`.
+- Refactor: `get_changes` categories come from one shared function, also used by the topology;
+  its output is unchanged.
+
+### Host manifest v4
+
+- Feature: `agent-guard-inventory-manifest-v4.schema.json` is manifest v3 plus a required
+  `networkIsolation` list. Each entry has `deploymentId`, `segmentId` (opaque, or `null` for no
+  shared segment), `egress` (`none` | `allowlist` | `open`), `egressTargets` (opaque refs, `[]`
+  unless `allowlist`, at most 32) and `sandbox` (`none` | `process` | `container` | `vm`); at
+  most one entry per deployment and 1,000 in total; `[]` declares nothing. It is a generated
+  `$ref` envelope over v3 with a drift test, and the v2 snapshot schema accepts it.
+- Executor: validates v4 and composes it like v3 into a v2 snapshot.
+- Cartography collector: sets `network_status` on every deployment of a v4 manifest
+  (`declared` or `not_declared`; absent before v4, which reads unknown) and the four network
+  fields on declared ones. Moving a host from v3 to v4 at the same ledger revision is accepted;
+  going back from v4 to v3 is refused as `MANIFEST_SCHEMA_ROLLBACK`.
+
+### Check
+
+- `@shieldaai/agent-guard-check` reads manifest v4 files like v3; network isolation adds no
+  finding.
+
 ## 1.3.1 — 2026-11-18
 
 ### Check

@@ -71,6 +71,7 @@ MAP_OPERATIONS = (
     "get_agent_inventory",
     "list_undeclared_activity",
     "list_unclaimed_identities",
+    "get_agent_topology",
 )
 OPERATIONS = frozenset(MAP_OPERATIONS)
 MAX_RESPONSE = 2 * 1024 * 1024

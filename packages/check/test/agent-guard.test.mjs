@@ -308,6 +308,27 @@ test('AGX-002 and AGX-004 read manifest declarations', () => {
   assert.equal(owners.find(finding => finding.severity === 'medium').location.file, 'agent-guard-manifest.json');
 });
 
+test('a manifest v4 file is read like v3; its network isolation adds no finding', () => {
+  const manifest = {
+    schemaVersion: 4,
+    evidenceKind: 'host_asserted',
+    source: { companyId: 'c', sourceId: 's', tenantId: 'acme' },
+    agents: [{ id: 'invoice', name: 'Invoice agent', ownerId: 'finance', ownershipStatus: 'assigned' }],
+    deployments: [{ id: 'd1', agentId: 'invoice' }],
+    taskBindings: [],
+    resourceBindings: [],
+    directAccess: [
+      { id: 'opaque:da1', deploymentId: 'd1', kind: 'shell', targetRef: null, description: 'Runs report scripts' },
+    ],
+    networkIsolation: [{ deploymentId: 'd1', segmentId: null, egress: 'none', egressTargets: [], sandbox: 'vm' }],
+  };
+  const result = scanFiles({ 'agent-guard-manifest.json': json(manifest) });
+  assert.deepEqual(result.errors, []);
+  assert.equal(findingsFor(result, 'AGC-AGX-002').length, 1, 'the v3 part is still read');
+  const future = scanFiles({ 'agent-guard-manifest.json': json({ ...manifest, schemaVersion: 5 }) });
+  assert.match(future.errors[0].message, /unsupported manifest schemaVersion 5/);
+});
+
 test('a real executor inventory snapshot is read without errors', async () => {
   const executor = new DurableExecutor({
     database: ':memory:',

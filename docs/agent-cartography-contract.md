@@ -45,7 +45,8 @@ lists it. One manifest covers one tenant of one executor.
 
 **Schemas.** [version 1](../schemas/agent-guard-inventory-manifest-v1.schema.json),
 [version 2](../schemas/agent-guard-inventory-manifest-v2.schema.json),
-[version 3](../schemas/agent-guard-inventory-manifest-v3.schema.json).
+[version 3](../schemas/agent-guard-inventory-manifest-v3.schema.json),
+[version 4](../schemas/agent-guard-inventory-manifest-v4.schema.json).
 
 **Validator.** `validateInventoryManifest(value)` returns a frozen copy or throws.
 `loadInventoryManifestFile(path)` reads a private file and then runs the same checks.
@@ -54,7 +55,7 @@ lists it. One manifest covers one tenant of one executor.
 
 | Field | Versions | Type | Meaning |
 | --- | --- | --- | --- |
-| `schemaVersion` | all | `1`, `2` or `3` | The manifest version. |
+| `schemaVersion` | all | `1`, `2`, `3` or `4` | The manifest version. |
 | `evidenceKind` | all | `"host_asserted"` | Always this value. |
 | `source` | all | object | Which executor and tenant the manifest belongs to. See below. |
 | `manifestId` | all | identifier | A stable name for this manifest. Keep it the same across revisions. |
@@ -65,10 +66,11 @@ lists it. One manifest covers one tenant of one executor.
 | `taskBindings` | all | list | Which deployment each task belongs to. |
 | `resourceBindings` | all | list | What a granted resource really is. |
 | `executionBindings` | all | list | Which identity or MCP connection a tool uses in a deployment. |
-| `authorityId` | 2, 3 | identifier | The system or team that vouches for these statements. |
-| `owners` | 2, 3 | list | The people, teams and services that can own agents and resources. |
-| `credentialReferences` | 2, 3 | list | Credentials that deployments use, described without their values. |
-| `directAccess` | 3 | list | Paths that act without the guard. `[]` means the host declared none. It does not mean anyone checked. |
+| `authorityId` | 2 to 4 | identifier | The system or team that vouches for these statements. |
+| `owners` | 2 to 4 | list | The people, teams and services that can own agents and resources. |
+| `credentialReferences` | 2 to 4 | list | Credentials that deployments use, described without their values. |
+| `directAccess` | 3, 4 | list | Paths that act without the guard. `[]` means the host declared none. It does not mean anyone checked. |
+| `networkIsolation` | 4 | list | The network segment, egress and sandbox the host declares for each deployment. `[]` means the host declared nothing for any deployment. It does not mean anyone checked. |
 
 `source` has five identifiers: `companyId`, `sourceId`, `enrollmentGeneration`,
 `inventoryInstanceId` and `tenantId`. Copy them from the executor's own snapshot
@@ -172,7 +174,7 @@ The same `id` must carry the same `name` and `kind` everywhere in the manifest.
 | `expiresAt` | timestamp or `null` |
 | `rotationStatus` | `current`, `due`, `overdue` or `unknown` |
 
-**`directAccess`** (version 3)
+**`directAccess`** (versions 3 and 4)
 
 Each entry is a path the host says can act without going through the guard, such as an
 operations shell or a direct database connection.
@@ -185,6 +187,24 @@ operations shell or a direct database connection.
 | `targetRef` | `null`, or the `id` of a host resource target that a resource binding in this manifest uses |
 | `description` | description |
 
+**`networkIsolation`** (version 4)
+
+Each entry is what the host says about one deployment's network: whether it shares a
+segment with other deployments, where it may send traffic, and what sandbox it runs in. A
+deployment without an entry has declared nothing; the map shows it as `not_declared`, never
+as isolated.
+
+| Field | Type |
+| --- | --- |
+| `deploymentId` | the `id` of a declared deployment; at most one entry per deployment |
+| `segmentId` | opaque reference, or `null` when the deployment shares no segment |
+| `egress` | `none`, `allowlist` or `open` |
+| `egressTargets` | list of opaque references, no duplicates; must be `[]` unless `egress` is `allowlist` |
+| `sandbox` | `none`, `process`, `container` or `vm` |
+
+An `egressTargets` reference is opaque to Agent Guard: it does not have to name a resource
+binding in the manifest. An `allowlist` with `[]` admits no destination.
+
 ### Limits
 
 | What | Limit |
@@ -193,17 +213,20 @@ operations shell or a direct database connection.
 | `agents`, `deployments`, `owners`, `credentialReferences` | 1,000 entries each |
 | `taskBindings`, `resourceBindings`, `executionBindings` | 10,000 entries each |
 | `directAccess` | 1,000 entries in total, 32 per deployment |
+| `networkIsolation` | 1,000 entries, one per deployment |
+| `egressTargets` on a network isolation entry | 32 |
 | `credentialReferenceIds` on a deployment | 32 |
 | `actions`, `approvedDestinations`, `dependsOn` on a resource binding | 128 each |
 | `audienceRefs`, `recipientRefs` on a credential reference | 128 each |
 
 ### Example
 
-A valid version 3 manifest with one agent, one deployment and one declared direct path:
+A valid version 4 manifest with one agent, one deployment, one declared direct path and the
+deployment's network isolation:
 
 ```json
 {
-  "schemaVersion": 3,
+  "schemaVersion": 4,
   "evidenceKind": "host_asserted",
   "source": {
     "companyId": "example-company", "sourceId": "support-host", "enrollmentGeneration": "enrollment-1",
@@ -232,6 +255,13 @@ A valid version 3 manifest with one agent, one deployment and one declared direc
     "id": "opaque:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "deploymentId": "support-prod", "kind": "shell", "targetRef": null,
     "description": "On-call engineers can open a shell in the support container"
+  }],
+  "networkIsolation": [{
+    "deploymentId": "support-prod",
+    "segmentId": "opaque:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "egress": "allowlist",
+    "egressTargets": ["opaque:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"],
+    "sandbox": "container"
   }]
 }
 ```
@@ -243,8 +273,9 @@ A valid version 3 manifest with one agent, one deployment and one declared direc
 | 1 | Agents, deployments, task bindings, resource bindings to AWS resources, execution bindings. |
 | 2 | Adds `authorityId`, `owners` and `credentialReferences`. Agents gain purpose, lifecycle and ownership. Deployments gain runtime, build and credential references. Resource bindings gain a display name, ownership, sensitivity, approved destinations and dependencies, and can target a host resource as well as an AWS one. |
 | 3 | Version 2 plus the required `directAccess` list. |
+| 4 | Version 3 plus the required `networkIsolation` list. |
 
-Version 1 and version 2 manifests are still accepted. A reader that does not know a
+Version 1, 2 and 3 manifests are still accepted. A reader that does not know a
 version rejects the manifest; it never drops the fields it does not understand.
 
 ### Publishing a new revision
@@ -418,11 +449,11 @@ same fields, `profile: "host"`, a new `snapshotId` and `generatedAt`, the manife
 | Version | Change |
 | --- | --- |
 | 1 | Tasks, tools, coverage and the optional `manifest` and `mcp` sections. |
-| 2 | Adds `untrustedContextDefault`, `untrusted` on every task, and `readsUntrusted`, `untrustedContext` and `sendsExternal` on every tool. Accepts a version 3 manifest. |
+| 2 | Adds `untrustedContextDefault`, `untrusted` on every task, and `readsUntrusted`, `untrustedContext` and `sendsExternal` on every tool. Accepts a version 3 or version 4 manifest. |
 
 The executor emits version 1 unless it has something to say in the new fields: a tool
 declares one of the three labels, or a task family is `untrusted`. Composing a version 1
-core snapshot with a version 3 manifest returns a version 2 snapshot in which
+core snapshot with a version 3 or version 4 manifest returns a version 2 snapshot in which
 `untrustedContextDefault` and the tool labels are `null` and every task has
 `untrusted: false`.
 

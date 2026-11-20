@@ -307,8 +307,9 @@ bundled into the wheel: inventory
 [v1](../../schemas/agent-guard-inventory-v1.schema.json) and
 [v2](../../schemas/agent-guard-inventory-v2.schema.json), manifest
 [v1](../../schemas/agent-guard-inventory-manifest-v1.schema.json),
-[v2](../../schemas/agent-guard-inventory-manifest-v2.schema.json) and
-[v3](../../schemas/agent-guard-inventory-manifest-v3.schema.json), and the
+[v2](../../schemas/agent-guard-inventory-manifest-v2.schema.json),
+[v3](../../schemas/agent-guard-inventory-manifest-v3.schema.json) and
+[v4](../../schemas/agent-guard-inventory-manifest-v4.schema.json), and the
 [MCP connection schema](../../schemas/agent-guard-mcp-inventory-v1.schema.json).
 The [contract document](../../docs/agent-cartography-contract.md) lists the fields.
 
@@ -353,6 +354,14 @@ for its shape and [how agents get onto the map](../../docs/guides/agent-cartogra
   `GuardExternalResource` and `GuardExternalIdentity`. Each carries
   `evidence_kind = 'host_asserted'` and the manifest's ID, revision and
   observation time.
+- **Network isolation** (manifest v4) is stored on `GuardDeployment`, not as a
+  node: `network_status` is `declared` when the manifest has an entry for the
+  deployment and `not_declared` when a v4 manifest has none for it; it is absent
+  for v1 to v3 manifests, which means unknown. Only a declared deployment also has
+  `network_segment` (absent when the host declared no shared segment),
+  `network_egress` (`none`, `allowlist` or `open`), `network_egress_targets`
+  (opaque references, sorted) and `sandbox_kind` (`none`, `process`, `container`
+  or `vm`). These are host declarations, not checks.
 - **Agents** exist only if the manifest declares them. A task not assigned to a
   deployment stays in the graph but is listed under no agent.
 - **Resource bindings** map one local tool and selector to one exact target
@@ -368,10 +377,12 @@ for its shape and [how agents get onto the map](../../docs/guides/agent-cartogra
 - **Revisions:** `manifest.revision` advances independently of `ledgerRevision`.
   A lower revision, different content at the same revision, a different
   `manifestId` and a lower manifest schema version are all refused. Moving from
-  manifest v1 to v2 requires a higher revision.
+  manifest v1 to v2 requires a higher revision. Moving from v3 to v4 at the same
+  ledger revision is not a conflict: both compose the same lifted core.
 
 Limits: 1,000 owners and 1,000 credential references per manifest, 32 credential
-references and 32 direct-access entries per deployment, 128 entries in each
+references and 32 direct-access entries per deployment, one network isolation
+entry per deployment with at most 32 egress targets, 128 entries in each
 dependency, destination, audience and recipient list.
 
 ### MCP observations

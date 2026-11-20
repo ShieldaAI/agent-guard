@@ -63,6 +63,39 @@ export function converted(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).map(([key, child]) => [key, converted(child)]));
   return value;
 }
+/** Manifest v4 network isolation on a deployment; see `networkIsolation`. */
+export const NETWORK_FIELDS = [
+  'network_status',
+  'network_segment',
+  'network_egress',
+  'network_egress_targets',
+  'sandbox_kind',
+] as const;
+const OPAQUE = /^opaque:[a-f0-9]{64}$/;
+/**
+ * Whether a deployment's network fields are a well-formed state: all absent (unknown, before
+ * manifest v4), `not_declared` alone, or `declared` with egress, targets (an allowlist's only,
+ * at most 32, unique) and sandbox. Neo4j stores no nulls, so a null segment reads as absent.
+ */
+function networkIsolation(properties: Readonly<Record<string, unknown>>): boolean {
+  const status = properties.network_status;
+  const present = NETWORK_FIELDS.filter(field => field !== 'network_status' && properties[field] != null);
+  if (status == null || status === 'not_declared') return present.length === 0;
+  if (status !== 'declared') return false;
+  const segment = properties.network_segment;
+  const targets = properties.network_egress_targets;
+  const egress = properties.network_egress;
+  return (
+    (segment == null || (typeof segment === 'string' && segment.length === 71 && OPAQUE.test(segment))) &&
+    ['none', 'allowlist', 'open'].includes(egress as string) &&
+    Array.isArray(targets) &&
+    targets.length <= 32 &&
+    new Set(targets).size === targets.length &&
+    targets.every(item => typeof item === 'string' && item.length === 71 && OPAQUE.test(item)) &&
+    (egress === 'allowlist' || targets.length === 0) &&
+    ['none', 'process', 'container', 'vm'].includes(properties.sandbox_kind as string)
+  );
+}
 export function safeNode(raw: unknown, label: unknown, sourceId: string, projectionId: string): MapNode {
   if (!MAP_LABELS.includes(label as GuardLabel) || !raw || typeof raw !== 'object' || Array.isArray(raw))
     throw new MapQueryError('MAP_UNAVAILABLE');
@@ -93,6 +126,9 @@ export function safeNode(raw: unknown, label: unknown, sourceId: string, project
       ![undefined, null, 'found', 'none_declared'].includes(properties.direct_access_status as string))
   )
     throw new MapQueryError('MAP_UNAVAILABLE');
+  if (label === 'GuardDeployment' && !networkIsolation(properties))
+    // A malformed or inconsistent declaration is dropped as a whole: it reads as unknown.
+    for (const field of NETWORK_FIELDS) delete properties[field];
   // Outside-content labels feed the boundary flags; a malformed value must not read as declared.
   const optionalFlag = (value: unknown): boolean => value === undefined || value === null || typeof value === 'boolean';
   const optionalMode = (value: unknown): boolean =>
