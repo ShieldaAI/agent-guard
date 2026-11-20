@@ -18,6 +18,7 @@ const GROUPS = [
   ['IDN', 'Identity'],
   ['GOV', 'Governance'],
   ['COV', 'Runtime coverage'],
+  ['REV', 'Review records (runs only with .agc-reviews.yaml, or policy.require_reviews in .agc.yaml)'],
   ['POL', 'Policy as code (runs only with a policy section in .agc.yaml)'],
   ['AGX', 'Agent Guard records (runs only when describe() output, an inventory or a manifest is found)'],
   ['DRF', 'Live Agent Map (runs only with --live or --agent-map-url)'],

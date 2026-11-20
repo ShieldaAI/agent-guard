@@ -156,6 +156,20 @@ export interface ScanStats {
   readonly filesSkipped: number;
 }
 
+/** One entry of `.agc-reviews.yaml` as the scan read it. */
+export interface ReviewSummary {
+  /** What the entry names: an agent ID, an agent name, or the file that defines agents. */
+  readonly agent: string;
+  readonly owner: string;
+  /** `YYYY-MM-DD`. */
+  readonly reviewBy: string;
+  /** What the review approved. */
+  readonly capabilities: readonly Capability[];
+  readonly location: Location;
+  /** IDs of the agents the entry speaks for. */
+  readonly agents: readonly string[];
+}
+
 export interface ScanResult {
   readonly root: string;
   readonly agents: readonly Agent[];
@@ -173,4 +187,6 @@ export interface ScanResult {
    * that changed while its source did not: what runs is the lock, and only the source was judged.
    */
   readonly compiledLocks?: readonly { readonly lock: string; readonly lockHash: string; readonly sourceHash: string }[];
+  /** Entries of `.agc-reviews.yaml` that could be read; empty when there is none. */
+  readonly reviews?: readonly ReviewSummary[];
 }

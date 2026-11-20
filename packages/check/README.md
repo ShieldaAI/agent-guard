@@ -292,6 +292,66 @@ policy:
       severity: critical
 ```
 
+## Review records: an owner and a review date
+
+Agents outlive the people who set them up. `.agc-reviews.yaml` at the repository root gives
+each agent the repository ships an owner, the capabilities its last review approved, and a date
+by which someone looks again:
+
+```yaml
+reviews:
+  - agent: .claude/settings.json # agent ID, agent name, or the file that defines it
+    owner: '@acme/platform'
+    review_by: 2027-05-01 # YYYY-MM-DD, UTC
+    capabilities: [write, selfModify] # what it may do without asking; [] for none
+  - agent: .github/workflows/triage.yml
+    owner: '@acme/support-tools'
+    review_by: 2027-02-15
+    capabilities: [untrustedInput, write]
+```
+
+`agent` matches an agent's ID, its name, or the file that defines it; `--format json` lists
+the ID and name of every agent the scan found. `capabilities` lists what the agent may do
+without a person approving each use, using the
+seven capability names (`privateData`, `untrustedInput`, `write`, `exec`, `egress`, `spend`,
+`selfModify`). Something behind a per-call prompt is checked at every call, so it is left out.
+
+A date on its own turns into a snooze button, so the check holds the record to it:
+
+- **The date passing fails the check** (AGC-REV-001, high). No commit makes a date pass, so in
+  a pull request the finding counts as new whether or not the base had it. Every change fails
+  until the review is done, and a baseline does not silence it. For 14 days before the date it
+  is reported as info.
+- **A renewal shows what it approves.** With `--base`, a change to a record is listed with the
+  date, the owner, the capabilities it approves (and what it approved before) and what the agent
+  can do now without asking. The reviewer approves access, not just a later date. A record
+  removed by the change is listed too.
+- **The record must match the agent.** An agent that can do more without asking than its record
+  approves is a finding (AGC-REV-003). So a change that widens access also has to change the
+  record, where the reviewer sees it.
+- **The date cannot be pushed out of sight.** `review_by` may be at most
+  `policy.max_review_days` ahead (default 365; AGC-REV-004).
+- **Every agent needs a record**, once `policy.require_reviews: true` is set (AGC-REV-002). A
+  record that names no agent (AGC-REV-005), usually left behind by a rename, and one that cannot
+  be read (AGC-REV-007) are findings too. A record is never guessed at.
+- **The owner should be asked about changes.** When the repository has CODEOWNERS, an owner it
+  does not name is reported (AGC-REV-006). That also catches an owner who left and was removed
+  from it.
+
+```yaml
+# .agc.yaml
+policy:
+  require_reviews: true
+  max_review_days: 180
+```
+
+With `--base`, `.agc-reviews.yaml` is read from the change, like agent configuration, so a
+renewal is judged on its new date. `.agc.yaml` is read from the base, so a change cannot raise its
+own `max_review_days` or turn off `require_reviews`. The scanner cannot tell whether anyone
+actually reviewed the agent before moving the date. That decision belongs to the people who
+approve the pull request, ideally the owner through CODEOWNERS. What the scanner does is put the
+capabilities in front of them.
+
 ## Other agents: MCP server and skill
 
 `agent-guard-check-mcp` is a read-only MCP server (stdio) so an agent can check its own
@@ -352,7 +412,7 @@ agent_guard:
 agent_map:
   url: https://agent-map.internal.example
   token_env: AGENT_MAP_TOKEN
-policy: {} # see Policy as code
+policy: {} # see Policy as code and Review records
 mcp_servers: # what servers the catalog does not know can do
   mcp.docs.example.com: # a package, image, remote host or catalog ID
     capabilities: [untrustedInput]
@@ -442,6 +502,13 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-GOV-003  | Info                    | Agent model is a moving alias                                           | ASI04        |
 | AGC-CFG-001  | Info (low confidence)   | Agent setting the scanner does not model                                | ASI02        |
 | AGC-CFG-002  | High                    | Agent configuration file too large to read                              | ASI02, ASI04 |
+| AGC-REV-001  | High                    | Agent review date has passed                                            | ASI10        |
+| AGC-REV-002  | High                    | Agent has no review record                                              | ASI10        |
+| AGC-REV-003  | High                    | Agent can do more than its review approved                              | ASI02, ASI10 |
+| AGC-REV-004  | High                    | Agent review date is too far away                                       | ASI10        |
+| AGC-REV-005  | Medium                  | Review record matches no agent                                          | ASI10        |
+| AGC-REV-006  | Low                     | Review owner is not a code owner                                        | ASI10        |
+| AGC-REV-007  | High                    | Review record could not be read                                         | ASI10        |
 | AGC-POL-001  | High                    | MCP server not on the approved list                                     | ASI04        |
 | AGC-POL-002  | High                    | Remote MCP server on a host not on the approved list                    | ASI04, ASI02 |
 | AGC-POL-003  | High                    | Agent holds a forbidden capability combination                          | ASI02, ASI01 |

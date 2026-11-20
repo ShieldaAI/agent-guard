@@ -132,6 +132,15 @@ const live = ({ undeclared = 0, unclaimed = 0, exposed = [], stale = false } = {
 });
 
 /** @type {{ id: string, rule: string, expect: boolean, files?: Record<string, string>, config?: string, live?: object }[]} */
+const REVIEW_NOW = '2026-11-20T12:00:00.000Z';
+/** One `.agc-reviews.yaml` entry for the project settings. */
+const review = ({
+  agent = '.claude/settings.json',
+  owner = '"@acme/platform"',
+  date = '2027-03-01',
+  caps = '[write, selfModify]',
+} = {}) => `reviews:\n  - agent: ${agent}\n    owner: ${owner}\n    review_by: ${date}\n    capabilities: ${caps}\n`;
+
 export const CASES = [
   // ---- permissions ----
   {
@@ -832,6 +841,131 @@ export const CASES = [
     rule: 'AGC-CFG-002',
     expect: false,
     files: { '.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }) },
+  },
+
+  // ---- review records (.agc-reviews.yaml; `now` fixes the clock) ----
+  {
+    id: 'rev1-lapsed',
+    rule: 'AGC-REV-001',
+    expect: true,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review({ date: '2026-11-01' }),
+    },
+  },
+  {
+    id: 'rev1-current',
+    rule: 'AGC-REV-001',
+    expect: false,
+    now: REVIEW_NOW,
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review() },
+  },
+  {
+    id: 'rev2-missing',
+    rule: 'AGC-REV-002',
+    expect: true,
+    now: REVIEW_NOW,
+    config: 'policy:\n  require_reviews: true\n',
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }) },
+  },
+  {
+    id: 'rev2-recorded',
+    rule: 'AGC-REV-002',
+    expect: false,
+    now: REVIEW_NOW,
+    config: 'policy:\n  require_reviews: true\n',
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review() },
+  },
+  {
+    id: 'rev3-exceeds',
+    rule: 'AGC-REV-003',
+    expect: true,
+    now: REVIEW_NOW,
+    files: { '.claude/settings.json': settings({ allow: ['Edit', 'Bash'] }), '.agc-reviews.yaml': review() },
+  },
+  {
+    id: 'rev3-only-asked',
+    rule: 'AGC-REV-003',
+    expect: false,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'], ask: ['Bash', 'WebFetch'] }),
+      '.agc-reviews.yaml': review(),
+    },
+  },
+  {
+    id: 'rev4-far',
+    rule: 'AGC-REV-004',
+    expect: true,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review({ date: '2099-01-01' }),
+    },
+  },
+  {
+    id: 'rev4-within',
+    rule: 'AGC-REV-004',
+    expect: false,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review({ date: '2027-11-01' }),
+    },
+  },
+  {
+    id: 'rev5-orphan',
+    rule: 'AGC-REV-005',
+    expect: true,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review({ agent: '.claude/renamed.json' }),
+    },
+  },
+  {
+    id: 'rev5-matched',
+    rule: 'AGC-REV-005',
+    expect: false,
+    now: REVIEW_NOW,
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review() },
+  },
+  {
+    id: 'rev6-owner-not-codeowner',
+    rule: 'AGC-REV-006',
+    expect: true,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review(),
+      CODEOWNERS: '* @acme/someone-else\n',
+    },
+  },
+  {
+    id: 'rev6-owner-is-codeowner',
+    rule: 'AGC-REV-006',
+    expect: false,
+    now: REVIEW_NOW,
+    files: {
+      '.claude/settings.json': settings({ allow: ['Edit'] }),
+      '.agc-reviews.yaml': review(),
+      CODEOWNERS: '/.claude/ @acme/platform\n',
+    },
+  },
+  {
+    id: 'rev7-no-owner',
+    rule: 'AGC-REV-007',
+    expect: true,
+    now: REVIEW_NOW,
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review({ owner: '""' }) },
+  },
+  {
+    id: 'rev7-complete',
+    rule: 'AGC-REV-007',
+    expect: false,
+    now: REVIEW_NOW,
+    files: { '.claude/settings.json': settings({ allow: ['Edit'] }), '.agc-reviews.yaml': review() },
   },
 
   // ---- policy as code ----

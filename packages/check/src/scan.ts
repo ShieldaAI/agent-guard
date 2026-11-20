@@ -9,7 +9,9 @@ import { fingerprint, runRules } from './rules/index.js';
 import { applySuppressions, DEFAULT_CONFIG, parseConfig, type CheckConfig } from './config.js';
 import { authority, level } from './authority.js';
 import { withScriptReader } from './claude.js';
-import { CAPABILITIES, type Agent, type Capability, type CapabilityState } from './types.js';
+import { CAPABILITIES, type Agent, type Capability, type CapabilityState, type ReviewSummary } from './types.js';
+import { CLOCK_RULES, covers, isShipped } from './reviews.js';
+import { currentCapabilities } from './rules/reviews.js';
 
 export interface ScanOptions {
   /** Repository root. Used for paths in the result and as the git directory for `ref`. */
@@ -29,6 +31,8 @@ export interface ScanOptions {
   readonly imported?: readonly Finding[];
   /** Settings outside the repository that apply to the person running the scan (`readUserConfig`). */
   readonly userFiles?: readonly TextFile[];
+  /** The clock for review dates, in milliseconds (default: now). */
+  readonly now?: number;
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -88,7 +92,10 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
   });
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
-    [...runRules(project, errors, { config, live: options.live }), ...(options.imported ?? [])],
+    [
+      ...runRules(project, errors, { config, live: options.live, now: options.now ?? Date.now() }),
+      ...(options.imported ?? []),
+    ],
     config,
     path => source.read(path),
     options.baseline ?? new Set(),
@@ -109,6 +116,14 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
       lockHash: digest(item.lockText),
       sourceHash: digest(item.sourceText),
     })),
+    reviews: (project.reviews?.records ?? []).map(record => ({
+      agent: record.agent,
+      owner: record.owner,
+      reviewBy: record.reviewBy,
+      capabilities: record.capabilities,
+      location: record.location,
+      agents: project.agents.filter(agent => isShipped(agent) && covers(record, agent)).map(agent => agent.id),
+    })),
   };
 }
 
@@ -119,12 +134,45 @@ export interface CapabilityChange {
   readonly after: CapabilityState;
 }
 
+/**
+ * A review record the change added, removed or edited. `current` is what the agents it speaks for
+ * can do at the head, so a renewal shows what it approves, not only its new date.
+ */
+export interface ReviewChange {
+  readonly agent: string;
+  readonly before: ReviewSummary | undefined;
+  readonly after: ReviewSummary | undefined;
+  readonly current: readonly Capability[];
+}
+
 export interface ScanDiff {
   readonly added: readonly Finding[];
   readonly resolved: readonly Finding[];
   /** Capabilities that grew: from none to unknown or yes, or from behind approval to no approval. */
   readonly widened: readonly CapabilityChange[];
   readonly newAgents: readonly Agent[];
+  /** Review records in `.agc-reviews.yaml` the change added, removed or edited. */
+  readonly reviews: readonly ReviewChange[];
+}
+
+const sameReview = (a: ReviewSummary, b: ReviewSummary) =>
+  a.owner === b.owner &&
+  a.reviewBy === b.reviewBy &&
+  [...a.capabilities].sort().join() === [...b.capabilities].sort().join();
+
+function reviewChanges(base: ScanResult, head: ScanResult): ReviewChange[] {
+  const before = new Map((base.reviews ?? []).map(item => [item.agent, item]));
+  const after = new Map((head.reviews ?? []).map(item => [item.agent, item]));
+  const out: ReviewChange[] = [];
+  for (const name of new Set([...before.keys(), ...after.keys()])) {
+    const old = before.get(name);
+    const now = after.get(name);
+    if (old && now && sameReview(old, now)) continue;
+    const ids = new Set(now?.agents ?? old?.agents ?? []);
+    const current = new Set(head.agents.filter(agent => ids.has(agent.id)).flatMap(currentCapabilities));
+    out.push({ agent: name, before: old, after: now, current: CAPABILITIES.filter(item => current.has(item)) });
+  }
+  return out;
 }
 
 const rank = (finding: Finding) => SEVERITY_ORDER.indexOf(finding.severity);
@@ -189,7 +237,11 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
     added: [
       ...lockEditedAlone(base, head),
       ...head.findings.filter(
-        finding => !before.has(finding.fingerprint) || rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
+        finding =>
+          // A review date that passed fails every change until the review is done: no commit made it pass.
+          CLOCK_RULES.has(finding.ruleId) ||
+          !before.has(finding.fingerprint) ||
+          rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
       ),
       // Silencing a finding the base already had is accepting known debt; silencing one this change
       // introduced (or made more severe) is not.
@@ -205,5 +257,6 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
     resolved: base.findings.filter(finding => !after.has(finding.fingerprint)),
     widened,
     newAgents,
+    reviews: reviewChanges(base, head),
   };
 }

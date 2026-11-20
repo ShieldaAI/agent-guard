@@ -23,6 +23,8 @@ export type Report = (input: ReportInput) => void;
 export interface RuleContext {
   readonly config: CheckConfig;
   readonly live?: LiveEvidence | undefined;
+  /** The scan's clock in milliseconds, for review dates. */
+  readonly now?: number;
 }
 
 export interface Rule extends RuleMeta {

@@ -2,7 +2,7 @@ import type { Agent, Finding, Mediator, ScanResult, Severity } from './types.js'
 import { CAPABILITIES, CAPABILITY_LABELS, SEVERITY_ORDER } from './types.js';
 import { authority, describeLevel } from './authority.js';
 import { RULES, RULES_BY_ID } from './rules/index.js';
-import type { ScanDiff } from './scan.js';
+import type { ReviewChange, ScanDiff } from './scan.js';
 import { readFileSync } from 'node:fs';
 import { isRecord, oneLine } from './text.js';
 
@@ -43,6 +43,50 @@ function where(finding: Finding): string {
   return `${finding.location.file}:${finding.location.line}`;
 }
 
+const list = (items: readonly string[]) => (items.length ? items.join(', ') : 'nothing');
+
+/**
+ * One review record change in words: the date and owner it sets, what it approves (and what it
+ * approved before), and what the agent can do now, so a renewal is read as an approval of access.
+ */
+export function describeReviewChange(change: ReviewChange): {
+  status: 'added' | 'removed' | 'changed';
+  reviewBy: string;
+  owner: string;
+  approves: string;
+  current: string;
+} {
+  const { before, after } = change;
+  if (!after)
+    return {
+      status: 'removed',
+      reviewBy: `${before!.reviewBy} → removed`,
+      owner: before!.owner,
+      approves: `was ${list(before!.capabilities)}`,
+      current: list(change.current),
+    };
+  const sameCaps = before && [...before.capabilities].sort().join() === [...after.capabilities].sort().join();
+  return {
+    status: before ? 'changed' : 'added',
+    reviewBy: before && before.reviewBy !== after.reviewBy ? `${before.reviewBy} → ${after.reviewBy}` : after.reviewBy,
+    owner: before && before.owner !== after.owner ? `${before.owner} → ${after.owner}` : after.owner,
+    approves: !before
+      ? list(after.capabilities)
+      : sameCaps
+        ? `${list(after.capabilities)} (unchanged)`
+        : `${list(after.capabilities)} (was ${list(before.capabilities)})`,
+    current: list(change.current),
+  };
+}
+
+/** The review record that speaks for an agent, as the scan read it. */
+function reviewOf(result: ScanResult, agent: Agent) {
+  const covering = (result.reviews ?? []).filter(item => item.agents.includes(agent.id));
+  return (
+    covering.find(item => item.agent === agent.id) ?? covering.find(item => item.agent === agent.name) ?? covering[0]
+  );
+}
+
 function authorityLines(agent: Agent): string[] {
   const a = authority(agent);
   const lines: string[] = [];
@@ -78,6 +122,13 @@ export function formatText(result: ScanResult, diff?: ScanDiff): string {
       out.push(
         `  ${change.agent.name}: ${CAPABILITY_LABELS[change.capability]} ${change.before ? describeLevel(change.before) : 'no'} -> ${describeLevel(change.after)}`,
       );
+    if (diff.reviews.length) out.push('Review records changed by this change:');
+    for (const change of diff.reviews) {
+      const item = describeReviewChange(change);
+      out.push(
+        `  ${change.agent} (${item.status}): review by ${item.reviewBy}; owner ${item.owner}; approves ${item.approves}; can do now without asking: ${item.current}`,
+      );
+    }
     if (diff.resolved.length) out.push(`Resolved by this change: ${diff.resolved.length} finding(s).`);
   }
   for (const agent of result.agents) {
@@ -90,6 +141,9 @@ export function formatText(result: ScanResult, diff?: ScanDiff): string {
       out.push(
         `  runtime check: ${agent.mediators.length ? [...new Set(agent.mediators.map(describeMediator))].join(', ') : 'none'}`,
       );
+    const review = reviewOf(result, agent);
+    if (review)
+      out.push(`  review: owner ${review.owner}, due ${review.reviewBy}, approved ${list(review.capabilities)}`);
   }
   const shown = diff ? diff.added : result.findings;
   if (shown.length) {
@@ -130,10 +184,11 @@ export function escapeMd(text: string): string {
 export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
   const out: string[] = [];
   const shown = diff ? diff.added : result.findings;
+  const reviewNote = diff?.reviews.length ? `, ${diff.reviews.length} review record(s) changed` : '';
   const title = diff
     ? diff.widened.length || diff.added.length
-      ? `Agent authority changed: ${diff.widened.length} widened, ${diff.added.length} new finding(s)`
-      : 'No agent gained authority in this change'
+      ? `Agent authority changed: ${diff.widened.length} widened, ${diff.added.length} new finding(s)${reviewNote}`
+      : `No agent gained authority in this change${reviewNote}`
     : `${result.agents.length} agent(s), ${counts(result.findings)}`;
   out.push(`### Agent Guard Check: ${title}`);
   out.push('', `_Evidence: ${escapeMd(modes(result))}_`);
@@ -152,6 +207,19 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
         .join(', ');
       out.push(
         `| ${escapeMd(change.agent.name)} | ${CAPABILITY_LABELS[change.capability]} | ${change.before ? describeLevel(change.before) : 'no'} | **${describeLevel(change.after)}** | ${via} |`,
+      );
+    }
+  }
+  if (diff?.reviews.length) {
+    out.push(
+      '',
+      '| Review record | Change | Review by | Owner | Approves | Can do now without asking |',
+      '| --- | --- | --- | --- | --- | --- |',
+    );
+    for (const change of diff.reviews) {
+      const item = describeReviewChange(change);
+      out.push(
+        `| ${escapeMd(change.agent)} | ${item.status} | ${escapeMd(item.reviewBy)} | ${escapeMd(item.owner)} | ${escapeMd(item.approves)} | **${escapeMd(item.current)}** |`,
       );
     }
   }
@@ -298,6 +366,7 @@ export function formatJson(result: ScanResult, diff?: ScanDiff): string {
     errors: result.errors,
     stats: result.stats,
     modes: result.modes,
+    reviews: result.reviews ?? [],
     ...(diff
       ? {
           diff: {
@@ -308,6 +377,24 @@ export function formatJson(result: ScanResult, diff?: ScanDiff): string {
               capability: change.capability,
               before: change.before ? describeLevel(change.before) : 'no',
               after: describeLevel(change.after),
+            })),
+            reviews: diff.reviews.map(change => ({
+              agent: change.agent,
+              before: change.before
+                ? {
+                    owner: change.before.owner,
+                    reviewBy: change.before.reviewBy,
+                    capabilities: change.before.capabilities,
+                  }
+                : null,
+              after: change.after
+                ? {
+                    owner: change.after.owner,
+                    reviewBy: change.after.reviewBy,
+                    capabilities: change.after.capabilities,
+                  }
+                : null,
+              current: change.current,
             })),
           },
         }
