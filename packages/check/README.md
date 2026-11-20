@@ -311,7 +311,9 @@ reviews:
 ```
 
 `agent` matches an agent's ID, its name, or the file that defines it; `--format json` lists
-the ID and name of every agent the scan found. `capabilities` lists what the agent may do
+the ID and name of every agent the scan found. A name counts only while one agent has it: a
+name is written in the agent's own file, so a copy could otherwise borrow another agent's review.
+The file is the safest choice. `capabilities` lists what the agent may do
 without a person approving each use, using the
 seven capability names (`privateData`, `untrustedInput`, `write`, `exec`, `egress`, `spend`,
 `selfModify`). Something behind a per-call prompt is checked at every call, so it is left out.
@@ -320,7 +322,8 @@ A date on its own turns into a snooze button, so the check holds the record to i
 
 - **The date passing fails the check** (AGC-REV-001, high). No commit makes a date pass, so in
   a pull request the finding counts as new whether or not the base had it. Every change fails
-  until the review is done, and a baseline does not silence it. For 14 days before the date it
+  until the review is done. Neither a baseline nor an inline `agc-ignore` comment silences it:
+  both are written by the repository, and the date passing is not. For 14 days before the date it
   is reported as info.
 - **A renewal shows what it approves.** With `--base`, a change to a record is listed with the
   date, the owner, the capabilities it approves (and what it approved before) and what the agent
@@ -332,8 +335,12 @@ A date on its own turns into a snooze button, so the check holds the record to i
 - **The date cannot be pushed out of sight.** `review_by` may be at most
   `policy.max_review_days` ahead (default 365; AGC-REV-004).
 - **Every agent needs a record**, once `policy.require_reviews: true` is set (AGC-REV-002). A
-  record that names no agent (AGC-REV-005), usually left behind by a rename, and one that cannot
-  be read (AGC-REV-007) are findings too. A record is never guessed at.
+  record that names no agent (AGC-REV-005, high), usually left behind by a rename, and one that
+  cannot be read (AGC-REV-007) are findings too. A record is never guessed at. AGC-REV-005 is high
+  because the moved agent is no longer checked against what its review approved: the change that
+  moves it has to point the record at it. Without `require_reviews`, records are opt-in, so a
+  change that deletes a record makes its date stop counting; the deletion is listed in the
+  report, and `require_reviews` turns it into a failure.
 - **The owner should be asked about changes.** When the repository has CODEOWNERS, an owner it
   does not name is reported (AGC-REV-006). That also catches an owner who left and was removed
   from it.
@@ -506,7 +513,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-REV-002  | High                    | Agent has no review record                                              | ASI10        |
 | AGC-REV-003  | High                    | Agent can do more than its review approved                              | ASI02, ASI10 |
 | AGC-REV-004  | High                    | Agent review date is too far away                                       | ASI10        |
-| AGC-REV-005  | Medium                  | Review record matches no agent                                          | ASI10        |
+| AGC-REV-005  | High                    | Review record matches no agent                                          | ASI10        |
 | AGC-REV-006  | Low                     | Review owner is not a code owner                                        | ASI10        |
 | AGC-REV-007  | High                    | Review record could not be read                                         | ASI10        |
 | AGC-POL-001  | High                    | MCP server not on the approved list                                     | ASI04        |

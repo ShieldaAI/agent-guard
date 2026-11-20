@@ -326,9 +326,12 @@ export function applySuppressions(
       }
       return inlineCache.get(key)!;
     };
-    const inline = [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
-      match => match && match[1] === finding.ruleId,
-    );
+    // A comment the change itself can add is no decision about a date that passes with no commit.
+    const inline = CLOCK_RULES.has(finding.ruleId)
+      ? undefined
+      : [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
+          match => match && match[1] === finding.ruleId,
+        );
     if (inline) {
       suppressed.push({ finding, reason: inline[2]!, source: 'inline' });
       continue;

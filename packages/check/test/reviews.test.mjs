@@ -41,6 +41,7 @@ test('AGC-REV-001: a passed review date is high; due within 14 days is info; due
   assert.equal(lapsed.length, 1);
   assert.equal(lapsed[0].severity, 'high');
   assert.match(lapsed[0].message, /due on 2026-11-19, 1 day ago \(owner @acme\/platform\)/);
+  assert.match(lapsed[0].message, /fails every change until someone renews it/);
   assert.equal(lapsed[0].location.file, '.agc-reviews.yaml');
   assert.equal(lapsed[0].location.line, 2);
 
@@ -127,6 +128,24 @@ test('AGC-REV-003 is medium when the extra capability is only possible', () => {
   assert.match(found[0].message, /sends data out \(maybe\)/);
 });
 
+test('a review change marks what is only possible and what the record does not approve', () => {
+  const files = caps => ({
+    '.claude/settings.json': settings({ allow: ['Bash(npm test)', 'Edit'] }),
+    '.agc-reviews.yaml': reviews(record({ caps, date: '2027-05-01' })),
+  });
+  const base = run(files('[exec, write, selfModify, egress]'));
+  const head = run(files('[selfModify, write, exec]'));
+  const diff = diffScans(base, head);
+  assert.deepEqual(diff.reviews[0].maybe, ['egress']);
+  assert.match(
+    formatText(head, diff),
+    /approves write, exec, selfModify \(was write, exec, egress, selfModify\); can do now without asking: write, exec, egress \(maybe\) \(not approved\), selfModify/,
+  );
+  const md = formatMarkdown(head, diff);
+  assert.match(md, /\| write, exec, \*\*egress \(maybe\)\*\* \(not approved\), selfModify \|/);
+  assert.equal(JSON.parse(formatJson(head, diff)).diff.reviews[0].maybe[0], 'egress');
+});
+
 test('AGC-REV-004: a review date past policy.max_review_days (default 365)', () => {
   const far = findingsFor(
     run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ date: '2027-11-21' })) }),
@@ -153,6 +172,19 @@ test('AGC-REV-005: a record that names no agent', () => {
   const found = findingsFor(result, 'AGC-REV-005');
   assert.equal(found.length, 1);
   assert.match(found[0].message, /\.claude\/old\.json matches no agent/);
+  assert.doesNotMatch(found[0].message, /Did you mean/);
+});
+
+test('AGC-REV-005 suggests the file when the entry names a subagent by its front-matter name', () => {
+  const result = run({
+    ...AGENT,
+    '.claude/agents/reviewer.md': '---\nname: reviewer\ndescription: Reviews\ntools: Read\n---\nReview.\n',
+    '.agc-reviews.yaml': reviews(record(), record({ agent: 'reviewer', caps: '[]' })),
+  });
+  const found = findingsFor(result, 'AGC-REV-005');
+  assert.equal(found.length, 1);
+  assert.match(found[0].message, /Did you mean \.claude\/agents\/reviewer\.md\?/);
+  assert.match(found[0].fix, /Set agent to \.claude\/agents\/reviewer\.md/);
 });
 
 test('AGC-REV-006: owner absent from CODEOWNERS; case-insensitive; silent without CODEOWNERS', () => {
@@ -200,6 +232,96 @@ test('a quoted date and a YAML timestamp both read as the same day', () => {
       findingsFor(run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ date })) }), 'AGC-REV-001').length,
       1,
     );
+});
+
+test('an inline agc-ignore comment cannot silence a passed review date, before or after it passes', () => {
+  const ignored = `reviews:\n  # agc-ignore AGC-REV-001: renewing next sprint\n${record({ date: '2026-11-01' }).replace('review_by: 2026-11-01', 'review_by: 2026-11-01 # agc-ignore AGC-REV-001: later')}`;
+  const head = run({ ...AGENT, '.agc-reviews.yaml': ignored });
+  assert.equal(findingsFor(head, 'AGC-REV-001').length, 1);
+  assert.deepEqual(
+    head.suppressed.filter(item => item.finding.ruleId === 'AGC-REV-001'),
+    [],
+  );
+  const base = run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ date: '2026-11-01' })) });
+  const diff = diffScans(base, head);
+  assert.deepEqual(
+    diff.added.map(f => f.ruleId),
+    ['AGC-REV-001'],
+  );
+  assert.deepEqual(diff.resolved, []);
+  // Written while the date was ahead, the comment does nothing once it passes either.
+  const later = run(
+    { ...AGENT, '.agc-reviews.yaml': ignored.replace(/2026-11-01/g, '2026-11-30') },
+    {
+      now: Date.parse('2026-12-05T00:00:00Z'),
+    },
+  );
+  assert.equal(findingsFor(later, 'AGC-REV-001')[0].severity, 'high');
+});
+
+test('a review due soon is a note, and it does not count as new in every pull request', () => {
+  const files = { ...AGENT, '.agc-reviews.yaml': reviews(record({ date: '2026-11-25' })) };
+  const diff = diffScans(run(files), run(files));
+  assert.deepEqual(diff.added, []);
+});
+
+test('moving an agent while widening it fails: the record no longer matches, at high', () => {
+  const head = run({
+    '.claude/agents/triage-bot.md': '---\nname: triage\ndescription: d\ntools: Read, Bash\n---\nx\n',
+    '.agc-reviews.yaml': reviews(record({ agent: '.claude/agents/triage.md', caps: '[]' })),
+  });
+  const found = findingsFor(head, 'AGC-REV-005');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, 'high');
+  assert.match(found[0].message, /no longer checked against it/);
+});
+
+test('a name shared by several agents covers none of them, so a copied name borrows no review', () => {
+  const sub = tools => `---\nname: deployer\ndescription: d\ntools: ${tools}\n---\nx\n`;
+  const files = {
+    '.claude/agents/deployer.md': sub('Read'),
+    '.claude/agents/copy.md': sub('Read, Bash'),
+    '.agc-reviews.yaml': reviews(record({ agent: 'Subagent deployer', caps: '[]' })),
+  };
+  const result = run(files, { config: 'policy:\n  require_reviews: true\n' });
+  assert.deepEqual(result.reviews[0].agents, []);
+  assert.deepEqual(
+    findingsFor(result, 'AGC-REV-002')
+      .map(f => f.agentId)
+      .filter(id => id.startsWith('subagent:'))
+      .sort(),
+    ['subagent:.claude/agents/copy.md', 'subagent:.claude/agents/deployer.md'],
+  );
+  const orphan = findingsFor(result, 'AGC-REV-005');
+  assert.equal(orphan.length, 1);
+  assert.match(orphan[0].message, /names 2 agents by the same name, so it covers none of them/);
+  // With one agent of that name, the name works.
+  delete files['.claude/agents/copy.md'];
+  assert.equal(run(files).reviews[0].agents.length, 1);
+});
+
+test('each record is located at its own entry, even when its name appears earlier in the file', () => {
+  const text = reviews(
+    record({ agent: '.claude/agents/triage.md', owner: '"@acme/triage-team"' }),
+    record({ agent: 'triage', date: '2026-11-01' }),
+  );
+  const result = run({ ...AGENT, '.agc-reviews.yaml': text });
+  const lapsed = findingsFor(result, 'AGC-REV-001');
+  assert.equal(lapsed.length, 1);
+  assert.equal(lapsed[0].location.line, 6);
+  assert.deepEqual(
+    result.reviews.map(item => item.location.line),
+    [2, 6],
+  );
+});
+
+test('a timestamp with a time of day or an offset is not a review date', () => {
+  for (const date of ['!!timestamp 2027-01-01T23:00:00-05:00', '!!timestamp 2027-01-01T12:00:00Z']) {
+    const found = findingsFor(run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ date })) }), 'AGC-REV-007');
+    assert.equal(found.length, 1, date);
+  }
+  const midnight = run({ ...AGENT, '.agc-reviews.yaml': reviews(record({ date: '!!timestamp 2027-01-01' })) });
+  assert.equal(midnight.reviews[0].reviewBy, '2027-01-01');
 });
 
 test('a baseline cannot silence a passed review date, but still silences other findings', () => {

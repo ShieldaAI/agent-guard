@@ -48,7 +48,7 @@ benchmark that the test suite runs.
 | [AGC-REV-002](#agc-rev-002) | high | repository files | Agent has no review record |
 | [AGC-REV-003](#agc-rev-003) | high | repository files | Agent can do more than its review approved |
 | [AGC-REV-004](#agc-rev-004) | high | repository files | Agent review date is too far away |
-| [AGC-REV-005](#agc-rev-005) | medium | repository files | Review record matches no agent |
+| [AGC-REV-005](#agc-rev-005) | high | repository files | Review record matches no agent |
 | [AGC-REV-006](#agc-rev-006) | low | repository files | Review owner is not a code owner |
 | [AGC-REV-007](#agc-rev-007) | high | repository files | Review record could not be read |
 | [AGC-POL-001](#agc-pol-001) | high | repository files | MCP server not on the approved list |
@@ -1569,9 +1569,9 @@ reviews:
 
 **Review record matches no agent**
 
-Severity: medium. Confidence: high. Evidence: repository files. OWASP Agentic Top 10: ASI10.
+Severity: high. Confidence: high. Evidence: repository files. OWASP Agentic Top 10: ASI10.
 
-An entry in .agc-reviews.yaml names no agent the scan found by ID, name or file. Usually the agent was moved or renamed, and its review date now guards nothing.
+An entry in .agc-reviews.yaml names no agent the scan found by ID, name or file, or names several agents by one name. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.
 
 Flagged:
 

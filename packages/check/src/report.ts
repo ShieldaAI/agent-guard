@@ -43,7 +43,12 @@ function where(finding: Finding): string {
   return `${finding.location.file}:${finding.location.line}`;
 }
 
-const list = (items: readonly string[]) => (items.length ? items.join(', ') : 'nothing');
+const order = (item: string) => {
+  const at = (CAPABILITIES as readonly string[]).indexOf(item);
+  return at < 0 ? CAPABILITIES.length : at;
+};
+const list = (items: readonly string[]) =>
+  items.length ? [...items].sort((a, b) => order(a) - order(b)).join(', ') : 'nothing';
 
 /**
  * One review record change in words: the date and owner it sets, what it approves (and what it
@@ -55,15 +60,32 @@ export function describeReviewChange(change: ReviewChange): {
   owner: string;
   approves: string;
   current: string;
+  /** `current` item by item: whether it is only possible, and whether the record approves it. */
+  currentItems: { capability: string; maybe: boolean; approved: boolean }[];
 } {
   const { before, after } = change;
+  const maybe = new Set(change.maybe ?? []);
+  const currentItems = change.current.map(capability => ({
+    capability,
+    maybe: maybe.has(capability),
+    approved: Boolean(after?.capabilities.includes(capability)),
+  }));
+  const current = currentItems.length
+    ? currentItems
+        .map(
+          item =>
+            `${item.capability}${item.maybe ? ' (maybe)' : ''}${after && !item.approved ? ' (not approved)' : ''}`,
+        )
+        .join(', ')
+    : 'nothing';
   if (!after)
     return {
       status: 'removed',
       reviewBy: `${before!.reviewBy} → removed`,
       owner: before!.owner,
       approves: `was ${list(before!.capabilities)}`,
-      current: list(change.current),
+      current,
+      currentItems,
     };
   const sameCaps = before && [...before.capabilities].sort().join() === [...after.capabilities].sort().join();
   return {
@@ -75,8 +97,20 @@ export function describeReviewChange(change: ReviewChange): {
       : sameCaps
         ? `${list(after.capabilities)} (unchanged)`
         : `${list(after.capabilities)} (was ${list(before.capabilities)})`,
-    current: list(change.current),
+    current,
+    currentItems,
   };
+}
+
+/** What the agent can do now, in Markdown: anything the record does not approve is in bold. */
+function markdownCurrent(items: ReturnType<typeof describeReviewChange>['currentItems']): string {
+  if (!items.length) return 'nothing';
+  return items
+    .map(item => {
+      const text = escapeMd(`${item.capability}${item.maybe ? ' (maybe)' : ''}`);
+      return item.approved ? text : `**${text}** (not approved)`;
+    })
+    .join(', ');
 }
 
 /** The review record that speaks for an agent, as the scan read it. */
@@ -219,7 +253,7 @@ export function formatMarkdown(result: ScanResult, diff?: ScanDiff): string {
     for (const change of diff.reviews) {
       const item = describeReviewChange(change);
       out.push(
-        `| ${escapeMd(change.agent)} | ${item.status} | ${escapeMd(item.reviewBy)} | ${escapeMd(item.owner)} | ${escapeMd(item.approves)} | **${escapeMd(item.current)}** |`,
+        `| ${escapeMd(change.agent)} | ${item.status} | ${escapeMd(item.reviewBy)} | ${escapeMd(item.owner)} | ${escapeMd(item.approves)} | ${markdownCurrent(item.currentItems)} |`,
       );
     }
   }
@@ -395,6 +429,7 @@ export function formatJson(result: ScanResult, diff?: ScanDiff): string {
                   }
                 : null,
               current: change.current,
+              maybe: change.maybe,
             })),
           },
         }

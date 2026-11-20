@@ -11,11 +11,15 @@
   silence it. It is info for the 14 days before the date. AGC-REV-002 requires a record for every
   shipped agent (with `policy.require_reviews`). AGC-REV-003 flags an agent that can do more
   without asking than its record approves. AGC-REV-004 caps how far ahead the date may be
-  (`policy.max_review_days`, default 365). AGC-REV-005 flags a record that matches no agent,
-  AGC-REV-006 an owner CODEOWNERS does not name, and AGC-REV-007 a record that cannot be read.
+  (`policy.max_review_days`, default 365). AGC-REV-005 (high) flags a record that matches no
+  agent, so moving an agent cannot carry new access past its record, AGC-REV-006 an owner
+  CODEOWNERS does not name, and AGC-REV-007 a record that cannot be read. An inline `agc-ignore`
+  comment cannot silence AGC-REV-001. A record that names an agent by name covers it only while no
+  other agent has that name.
 - Feature: with `--base`, a change to a review record is listed in the text, Markdown and JSON
   reports with its date, owner, the capabilities it approves (and what it approved before) and
-  what the agent can do now without asking. A renewal reads as an approval of access, not a
+  what the agent can do now without asking, marking what the record does not approve and what is
+  only possible. A renewal reads as an approval of access, not a
   one-line date change. The review file is read from the change. The review policy in
   `.agc.yaml` is read from the base, like the rest of the gate.
 - API: `ScanOptions.now` sets the clock for review dates, `ScanResult.reviews` lists the records

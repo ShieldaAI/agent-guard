@@ -11,7 +11,7 @@ import { authority, level } from './authority.js';
 import { withScriptReader } from './claude.js';
 import { CAPABILITIES, type Agent, type Capability, type CapabilityState, type ReviewSummary } from './types.js';
 import { CLOCK_RULES, covers, isShipped } from './reviews.js';
-import { currentCapabilities } from './rules/reviews.js';
+import { unasked } from './rules/reviews.js';
 
 export interface ScanOptions {
   /** Repository root. Used for paths in the result and as the git directory for `ref`. */
@@ -100,6 +100,7 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
     path => source.read(path),
     options.baseline ?? new Set(),
   );
+  const shipped = project.agents.filter(isShipped);
   return {
     root: options.root,
     agents: project.agents,
@@ -122,7 +123,7 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
       reviewBy: record.reviewBy,
       capabilities: record.capabilities,
       location: record.location,
-      agents: project.agents.filter(agent => isShipped(agent) && covers(record, agent)).map(agent => agent.id),
+      agents: shipped.filter(agent => covers(record, agent, shipped)).map(agent => agent.id),
     })),
   };
 }
@@ -143,6 +144,8 @@ export interface ReviewChange {
   readonly before: ReviewSummary | undefined;
   readonly after: ReviewSummary | undefined;
   readonly current: readonly Capability[];
+  /** The part of `current` the scanner cannot confirm: it may be possible, not certainly. */
+  readonly maybe: readonly Capability[];
 }
 
 export interface ScanDiff {
@@ -169,8 +172,13 @@ function reviewChanges(base: ScanResult, head: ScanResult): ReviewChange[] {
     const now = after.get(name);
     if (old && now && sameReview(old, now)) continue;
     const ids = new Set(now?.agents ?? old?.agents ?? []);
-    const current = new Set(head.agents.filter(agent => ids.has(agent.id)).flatMap(currentCapabilities));
-    out.push({ agent: name, before: old, after: now, current: CAPABILITIES.filter(item => current.has(item)) });
+    const found = new Map<Capability, 'yes' | 'unknown'>();
+    for (const agent of head.agents.filter(item => ids.has(item.id)))
+      for (const [capability, certainty] of unasked(agent))
+        if (found.get(capability) !== 'yes') found.set(capability, certainty);
+    const current = CAPABILITIES.filter(item => found.has(item));
+    const maybe = current.filter(item => found.get(item) === 'unknown');
+    out.push({ agent: name, before: old, after: now, current, maybe });
   }
   return out;
 }
@@ -239,7 +247,7 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
       ...head.findings.filter(
         finding =>
           // A review date that passed fails every change until the review is done: no commit made it pass.
-          CLOCK_RULES.has(finding.ruleId) ||
+          (CLOCK_RULES.has(finding.ruleId) && finding.severity !== 'info') ||
           !before.has(finding.fingerprint) ||
           rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
       ),

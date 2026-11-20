@@ -1,6 +1,6 @@
-import { parse as parseYaml } from 'yaml';
+import { isMap, isSeq, parseDocument } from 'yaml';
 import { CAPABILITIES, type Capability, type Location } from './types.js';
-import { isRecord, lineLocator } from './text.js';
+import { isRecord } from './text.js';
 
 /**
  * Review records: `.agc-reviews.yaml` at the repository root says, for each agent the team ships,
@@ -62,7 +62,9 @@ export function parseDay(value: string): number | undefined {
 /** The `YYYY-MM-DD` a YAML value stands for: a quoted or plain string, or a YAML 1.1 timestamp. */
 function dayText(value: unknown): string | undefined {
   if (typeof value === 'string') return value.trim();
-  if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
+  // A timestamp with a time of day or an offset is not a day: reading it as UTC would move the date.
+  if (value instanceof Date && !Number.isNaN(value.getTime()) && value.getTime() % DAY === 0)
+    return value.toISOString().slice(0, 10);
   return undefined;
 }
 
@@ -75,8 +77,14 @@ export function parseReviews(path: string, text: string): ReviewFile {
     invalid: [{ message, location: { file: path, line: 1 }, subject: 'file' }],
   });
   let data: unknown;
+  let starts: (number | undefined)[] = [];
   try {
-    data = parseYaml(text, { maxAliasCount: 20, uniqueKeys: true });
+    const doc = parseDocument(text, { uniqueKeys: true });
+    if (doc.errors.length) throw doc.errors[0];
+    data = doc.toJS({ maxAliasCount: 20 });
+    // Each entry's line comes from where the parser found it, not from searching for its text.
+    const list = isMap(doc.contents) ? doc.contents.get('reviews', true) : undefined;
+    if (isSeq(list)) starts = list.items.map(item => (item as { range?: [number] } | null)?.range?.[0]);
   } catch (error) {
     return whole(
       `${path} is not valid YAML (${error instanceof Error ? error.message.split('\n')[0] : String(error)})`,
@@ -89,10 +97,10 @@ export function parseReviews(path: string, text: string): ReviewFile {
   const list = data['reviews'];
   if (list === undefined || list === null) return { path, records, invalid };
   if (!Array.isArray(list)) return whole(`${path}: reviews must be a list`);
-  const locate = lineLocator(text);
+  const lineAt = (offset: number | undefined) => (offset === undefined ? 1 : text.slice(0, offset).split('\n').length);
   list.forEach((entry, i) => {
     const name = isRecord(entry) && typeof entry['agent'] === 'string' ? entry['agent'].trim() : '';
-    const location = { file: path, line: name ? locate(name) : 1 };
+    const location = { file: path, line: lineAt(starts[i]) };
     const fail = (problem: string) =>
       invalid.push({
         message: `reviews[${i}]${name ? ` (${name})` : ''}: ${problem}`,
@@ -129,9 +137,27 @@ export function parseReviews(path: string, text: string): ReviewFile {
   return { path, records, invalid };
 }
 
-/** Whether a record covers an agent: by ID, by name, or by the file that defines it. */
-export function covers(record: ReviewRecord, agent: { id: string; name: string; location: Location }): boolean {
-  return record.agent === agent.id || record.agent === agent.name || record.agent === agent.location.file;
+interface Named {
+  readonly id: string;
+  readonly name: string;
+  readonly location: Location;
+}
+
+/**
+ * Whether a record covers an agent: by ID, by the file that defines it, or by name when no other
+ * agent in `agents` has that name. A name is chosen in the file (a subagent's front matter), so one
+ * shared by several agents would let a new agent borrow another's review.
+ */
+export function covers(record: ReviewRecord, agent: Named, agents: readonly Named[]): boolean {
+  if (record.agent === agent.id || record.agent === agent.location.file) return true;
+  return record.agent === agent.name && agents.filter(item => item.name === agent.name).length === 1;
+}
+
+/** How many of `agents` a record's value names by name: more than one covers none of them. */
+export function sameName(record: ReviewRecord, agents: readonly Named[]): number {
+  return agents.filter(
+    item => item.name === record.agent && item.id !== record.agent && item.location.file !== record.agent,
+  ).length;
 }
 
 /** Agents defined outside the repository (your own or managed settings) are not shipped with it. */

@@ -2,7 +2,7 @@ import { ASI, rule } from './common.js';
 import type { Rule } from './common.js';
 import type { Project } from '../model.js';
 import { CAPABILITIES, CAPABILITY_LABELS, type Agent, type Capability } from '../types.js';
-import { covers, DAY, isShipped, REVIEWS_PATH, startOfDay, type ReviewRecord } from '../reviews.js';
+import { covers, DAY, isShipped, REVIEWS_PATH, sameName, startOfDay, type ReviewRecord } from '../reviews.js';
 
 /** Days before review_by when the check starts saying the review is due. */
 export const DUE_SOON_DAYS = 14;
@@ -10,10 +10,14 @@ export const DUE_SOON_DAYS = 14;
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? '' : 's'}`;
 
 /** The record that speaks for an agent: the one naming its ID, else its name, else its file. */
-export function recordFor(agent: Agent, records: readonly ReviewRecord[]): ReviewRecord | undefined {
+export function recordFor(
+  agent: Agent,
+  records: readonly ReviewRecord[],
+  agents: readonly Agent[],
+): ReviewRecord | undefined {
   return (
     records.find(record => record.agent === agent.id) ??
-    records.find(record => record.agent === agent.name) ??
+    records.find(record => record.agent === agent.name && covers(record, agent, agents)) ??
     records.find(record => record.agent === agent.location.file)
   );
 }
@@ -32,6 +36,22 @@ export function unasked(agent: Agent): Map<Capability, 'yes' | 'unknown'> {
 export function currentCapabilities(agent: Agent): Capability[] {
   const found = unasked(agent);
   return CAPABILITIES.filter(capability => found.has(capability));
+}
+
+/**
+ * The defining file of the one agent an unmatched entry most likely means: its file name without the
+ * extension, or the last word of its name (a subagent's front-matter name), equal to the entry.
+ */
+function likelyMeant(entry: string, agents: readonly Agent[]): string | undefined {
+  const want = entry.trim().toLowerCase();
+  if (!want) return undefined;
+  const stem = (file: string) => (file.split('/').pop() ?? '').replace(/\.[^.]+$/, '').toLowerCase();
+  const files = new Set(
+    agents
+      .filter(agent => stem(agent.location.file) === want || agent.name.toLowerCase().endsWith(` ${want}`))
+      .map(agent => agent.location.file),
+  );
+  return files.size === 1 ? [...files][0] : undefined;
 }
 
 function shipped(project: Project): Agent[] {
@@ -68,7 +88,7 @@ export const REVIEW_RULES: readonly Rule[] = [
         const days = Math.round((today - record.reviewByTime) / DAY);
         if (days > 0)
           report({
-            message: `The review of ${record.agent} was due on ${record.reviewBy}, ${plural(days, 'day')} ago (owner ${record.owner}). Until it is reviewed, it keeps access nobody has checked on schedule.`,
+            message: `The review of ${record.agent} was due on ${record.reviewBy}, ${plural(days, 'day')} ago (owner ${record.owner}). Until it is reviewed, it keeps access nobody has checked on schedule, and this fails every change until someone renews it.`,
             location: record.location,
             subject: `lapsed:${record.agent}:${record.reviewBy}`,
             fix: RENEW,
@@ -96,8 +116,9 @@ export const REVIEW_RULES: readonly Rule[] = [
     (project, report, context) => {
       if (!context.config.policy.requireReviews) return;
       const records = project.reviews?.records ?? [];
-      for (const agent of shipped(project)) {
-        if (records.some(record => covers(record, agent))) continue;
+      const agents = shipped(project);
+      for (const agent of agents) {
+        if (records.some(record => covers(record, agent, agents))) continue;
         report({
           message: `${agent.name} has no entry in ${REVIEWS_PATH}, so it has no owner and no review date.`,
           location: agent.location,
@@ -120,8 +141,9 @@ export const REVIEW_RULES: readonly Rule[] = [
     (project, report) => {
       const records = project.reviews?.records ?? [];
       if (!records.length) return;
-      for (const agent of shipped(project)) {
-        const record = recordFor(agent, records);
+      const agents = shipped(project);
+      for (const agent of agents) {
+        const record = recordFor(agent, records, agents);
         if (!record) continue;
         const found = unasked(agent);
         const extra = currentCapabilities(agent).filter(capability => !record.capabilities.includes(capability));
@@ -169,20 +191,33 @@ export const REVIEW_RULES: readonly Rule[] = [
     {
       id: 'AGC-REV-005',
       title: 'Review record matches no agent',
-      severity: 'medium',
+      severity: 'high',
       confidence: 'high',
       owasp: [ASI.rogue],
-      help: `An entry in ${REVIEWS_PATH} names no agent the scan found by ID, name or file. Usually the agent was moved or renamed, and its review date now guards nothing.`,
+      help: `An entry in ${REVIEWS_PATH} names no agent the scan found by ID, name or file, or names several agents by one name. Usually the agent was moved or renamed: its review date now guards nothing, and what it can do is no longer checked against what the review approved, so a rename could carry new access past the record. High so that the change that moved the agent also points the record at it.`,
     },
     (project, report) => {
       const agents = shipped(project);
       for (const record of project.reviews?.records ?? []) {
-        if (agents.some(agent => covers(record, agent))) continue;
+        if (agents.some(agent => covers(record, agent, agents))) continue;
+        const shared = sameName(record, agents);
+        if (shared > 1) {
+          report({
+            message: `The review record for ${record.agent} names ${shared} agents by the same name, so it covers none of them: a name can be copied into a new agent's file.`,
+            location: record.location,
+            subject: `orphan:${record.agent}`,
+            fix: 'Set agent to the file or ID of the one agent the review is for (agent-guard-check --format json lists them).',
+          });
+          continue;
+        }
+        const guess = likelyMeant(record.agent, agents);
         report({
-          message: `The review record for ${record.agent} matches no agent in the repository, so its review date applies to nothing.`,
+          message: `The review record for ${record.agent} matches no agent in the repository, so its review date applies to nothing and what the agent can do is no longer checked against it.${guess ? ` Did you mean ${guess}?` : ''}`,
           location: record.location,
           subject: `orphan:${record.agent}`,
-          fix: 'Point agent at the agent’s ID, name or defining file, or remove the entry if the agent is gone.',
+          fix: guess
+            ? `Set agent to ${guess}, or remove the entry if the agent is gone.`
+            : 'Point agent at the agent’s ID, name or defining file (agent-guard-check --format json lists them), or remove the entry if the agent is gone.',
         });
       }
     },
