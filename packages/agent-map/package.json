@@ -40,7 +40,7 @@
   "dependencies": {
     "@modelcontextprotocol/server": "2.4.0",
     "@shieldaai/agent-guard": "1.5.0",
-    "neo4j-driver": "6.3.0",
+    "neo4j-driver": "6.3.2",
     "openid-client": "6.8.8"
   },
   "publishConfig": {
