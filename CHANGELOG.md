@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.5.0 — 2026-11-21
+
+### Agent Guard Check
+
+- Feature: review records. `.agc-reviews.yaml` gives each agent an owner, the capabilities its
+  last review approved it to do without asking, and a `review_by` date. Eight rules hold the
+  record to it. AGC-REV-001 (high) fires once the date passes. A passing date is not a change,
+  so in a pull request it counts as new whether or not the base had it, and a baseline does not
+  silence it. It is info for the 14 days before the date. AGC-REV-002 requires a record for every
+  shipped agent (with `policy.require_reviews`). AGC-REV-003 flags an agent that can do more
+  without asking than its record approves. AGC-REV-004 caps how far ahead the date may be
+  (`policy.max_review_days`, default 365). AGC-REV-005 (high) flags a record that matches no
+  agent (usually a moved agent, which is then no longer checked against its record), AGC-REV-006
+  an owner CODEOWNERS does not name, and AGC-REV-007 a record that cannot be read. An inline
+  `agc-ignore` comment cannot silence AGC-REV-001 or AGC-REV-007. AGC-REV-008 (low) flags a record
+  that approves access the agent no longer has, so it cannot be restored later without the record. A record that names agents by
+  name covers them only while every agent with that name is defined in one file. A YAML 1.1
+  timestamp counts only when written as the day itself. Without `policy.require_reviews`, records
+  are opt-in: deleting one, or moving an agent and leaving another at the old path, leaves the
+  moved agent unrecorded without failing; `require_reviews` makes both fail.
+- Feature: with `--base`, a change to a review record is listed in the text, Markdown and JSON
+  reports with its date, owner, the capabilities it approves (and what it approved before) and
+  what the agent can do now without asking, marking what the record does not approve and what is
+  only possible. A renewal reads as an approval of access, not a
+  one-line date change. The review file is read from the change. The review policy in
+  `.agc.yaml` is read from the base, like the rest of the gate.
+- API: `ScanOptions.now` sets the clock for review dates, `ScanResult.reviews` lists the records
+  read, and `ScanDiff.reviews` lists the records a change added, removed or edited.
+
 ## 1.4.0 — 2026-11-20
 
 ### Agent Map

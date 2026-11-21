@@ -299,7 +299,7 @@ export function isCandidate(path: string): boolean {
     (parts.length === 1 || (parts.length === 2 && (parent === '.github' || parent === 'docs')))
   )
     return true;
-  if (name === 'package.json' || path === '.agc.yaml') return true;
+  if (name === 'package.json' || path === '.agc.yaml' || path === '.agc-reviews.yaml') return true;
   if (PACKAGE_SOURCE_FILES.has(name)) return true;
   // Agent Guard records: describe() output, inventory snapshots, host manifests.
   if (/^agent-guard[\w.-]*\.json$/.test(name) && parts.length <= 6) return true;

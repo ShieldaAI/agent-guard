@@ -13,6 +13,7 @@ import { SECRETS_RULES } from './secrets.js';
 import { INSTRUCTIONS_RULES } from './instructions.js';
 import { WORKFLOWS_RULES } from './workflows.js';
 import { GOVERNANCE_RULES } from './governance.js';
+import { REVIEW_RULES } from './reviews.js';
 
 export { fingerprint } from './common.js';
 export type { Rule, RuleContext } from './common.js';
@@ -27,6 +28,7 @@ export const RULES: readonly Rule[] = Object.freeze([
   ...INSTRUCTIONS_RULES,
   ...WORKFLOWS_RULES,
   ...GOVERNANCE_RULES,
+  ...REVIEW_RULES,
   ...POLICY_RULES,
   ...AGENT_GUARD_RULES,
   ...AGENT_MAP_RULES,

@@ -1,4 +1,5 @@
 import { resolve } from 'node:path';
+import { parseReviews, REVIEWS_PATH, type ReviewFile } from './reviews.js';
 import type { Agent, Grant, Location, Mediator, Unrecognized } from './types.js';
 import { mediates } from './authority.js';
 import { DECIDING_EVENTS, judgeHook, type HookJudgement } from './hooks.js';
@@ -107,6 +108,8 @@ export interface Project {
   readonly filesRead: number;
   /** Agent Guard's own records found in the repo or given on the command line (Mode B). */
   readonly agentGuard: AgentGuardEvidence;
+  /** `.agc-reviews.yaml`: owner, approved capabilities and review date per agent; null when absent. */
+  readonly reviews: ReviewFile | null;
   /** Tools other agents (Gemini CLI) run without asking, as Claude Code permission rules. */
   readonly otherAllow: readonly PermissionRule[];
   /** Settings that run every action without asking, outside Claude Code's own settings. */
@@ -963,7 +966,7 @@ export function buildProject(
               line: text.split('\n').findIndex(line => line.includes('@shieldaai/agent-guard')) + 1,
             };
         }
-      } else if (path === '.agc.yaml') continue;
+      } else if (path === '.agc.yaml' || path === REVIEWS_PATH) continue;
       else if (name.endsWith('.md')) {
         prompts.push({ path, text });
         if (path.split('/').includes('agents') && path.includes('.claude/agents/')) {
@@ -1660,6 +1663,10 @@ export function buildProject(
     errors,
     filesRead,
     agentGuard: guardFiles.length ? readAgentGuardFiles(guardFiles, errors) : EMPTY_EVIDENCE,
+    reviews: (() => {
+      const text = source.read(REVIEWS_PATH);
+      return text === undefined ? null : parseReviews(REVIEWS_PATH, text);
+    })(),
     otherAllow: others.flatMap(other => other.allow),
     bypasses: [...editorBypasses, ...others.flatMap(other => other.bypasses)],
     models,

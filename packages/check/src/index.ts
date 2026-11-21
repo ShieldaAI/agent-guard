@@ -1,5 +1,5 @@
 export { scan, diffScans } from './scan.js';
-export type { ScanOptions, ScanDiff, CapabilityChange } from './scan.js';
+export type { ScanOptions, ScanDiff, CapabilityChange, ReviewChange } from './scan.js';
 export { DirectorySource, GitSource, MemorySource, isCandidate, safeRelative } from './source.js';
 export type { FileSource } from './source.js';
 export { authority, capabilityState, mediates } from './authority.js';

@@ -2,6 +2,7 @@ import { parse as parseYaml } from 'yaml';
 import type { Capability, Confidence, Finding, Severity, Suppressed } from './types.js';
 import { CAPABILITIES, SEVERITY_ORDER } from './types.js';
 import { isRecord } from './text.js';
+import { CLOCK_RULES, NO_INLINE_RULES } from './reviews.js';
 import type { DeclaredServer } from './mcp.js';
 
 export type FailOn = Severity | 'none';
@@ -42,6 +43,10 @@ export interface PolicyConfig {
   /** Hosts remote MCP servers may use; null: no allowlist. */
   readonly allowedMcpHosts: readonly string[] | null;
   readonly forbid: readonly ForbiddenCombination[];
+  /** Every agent the repository ships must have a record in .agc-reviews.yaml (AGC-REV-002). */
+  readonly requireReviews: boolean;
+  /** How far ahead a review_by date may be set (AGC-REV-004). */
+  readonly maxReviewDays: number;
 }
 
 export interface CheckConfig {
@@ -63,7 +68,13 @@ export const DEFAULT_CONFIG: CheckConfig = Object.freeze({
   ignore: Object.freeze([]),
   agentGuard: Object.freeze({ files: Object.freeze([]), maxDeadlineHours: 24, maxCalls: 1000, maxCost: null }),
   agentMap: null,
-  policy: Object.freeze({ allowedMcpServers: null, allowedMcpHosts: null, forbid: Object.freeze([]) }),
+  policy: Object.freeze({
+    allowedMcpServers: null,
+    allowedMcpHosts: null,
+    forbid: Object.freeze([]),
+    requireReviews: false,
+    maxReviewDays: 365,
+  }),
   mcpServers: Object.freeze([]),
 });
 
@@ -142,7 +153,11 @@ const LEVELS = new Set(['auto', 'any']);
 function parsePolicy(value: unknown): PolicyConfig {
   if (value === undefined) return DEFAULT_CONFIG.policy;
   if (!isRecord(value)) throw new Error('.agc.yaml: policy must be a mapping');
-  onlyKeys(value, ['allowed_mcp_servers', 'allowed_mcp_hosts', 'forbid'], 'policy.');
+  onlyKeys(
+    value,
+    ['allowed_mcp_servers', 'allowed_mcp_hosts', 'forbid', 'require_reviews', 'max_review_days'],
+    'policy.',
+  );
   const forbid: ForbiddenCombination[] = [];
   if (value['forbid'] !== undefined) {
     if (!Array.isArray(value['forbid'])) throw new Error('.agc.yaml: policy.forbid must be a list');
@@ -173,6 +188,11 @@ function parsePolicy(value: unknown): PolicyConfig {
       });
     });
   }
+  const requireReviews = value['require_reviews'] ?? false;
+  if (typeof requireReviews !== 'boolean') throw new Error('.agc.yaml: policy.require_reviews must be true or false');
+  const maxReviewDays = value['max_review_days'] ?? DEFAULT_CONFIG.policy.maxReviewDays;
+  if (typeof maxReviewDays !== 'number' || !Number.isInteger(maxReviewDays) || maxReviewDays < 1)
+    throw new Error('.agc.yaml: policy.max_review_days must be a whole number of days, at least 1');
   return {
     allowedMcpServers:
       value['allowed_mcp_servers'] === undefined
@@ -183,6 +203,8 @@ function parsePolicy(value: unknown): PolicyConfig {
         ? null
         : stringList(value['allowed_mcp_hosts'], 'policy.allowed_mcp_hosts'),
     forbid,
+    requireReviews,
+    maxReviewDays,
   };
 }
 
@@ -304,9 +326,12 @@ export function applySuppressions(
       }
       return inlineCache.get(key)!;
     };
-    const inline = [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
-      match => match && match[1] === finding.ruleId,
-    );
+    // A comment the change itself can add is no decision about a date that passes with no commit.
+    const inline = NO_INLINE_RULES.has(finding.ruleId)
+      ? undefined
+      : [lineMatch(finding.location.line - 1), lineMatch(finding.location.line - 2)].find(
+          match => match && match[1] === finding.ruleId,
+        );
     if (inline) {
       suppressed.push({ finding, reason: inline[2]!, source: 'inline' });
       continue;
@@ -322,7 +347,8 @@ export function applySuppressions(
       suppressed.push({ finding, reason: entry.reason, source: 'config' });
       continue;
     }
-    if (baseline.has(finding.fingerprint)) {
+    // A date passing is not repository state, so a baseline (a record of the repository) never hides it.
+    if (baseline.has(finding.fingerprint) && !CLOCK_RULES.has(finding.ruleId)) {
       suppressed.push({ finding, reason: 'in baseline', source: 'baseline' });
       continue;
     }
