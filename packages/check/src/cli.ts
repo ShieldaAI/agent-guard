@@ -38,6 +38,7 @@ import {
 import { SEVERITY_ORDER, type Confidence, type Finding, type ScanResult } from './types.js';
 import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
 import { fetchLiveEvidence, AgentMapError, type LiveEvidence } from './agent-map.js';
+import { fetchBranchRules, GitHubError, isRepoName, type BranchRules } from './github.js';
 import { importSarif } from './sarif-import.js';
 import { formatDiff, planFixes } from './fix.js';
 import { RULES } from './rules/index.js';
@@ -64,7 +65,7 @@ const USAGE = `Usage: ${TOOL_NAME} [path] [options]
 
 Shows what each AI agent in a repository can do and flags authority it does not need.
 Reads files only: it never runs repository code. It makes no network calls unless you ask
-for live evidence with --live or --agent-map-url.
+for live evidence with --live or --agent-map-url, or for branch rules with --github-repo.
 
 Output:
   --format <text|json|sarif|markdown|inventory>  Output format (default: text)
@@ -85,6 +86,9 @@ Evidence:
   --agent-map-url <url>                Query this Agent Map (read-only); implies --live
                                        The token comes from AGENT_MAP_TOKEN (or agent_map.token_env,
                                        which must end in AGENT_MAP_TOKEN)
+  --github-repo <owner/name>           Ask GitHub (read-only) whether the branch requires code-owner
+                                       review; the token comes from GITHUB_TOKEN or GH_TOKEN
+  --github-branch <branch>             The branch changes merge into (default: the default branch)
   --import-sarif <file>                Merge another tool's SARIF 2.1.0 findings (repeatable)
   --include-user                       Also read your own settings: ~/.claude, ~/.claude.json, ~/.codex,
                                        ~/.gemini and managed settings (local runs only, not in CI)
@@ -183,6 +187,8 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         'agent-guard': { type: 'string', multiple: true },
         live: { type: 'boolean', default: false },
         'agent-map-url': { type: 'string' },
+        'github-repo': { type: 'string' },
+        'github-branch': { type: 'string' },
         'import-sarif': { type: 'string', multiple: true },
         fix: { type: 'boolean', default: false },
         'fix-dry-run': { type: 'boolean', default: false },
@@ -231,6 +237,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   if (values['include-user'] && env['CI'] && env['CI'] !== 'false' && env['CI'] !== '0')
     return usage('--include-user reads your own settings; it is for local runs, not CI.');
   if ((values.fix || values['fix-dry-run']) && values.base) return usage('--fix cannot be combined with --base.');
+  if (values['github-branch'] !== undefined && !values['github-repo'])
+    return usage('--github-branch needs --github-repo.');
+  if (values['github-repo'] !== undefined && !isRepoName(values['github-repo']))
+    return usage('--github-repo must be owner/name.');
 
   const root = resolve(io.cwd, positionals[0] ?? '.');
   try {
@@ -298,12 +308,32 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
     }
 
+    let github: BranchRules | undefined;
+    if (values['github-repo']) {
+      const token = env['GITHUB_TOKEN'] || env['GH_TOKEN'] || undefined;
+      try {
+        github = await fetchBranchRules({
+          repo: values['github-repo'],
+          ...(values['github-branch'] ? { branch: values['github-branch'] } : {}),
+          ...(token ? { token } : {}),
+          ...(env['GITHUB_API_URL'] ? { apiUrl: env['GITHUB_API_URL'] } : {}),
+          ...(io.fetch ? { fetch: io.fetch } : {}),
+        });
+      } catch (error) {
+        if (!(error instanceof GitHubError)) throw error;
+        // Branch rules add one low-severity check; a GitHub outage should not fail the scan.
+        const message = token ? error.message.replaceAll(token, '[token]') : error.message;
+        io.stderr(oneLine(`warning: ${message}; code-owner enforcement (AGC-GOV-004) was not checked.`) + '\n');
+      }
+    }
+
     const options: Omit<ScanOptions, 'root'> = {
       config,
       baseline,
       agentGuardFiles,
       imported,
       ...(live ? { live } : {}),
+      ...(github ? { github } : {}),
       ...(values['include-user']
         ? {
             userFiles: readUserConfig(io.home ?? homedir(), process.platform, path =>

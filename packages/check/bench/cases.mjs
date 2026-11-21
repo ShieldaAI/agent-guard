@@ -131,7 +131,7 @@ const live = ({ undeclared = 0, unclaimed = 0, exposed = [], stale = false } = {
   exposedAgents: exposed.map(name => ({ id: `e:${name}`, agentId: name, name, sourceId: 's' })),
 });
 
-/** @type {{ id: string, rule: string, expect: boolean, files?: Record<string, string>, config?: string, live?: object }[]} */
+/** @type {{ id: string, rule: string, expect: boolean, files?: Record<string, string>, config?: string, live?: object, github?: object }[]} */
 const REVIEW_NOW = '2026-11-20T12:00:00.000Z';
 /** One `.agc-reviews.yaml` entry for the project settings. */
 const review = ({
@@ -234,6 +234,17 @@ export const CASES = [
       '.gemini/settings.json': json({
         mcpServers: { gh: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-github@1.0.0'], trust: true } },
       }),
+    },
+  },
+  {
+    id: 'perm2-mcp-read-only-server',
+    rule: 'AGC-PERM-002',
+    expect: true,
+    files: {
+      '.mcp.json': json({
+        mcpServers: { pg: { command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres@0.6.2'] } },
+      }),
+      '.claude/settings.json': settings({ allow: ['mcp__pg'] }),
     },
   },
   {
@@ -749,6 +760,20 @@ export const CASES = [
     rule: 'AGC-GOV-001',
     expect: false,
     files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
+  },
+  {
+    id: 'gov4-not-required',
+    rule: 'AGC-GOV-004',
+    expect: true,
+    files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
+    github: { repo: 'acme/app', branch: 'main', codeOwnerReview: 'not-required', why: 'no rule requires it' },
+  },
+  {
+    id: 'gov4-required',
+    rule: 'AGC-GOV-004',
+    expect: false,
+    files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
+    github: { repo: 'acme/app', branch: 'main', codeOwnerReview: 'required', why: 'a ruleset requires it' },
   },
   {
     id: 'gov2-no-description',

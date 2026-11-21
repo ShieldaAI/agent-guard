@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased
+
+### Agent Guard Check
+
+- Feature: AGC-GOV-004 (low) reports a branch that does not require code-owner review while
+  CODEOWNERS names an owner for agent configuration. A CODEOWNERS entry only requests the owner's
+  review; "Require review from Code Owners" in a ruleset or branch protection rule makes the
+  approval required. The new `--github-repo <owner/name>` (and `--github-branch`) asks GitHub,
+  read-only, which rules apply to the branch; the GitHub Action does so by default with the
+  workflow token (input `github-rules`). Active rulesets are readable by anyone who can read the
+  repository. Classic branch protection needs admin access to read, so without it a protected
+  branch with no ruleset requiring code owners is reported at info. On a pull request the finding
+  counts as new only when the change widens an agent, adds one or edits a review record, not when
+  it adds or moves CODEOWNERS. CODEOWNERS is read as GitHub reads it (the last matching line
+  decides). The workflow token reaches the scanner only when the check runs. A GitHub error is a
+  warning, never a failed scan.
+- Change: AGC-PERM-002 now flags every MCP server allowed whole in Claude Code permissions
+  (`mcp__name` or `mcp__name__*`), not only servers the catalog knows to write, send data out or
+  spend. Those stay medium; a server that is read-only today, from the catalog or declared in
+  `mcp_servers`, is low: the allow covers every tool a later version of the server adds, and none
+  of them would change the settings file. A server the scanner cannot identify is already high
+  under AGC-CFG-001 and gets no second finding.
+
 ## 1.5.0 — 2026-11-21
 
 ### Agent Guard Check

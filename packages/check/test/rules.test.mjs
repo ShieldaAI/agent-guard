@@ -52,7 +52,7 @@ test('AGC-PERM-001: bypass mode in settings and bypass flags in workflows', () =
   assert.equal(findingsFor(internal, 'AGC-PERM-001')[0].severity, 'high');
 });
 
-test('AGC-PERM-002: wildcards, and server-wide allows for servers that write or send', () => {
+test('AGC-PERM-002: wildcards, and server-wide MCP allows (medium if the server writes or sends)', () => {
   for (const raw of ['Bash', 'Bash(*)', 'Bash(:*)', '*'])
     assert.equal(
       findingsFor(scanFiles({ '.claude/settings.json': settings({ allow: [raw] }) }), 'AGC-PERM-002').length,
@@ -74,7 +74,32 @@ test('AGC-PERM-002: wildcards, and server-wide allows for servers that write or 
     '.mcp.json': mcp({ pg: pinned }),
     '.claude/settings.json': settings({ allow: ['mcp__pg'] }),
   });
-  assert.equal(findingsFor(readOnly, 'AGC-PERM-002').length, 0, 'a read-only server allowed whole is fine');
+  // Read-only today is not read-only forever: the allow covers every tool a later version adds.
+  const [readOnlyFinding] = findingsFor(readOnly, 'AGC-PERM-002');
+  assert.equal(readOnlyFinding?.severity, 'low', 'a read-only server allowed whole is low');
+  assert.match(readOnlyFinding.message, /including tools a later version of the server adds/);
+  const star = findingsFor(
+    scanFiles({ '.mcp.json': mcp({ pg: pinned }), '.claude/settings.json': settings({ allow: ['mcp__pg__*'] }) }),
+    'AGC-PERM-002',
+  );
+  assert.equal(star[0]?.severity, 'low', 'mcp__pg__* is the whole server');
+  // A server the scanner cannot identify is already high under AGC-CFG-001; no second finding.
+  const custom = scanFiles({
+    '.mcp.json': mcp({ custom: { command: 'node', args: ['tools/server.js'] } }),
+    '.claude/settings.json': settings({ allow: ['mcp__custom'] }),
+  });
+  assert.equal(findingsFor(custom, 'AGC-PERM-002').length, 0);
+  assert.ok(findingsFor(custom, 'AGC-CFG-001').length > 0);
+  // Gemini's trust setting names no tools: the Claude-syntax advice does not apply to it.
+  const gemini = scanFiles({
+    '.gemini/settings.json': JSON.stringify({ mcpServers: { pg: { ...pinned, trust: true } } }),
+  });
+  assert.equal(findingsFor(gemini, 'AGC-PERM-002').length, 0);
+  const named = scanFiles({
+    '.mcp.json': mcp({ pg: pinned }),
+    '.claude/settings.json': settings({ allow: ['mcp__pg__query'] }),
+  });
+  assert.equal(findingsFor(named, 'AGC-PERM-002').length, 0, 'tools allowed by name are fine');
 });
 
 test('AGC-PERM-003: network commands and interpreters, not tests', () => {

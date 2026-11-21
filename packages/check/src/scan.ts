@@ -3,6 +3,7 @@ import type { Finding, ScanResult } from './types.js';
 import { SEVERITY_ORDER } from './types.js';
 import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
 import type { LiveEvidence } from './agent-map.js';
+import type { BranchRules } from './github.js';
 import { buildProject, type TextFile } from './model.js';
 import { createHash } from 'node:crypto';
 import { fingerprint, runRules } from './rules/index.js';
@@ -33,6 +34,8 @@ export interface ScanOptions {
   readonly userFiles?: readonly TextFile[];
   /** The clock for review dates, in milliseconds (default: now). */
   readonly now?: number;
+  /** What GitHub enforces on the branch changes merge into, fetched by `fetchBranchRules`. */
+  readonly github?: BranchRules;
 }
 
 function bySeverity(a: Finding, b: Finding): number {
@@ -93,7 +96,12 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
   errors.unshift(...project.errors);
   const { kept, suppressed } = applySuppressions(
     [
-      ...runRules(project, errors, { config, live: options.live, now: options.now ?? Date.now() }),
+      ...runRules(project, errors, {
+        config,
+        live: options.live,
+        now: options.now ?? Date.now(),
+        github: options.github,
+      }),
       ...(options.imported ?? []),
     ],
     config,
@@ -111,6 +119,7 @@ function scanSource(options: ScanOptions, source: FileSource): ScanResult {
     modes: {
       agentGuard: project.agentGuard.files,
       live: options.live ? { url: options.live.url, notes: options.live.notes } : null,
+      ...(options.github ? { github: options.github } : {}),
     },
     compiledLocks: project.compiledLocks.map(item => ({
       lock: item.lock,
@@ -185,6 +194,9 @@ function reviewChanges(base: ScanResult, head: ScanResult): ReviewChange[] {
 
 const rank = (finding: Finding) => SEVERITY_ORDER.indexOf(finding.severity);
 
+/** Rules about whether the owner's approval is enforced: reported on changes that widen authority. */
+const OWNER_GATE_RULES: ReadonlySet<string> = new Set(['AGC-GOV-004']);
+
 /**
  * What a change did to agent authority. Only growth is reported as widened. A finding counts as
  * added when it is new, when its severity rose (the same configuration made more dangerous), or when
@@ -241,15 +253,23 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
         widened.push({ agent, capability, before: previous, after: now[capability] });
     }
   }
+  const reviews = reviewChanges(base, head);
+  // Code-owner review matters when a change widens what an agent can do or edits its review record:
+  // that is the change the owner should have to approve. The branch setting is no commit's doing, so
+  // it is reported as new on those changes only.
+  const ownerGate = widened.length > 0 || newAgents.length > 0 || reviews.length > 0;
   return {
     added: [
       ...lockEditedAlone(base, head),
-      ...head.findings.filter(
-        finding =>
-          // A review date that passed fails every change until the review is done: no commit made it pass.
-          (CLOCK_RULES.has(finding.ruleId) && finding.severity !== 'info') ||
-          !before.has(finding.fingerprint) ||
-          rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
+      ...head.findings.filter(finding =>
+        OWNER_GATE_RULES.has(finding.ruleId)
+          ? // Whether owners must approve is a branch setting: it is the change that widens an agent
+            // that needed the approval, not the one that added or moved CODEOWNERS.
+            ownerGate
+          : // A review date that passed fails every change until the review is done: no commit made it pass.
+            (CLOCK_RULES.has(finding.ruleId) && finding.severity !== 'info') ||
+            !before.has(finding.fingerprint) ||
+            rank(finding) > (baseSeverity.get(finding.fingerprint) ?? -1),
       ),
       // Silencing a finding the base already had is accepting known debt; silencing one this change
       // introduced (or made more severe) is not.
@@ -265,6 +285,6 @@ export function diffScans(base: ScanResult, head: ScanResult): ScanDiff {
     resolved: base.findings.filter(finding => !after.has(finding.fingerprint)),
     widened,
     newAgents,
-    reviews: reviewChanges(base, head),
+    reviews,
   };
 }

@@ -8,7 +8,8 @@ reviewer sees a JSON diff, not that consequence.
 Agent Guard Check reads those files and shows what each agent in a repository can do. It
 flags authority the agent does not need and, on a pull request, reports only what the change
 made worse. By default it reads files only: it never runs repository code, never starts an MCP
-server and makes no network calls.
+server and makes no network calls. From 1.6.0 the GitHub Action also asks GitHub, read-only, whether
+the branch requires code-owner review (input `github-rules`).
 
 It works on its own. With [Agent Guard](../../README.md) it also reads the guard's own records
 (tool labels, live task grants, host manifests), and with a running Agent Map it compares the
@@ -65,13 +66,14 @@ writes, runs code, sends data out, spends money, changes itself. Each one is `no
 `unknown`, `yes, with approval` or `yes, no approval`, and names the file and line that
 grants it. An unknown capability is never treated as safe.
 
-## Three levels of evidence
+## Levels of evidence
 
 | Evidence            | When it runs                                                                                                                                                                      | What it adds                                                                                                                                                                                                                           |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 36 rules on configuration                                                                                                                                                                               |
 | Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
 | Live Agent Map      | Only with `--live` or `--agent-map-url` and a read-only token                                                                                                                     | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory                                                                             |
+| GitHub branch rules | With `--github-repo` (on by default in the GitHub Action from 1.6.0)                                                                                                              | 1 rule (AGC-GOV-004): CODEOWNERS names an owner for agent configuration, but the branch does not require the owner's approval                                                                                                          |
 
 Files named `agent-guard*.json` are read automatically, and what each one is (describe() output,
 inventory snapshot or manifest) is recognised from its content. Name any other path in
@@ -240,7 +242,32 @@ comment up to date. It runs an exact package version (input `version`, default `
 from a folder outside the checkout and with the public npm registry, so a `node_modules` or
 `.npmrc` committed in the pull request cannot replace the scanner.
 Inputs: `path`, `fail-on`, `base`, `baseline`, `agent-guard-files`, `sarif`, `comment`,
-`version`.
+`github-rules`, `version`.
+
+#### Code-owner review
+
+A CODEOWNERS entry only requests the owner's review. The approval becomes required when a ruleset
+or branch protection rule for the branch turns on "Require review from Code Owners". Without it, a
+pull request that widens `.claude/settings.json` merges with any approval, or with none on a branch
+that requires no reviews. The two settings live in different places, so a review of one rarely
+shows the other.
+
+With `--github-repo`, the scanner asks GitHub which rules apply to the branch and reports
+AGC-GOV-004 when CODEOWNERS gives an owner to a file that defines an agent and nothing requires
+that owner's approval. CODEOWNERS is read as GitHub reads it: the last matching line decides. On a pull request it is reported only when the change widens what an agent can
+do, adds an agent or edits a review record: the change the owner should have had to approve. The
+action does this by default with the workflow's own token (`github-rules: false` turns it off).
+
+- Active rulesets, from the repository or the organization, can be read by anyone who can read the
+  repository. Rulesets in "evaluate" mode enforce nothing and do not count.
+- Classic branch protection settings need admin access to read, and the Actions token cannot have
+  it. A branch with classic protection and no ruleset requiring code owners is reported at info:
+  the scanner cannot tell. A ruleset reads the same for everyone.
+- Who may bypass a ruleset is not visible to the scanner. Keep that list short.
+- If more rules apply than the scanner reads (ten pages), or GitHub does not say how a protected
+  branch is protected, the answer is "cannot tell" (info), never "not required".
+- If GitHub cannot be reached, or refuses the token, the scan warns on stderr and goes on without
+  this rule.
 
 ### pre-commit
 
@@ -351,7 +378,8 @@ A date on its own turns into a snooze button, so the check holds the record to i
   still lists a deleted record. With `require_reviews`, both fail as a missing record (AGC-REV-002).
 - **The owner should be asked about changes.** When the repository has CODEOWNERS, an owner it
   does not name is reported (AGC-REV-006). That also catches an owner who left and was removed
-  from it.
+  from it. Being asked is not the same as having to approve: see
+  [Code-owner review](#code-owner-review) (AGC-GOV-004).
 
 ```yaml
 # .agc.yaml
@@ -399,6 +427,7 @@ Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref)
 | `--baseline <file>` / `--write-baseline <file>`   | Accept current findings once; later runs fail only on new ones.                                                                                                                                                                      |
 | `--agent-guard <file>`                            | Read an Agent Guard record from anywhere (repeatable).                                                                                                                                                                               |
 | `--live`, `--agent-map-url <url>`                 | Add live evidence from Agent Map (read-only).                                                                                                                                                                                        |
+| `--github-repo <owner/name>`, `--github-branch`   | Ask GitHub (read-only) whether the branch, by default the default branch, requires code-owner review. The token comes from `GITHUB_TOKEN` or `GH_TOKEN`. See [Code-owner review](#code-owner-review).                                |
 | `--import-sarif <file>`                           | Merge another tool's SARIF findings into the report, baseline and gate (repeatable). They keep their own tool name in SARIF output.                                                                                                  |
 | `--fix`, `--fix-dry-run`                          | Apply or print verified safe fixes.                                                                                                                                                                                                  |
 | `--include-user`                                  | Also read your own settings outside the repository (local runs only). See [Your own settings](#your-own-settings).                                                                                                                   |
@@ -485,7 +514,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | ID           | Severity                | Finding                                                                 | OWASP        |
 | ------------ | ----------------------- | ----------------------------------------------------------------------- | ------------ |
 | AGC-PERM-001 | Critical                | Agent runs every tool without asking                                    | ASI02, ASI09 |
-| AGC-PERM-002 | High                    | Wildcard tool allow                                                     | ASI02        |
+| AGC-PERM-002 | High (MCP: medium, low) | Wildcard tool allow, or every tool of an MCP server                     | ASI02        |
 | AGC-PERM-003 | High                    | Allowed command can send data out or run any code                       | ASI02, ASI05 |
 | AGC-PERM-004 | High                    | Agent can read files outside the project                                | ASI03        |
 | AGC-PERM-005 | Medium                  | Destructive action allowed without approval                             | ASI02, ASI09 |
@@ -512,6 +541,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-TRG-002  | Medium                  | Unattended agent changes the repository with no reviewer                | ASI09, ASI08 |
 | AGC-IDN-002  | Medium                  | Agent gets long-lived cloud keys                                        | ASI03        |
 | AGC-GOV-001  | Low                     | Agent configuration has no code owner                                   | ASI10        |
+| AGC-GOV-004  | Low (info if unknown)   | Code owners are asked to review, not required to approve                | ASI10        |
 | AGC-GOV-002  | Low                     | Subagent has no stated purpose                                          | ASI10        |
 | AGC-COV-001  | Medium                  | Risky actions with no runtime check                                     | ASI02        |
 | AGC-GOV-003  | Info                    | Agent model is a moving alias                                           | ASI04        |

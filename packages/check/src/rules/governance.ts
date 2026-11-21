@@ -1,6 +1,7 @@
 import { ASI, agentServers, allowRules, rule, serverKey } from './common.js';
 import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
+import type { Project } from '../model.js';
 import { bashScope, HARMLESS_TOOLS, parseRule } from '../claude.js';
 import { authority, isMediated } from '../authority.js';
 import { foldPath, isInstructionPath } from '../source.js';
@@ -24,6 +25,69 @@ const MODELLED_TOOLS = new Set([
   'mcp',
 ]);
 
+/** The first CODEOWNERS line (1-based) whose pattern covers agent configuration, if any. */
+function agentOwnerLine(project: Project): number | undefined {
+  const lines = project.codeowners?.text.split('\n') ?? [];
+  const index = lines.findIndex(raw => {
+    const line = raw.trim();
+    return (
+      line !== '' &&
+      !line.startsWith('#') &&
+      /^(\*|\/?\*\*|\/?\.claude\b|\/?\.mcp\.json|\/?\.github\b|\/?CLAUDE\.md|\/?AGENTS\.md)/.test(line.split(/\s+/)[0]!)
+    );
+  });
+  return index < 0 ? undefined : index + 1;
+}
+
+/** A CODEOWNERS pattern as a matcher for repository paths (gitignore-style, as GitHub reads it). */
+function ownerPattern(pattern: string): RegExp | undefined {
+  if (pattern.startsWith('!') || pattern.includes('[')) return undefined; // Not supported by GitHub.
+  const dir = pattern.endsWith('/');
+  let body = pattern.replace(/\/+$/, '');
+  const anchored = body.startsWith('/') || body.includes('/');
+  body = body.replace(/^\/+/, '');
+  if (!body) return undefined;
+  const source = body
+    .split(/(\*\*\/|\/\*\*$|\*\*|\*|\?)/)
+    .map(part =>
+      part === '**/'
+        ? '(?:.*/)?'
+        : part === '/**'
+          ? '/.*'
+          : part === '**'
+            ? '.*'
+            : part === '*'
+              ? '[^/]*'
+              : part === '?'
+                ? '[^/]'
+                : part.replace(/[.+^${}()|\\]/g, '\\$&'),
+    )
+    .join('');
+  return new RegExp(`^${anchored ? '' : '(?:.*/)?'}${source}${dir ? '/.*' : '(?:/.*)?'}$`);
+}
+
+/**
+ * The CODEOWNERS line (1-based) that gives an owner to a file defining an agent. The last matching
+ * line decides, as on GitHub; a line with a pattern and no owner takes ownership away.
+ */
+function ownedAgentLine(project: Project): number | undefined {
+  const rules = (project.codeowners?.text.split('\n') ?? [])
+    .map((raw, index) => {
+      const [pattern, ...owners] = raw
+        .replace(/(^|\s)#.*$/, '')
+        .trim()
+        .split(/\s+/);
+      const match = pattern ? ownerPattern(pattern) : undefined;
+      return match ? { match, owned: owners.length > 0, line: index + 1 } : undefined;
+    })
+    .filter(rule => rule !== undefined);
+  const lines = [...new Set(project.agents.map(agent => agent.location.file))]
+    .map(file => rules.filter(rule => rule.match.test(file)).at(-1))
+    .filter(rule => rule?.owned)
+    .map(rule => rule!.line);
+  return lines.length ? Math.min(...lines) : undefined;
+}
+
 export const GOVERNANCE_RULES: readonly Rule[] = [
   rule(
     {
@@ -37,16 +101,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
     (project, report) => {
       const first = project.agents.find(agent => agent.kind !== 'subagent');
       if (!first) return;
-      const owned = project.codeowners?.text
-        .split('\n')
-        .map(line => line.trim())
-        .filter(line => line && !line.startsWith('#'))
-        .some(line =>
-          /^(\*|\/?\*\*|\/?\.claude\b|\/?\.mcp\.json|\/?\.github\b|\/?CLAUDE\.md|\/?AGENTS\.md)/.test(
-            line.split(/\s+/)[0]!,
-          ),
-        );
-      if (owned) return;
+      if (agentOwnerLine(project) !== undefined) return;
       report({
         message: project.codeowners
           ? 'CODEOWNERS does not cover agent configuration.'
@@ -56,6 +111,35 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
         fix: 'Add CODEOWNERS entries for .claude/, .mcp.json, CLAUDE.md and .github/workflows/.',
       });
     },
+  ),
+  rule(
+    {
+      id: 'AGC-GOV-004',
+      title: 'Code owners are asked to review, not required to approve',
+      severity: 'low',
+      confidence: 'high',
+      owasp: [ASI.rogue],
+      help: 'A CODEOWNERS entry only requests the owner’s review. Unless a ruleset or branch protection rule turns on "Require review from Code Owners", a change that widens an agent’s permissions merges with any approval, or with none on a branch that requires no reviews.',
+    },
+    (project, report, context) => {
+      const github = context.github;
+      if (!github || github.codeOwnerReview === 'required' || !project.codeowners) return;
+      if (!project.agents.some(agent => agent.kind !== 'subagent')) return; // as AGC-GOV-001
+      const line = ownedAgentLine(project);
+      if (line === undefined) return; // No owner to require: AGC-GOV-001 covers the missing owner.
+      const unknown = github.codeOwnerReview === 'unknown';
+      report({
+        message: unknown
+          ? `CODEOWNERS names owners for agent configuration, and it could not be confirmed that ${github.branch} requires their approval: ${github.why}.`
+          : `CODEOWNERS names owners for agent configuration, but ${github.branch} does not require their approval (${github.why}), so a change to an agent can merge without them.`,
+        location: { file: project.codeowners.path, line },
+        // The branch and repository stay out of the key, so a baseline holds across branches.
+        subject: 'code-owner-review',
+        severity: unknown ? 'info' : 'low',
+        fix: `Turn on "Require review from Code Owners" for ${github.branch} in a ruleset (Settings > Rules) or branch protection rule, and keep the list of who can bypass it short.`,
+      });
+    },
+    'github',
   ),
   rule(
     {

@@ -100,10 +100,12 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
       severity: 'high',
       confidence: 'high',
       owasp: [ASI.tools],
-      help: 'An allow rule for every shell command, or every tool, removes approval for anything the agent decides to run.',
+      help: 'An allow rule for every shell command, every tool, or every tool of an MCP server removes approval for anything the agent decides to run, including tools the server adds later.',
     },
     (project, report) => {
       const servers = agentServers(project);
+      // Allows that come from other agents' formats (Gemini trust, Kiro autoApprove): not Claude rules.
+      const otherAgents = new Set(project.otherAllow);
       for (const allowed of allowRules(project)) {
         if (
           allowed.tool === '*' ||
@@ -125,6 +127,17 @@ export const PERMISSIONS_RULES: readonly Rule[] = [
               subject: allowed.raw,
               severity: 'medium',
               fix: `List the read-only ${server!.catalog!.label} tools the agent needs, for example "mcp__${allowed.server}__get_…", and leave the rest behind approval.`,
+            });
+          else if (server?.catalog && !otherAgents.has(allowed))
+            // Read-only today: the allow still covers every tool a later version of the server adds,
+            // and none of them would change this file. (A server the scanner cannot identify is
+            // already reported at high by AGC-CFG-001; other agents' trust settings name no tools.)
+            report({
+              message: `"${allowed.raw}" allows every ${server.catalog.label} tool without asking, including tools a later version of the server adds.`,
+              location: allowed.location,
+              subject: allowed.raw,
+              severity: 'low',
+              fix: `Allow the tools the agent needs by name, for example "mcp__${allowed.server}__query", so a tool a new version adds needs a reviewed change.`,
             });
         }
       }

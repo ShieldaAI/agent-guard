@@ -6,6 +6,8 @@ export { authority, capabilityState, mediates } from './authority.js';
 export { RULES, RULES_BY_ID } from './rules/index.js';
 export { fetchLiveEvidence, AgentMapError } from './agent-map.js';
 export type { LiveEvidence, LiveOptions, LiveSource } from './agent-map.js';
+export { fetchBranchRules, GitHubError } from './github.js';
+export type { BranchRules, BranchRulesOptions } from './github.js';
 export { artifactKind, taskExposure } from './agent-guard.js';
 export type { AgentGuardEvidence, GuardTool, GuardTask, TaskExposure } from './agent-guard.js';
 export { parseConfig, shouldFail, parseBaseline, formatBaseline, DEFAULT_CONFIG } from './config.js';

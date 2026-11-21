@@ -181,6 +181,13 @@ export interface ScanResult {
   readonly modes: {
     readonly agentGuard: readonly { readonly path: string; readonly kind: string }[];
     readonly live: { readonly url: string; readonly notes: readonly string[] } | null;
+    /** What GitHub enforces on the branch changes merge into, when `--github-repo` was given. */
+    readonly github?: {
+      readonly repo: string;
+      readonly branch: string;
+      readonly codeOwnerReview: 'required' | 'not-required' | 'unknown';
+      readonly why: string;
+    };
   };
   /**
    * gh-aw lock files judged from their source, with digests of both. `diffScans` reports a lock

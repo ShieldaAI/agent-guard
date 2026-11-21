@@ -27,6 +27,9 @@ inputs:
   comment:
     description: Post or update one pull-request comment with the report (needs pull-requests write).
     default: 'false'
+  github-rules:
+    description: Ask GitHub (read-only, with the workflow token) whether the branch changes merge into requires code-owner review (AGC-GOV-004). Set to false to make no GitHub API call.
+    default: 'true'
   version:
     description: Version of @shieldaai/agent-guard-check to run.
     default: 1.5.0
@@ -55,6 +58,10 @@ runs:
         AGC_BASELINE: ${{ inputs.baseline }}
         AGC_FILES: ${{ inputs.agent-guard-files }}
         AGC_VERSION: ${{ inputs.version }}
+        AGC_GITHUB_RULES: ${{ inputs.github-rules }}
+        AGC_REPO: ${{ github.repository }}
+        AGC_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
+        AGC_TOKEN: ${{ inputs.github-rules == 'true' && github.token || '' }}
       run: |
         set -uo pipefail
         if ! [[ "$AGC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
@@ -77,13 +84,24 @@ runs:
         while IFS= read -r file; do
           [ -n "$file" ] && args+=(--agent-guard "$(abs "$file")")
         done <<< "$AGC_FILES"
+        agc_token=''
+        # --github-repo arrived in 1.6.0; an older pinned version runs without it.
+        IFS=. read -r agc_major agc_minor _ <<< "$AGC_VERSION"
+        if [ "$AGC_GITHUB_RULES" = "true" ] && [ -n "$AGC_REPO" ] &&
+          { [ "$agc_major" -gt 1 ] || { [ "$agc_major" -eq 1 ] && [ "$agc_minor" -ge 6 ]; }; }; then
+          args+=(--github-repo "$AGC_REPO")
+          [ -n "$AGC_BRANCH" ] && args+=(--github-branch "$AGC_BRANCH")
+          agc_token="$AGC_TOKEN"
+        fi
+        # Only the scanner gets the token, and only as GITHUB_TOKEN when the check runs.
+        unset AGC_TOKEN
         # The checkout is the change under review. npx run inside it would use a copy of the scanner
         # in its node_modules and the registry in its .npmrc, so run it from an empty folder, with no
         # user config and the public registry named explicitly.
         runner="${RUNNER_TEMP}/agent-guard-check-runner"
         mkdir -p "$runner"
         run() {
-          (cd "$runner" && NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
+          (cd "$runner" && GITHUB_TOKEN="$agc_token" NPM_CONFIG_USERCONFIG=/dev/null NPM_CONFIG_REGISTRY=https://registry.npmjs.org/ \
             npx --yes "@shieldaai/agent-guard-check@${AGC_VERSION}" "${args[@]}" "$@")
         }
         run --format markdown --output "$out/report.md" --fail-on none || true

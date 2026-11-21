@@ -73,6 +73,10 @@ test(
       AGC_BASELINE: '',
       AGC_FILES: '',
       AGC_VERSION: version,
+      AGC_GITHUB_RULES: 'false',
+      AGC_REPO: 'acme/app',
+      AGC_BRANCH: 'main',
+      AGC_TOKEN: 'workflow-token',
     };
     const run = spawnSync('bash', ['-c', script], { cwd: repo, env, encoding: 'utf8' });
     assert.equal(run.status, 0, run.stderr);
@@ -88,5 +92,73 @@ test(
     });
     assert.equal(bad.status, 2);
     assert.ok(!bad.stdout.includes('pwned'));
+  },
+);
+
+test(
+  'the action asks GitHub for branch rules only when github-rules is on and the version knows the flag',
+  { skip: process.platform === 'win32' },
+  async t => {
+    const {
+      mkdtempSync,
+      mkdirSync,
+      writeFileSync,
+      chmodSync,
+      rmSync,
+      readFileSync: readFile,
+    } = await import('node:fs');
+    const { spawnSync } = await import('node:child_process');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { parse } = await import('yaml');
+    const script = parse(read('../action/action.yml')).runs.steps.find(step => step.id === 'check').run;
+    const dir = mkdtempSync(join(tmpdir(), 'agc-action-gh-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    // Stand in for npx: record the arguments and the token the scanner would get.
+    const log = join(dir, 'calls.txt');
+    writeFileSync(
+      join(bin, 'npx'),
+      `#!/bin/sh\nprintf '%s token=%s agc=%s\\n' "$*" "$GITHUB_TOKEN" "\${AGC_TOKEN-}" >> "${log}"\nexit 0\n`,
+    );
+    chmodSync(join(bin, 'npx'), 0o755);
+    const repo = join(dir, 'repo');
+    mkdirSync(repo);
+    const env = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      RUNNER_TEMP: join(dir, 'tmp'),
+      GITHUB_STEP_SUMMARY: join(dir, 'summary.md'),
+      GITHUB_OUTPUT: join(dir, 'output.txt'),
+      AGC_PATH: '.',
+      AGC_FAIL_ON: '',
+      AGC_BASE: '',
+      AGC_BASELINE: '',
+      AGC_FILES: '',
+      AGC_REPO: 'acme/app',
+      AGC_BRANCH: 'release/2',
+      AGC_TOKEN: 'workflow-token',
+    };
+    const calls = overrides => {
+      writeFileSync(log, '');
+      const run = spawnSync('bash', ['-c', script], { cwd: repo, env: { ...env, ...overrides }, encoding: 'utf8' });
+      assert.equal(run.status, 0, run.stderr);
+      return readFile(log, 'utf8').trim().split('\n');
+    };
+    const on = calls({ AGC_VERSION: '1.6.0', AGC_GITHUB_RULES: 'true' });
+    assert.equal(on.length, 3);
+    for (const line of on) {
+      assert.match(line, /--github-repo acme\/app --github-branch release\/2/);
+      assert.match(line, /token=workflow-token agc=$/, 'the token reaches the scanner as GITHUB_TOKEN only');
+    }
+    for (const overrides of [
+      { AGC_VERSION: '1.6.0', AGC_GITHUB_RULES: 'false' },
+      { AGC_VERSION: '1.5.0', AGC_GITHUB_RULES: 'true' },
+    ])
+      for (const line of calls(overrides)) {
+        assert.doesNotMatch(line, /--github-repo/, JSON.stringify(overrides));
+        assert.match(line, /token= agc=$/, 'no token without the check');
+      }
   },
 );

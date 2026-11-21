@@ -5,6 +5,7 @@ import type { PermissionRule } from '../claude.js';
 import type { McpServer } from '../mcp.js';
 import type { CheckConfig } from '../config.js';
 import type { LiveEvidence } from '../agent-map.js';
+import type { BranchRules } from '../github.js';
 
 /** What a rule reports. The rule's own metadata fills in the rest. */
 export interface ReportInput {
@@ -25,10 +26,12 @@ export interface RuleContext {
   readonly live?: LiveEvidence | undefined;
   /** The scan's clock in milliseconds, for review dates. */
   readonly now?: number;
+  /** What GitHub enforces on the branch changes merge into (`--github-repo`). */
+  readonly github?: BranchRules | undefined;
 }
 
 export interface Rule extends RuleMeta {
-  readonly mode: 'files' | 'agent-guard' | 'agent-map';
+  readonly mode: 'files' | 'agent-guard' | 'agent-map' | 'github';
   check(project: Project, report: Report, context: RuleContext): void;
 }
 
@@ -164,7 +167,7 @@ export function knownToken(text: string): { label: string; index: number; value:
 
 export const LOCAL_HOST = /^(localhost|127\.\d+\.\d+\.\d+|\[?::1\]?|0\.0\.0\.0|host\.docker\.internal)$/;
 
-/** Defines a rule. `mode` says which evidence it needs: files only, Agent Guard artifacts or a live Agent Map. */
+/** Defines a rule. `mode` says which evidence it needs: files only, Agent Guard artifacts, a live Agent Map or GitHub's branch rules. */
 export function rule(meta: RuleMeta, check: Rule['check'], mode: Rule['mode'] = 'files'): Rule {
   return Object.freeze({ ...meta, mode, check });
 }
