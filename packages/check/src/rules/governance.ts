@@ -2,6 +2,7 @@ import { ASI, agentServers, allowRules, rule, serverKey } from './common.js';
 import type { Rule } from './common.js';
 import type { Grant } from '../types.js';
 import type { Project } from '../model.js';
+import { withoutTrailingSlashes } from '../text.js';
 import { bashScope, HARMLESS_TOOLS, parseRule } from '../claude.js';
 import { authority, isMediated } from '../authority.js';
 import { foldPath, isInstructionPath } from '../source.js';
@@ -43,7 +44,7 @@ function agentOwnerLine(project: Project): number | undefined {
 function ownerPattern(pattern: string): RegExp | undefined {
   if (pattern.startsWith('!') || pattern.includes('[')) return undefined; // Not supported by GitHub.
   const dir = pattern.endsWith('/');
-  let body = pattern.replace(/\/+$/, '');
+  let body = withoutTrailingSlashes(pattern);
   const anchored = body.startsWith('/') || body.includes('/');
   body = body.replace(/^\/+/, '');
   if (!body) return undefined;

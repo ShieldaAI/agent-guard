@@ -1,4 +1,4 @@
-import { isRecord } from './text.js';
+import { isRecord, withoutTrailingSlashes } from './text.js';
 
 /**
  * Read-only evidence from GitHub: whether the branch changes merge into requires a code owner's
@@ -133,7 +133,7 @@ function failure(what: string, response: Response): GitHubError {
 /** Which rules apply to `branch`, and whether any of them requires a code owner's approval. */
 export async function fetchBranchRules(options: BranchRulesOptions): Promise<BranchRules> {
   if (!isRepoName(options.repo)) throw new GitHubError(`"${options.repo}" is not an owner/name repository`, null);
-  const api = (options.apiUrl ?? 'https://api.github.com').replace(/\/+$/, '');
+  const api = withoutTrailingSlashes(options.apiUrl ?? 'https://api.github.com');
   let parsed: URL;
   try {
     parsed = new URL(api);
