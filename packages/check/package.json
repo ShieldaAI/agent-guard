@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-check",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Static scanner for AI agent configuration: shows what each agent in a repo can do, flags authority it does not need, and reports what a pull request widened.",
   "license": "Apache-2.0",
   "type": "module",
