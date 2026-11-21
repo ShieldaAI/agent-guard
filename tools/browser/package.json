@@ -5,7 +5,7 @@
   "description": "Isolated browser verification tools; excluded from published packages and runtime images.",
   "engines": { "node": ">=22" },
   "devDependencies": {
-    "axe-core": "4.14.0",
+    "axe-core": "4.14.1",
     "playwright": "1.63.0"
   }
 }
