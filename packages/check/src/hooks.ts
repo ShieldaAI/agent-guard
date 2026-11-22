@@ -1,4 +1,4 @@
-import { bashScope, type Hook } from './claude.js';
+import { bashScope, isAgentGuardHook, type Hook } from './claude.js';
 import { commands, localImports, unwrap } from './shell.js';
 import { PIPE_TO_SHELL } from './rules/common.js';
 
@@ -118,6 +118,18 @@ export function judgeHook(
     for (const words of commands(script)) {
       const call = unwrap(words);
       if (!call) continue;
+      // Agent Guard Check's own hook form, judged before npx is unwrapped to the package it runs.
+      // Word by word: a quoted "--no-install agent-guard-check --hook" is one argument, not the form.
+      if (
+        !words.some(word => word.dynamic || /\s/.test(word.text)) &&
+        isAgentGuardHook(words.map(word => word.text).join(' '))
+      ) {
+        if (RANK.project > RANK[reach]) {
+          reach = 'project';
+          why = words.map(word => word.text).join(' ');
+        }
+        continue;
+      }
       let found: HookJudgement['reach'];
       // A pinned package (`npx prettier@3.5.3`) is the package; a path is kept as written.
       let shown = [call.head.includes('/') ? call.head : call.name, ...call.args.map(arg => arg.text)].join(' ');

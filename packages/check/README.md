@@ -198,6 +198,65 @@ It is for local runs only: in CI these files belong to the runner, so the flag i
 it cannot read (over 1 MiB, or not a regular file) is named on stderr. Managed MCP servers
 (`managed-mcp.json`) count for every project.
 
+### On every Claude Code session: `--hook`
+
+`--include-user` sees the files no pull request shows only when someone runs it. As a Claude Code
+hook it runs on its own. Add the package to the project's dev dependencies
+(`npm install --save-dev @shieldaai/agent-guard-check`) and the hook to the shared
+`.claude/settings.json`:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [{ "type": "command", "command": "npx --no-install @shieldaai/agent-guard-check --hook" }]
+      }
+    ]
+  }
+}
+```
+
+The hook scans the folder on disk with the settings Claude Code adds to it (the gitignored
+`.claude/settings.local.json`, `~/.claude/settings.json`, `~/.claude.json` and managed settings;
+`CLAUDE_CONFIG_DIR` is honoured) and compares it with the files git tracks, as staged: what a pull
+request will show and CI judge. When the difference adds a finding at or above `fail_on`
+(`--fail-on` overrides it), it names the finding and the file it comes from and exits 2;
+otherwise it prints nothing. An unstaged edit to a tracked file counts, including one hidden with
+`git update-index --skip-worktree`; once staged, it is the pull request's to show.
+
+| Event              | What exit 2 does                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
+| `SessionStart`     | Shows the findings to the developer; the session goes on. Nothing is added to Claude's context.         |
+| `UserPromptSubmit` | Holds every prompt until the local settings are fixed. Use the same command under `"UserPromptSubmit"`. |
+
+- Only what the local layers add is reported. A finding the tracked files already have (a passed
+  review date, a finding CI accepted) is CI's, and does not interrupt a session.
+- `.agc.yaml` is read as staged, so an unstaged or untracked edit cannot lower the bar.
+- Submodules count as tracked, and a clone or worktree inside the folder is another checkout, not
+  this session's settings (the project's own `.claude/`, `.mcp.json` and `CLAUDE.md` always
+  count). A tracked link, or a file under a git filter (LFS, git-crypt), is compared as it is on
+  disk, so an unstaged edit to one is not seen. Outside git, or in a folder its parent repository does not track,
+  everything but `.claude/settings.local.json` and `CLAUDE.local.md` counts as shared.
+- Not read: agents, skills and commands under `~/.claude`, user plugins, `managed-settings.d`, and
+  managed settings delivered by an MDM profile or the Windows registry. A personal settings file
+  that exists but cannot be read is named in the report.
+- Codex and Gemini settings are left out: the hook speaks for the Claude Code session. In CI
+  (`CI` set) no personal settings are read.
+- A mistake in the hook command, or a failure of the scan itself, exits 1, which Claude Code shows
+  without blocking: a broken check never holds a prompt.
+- The command above (or `npx --no-install agent-guard-check --hook`) is the form the scanner
+  itself does not report as a hook that can reach the network: `--no-install` runs the project's
+  installed copy and never downloads. `npx -y @shieldaai/agent-guard-check@…` downloads the
+  package on each machine, and a bare `agent-guard-check` could be any program on `PATH`; both are
+  reported like any other hook that can reach the network.
+- A hook warns or holds; it does not enforce. Claude Code runs project hooks only after the
+  folder's workspace-trust prompt is accepted, and a developer can turn them off with
+  `disableAllHooks` in their own settings. To enforce, use managed settings:
+  `allowManagedPermissionRulesOnly` makes Claude Code ignore allow rules from user, project and
+  local files, and `allowManagedHooksOnly` keeps a managed copy of this hook from being turned off.
+
 ## Pull requests: report only what got worse
 
 ```sh
@@ -431,6 +490,7 @@ Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref)
 | `--import-sarif <file>`                           | Merge another tool's SARIF findings into the report, baseline and gate (repeatable). They keep their own tool name in SARIF output.                                                                                                  |
 | `--fix`, `--fix-dry-run`                          | Apply or print verified safe fixes.                                                                                                                                                                                                  |
 | `--include-user`                                  | Also read your own settings outside the repository (local runs only). See [Your own settings](#your-own-settings).                                                                                                                   |
+| `--hook`                                          | Run as a Claude Code SessionStart or UserPromptSubmit hook. See [On every Claude Code session](#on-every-claude-code-session---hook).                                                                                                |
 | `--list-rules`                                    | Print every rule.                                                                                                                                                                                                                    |
 
 Exit codes: `0` nothing at or above `--fail-on`, `1` findings, `2` usage, read or live-evidence error.
@@ -873,6 +933,7 @@ const result = scan({ root: '/path/to/repo', live });
 ```
 
 `MemorySource` scans files you already hold, without touching the disk. `planFixes`,
-`importSarif`, `formatInventory` and the rule list (`RULES`) are exported too.
+`importSarif`, `formatInventory`, `runHook`, `fetchBranchRules` and the rule list (`RULES`) are
+exported too.
 
 Apache-2.0.

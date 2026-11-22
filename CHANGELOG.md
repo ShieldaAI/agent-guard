@@ -16,6 +16,17 @@
   it adds or moves CODEOWNERS. CODEOWNERS is read as GitHub reads it (the last matching line
   decides). The workflow token reaches the scanner only when the check runs. A GitHub error is a
   warning, never a failed scan.
+- Feature: `--hook` runs the check from a Claude Code hook on a developer's machine. Claude Code
+  merges the repository's settings with files no pull request shows (the gitignored
+  `.claude/settings.local.json`, `~/.claude`, `~/.claude.json` and managed settings). The hook scans
+  the folder with those files and compares it with the files git tracks, as staged; what the
+  difference adds at or above `fail_on` (including an unstaged or `--skip-worktree` edit) is printed
+  with the file it comes from and exits 2. As a SessionStart hook that shows it and the session goes
+  on; as a UserPromptSubmit hook it holds prompts until fixed. Findings the tracked files already
+  have, submodules, nested checkouts, Codex and Gemini settings, and personal settings in CI are
+  left out; `CLAUDE_CONFIG_DIR` is honoured. The hook's own mistakes and failures exit 1 and never
+  block. `npx --no-install [@shieldaai/]agent-guard-check --hook` is not reported as a hook that
+  reaches the network; `npm_config_*` variables before a command now count as changing what runs.
 - Change: AGC-PERM-002 now flags every MCP server allowed whole in Claude Code permissions
   (`mcp__name` or `mcp__name__*`), not only servers the catalog knows to write, send data out or
   spend. Those stay medium; a server that is read-only today, from the catalog or declared in
