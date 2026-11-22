@@ -6,3 +6,12 @@ coverage/
 .env
 .env.*
 .DS_Store
+
+# Working notes stay outside the repository (release handoffs, PR bodies, post and reply drafts).
+/*_HANDOFF.md
+/*_PR.md
+/*_POSTS.md
+/*_DRAFTS.md
+/*_PLAN.md
+/*_RELEASE_STEPS.md
+/*_FINDINGS.md
