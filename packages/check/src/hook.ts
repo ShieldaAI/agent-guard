@@ -227,7 +227,7 @@ function inNestedRepo(root: string, path: string, seen: Map<string, boolean>): b
       const top = existsSync(join(root, dir, '.git'))
         ? git(join(root, dir), ['rev-parse', '--show-toplevel'])?.toString('utf8').trim()
         : undefined;
-      nested = top !== undefined && realpathOrSelf(top) === realpathOrSelf(join(root, dir));
+      nested = top !== undefined && samePath(top) === samePath(join(root, dir));
       seen.set(dir, nested);
     }
     if (nested) return true;
@@ -235,12 +235,18 @@ function inNestedRepo(root: string, path: string, seen: Map<string, boolean>): b
   return false;
 }
 
-function realpathOrSelf(path: string): string {
+/**
+ * One spelling of a folder, to compare git's answer with Node's: git prints `D:/a/x` on Windows,
+ * Node `D:\\a\\x`, and either may use a short (8.3) name or another letter case.
+ */
+function samePath(path: string): string {
+  let out = resolve(path);
   try {
-    return realpathSync(path);
+    out = realpathSync.native(out);
   } catch {
-    return path;
+    // Keep the resolved spelling.
   }
+  return process.platform === 'win32' || process.platform === 'darwin' ? out.toLowerCase() : out;
 }
 
 /** Settings outside the repository that a Claude Code session reads (not Codex's or Gemini's). */
