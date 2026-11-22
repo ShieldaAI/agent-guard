@@ -252,3 +252,10 @@ export function lenientFrontmatter(text: string): Record<string, unknown> | unde
   }
   return Object.keys(out).length ? out : undefined;
 }
+
+/** `text` without trailing slashes, in linear time (a `/\/+$/` regex is quadratic on many slashes). */
+export function withoutTrailingSlashes(text: string): string {
+  let end = text.length;
+  while (end > 0 && text.charCodeAt(end - 1) === 47) end--;
+  return text.slice(0, end);
+}

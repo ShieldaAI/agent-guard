@@ -1,5 +1,39 @@
 # Changelog
 
+## 1.6.0 — 2026-11-22
+
+### Agent Guard Check
+
+- Feature: AGC-GOV-004 (low) reports a branch that does not require code-owner review while
+  CODEOWNERS names an owner for agent configuration. A CODEOWNERS entry only requests the owner's
+  review; "Require review from Code Owners" in a ruleset or branch protection rule makes the
+  approval required. The new `--github-repo <owner/name>` (and `--github-branch`) asks GitHub,
+  read-only, which rules apply to the branch; the GitHub Action does so by default with the
+  workflow token (input `github-rules`). Active rulesets are readable by anyone who can read the
+  repository. Classic branch protection needs admin access to read, so without it a protected
+  branch with no ruleset requiring code owners is reported at info. On a pull request the finding
+  counts as new only when the change widens an agent, adds one or edits a review record, not when
+  it adds or moves CODEOWNERS. CODEOWNERS is read as GitHub reads it (the last matching line
+  decides). The workflow token reaches the scanner only when the check runs. A GitHub error is a
+  warning, never a failed scan.
+- Feature: `--hook` runs the check from a Claude Code hook on a developer's machine. Claude Code
+  merges the repository's settings with files no pull request shows (the gitignored
+  `.claude/settings.local.json`, `~/.claude`, `~/.claude.json` and managed settings). The hook scans
+  the folder with those files and compares it with the files git tracks, as staged; what the
+  difference adds at or above `fail_on` (including an unstaged or `--skip-worktree` edit) is printed
+  with the file it comes from and exits 2. As a SessionStart hook that shows it and the session goes
+  on; as a UserPromptSubmit hook it holds prompts until fixed. Findings the tracked files already
+  have, submodules, nested checkouts, Codex and Gemini settings, and personal settings in CI are
+  left out; `CLAUDE_CONFIG_DIR` is honoured. The hook's own mistakes and failures exit 1 and never
+  block. `npx --no-install [@shieldaai/]agent-guard-check --hook` is not reported as a hook that
+  reaches the network; `npm_config_*` variables before a command now count as changing what runs.
+- Change: AGC-PERM-002 now flags every MCP server allowed whole in Claude Code permissions
+  (`mcp__name` or `mcp__name__*`), not only servers the catalog knows to write, send data out or
+  spend. Those stay medium; a server that is read-only today, from the catalog or declared in
+  `mcp_servers`, is low: the allow covers every tool a later version of the server adds, and none
+  of them would change the settings file. A server the scanner cannot identify is already high
+  under AGC-CFG-001 and gets no second finding.
+
 ## 1.5.0 — 2026-11-21
 
 ### Agent Guard Check

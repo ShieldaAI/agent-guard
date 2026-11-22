@@ -317,6 +317,17 @@ function riskyOptions(command: string): BashScope | undefined {
   return undefined;
 }
 
+/**
+ * Agent Guard Check's hook mode, run from the project's installed packages (`npx --no-install` never
+ * downloads): it reads files and makes no network call. Only the exact hook form counts; a bare
+ * name could be any program on PATH, and --github-repo or --live would reach out.
+ */
+export function isAgentGuardHook(command: string): boolean {
+  return /^npx --no-install (@shieldaai\/)?agent-guard-check --hook( --fail-on (critical|high|medium|low|info|none))?( --min-confidence (high|low))?$/.test(
+    command.trim(),
+  );
+}
+
 function commandScope(simple: string, prefix: boolean): BashScope {
   let command = simple.trim();
   if (command === '') return 'local';
@@ -324,7 +335,7 @@ function commandScope(simple: string, prefix: boolean): BashScope {
   // they load code or change what runs.
   while (/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/.test(command)) {
     if (
-      /^(BASH_ENV|ENV|PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|EDITOR|GIT_EDITOR|GIT_CONFIG_\w+|SHELL)=/.test(
+      /^(BASH_ENV|ENV|PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|npm_config_\w+|NPM_CONFIG_\w+|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|EDITOR|GIT_EDITOR|GIT_CONFIG_\w+|SHELL)=/.test(
         command,
       )
     )
@@ -355,6 +366,7 @@ function commandScope(simple: string, prefix: boolean): BashScope {
     )
   )
     return 'local';
+  if (!prefix && isAgentGuardHook(command)) return 'project';
   // A workspace's own script (`pnpm --filter web test`, `npm -w web test`, `yarn workspace web
   // test`, `turbo run test`) is project code.
   if (

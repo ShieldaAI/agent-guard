@@ -38,6 +38,8 @@ import {
 import { SEVERITY_ORDER, type Confidence, type Finding, type ScanResult } from './types.js';
 import { DirectorySource, GitSource, safeRelative, type FileSource } from './source.js';
 import { fetchLiveEvidence, AgentMapError, type LiveEvidence } from './agent-map.js';
+import { fetchBranchRules, GitHubError, isRepoName, type BranchRules } from './github.js';
+import { parseHookInput, runHook } from './hook.js';
 import { importSarif } from './sarif-import.js';
 import { formatDiff, planFixes } from './fix.js';
 import { RULES } from './rules/index.js';
@@ -64,7 +66,7 @@ const USAGE = `Usage: ${TOOL_NAME} [path] [options]
 
 Shows what each AI agent in a repository can do and flags authority it does not need.
 Reads files only: it never runs repository code. It makes no network calls unless you ask
-for live evidence with --live or --agent-map-url.
+for live evidence with --live or --agent-map-url, or for branch rules with --github-repo.
 
 Output:
   --format <text|json|sarif|markdown|inventory>  Output format (default: text)
@@ -85,9 +87,16 @@ Evidence:
   --agent-map-url <url>                Query this Agent Map (read-only); implies --live
                                        The token comes from AGENT_MAP_TOKEN (or agent_map.token_env,
                                        which must end in AGENT_MAP_TOKEN)
+  --github-repo <owner/name>           Ask GitHub (read-only) whether the branch requires code-owner
+                                       review; the token comes from GITHUB_TOKEN or GH_TOKEN
+  --github-branch <branch>             The branch changes merge into (default: the default branch)
   --import-sarif <file>                Merge another tool's SARIF 2.1.0 findings (repeatable)
   --include-user                       Also read your own settings: ~/.claude, ~/.claude.json, ~/.codex,
                                        ~/.gemini and managed settings (local runs only, not in CI)
+
+Claude Code hook:
+  --hook                               Run as a SessionStart or UserPromptSubmit hook: report what local,
+                                       personal and unstaged settings add to the staged files (exit 2)
 
 Fixing:
   --fix                                Apply safe fixes to agent settings and workflows, then report
@@ -109,6 +118,31 @@ export interface CliIo {
   readonly fetch?: typeof fetch;
   /** Home folder for --include-user; defaults to the user's home. For tests. */
   readonly home?: string;
+  /** What Claude Code wrote to a hook's stdin, for --hook; defaults to reading stdin. For tests. */
+  readonly stdin?: () => Promise<string | undefined>;
+}
+
+/** Reads a hook's stdin: the JSON Claude Code sends. Nothing on a terminal; gives up after 2 seconds. */
+async function readStdin(): Promise<string | undefined> {
+  if (process.stdin.isTTY) return undefined;
+  return new Promise(done => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    const finish = () => {
+      clearTimeout(timer);
+      process.stdin.removeAllListeners('data').removeAllListeners('end').removeAllListeners('error');
+      // An error after the read is done must not crash the hook.
+      process.stdin.on('error', () => {});
+      process.stdin.pause();
+      done(size ? Buffer.concat(chunks).toString('utf8') : undefined);
+    };
+    const timer = setTimeout(finish, 2000);
+    process.stdin.on('data', (chunk: Buffer) => {
+      size += chunk.length;
+      if (size <= 1024 * 1024) chunks.push(chunk);
+    });
+    process.stdin.on('end', finish).on('error', finish);
+  });
 }
 
 class UsageError extends Error {}
@@ -183,20 +217,28 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
         'agent-guard': { type: 'string', multiple: true },
         live: { type: 'boolean', default: false },
         'agent-map-url': { type: 'string' },
+        'github-repo': { type: 'string' },
+        'github-branch': { type: 'string' },
         'import-sarif': { type: 'string', multiple: true },
         fix: { type: 'boolean', default: false },
         'fix-dry-run': { type: 'boolean', default: false },
         'list-rules': { type: 'boolean', default: false },
         'include-user': { type: 'boolean', default: false },
+        hook: { type: 'boolean', default: false },
         version: { type: 'boolean', default: false },
         help: { type: 'boolean', default: false },
       },
     });
   } catch (error) {
     io.stderr(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
-    return 2;
+    return argv.some(arg => arg === '--hook' || arg.startsWith('--hook=')) ? 1 : 2;
   }
   const { values, positionals } = parsed;
+  // As a SessionStart hook, anything on stdout goes into Claude's context: --hook prints nothing there.
+  if (values.hook && (values.help || values.version || values['list-rules'])) {
+    io.stderr('--hook takes only --fail-on, --min-confidence and a path.\n');
+    return 1;
+  }
   if (values.help) {
     io.stdout(USAGE);
     return 0;
@@ -209,9 +251,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     io.stdout(listRules());
     return 0;
   }
+  // In a hook, exit 2 would hold the developer's prompt: a mistake in the hook's own command exits 1.
   const usage = (message: string) => {
     io.stderr(`${message}\n`);
-    return 2;
+    return values.hook ? 1 : 2;
   };
   if (positionals.length > 1) return usage(`Expected at most one path.\n\n${USAGE}`);
   const format = values.format;
@@ -231,6 +274,22 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   if (values['include-user'] && env['CI'] && env['CI'] !== 'false' && env['CI'] !== '0')
     return usage('--include-user reads your own settings; it is for local runs, not CI.');
   if ((values.fix || values['fix-dry-run']) && values.base) return usage('--fix cannot be combined with --base.');
+  if (values.hook) {
+    // Defaults (false flags, text format) are not choices; anything else set is.
+    const others = Object.entries(values).filter(
+      ([key, value]) =>
+        !['hook', 'fail-on', 'min-confidence'].includes(key) &&
+        value !== false &&
+        !(key === 'format' && value === 'text'),
+    );
+    if (others.length)
+      return usage(`--hook takes only --fail-on, --min-confidence and a path, not --${others[0]![0]}.`);
+    return hook(values, positionals[0], io, env);
+  }
+  if (values['github-branch'] !== undefined && !values['github-repo'])
+    return usage('--github-branch needs --github-repo.');
+  if (values['github-repo'] !== undefined && !isRepoName(values['github-repo']))
+    return usage('--github-repo must be owner/name.');
 
   const root = resolve(io.cwd, positionals[0] ?? '.');
   try {
@@ -298,18 +357,42 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       }
     }
 
+    let github: BranchRules | undefined;
+    if (values['github-repo']) {
+      const token = env['GITHUB_TOKEN'] || env['GH_TOKEN'] || undefined;
+      try {
+        github = await fetchBranchRules({
+          repo: values['github-repo'],
+          ...(values['github-branch'] ? { branch: values['github-branch'] } : {}),
+          ...(token ? { token } : {}),
+          ...(env['GITHUB_API_URL'] ? { apiUrl: env['GITHUB_API_URL'] } : {}),
+          ...(io.fetch ? { fetch: io.fetch } : {}),
+        });
+      } catch (error) {
+        if (!(error instanceof GitHubError)) throw error;
+        // Branch rules add one low-severity check; a GitHub outage should not fail the scan.
+        const message = token ? error.message.replaceAll(token, '[token]') : error.message;
+        io.stderr(oneLine(`warning: ${message}; code-owner enforcement (AGC-GOV-004) was not checked.`) + '\n');
+      }
+    }
+
     const options: Omit<ScanOptions, 'root'> = {
       config,
       baseline,
       agentGuardFiles,
       imported,
       ...(live ? { live } : {}),
+      ...(github ? { github } : {}),
       ...(values['include-user']
         ? {
-            userFiles: readUserConfig(io.home ?? homedir(), process.platform, path =>
-              io.stderr(
-                `${TOOL_NAME}: ${path} was not read (larger than 1 MiB, or not a readable file); settings in it are not in this report.\n`,
-              ),
+            userFiles: readUserConfig(
+              io.home ?? homedir(),
+              process.platform,
+              path =>
+                io.stderr(
+                  `${TOOL_NAME}: ${path} was not read (larger than 1 MiB, or not a readable file); settings in it are not in this report.\n`,
+                ),
+              env['CLAUDE_CONFIG_DIR'],
             ),
           }
         : {}),
@@ -363,6 +446,45 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
   } catch (error) {
     io.stderr(oneLine(`${TOOL_NAME}: ${error instanceof Error ? error.message : String(error)}`) + '\n');
     return 2;
+  }
+}
+
+/**
+ * --hook: Claude Code runs this at session start or before each prompt. A failure of the hook itself
+ * exits 1, which Claude Code treats as a non-blocking error: a broken check never holds a prompt.
+ */
+async function hook(
+  values: { readonly 'fail-on'?: string | undefined; readonly 'min-confidence'?: string | undefined },
+  path: string | undefined,
+  io: CliIo,
+  env: Readonly<Record<string, string | undefined>>,
+): Promise<number> {
+  try {
+    const input = parseHookInput(await (io.stdin ?? readStdin)());
+    const root = resolve(io.cwd, path ?? env['CLAUDE_PROJECT_DIR'] ?? input.cwd ?? '.');
+    // In CI there is no developer's own settings to add; Claude Code there runs what the repo holds.
+    const ci = Boolean(env['CI'] && env['CI'] !== 'false' && env['CI'] !== '0');
+    const unreadUserFiles: string[] = [];
+    const result = runHook({
+      root,
+      event: input.event ?? 'SessionStart',
+      userFiles: ci
+        ? []
+        : readUserConfig(
+            io.home ?? homedir(),
+            process.platform,
+            path => unreadUserFiles.push(path),
+            env['CLAUDE_CONFIG_DIR'],
+          ),
+      unreadUserFiles,
+      ...(values['fail-on'] ? { failOn: values['fail-on'] as FailOn } : {}),
+      ...(values['min-confidence'] ? { minConfidence: values['min-confidence'] as Confidence } : {}),
+    });
+    if (result.message) io.stderr(result.message);
+    return result.code;
+  } catch (error) {
+    io.stderr(oneLine(`${TOOL_NAME} --hook: ${error instanceof Error ? error.message : String(error)}`) + '\n');
+    return 1;
   }
 }
 

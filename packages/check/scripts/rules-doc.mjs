@@ -23,11 +23,21 @@ const GROUPS = [
   ['AGX', 'Agent Guard records (runs only when describe() output, an inventory or a manifest is found)'],
   ['DRF', 'Live Agent Map (runs only with --live or --agent-map-url)'],
 ];
-const EVIDENCE = { files: 'repository files', 'agent-guard': 'Agent Guard records', 'agent-map': 'live Agent Map' };
+const EVIDENCE = {
+  files: 'repository files',
+  'agent-guard': 'Agent Guard records',
+  'agent-map': 'live Agent Map',
+  github: 'repository files and GitHub branch rules',
+};
 
 function example(item) {
   if (item.live) return '_Live evidence from Agent Map; no repository file._';
   const lines = [];
+  if (item.github)
+    lines.push(
+      `_GitHub reports that ${item.github.branch} ${item.github.codeOwnerReview === 'required' ? 'requires' : 'does not require'} review from code owners; \`CODEOWNERS\` names an owner for \`.claude/\`._`,
+      '',
+    );
   if (item.config) lines.push('`.agc.yaml`:', '', '```yaml', item.config.trimEnd(), '```', '');
   for (const [path, text] of Object.entries(item.files ?? {})) {
     if (path === 'CODEOWNERS') continue;

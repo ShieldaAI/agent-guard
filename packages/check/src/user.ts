@@ -46,10 +46,14 @@ export function readUserConfig(
   home: string,
   platform: NodeJS.Platform = process.platform,
   onSkip: (path: string) => void = () => {},
+  /** CLAUDE_CONFIG_DIR, when set: Claude Code keeps settings.json and .claude.json there instead. */
+  claudeConfigDir?: string,
 ): TextFile[] {
+  const claude = claudeConfigDir || join(home, '.claude');
   const files: [string, string][] = [
-    ['~/.claude/settings.json', join(home, '.claude', 'settings.json')],
-    ['~/.claude.json', join(home, '.claude.json')],
+    // Reported under the ~/.claude names wherever they live, which is how findings name them.
+    ['~/.claude/settings.json', join(claude, 'settings.json')],
+    ['~/.claude.json', claudeConfigDir ? join(claudeConfigDir, '.claude.json') : join(home, '.claude.json')],
     ['~/.codex/config.toml', join(home, '.codex', 'config.toml')],
     ['~/.gemini/settings.json', join(home, '.gemini', 'settings.json')],
     [`${MANAGED_DIR}/managed-settings.json`, managedSettingsPath(platform)],

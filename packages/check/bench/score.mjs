@@ -8,6 +8,7 @@ export function fires(item) {
     source: new MemorySource(item.files ?? {}),
     ...(item.config ? { config: parseConfig(item.config) } : {}),
     ...(item.live ? { live: item.live } : {}),
+    ...(item.github ? { github: item.github } : {}),
     ...(item.now ? { now: Date.parse(item.now) } : {}),
   });
   if (result.errors.length) throw new Error(`${item.id}: ${result.errors.map(error => error.message).join('; ')}`);
