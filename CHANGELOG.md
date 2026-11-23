@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+### Agent Guard Check
+
+- The GitHub Action now compares with the merge queue's base commit on `merge_group` runs. Before,
+  it found no base there and reported every finding in the queued commit, so a required check
+  could hold up pull requests that changed no agent configuration. The README workflow lists
+  `merge_group`, and code-owner rules (AGC-GOV-004) are read for the queue's target branch.
+
 ## 1.6.1 — 2026-11-23
 
 ### Agent Guard Check

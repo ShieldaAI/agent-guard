@@ -13,7 +13,7 @@ inputs:
     description: Fail at or above this severity (critical, high, medium, low, info, none). Default from .agc.yaml, else high.
     default: ''
   base:
-    description: Git ref to compare with. On pull requests it defaults to the base commit, so only what the change made worse is reported.
+    description: Git ref to compare with. On pull requests and in a merge queue it defaults to the base commit, so only what the change made worse is reported.
     default: ''
   baseline:
     description: Baseline file of accepted findings.
@@ -54,16 +54,18 @@ runs:
       env:
         AGC_PATH: ${{ inputs.path }}
         AGC_FAIL_ON: ${{ inputs.fail-on }}
-        AGC_BASE: ${{ inputs.base || github.event.pull_request.base.sha }}
+        AGC_BASE: ${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
         AGC_BASELINE: ${{ inputs.baseline }}
         AGC_FILES: ${{ inputs.agent-guard-files }}
         AGC_VERSION: ${{ inputs.version }}
         AGC_GITHUB_RULES: ${{ inputs.github-rules }}
         AGC_REPO: ${{ github.repository }}
-        AGC_BRANCH: ${{ github.base_ref || github.event.repository.default_branch }}
+        AGC_BRANCH: ${{ github.base_ref || github.event.merge_group.base_ref || github.event.repository.default_branch }}
         AGC_TOKEN: ${{ inputs.github-rules == 'true' && github.token || '' }}
       run: |
         set -uo pipefail
+        # A merge queue names the target branch as a full ref (refs/heads/main).
+        AGC_BRANCH="${AGC_BRANCH#refs/heads/}"
         if ! [[ "$AGC_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
           echo "::error::version must be an exact release, such as 1.6.1" >&2
           exit 2

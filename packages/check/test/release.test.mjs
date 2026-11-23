@@ -26,6 +26,19 @@ test('version references match package.json', () => {
   }
 });
 
+test('the action finds the base commit and target branch in a merge queue', async () => {
+  const { parse } = await import('yaml');
+  const env = parse(read('../action/action.yml')).runs.steps.find(step => step.id === 'check').env;
+  assert.equal(
+    env.AGC_BASE,
+    '${{ inputs.base || github.event.pull_request.base.sha || github.event.merge_group.base_sha }}',
+  );
+  assert.equal(
+    env.AGC_BRANCH,
+    '${{ github.base_ref || github.event.merge_group.base_ref || github.event.repository.default_branch }}',
+  );
+});
+
 test('the action pins third-party actions by commit', () => {
   const action = read('../action/action.yml');
   for (const match of action.matchAll(/uses:\s*([^\s#]+)/g)) assert.match(match[1], /@[0-9a-f]{40}$/, match[1]);
@@ -152,6 +165,9 @@ test(
       assert.match(line, /--github-repo acme\/app --github-branch release\/2/);
       assert.match(line, /token=workflow-token agc=$/, 'the token reaches the scanner as GITHUB_TOKEN only');
     }
+    // A merge queue gives the target branch as a full ref.
+    for (const line of calls({ AGC_VERSION: '1.6.0', AGC_GITHUB_RULES: 'true', AGC_BRANCH: 'refs/heads/release/2' }))
+      assert.match(line, /--github-branch release\/2 /);
     for (const overrides of [
       { AGC_VERSION: '1.6.0', AGC_GITHUB_RULES: 'false' },
       { AGC_VERSION: '1.5.0', AGC_GITHUB_RULES: 'true' },
