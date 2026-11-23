@@ -263,12 +263,26 @@ function object(value: Json): Record<string, Json> {
     throw new McpBoundaryError('ARGUMENTS_INVALID');
   return value as Record<string, Json>;
 }
+/** The guard checks these flags only when it registers the operation, after the server was contacted. */
+function bindingFlagsValid(binding: McpBinding): boolean {
+  const flag = (value: unknown) => value === undefined || typeof value === 'boolean';
+  return (
+    flag(binding.requiresApproval) &&
+    flag(binding.controlPlane) &&
+    flag(binding.readsUntrusted) &&
+    flag(binding.sendsExternal) &&
+    (binding.maxCost === undefined || (Number.isSafeInteger(binding.maxCost) && binding.maxCost >= 0)) &&
+    (binding.measureCost === undefined || typeof binding.measureCost === 'function') &&
+    (binding.untrustedContext === undefined || ['allow', 'require_approval', 'deny'].includes(binding.untrustedContext))
+  );
+}
 function bindings(input: readonly McpBinding[] | undefined): readonly McpBinding[] {
   const seen = new Set<string>();
   return Object.freeze(
     (input ?? []).map(binding => {
       const name = identifier(binding.name);
-      if (seen.has(name) || typeof binding.resolve !== 'function') throw new McpBoundaryError('INVALID_CONFIGURATION');
+      if (seen.has(name) || typeof binding.resolve !== 'function' || !bindingFlagsValid(binding))
+        throw new McpBoundaryError('INVALID_CONFIGURATION');
       seen.add(name);
       return Object.freeze({ ...binding, name });
     }),

@@ -349,6 +349,21 @@ test('active widget content is rejected and quarantines the connection', { timeo
   assert.equal(f.connection.failureReason, 'ACTIVE_CONTENT_DENIED');
 });
 
+test('active content is recognised whatever the case of a ui: address or the HTML or script type', async t => {
+  for (const resource of [
+    { uri: 'UI://widget', mimeType: 'text/plain', text: 'x' },
+    { uri: ' Ui://widget', mimeType: 'text/plain', text: 'x' },
+    { uri: 'https://example.test/w', mimeType: 'text/html+skybridge', text: '<script>attack()</script>' },
+    { uri: 'https://example.test/w', mimeType: 'application/x-javascript', text: 'attack()' },
+    { uri: 'https://example.test/w', mimeType: 'Text/ECMAScript; charset=utf-8', text: 'attack()' },
+  ]) {
+    const f = await fixture(t, { handler: () => ({ content: [{ type: 'resource', resource }] }) });
+    f.approve();
+    await assert.rejects(f.guard.execute(await f.prepare()), { code: 'TOOL_FAILED', detail: 'MCP_OPERATION_FAILED' });
+    assert.equal(f.connection.failureReason, 'ACTIVE_CONTENT_DENIED', JSON.stringify(resource));
+  }
+});
+
 test(
   'an incoming-message flood quarantines, and refresh recovers once the window passes',
   { timeout: 5_000 },

@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { isPromise } from 'node:util/types';
+import { isPromise, isProxy } from 'node:util/types';
 import { Buffer } from 'node:buffer';
 import { canonicalJson, digestJson, immutableJson, type JsonObject } from './json.js';
 import { diffFrozenDefinitions } from './tool-diff.js';
@@ -586,13 +586,17 @@ export class AgentGuard {
       });
       return prepared;
     } catch (error) {
-      const tool =
-        request !== null &&
-        typeof request === 'object' &&
-        typeof request.tool === 'string' &&
-        this.#tools.has(request.tool)
-          ? request.tool
-          : undefined;
+      // Read without invoking a getter or proxy trap: the refusal must stay this GuardError.
+      let tool: string | undefined;
+      try {
+        const value =
+          request !== null && typeof request === 'object' && !isProxy(request)
+            ? Object.getOwnPropertyDescriptor(request, 'tool')?.value
+            : undefined;
+        if (typeof value === 'string' && this.#tools.has(value)) tool = value;
+      } catch {
+        tool = undefined;
+      }
       this.#decision('prepare', 'denied', this.#tasks.get(task), { ...(tool === undefined ? {} : { tool }) }, error);
       throw error;
     }

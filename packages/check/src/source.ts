@@ -576,14 +576,21 @@ export class GitSource implements FileSource {
       const parts = path.split('/');
       const skippedAt = parts.slice(0, -1).findIndex((part, i) => skipsFolder(parts.slice(0, i).join('/'), part));
       if (skippedAt >= 0) {
-        // Configuration inside skipped build output or vendored code is reported, not read.
+        // Configuration inside skipped build output or vendored code is reported, not read. It is
+        // named as the walk on disk names it (the entry, up to two levels into the skipped folder),
+        // so a commit and the working tree report the same finding.
+        const entry = parts.findIndex((part, i) => i > skippedAt && CONFIG_ENTRIES.has(part));
+        const between = parts[skippedAt + 1]!;
+        const at = parts.slice(0, entry + 1).join('/');
         if (
           !DEPENDENCY_DIRECTORIES.has(parts[skippedAt]!) &&
           !parts.slice(0, skippedAt).some(part => DEPENDENCY_DIRECTORIES.has(part)) &&
-          parts.slice(skippedAt + 1).some(part => CONFIG_ENTRIES.has(part)) &&
+          (entry === skippedAt + 1 ||
+            (entry === skippedAt + 2 && !DEPENDENCY_DIRECTORIES.has(between) && !between.startsWith('.'))) &&
+          !this.skippedConfig.includes(at) &&
           this.skippedConfig.length < 100
         )
-          this.skippedConfig.push(path);
+          this.skippedConfig.push(at);
         continue;
       }
       if (mode === '120000') links.push({ path, object });

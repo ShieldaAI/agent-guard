@@ -82,3 +82,53 @@ test('unsafe or accessor codes never become a detail', async () => {
   }
   assert.equal(reads, 0, 'the accessor was never invoked');
 });
+
+test('a request with a throwing getter or proxy is refused with a GuardError and still observed', async () => {
+  const events = [];
+  const guard = new AgentGuard({ onDecision: event => events.push(event) });
+  guard.approveTool(
+    'call',
+    guard.registerTool({
+      name: 'call',
+      description: 'fixture',
+      resolve: () => ({ resourceId: 'one', tenantId: 'acme' }),
+      execute: () => ({ value: 'ok' }),
+    }),
+  );
+  const task = guard.createTask({
+    id: 't',
+    principalId: 'p',
+    tenantId: 'acme',
+    grants: [{ tool: 'call', resources: ['one'] }],
+    budget: { maxCalls: 5, maxConcurrent: 1, maxCost: 0, deadline: Date.now() + 60_000 },
+  });
+  const getter = {
+    args: {},
+    get tool() {
+      throw new Error('host secret');
+    },
+  };
+  const trap = new Proxy(
+    { tool: 'call', args: {} },
+    {
+      get() {
+        throw new Error('host secret');
+      },
+      getOwnPropertyDescriptor() {
+        throw new Error('host secret');
+      },
+    },
+  );
+  for (const request of [getter, trap])
+    await assert.rejects(
+      guard.prepare(task, request),
+      error => error instanceof GuardError && error.code === 'INVALID_JSON',
+    );
+  assert.deepEqual(
+    events.map(event => [event.operation, event.outcome, event.code, event.tool]),
+    [
+      ['prepare', 'denied', 'INVALID_JSON', undefined],
+      ['prepare', 'denied', 'INVALID_JSON', undefined],
+    ],
+  );
+});

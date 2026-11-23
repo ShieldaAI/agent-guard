@@ -120,6 +120,34 @@ export function boundedJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS)
   return result;
 }
 
+// HTML, XHTML, SVG and every JavaScript MIME type of the WHATWG MIME Sniffing standard.
+const ACTIVE_MIME_TYPES = new Set([
+  'text/html',
+  'application/xhtml+xml',
+  'image/svg+xml',
+  'application/ecmascript',
+  'application/javascript',
+  'application/x-ecmascript',
+  'application/x-javascript',
+  'text/ecmascript',
+  'text/javascript',
+  'text/javascript1.0',
+  'text/javascript1.1',
+  'text/javascript1.2',
+  'text/javascript1.3',
+  'text/javascript1.4',
+  'text/javascript1.5',
+  'text/jscript',
+  'text/livescript',
+  'text/x-ecmascript',
+  'text/x-javascript',
+]);
+function activeMimeType(value: string): boolean {
+  const essence = value.split(';')[0]!.trim().toLowerCase();
+  // `text/html+skybridge` and similar widget types are HTML too.
+  return ACTIVE_MIME_TYPES.has(essence) || essence.startsWith('text/html+');
+}
+
 /** This profile has no renderer or server-selected application/widget channel. */
 export function passiveJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS): Json {
   const value = boundedJson(input, limits);
@@ -127,14 +155,10 @@ export function passiveJson(input: unknown, limits: JsonLimits = MESSAGE_LIMITS)
     if (item === null || typeof item !== 'object') return;
     if (!Array.isArray(item)) {
       const record = item as Record<string, Json>;
-      if (
-        typeof record.mimeType === 'string' &&
-        ['text/html', 'application/xhtml+xml', 'application/javascript', 'text/javascript', 'image/svg+xml'].includes(
-          record.mimeType.toLowerCase().split(';')[0]!.trim(),
-        )
-      )
+      if (typeof record.mimeType === 'string' && activeMimeType(record.mimeType))
         throw new McpBoundaryError('ACTIVE_CONTENT_DENIED');
-      if (typeof record.uri === 'string' && record.uri.startsWith('ui:'))
+      // URI schemes are case-insensitive, and URL parsers skip leading spaces and controls.
+      if (typeof record.uri === 'string' && /^[\u0000-\u0020]*ui:/i.test(record.uri))
         throw new McpBoundaryError('ACTIVE_CONTENT_DENIED');
       const meta = record._meta;
       if (

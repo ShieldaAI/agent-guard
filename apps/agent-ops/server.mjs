@@ -395,10 +395,16 @@ export async function startOpsServer(options) {
     const timer = setTimeout(() => request.destroy(), 5000);
     timer.unref();
     try {
-      for await (const chunk of request) {
-        size += chunk.length;
-        if (size > 8192) fail('BODY_TOO_LARGE', 413);
-        chunks.push(chunk);
+      try {
+        for await (const chunk of request) {
+          size += chunk.length;
+          if (size > 8192) fail('BODY_TOO_LARGE', 413);
+          chunks.push(chunk);
+        }
+      } catch (error) {
+        // A client that stops sending or goes away mid-body is a client error, not a service failure.
+        if (error instanceof OpsError) throw error;
+        fail('INVALID_INPUT');
       }
       try {
         return parseEvidenceJson(Buffer.concat(chunks), 8192);

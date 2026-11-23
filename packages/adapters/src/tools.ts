@@ -108,7 +108,13 @@ export function registerApprovedTools(
   const mismatched: string[] = [];
   for (const tool of tools) {
     const fingerprint = guard.registerTool(tool);
-    fingerprints[tool.name] = fingerprint;
+    // defineProperty, not assignment: a tool named "__proto__" must stay an ordinary key.
+    Object.defineProperty(fingerprints, tool.name, {
+      value: fingerprint,
+      enumerable: true,
+      writable: true,
+      configurable: true,
+    });
     const expected = pinned === undefined ? undefined : Object.hasOwn(pinned, tool.name) ? pinned[tool.name] : null;
     if (expected !== undefined && expected !== fingerprint) {
       mismatched.push(tool.name);

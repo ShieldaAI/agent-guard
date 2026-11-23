@@ -171,6 +171,11 @@ test('one path rule: the adapter, the sandbox, receipts and build policy accept 
     `d/${'x'.repeat(MAX_PATH_BYTES - 2)}`,
     `${'é'.repeat(MAX_PATH_BYTES / 2)}`,
     'café/日本語.txt',
+    // Near-misses of Windows device names stay ordinary names.
+    'COM10',
+    'console.txt',
+    'conin',
+    'a/LPT⁴.txt',
   ];
   const rejected = [
     ['x'.repeat(MAX_PATH_BYTES + 1), 'PATH_TOO_LONG'],
@@ -196,6 +201,12 @@ test('one path rule: the adapter, the sandbox, receipts and build policy accept 
     ['a /b', 'PATH_SEGMENT'],
     ['CON', 'PATH_RESERVED'],
     ['dir/nul.txt', 'PATH_RESERVED'],
+    // Windows opens these as devices too: superscript digits, console names, spaces before the extension.
+    ['COM¹', 'PATH_RESERVED'],
+    ['dir/lpt³.log', 'PATH_RESERVED'],
+    ['CONIN$', 'PATH_RESERVED'],
+    ['conout$.txt', 'PATH_RESERVED'],
+    ['CON .txt', 'PATH_RESERVED'],
     ['.agent-guard-provenance.json', 'PATH_RESERVED'],
     ['.Agent-Guard-Provenance.JSON', 'PATH_RESERVED'],
     ['', 'PATH_EMPTY'],
@@ -238,6 +249,9 @@ test('path lists reject case collisions, file-against-directory clashes and more
     ['a', 'a/b'],
     ['A/b', 'a'],
     ['straße', 'STRASSE'],
+    // Capital sharp s: one name with "ß" on a case-insensitive volume such as APFS.
+    ['straße', 'STRAẞE'],
+    ['ẞ/a', 'ß/b'],
   ];
   const tooMany = Array.from({ length: MAX_PATH_COUNT + 1 }, (_, index) => `f${index}`);
   const invalid = detail => error => {

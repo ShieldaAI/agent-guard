@@ -266,8 +266,9 @@ const SCOPE_ORDER: readonly BashScope[] = [
 
 /**
  * Options that make an otherwise local command run a program or write a file, read from an exact
- * command: `awk 'BEGIN{system(...)}'`, `sed e`, `find -exec`, `git -c`, `rg --pre`, `sort
- * --compress-program`, `tar --to-command`. Undefined when the command has none.
+ * command: `awk 'BEGIN{system(...)}'`, `sed e`, `find -exec`, `git -c` (or `--git-dir`, a config of
+ * the repository's choosing), `rg --pre`, `sort --compress-program`, `tar --to-command`. Undefined
+ * when the command has none.
  */
 function riskyOptions(command: string): BashScope | undefined {
   const words = command.split(/\s+/);
@@ -299,7 +300,7 @@ function riskyOptions(command: string): BashScope | undefined {
   }
   if (name === 'git') {
     if (
-      /\s(-c|--config-env|--upload-pack|--receive-pack|--exec|-O|--open-files-in-pager|--ext-diff|--textconv|-x|--exec-path)(\s|=|$)/.test(
+      /\s(-c|--config-env|--upload-pack|--receive-pack|--exec|-O|--open-files-in-pager|--ext-diff|--textconv|-x|--exec-path|--git-dir)(\s|=|$)/.test(
         rest,
       )
     )
@@ -332,10 +333,11 @@ function commandScope(simple: string, prefix: boolean): BashScope {
   let command = simple.trim();
   if (command === '') return 'local';
   // Variable assignments before the command (`GIT_TERMINAL_PROMPT=0 git ...`) are dropped, unless
-  // they load code or change what runs.
+  // they load code or change what runs (`GIT_DIR` and `HOME` choose the git config, whose
+  // core.fsmonitor runs with `git status`).
   while (/^[A-Za-z_][A-Za-z0-9_]*=\S*\s+/.test(command)) {
     if (
-      /^(BASH_ENV|ENV|PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|npm_config_\w+|NPM_CONFIG_\w+|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|EDITOR|GIT_EDITOR|GIT_CONFIG_\w+|SHELL)=/.test(
+      /^(BASH_ENV|ENV|PATH|LD_\w+|DYLD_\w+|NODE_OPTIONS|npm_config_\w+|NPM_CONFIG_\w+|PYTHONPATH|PYTHONSTARTUP|PERL5OPT|RUBYOPT|GIT_SSH_COMMAND|GIT_EXTERNAL_DIFF|GIT_PAGER|PAGER|EDITOR|GIT_EDITOR|GIT_CONFIG_\w+|SHELL|HOME|XDG_CONFIG_HOME|GIT_DIR|GIT_COMMON_DIR|GIT_EXEC_PATH)=/.test(
         command,
       )
     )

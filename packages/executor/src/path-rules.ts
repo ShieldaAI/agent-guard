@@ -10,7 +10,8 @@ import { ExecutorError } from './store.js';
  * - uses "/" between segments, with no leading or trailing "/";
  * - contains none of \ : * ? " < > | and no control character (U+0000-U+001F, U+007F);
  * - has no empty, "." or ".." segment, no segment ending in "." or a space, and no
- *   Windows device name (CON, PRN, AUX, NUL, COM0-COM9, LPT0-LPT9, with or without extension);
+ *   Windows device name (CON, PRN, AUX, NUL, CONIN$, CONOUT$, COM0-COM9, COM¹-COM³, LPT0-LPT9,
+ *   LPT¹-LPT³, with or without extension, and with or without spaces before the extension);
  * - is not the reserved provenance sidecar name ".agent-guard-provenance.json" (any case).
  *
  * A list holds at most 256 paths. Two paths collide when they are equal ignoring case,
@@ -33,11 +34,13 @@ export type PathListProblem = PathProblem | 'PATH_LIST_INVALID' | 'PATH_COUNT' |
 
 const FORBIDDEN = /[\\:*?"<>|\u0000-\u001f\u007f]/u;
 const LONE_SURROGATE = /\p{Cs}/u;
-const DEVICE = /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/iu;
+// Windows also maps superscript digits, CONIN$/CONOUT$ and "CON .txt" (spaces before the extension) to devices.
+const DEVICE = /^(?:con|prn|aux|nul|conin\$|conout\$|com[0-9¹²³]|lpt[0-9¹²³]) *(?:\.|$)/iu;
 
 /** Comparison key for case-insensitive volumes. Paths are already NFC, so case is the only fold. */
 export function foldPath(value: string): string {
-  return value.toUpperCase().toLowerCase();
+  // Lowercase first too: "ẞ" (U+1E9E) uppercases to itself but lowercases to "ß", which folds to "ss".
+  return value.toLowerCase().toUpperCase().toLowerCase();
 }
 
 /** Returns the first rule the value breaks, or undefined for a portable path. Never throws. */

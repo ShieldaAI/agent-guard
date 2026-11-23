@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from 'node:child_process';
 import {
   closeSync,
   constants,
@@ -192,6 +193,23 @@ function insideRoot(root: string, path: string): string | undefined {
   return safeRelative(rel.split(sep).join('/'));
 }
 
+/** The top of the git work tree that holds `root`, without links in its spelling; undefined outside git. */
+function workTree(root: string): string | undefined {
+  const result = spawnSync('git', ['-C', root, 'rev-parse', '--show-toplevel'], {
+    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' },
+  });
+  const top = result.error || result.status !== 0 ? '' : result.stdout.toString('utf8').trim();
+  return top ? realPath(top) : undefined;
+}
+
+function realPath(path: string): string {
+  try {
+    return realpathSync.native(path);
+  } catch {
+    return resolve(path);
+  }
+}
+
 function listRules(): string {
   const rows = RULES.map(
     rule => `${rule.id.padEnd(13)} ${rule.severity.padEnd(8)} ${rule.mode.padEnd(11)} ${rule.title}`,
@@ -305,12 +323,19 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
     let baseline = new Set<string>();
     if (values.baseline) {
       const path = resolve(io.cwd, values.baseline);
-      const inRepo = baseSource ? insideRoot(root, path) : undefined;
-      if (baseSource && inRepo !== undefined) {
-        const text = baseSource.readNamed(inRepo);
+      let inRepo = baseSource ? insideRoot(root, path) : undefined;
+      let from = { root, source: baseSource };
+      // A baseline elsewhere in the same checkout (the scan path is a subfolder) is the change's too.
+      const top = baseSource && inRepo === undefined ? workTree(root) : undefined;
+      if (top !== undefined) {
+        inRepo = insideRoot(top, realPath(path));
+        from = { root: top, source: new GitSource(top, values.base!) };
+      }
+      if (from.source && inRepo !== undefined) {
+        const text = from.source.readNamed(inRepo);
         if (text === undefined) io.stderr(`note: ${inRepo} is not in ${values.base}; no baseline applied.\n`);
         else baseline = parseBaseline(text);
-        if (text !== undefined && text !== new DirectorySource(root).readNamed(inRepo))
+        if (text !== undefined && text !== new DirectorySource(from.root).readNamed(inRepo))
           io.stderr(`note: ${inRepo} differs from ${values.base}; the version at ${values.base} is used.\n`);
       } else baseline = parseBaseline(readInput(path));
     }

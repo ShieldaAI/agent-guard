@@ -69,6 +69,8 @@ const CONSTRAINTS = new Set([
 const UPPER_BOUNDS = new Set(['maximum', 'exclusiveMaximum', 'maxLength', 'maxItems', 'maxProperties', 'maxContains']);
 const LOWER_BOUNDS = new Set(['minimum', 'exclusiveMinimum', 'minLength', 'minItems', 'minProperties', 'minContains']);
 const CLOSED = new Set(['additionalProperties', 'unevaluatedProperties', 'additionalItems', 'unevaluatedItems']);
+/** Keywords whose value is one schema applied to part of the input. */
+const SUBSCHEMAS = new Set([...CLOSED, 'items', 'contains']);
 const UNTRUSTED_RANK: Readonly<Record<string, number>> = Object.freeze({ allow: 0, require_approval: 1, deny: 2 });
 
 function list(value: JsonValue | undefined): readonly JsonValue[] {
@@ -164,6 +166,20 @@ function hintsFor(
   if (added.some(text => HIDDEN_CHARACTERS.test(text))) hints.push('HIDDEN_CHARACTERS');
   if (key !== undefined && segments.length === 1 && flagLoosened(key, before, after)) hints.push('FLAG_LOOSENED');
   const position = schemaPosition(segments);
+  // A whole schema dropped, or a schema replaced by `true` (or null at the top), accepts anything.
+  const wholeSchema = segments.length === 1 && key === 'inputSchema';
+  const schemaSlot =
+    wholeSchema ||
+    (position !== undefined &&
+      (position.named
+        ? position.container === 'properties' || position.container === 'patternProperties'
+        : SUBSCHEMAS.has(key!)));
+  const acceptsAll =
+    schemaSlot &&
+    kind !== 'added' &&
+    before !== true &&
+    before !== null &&
+    (after === true || (wholeSchema && (after === null || after === undefined)));
   if (key !== undefined && position !== undefined) {
     const { named, container } = position;
     if (
@@ -174,8 +190,8 @@ function hintsFor(
     const parent = segments.at(-2);
     // One more alternative accepts more input.
     const alternative = kind === 'added' && !named && (parent === 'anyOf' || parent === 'oneOf');
-    if (!named && (alternative || schemaLoosened(key, before, after))) hints.push('SCHEMA_LOOSENED');
-  }
+    if (acceptsAll || (!named && (alternative || schemaLoosened(key, before, after)))) hints.push('SCHEMA_LOOSENED');
+  } else if (acceptsAll) hints.push('SCHEMA_LOOSENED');
   return Object.freeze(hints);
 }
 
