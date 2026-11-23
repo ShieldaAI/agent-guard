@@ -279,7 +279,7 @@ and the scanner notes on stderr that the file differs.
 
 ```yaml
 name: Agent config
-on: pull_request
+on: [pull_request, merge_group]
 permissions:
   contents: read
   pull-requests: write # for comment: true
@@ -303,6 +303,14 @@ from a folder outside the checkout and with the public npm registry, so a `node_
 `.npmrc` committed in the pull request cannot replace the scanner.
 Inputs: `path`, `fail-on`, `base`, `baseline`, `agent-guard-files`, `sarif`, `comment`,
 `github-rules`, `version`.
+
+`merge_group` runs the check again in a merge queue, on the commit that will land, compared with
+the queue's base commit. It catches two pull requests that are fine alone but not together, such
+as one that adds a database MCP server and another, checked before the first merged, that adds
+`WebFetch`. If the check is required and the repository uses a merge queue, the queue waits for
+it, so the trigger is needed there. The pull-request comment is skipped in the queue. Without a
+merge queue, `merge_group` never fires; "Require branches to be up to date" in branch protection
+covers the same case.
 
 #### Code-owner review
 
