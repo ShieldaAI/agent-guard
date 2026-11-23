@@ -58,8 +58,8 @@ export function explainCode(code: string): CodeExplanation | undefined {
       modelMessage: modelMessage(code),
     });
   }
-  const adapter = ADAPTER_CODES[code];
-  if (adapter === undefined) return undefined;
+  if (!Object.hasOwn(ADAPTER_CODES, code)) return undefined;
+  const adapter = ADAPTER_CODES[code]!;
   return Object.freeze({ code, source: 'adapter', ...adapter, retryable: false, modelMessage: modelMessage(code) });
 }
 

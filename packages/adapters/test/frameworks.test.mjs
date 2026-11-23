@@ -47,6 +47,22 @@ test('Vercel AI SDK: tools whose execute goes through the guard', async () => {
   assert.deepEqual(desk.runs, [['ticket.read', '42']]);
 });
 
+test('Vercel AI SDK: a tool named __proto__ is an ordinary key', async () => {
+  const specs = [{ name: '__proto__', description: 'Odd name', inputSchema: { type: 'object' } }];
+  const calls = [];
+  const tools = aiSdkTools(
+    async call => (calls.push(call.name), { status: 'ok', tool: call.name, actionId: 'a', result: 1 }),
+    specs,
+    {
+      jsonSchema: schema => schema,
+    },
+  );
+  assert.deepEqual(Object.keys(tools), ['__proto__']);
+  assert.equal(Object.getPrototypeOf(tools), Object.prototype);
+  assert.equal((await Object.getOwnPropertyDescriptor(tools, '__proto__').value.execute({})).status, 'ok');
+  assert.deepEqual(calls, ['__proto__']);
+});
+
 test('OpenAI Agents SDK: tool configs with non-strict JSON Schema and string results', async () => {
   const { dispatch, specs } = setup();
   const configs = openAIAgentsTools(dispatch, specs, { tool: config => config });

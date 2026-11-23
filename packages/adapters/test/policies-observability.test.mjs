@@ -262,6 +262,25 @@ test('every guard code has a model message and an explanation', () => {
   assert.equal(knownCodes().length, Object.keys(GuardErrorCatalog).length + 7);
 });
 
+test('codes and tool names that are Object.prototype keys are ordinary strings', () => {
+  for (const code of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+    assert.equal(explainCode(code), undefined, code);
+    assert.equal(typeof modelMessage(code), 'string', code);
+    assert.equal(typeof modelMessage('ARGUMENT_INVALID', code), 'string', code);
+  }
+  const guard = new AgentGuard();
+  const tool = name => ({
+    name,
+    description: 'fixture',
+    resolve: () => ({ resourceId: 'r', tenantId: 't' }),
+    execute: () => ({ value: 1 }),
+  });
+  const fingerprints = registerApprovedTools(guard, [tool('__proto__'), tool('read')]);
+  assert.deepEqual(Object.keys(fingerprints), ['__proto__', 'read']);
+  assert.equal(Object.getPrototypeOf(fingerprints), Object.prototype);
+  assert.equal(fingerprints['__proto__'], guard.describe().tools.find(entry => entry.name === '__proto__').fingerprint);
+});
+
 test('the agent-guard-explain command', () => {
   const cli = fileURLToPath(new URL('../dist/explain-cli.js', import.meta.url));
   const run = (...args) => spawnSync(process.execPath, [cli, ...args], { encoding: 'utf8' });

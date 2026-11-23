@@ -154,8 +154,9 @@ const DETAIL_HINTS: Readonly<Record<string, string>> = Object.freeze({
 
 /** The model-facing sentence for a code. Never contains request data. */
 export function modelMessage(code: OutcomeCode, detail?: string): string {
-  const base = MODEL_MESSAGES[code] ?? FALLBACK_MESSAGE;
-  const hint = detail === undefined ? undefined : DETAIL_HINTS[detail];
+  // Own keys only: a code such as `toString` must not read Object.prototype.
+  const base = Object.hasOwn(MODEL_MESSAGES, code) ? MODEL_MESSAGES[code]! : FALLBACK_MESSAGE;
+  const hint = detail === undefined || !Object.hasOwn(DETAIL_HINTS, detail) ? undefined : DETAIL_HINTS[detail];
   return hint === undefined ? base : `${base} ${hint}`;
 }
 

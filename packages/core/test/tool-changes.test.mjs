@@ -182,6 +182,33 @@ test('tightening a schema or a flag carries no loosening hint', () => {
   );
 });
 
+test('a schema dropped or replaced by one that accepts anything is a loosening', () => {
+  const guard = new AgentGuard();
+  guard.approveTool(base.name, guard.registerTool(base));
+  const { inputSchema: _schema, ...withoutSchema } = base;
+  guard.registerTool(withoutSchema);
+  assert.deepEqual(byPath(guard.toolChanges(base.name))['/inputSchema'].hints, ['SCHEMA_LOOSENED']);
+  guard.registerTool({ ...base, inputSchema: true });
+  assert.deepEqual(byPath(guard.toolChanges(base.name))['/inputSchema'].hints, ['SCHEMA_LOOSENED']);
+
+  const diff = diffToolDefinitions(
+    { inputSchema: { properties: { path: { type: 'string' }, tags: { items: { enum: ['a'] } } } } },
+    { inputSchema: { properties: { path: true, tags: { items: true } } } },
+  );
+  assert.deepEqual(
+    diff.changes.map(change => [change.path, change.hints]),
+    [
+      ['/inputSchema/properties/path', ['SCHEMA_LOOSENED']],
+      ['/inputSchema/properties/tags/items', ['SCHEMA_LOOSENED']],
+    ],
+  );
+  // Adding a schema where there was none tightens: no hint.
+  assert.deepEqual(
+    diffToolDefinitions({ inputSchema: null }, { inputSchema: { type: 'object' } }).changes[0].hints,
+    [],
+  );
+});
+
 test('flag hints cover each guard flag that can become weaker', () => {
   const before = {
     controlPlane: true,

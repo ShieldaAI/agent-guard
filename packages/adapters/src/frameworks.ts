@@ -47,7 +47,7 @@ export function aiSdkTools(
   const jsonSchema = factory(options?.jsonSchema);
   const tools: Record<string, AiSdkTool> = {};
   for (const spec of specs) {
-    tools[spec.name] = {
+    const entry: AiSdkTool = {
       description: spec.description,
       inputSchema: jsonSchema(objectSchema(spec.inputSchema)),
       async execute(input, executeOptions) {
@@ -64,6 +64,8 @@ export function aiSdkTools(
         return plainJson(outcomeForModel(outcome));
       },
     };
+    // defineProperty, not assignment: a tool named "__proto__" must stay an ordinary key.
+    Object.defineProperty(tools, spec.name, { value: entry, enumerable: true, writable: true, configurable: true });
   }
   return tools;
 }
