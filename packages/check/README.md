@@ -179,7 +179,8 @@ script that is missing or outside the repository, an HTTP or prompt hook). Setti
 values that run code or change where packages come from are high: shell startup and prefix
 variables (`BASH_ENV`, `CLAUDE_CODE_SHELL_PREFIX`, `PATH`), loaders (`LD_PRELOAD`, `NODE_OPTIONS`,
 `PYTHONPATH`, `JAVA_TOOL_OPTIONS`, `DOTNET_STARTUP_HOOKS`), git hooks into commands
-(`GIT_CONFIG_*`, `GIT_ASKPASS`, `GIT_SSH_COMMAND`), build wrappers (`RUSTC_WRAPPER`, `GOFLAGS`)
+(`GIT_CONFIG_*`, `GIT_ASKPASS`, `GIT_SSH_COMMAND`, and `GIT_DIR`, `HOME` or `XDG_CONFIG_HOME`,
+which choose the git config), build wrappers (`RUSTC_WRAPPER`, `GOFLAGS`)
 and package sources (`npm_config_*`, `PIP_INDEX_URL`, ...).
 
 ### Your own settings
