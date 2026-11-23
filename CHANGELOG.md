@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.6.2 — 2026-11-23
 
 ### Agent Guard Check
 

@@ -37,7 +37,7 @@ example. The [glossary](glossary.md) defines the terms.
 | [Error codes](errors.md) | Every code, whether a retry is safe, the usual cause. |
 | [Scenarios](scenarios.md) | The thirteen hostile and ordinary test cases. |
 | [Inventory formats](agent-cartography-contract.md) | Host manifest and snapshot fields. |
-| [Release notes](releases/1.6.1.md) and [changelog](../CHANGELOG.md) | What changed. |
+| [Release notes](releases/1.6.2.md) and [changelog](../CHANGELOG.md) | What changed. |
 
 ## Evaluate a deployment
 
