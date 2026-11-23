@@ -1,7 +1,7 @@
 # Releasing the npm packages
 
 Seven ESM workspaces (core, MCP, scenarios, adapters, executor, Agent Map, Check) are versioned together under `@shieldaai`;
-the private viewer and Python Cartography are not published. Gates: [release notes](releases/1.6.1.md),
+the private viewer and Python Cartography are not published. Gates: [release notes](releases/1.6.2.md),
 root [release state](../release-state.json) (do not publish while blocked), [support and limits](support-and-limits.md).
 
 ## Checklist
@@ -56,18 +56,18 @@ npm publish --workspace packages/check --access public --tag latest
 Wait for each with `npm view <package>@<version> version dist-tags --json`. Then verify and release (`RELEASE_COMMIT` = verified merged commit):
 
 ```sh
-mkdir -p artifacts/registry-1.6.1
+mkdir -p artifacts/registry-1.6.2
 for package in @shieldaai/agent-guard @shieldaai/agent-guard-mcp \
   @shieldaai/agent-guard-scenarios @shieldaai/agent-guard-adapters @shieldaai/agent-guard-executor \
   @shieldaai/agent-map @shieldaai/agent-guard-check; do
-  npm view "$package@1.6.1" version dist.integrity gitHead --json
+  npm view "$package@1.6.2" version dist.integrity gitHead --json
   npm view "$package" dist-tags --json
-  npm pack "$package@1.6.1" --ignore-scripts --pack-destination artifacts/registry-1.6.1
+  npm pack "$package@1.6.2" --ignore-scripts --pack-destination artifacts/registry-1.6.2
 done
-git tag -a v1.6.1 "$RELEASE_COMMIT" -m 'Agent Guard 1.6.1'
-git push origin refs/tags/v1.6.1
-gh release create v1.6.1 artifacts/registry-1.6.1/*-1.6.1.tgz --verify-tag --latest \
-  --title 'Agent Guard 1.6.1' --notes-file docs/releases/1.6.1.md
+git tag -a v1.6.2 "$RELEASE_COMMIT" -m 'Agent Guard 1.6.2'
+git push origin refs/tags/v1.6.2
+gh release create v1.6.2 artifacts/registry-1.6.2/*-1.6.2.tgz --verify-tag --latest \
+  --title 'Agent Guard 1.6.2' --notes-file docs/releases/1.6.2.md
 ```
 
 ## Rollback and partial publication
