@@ -1,6 +1,6 @@
 {
   "name": "@shieldaai/agent-guard-adapters",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "Connect Agent Guard to model providers and agent frameworks: one dispatcher, an approval queue, tool schemas, policies and telemetry hooks. No third-party runtime dependencies.",
   "license": "Apache-2.0",
   "type": "module",
@@ -57,6 +57,6 @@
     "prepublishOnly": "node ../../scripts/release-check.mjs"
   },
   "dependencies": {
-    "@shieldaai/agent-guard": "1.6.0"
+    "@shieldaai/agent-guard": "1.6.1"
   }
 }
