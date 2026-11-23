@@ -1,5 +1,59 @@
 # Changelog
 
+## Unreleased
+
+### Agent Guard Check
+
+- Fix: with `--base`, a `--baseline` file outside the scanned folder (the Action with `path:` set
+  to a subfolder and the baseline at the checkout root) was read from the working tree, so a pull
+  request could write its own new findings into the baseline and pass. It is now read from the
+  base commit, like a baseline inside the folder.
+- Fix: `GIT_DIR=`, `GIT_COMMON_DIR=`, `GIT_EXEC_PATH=`, `HOME=` and `XDG_CONFIG_HOME=` before an
+  allowed command, `git --git-dir=`, and `GIT_DIR`, `GIT_COMMON_DIR`, `HOME` or `XDG_CONFIG_HOME` in
+  settings `env` now count as changing what runs. Each lets a committed git config choose
+  `core.fsmonitor`, which runs with `git status`.
+- Fix: with `--base`, unchanged configuration in a folder the scan skips (`vendor/lib/.claude`)
+  was reported as new on every pull request, because the commit and the working tree named the
+  finding differently.
+- Fix: `--hook` no longer holds prompts for agent configuration in an ignored build folder
+  (`dist/templates/.claude/settings.json`). The session does not read it and no pull request
+  shows it. Tracked files there are still reported.
+
+### Agent Guard MCP
+
+- Fix: the active-content refusal missed `UI://` and ` ui:` addresses and HTML or script content
+  types other than five exact ones (`text/html+skybridge`, `application/x-javascript`,
+  `text/ecmascript`). Case is now ignored and every HTML, XHTML, SVG and JavaScript type is refused.
+- Fix: a binding with a malformed flag, a negative or fractional `maxCost`, a `measureCost` that is
+  not a function or an unknown `untrustedContext` now fails `INVALID_CONFIGURATION` before any
+  network call. Before, it failed after contacting the server, or, for `measureCost`, after the
+  remote tool had run.
+
+### Agent Guard
+
+- Fix: `toolChanges` and `diffToolDefinitions` now mark a dropped input schema, or a schema (or a
+  property, `items`, `contains` or additional-items schema) replaced by `true`, as
+  `SCHEMA_LOOSENED`.
+- Fix: `prepare()` with a request whose `tool` getter throws, or a proxy request, now rejects with
+  the `GuardError` and reports the refusal to `onDecision`.
+
+### Agent Guard Adapters
+
+- Fix: a tool named `__proto__` is kept in `registerApprovedTools` fingerprints and `aiSdkTools`.
+  `explainCode` and `modelMessage` no longer read `Object.prototype` for codes such as
+  `constructor`.
+
+### Agent Guard Executor
+
+- Fix: the path rule now refuses the Windows device names `COM¹`-`COM³`, `LPT¹`-`LPT³`, `CONIN$`,
+  `CONOUT$`, and a device name with spaces before the extension (`CON .txt`).
+- Fix: paths that differ only by `ẞ` and `ß` (or `ss`) now collide, as they do on macOS.
+
+### Agent Ops
+
+- Fix: a client that abandons its request body gets a client error. Before, it was logged as a
+  `REQUEST_FAILED` service failure, so any client could fill the security log.
+
 ## 1.6.0 — 2026-11-22
 
 ### Agent Guard Check

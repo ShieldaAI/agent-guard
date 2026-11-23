@@ -12,6 +12,7 @@ const test = (name, fn) =>
   );
 import assert from 'node:assert/strict';
 import { randomBytes } from 'node:crypto';
+import { connect } from 'node:tls';
 import { httpsSetup } from './helpers.mjs';
 
 test('real signed OIDC login, exact review, durable ticket update and authenticated archival', async t => {
@@ -418,6 +419,33 @@ test('an unparseable request target is a client error and an unexpected failure 
   // An ordinary refusal is not a server failure and leaves no such event.
   assert.equal((await operator.get('/api/tickets?limit=0')).status, 400);
   assert.equal(events.filter(event => event.event === 'REQUEST_FAILED').length, 2);
+});
+test('a client that abandons its request body leaves no service-failure trace', async t => {
+  const events = [],
+    fixture = await httpsSetup(t, { server: { onSecurityEvent: event => events.push(event) } });
+  const session = await fixture.request('/api/session'),
+    cookie = session.headers['set-cookie'][0].split(';')[0];
+  const { host } = new URL(fixture.origin);
+  // Anyone can hold a pre-login session; three bodies cut off after their first byte.
+  for (let attempt = 0; attempt < 3; attempt++)
+    await new Promise(resolve => {
+      const socket = connect(
+        { host: '127.0.0.1', port: Number(fixture.config.port), ca: fixture.provider.ca, servername: 'localhost' },
+        () =>
+          socket.write(
+            `POST /auth/logout HTTP/1.1\r\nHost: ${host}\r\nCookie: ${cookie}\r\nOrigin: ${fixture.origin}\r\n` +
+              `X-CSRF-Token: ${session.json().csrfToken}\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{`,
+            () => setTimeout(() => socket.destroy(), 50),
+          ),
+      );
+      socket.once('error', () => {});
+      socket.once('close', resolve);
+    });
+  await new Promise(resolve => setTimeout(resolve, 300));
+  assert.deepEqual(
+    events.filter(event => event.event === 'REQUEST_FAILED'),
+    [],
+  );
 });
 test('close-out over HTTP is operator-only, previews without a digest and never touches a request that is not unconfirmed', async t => {
   const fixture = await httpsSetup(t),
