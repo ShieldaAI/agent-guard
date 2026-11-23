@@ -290,8 +290,14 @@ export function runHook(options: HookOptions): HookResult {
     };
     shared = new FilteredSource(disk, path => tracked.paths.has(path), stagedOf);
     // A clone or worktree inside the folder is another checkout: its settings are not this session's.
+    // Untracked configuration in a folder the scan skips (ignored build output) is neither read by
+    // this session nor shown by a pull request.
     const seen = new Map<string, boolean>();
-    session = new FilteredSource(disk, path => tracked.paths.has(path) || !inNestedRepo(root, path, seen));
+    const skipped = new Set(disk.skippedConfig);
+    session = new FilteredSource(
+      disk,
+      path => tracked.paths.has(path) || (!skipped.has(path) && !inNestedRepo(root, path, seen)),
+    );
   } else {
     shared = new FilteredSource(disk, path => !LOCAL_ONLY.test(path));
   }

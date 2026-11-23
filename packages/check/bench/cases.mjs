@@ -287,6 +287,19 @@ export const CASES = [
     files: { '.claude/settings.json': settings({ allow: ['Bash(gh pr view:*)', 'Bash(gh run list:*)'] }) },
   },
   {
+    // GIT_DIR names a git config of the repository's choosing; its core.fsmonitor runs with git status.
+    id: 'perm3-git-dir',
+    rule: 'AGC-PERM-003',
+    expect: true,
+    files: { '.claude/settings.json': settings({ allow: ['Bash(GIT_DIR=tools/g git status)'] }) },
+  },
+  {
+    id: 'perm3-git-status',
+    rule: 'AGC-PERM-003',
+    expect: false,
+    files: { '.claude/settings.json': settings({ allow: ['Bash(GIT_TERMINAL_PROMPT=0 git status)'] }) },
+  },
+  {
     id: 'perm4-home',
     rule: 'AGC-PERM-004',
     expect: true,
