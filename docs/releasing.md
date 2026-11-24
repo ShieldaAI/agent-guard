@@ -24,10 +24,13 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
 6. Publish one package at a time in the order below. Before the next one, wait for the version to
    appear and verify its `gitHead`, registry integrity and package bytes. Never use `--ignore-scripts` to bypass publish hooks.
 7. Install the exact versions from the registry into a clean project, then tag and create the GitHub release.
-8. After npm serves the new version: publish `packages/check/server.json` to the MCP Registry
-   (`mcp-publisher publish`), push the version tag to the standalone Action repository, and for
-   OpenAI upload the archives from `npm run pack:plugins`. Anthropic's directory and Antigravity
-   read the plugin folder from GitHub.
+8. After npm serves the new version: push the version tag to the standalone Action repository,
+   move `plugin-stable` to the release commit, and for OpenAI upload the archives from
+   `npm run pack:plugins`. Anthropic's directory and Antigravity read the plugin folder from
+   GitHub. The MCP Registry needs nothing: publishing the GitHub release starts
+   `.github/workflows/mcp-registry.yml`, which waits for npm and publishes
+   `packages/check/server.json` with the repository's OIDC token. To publish an existing release
+   by hand: `gh workflow run mcp-registry.yml -f version=<version>`.
 
 Release notes link the release pull request and its CI run; add the merged commit's CI run in the GitHub release. If you publish from CI, use npm trusted publishing with `--provenance` so each package carries a signed statement of the commit it was built from; no workflow in this repository holds a publishing token today.
 
