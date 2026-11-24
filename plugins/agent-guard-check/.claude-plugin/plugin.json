@@ -1,7 +1,7 @@
 {
   "name": "agent-guard-check",
   "displayName": "Agent Guard Check",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "description": "Shows what each AI agent in a repository can do and flags authority it does not need, before and after you change its configuration.",
   "author": {
     "name": "Shielda",

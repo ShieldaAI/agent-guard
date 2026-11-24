@@ -24,7 +24,7 @@ Node.js 22 or later. Two runtime dependencies (`yaml`, `smol-toml`), both pinned
 ## What it shows
 
 ```text
-agent-guard-check 1.6.2: 1 agent(s), 1 critical, 1 medium
+agent-guard-check 1.7.0: 1 agent(s), 1 critical, 1 medium
 Evidence: repository files
 
 Claude Code (project)  (.claude/settings.json)
@@ -298,7 +298,7 @@ jobs:
 
 On pull requests the action compares with the base commit by itself, writes the Markdown
 report to the job summary, optionally uploads SARIF to code scanning and keeps one pull-request
-comment up to date. It runs an exact package version (input `version`, default `1.6.2`),
+comment up to date. It runs an exact package version (input `version`, default `1.7.0`),
 from a folder outside the checkout and with the public npm registry, so a `node_modules` or
 `.npmrc` committed in the pull request cannot replace the scanner.
 Inputs: `path`, `fail-on`, `base`, `baseline`, `agent-guard-files`, `sarif`, `comment`,
@@ -491,7 +491,7 @@ plugin when you check repositories you did not write.
   "mcpServers": {
     "agent-guard-check": {
       "command": "npx",
-      "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.6.2", "agent-guard-check-mcp", "."]
+      "args": ["-y", "-p", "@shieldaai/agent-guard-check@1.7.0", "agent-guard-check-mcp", "."]
     }
   }
 }
