@@ -3,7 +3,7 @@
   "name": "io.github.ShieldaAI/agent-guard-check",
   "title": "Agent Guard Check",
   "description": "Shows what each AI agent configured in a repository can do and flags authority it does not need.",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "websiteUrl": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/check#readme",
   "repository": {
     "url": "https://github.com/ShieldaAI/agent-guard",
@@ -22,7 +22,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@shieldaai/agent-guard-check",
-      "version": "1.6.2",
+      "version": "1.7.0",
       "runtimeHint": "npx",
       "transport": { "type": "stdio" },
       "packageArguments": [

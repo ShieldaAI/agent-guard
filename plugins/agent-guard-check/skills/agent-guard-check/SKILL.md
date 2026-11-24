@@ -42,7 +42,7 @@ scanner runs. The parentheses keep your shell in the repository afterwards:
 
 ```sh
 repo="$(git rev-parse --show-toplevel)"
-(cd "$(mktemp -d)" && npx --yes @shieldaai/agent-guard-check@1.6.2 "$repo" --base HEAD)
+(cd "$(mktemp -d)" && npx --yes @shieldaai/agent-guard-check@1.7.0 "$repo" --base HEAD)
 ```
 
 Leave out `--base HEAD` to list every finding instead of only what the change added. Exit code 1

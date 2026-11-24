@@ -332,3 +332,37 @@ test('the scanner package pins every dependency exactly, and they have none of t
     assert.equal(entry.optionalDependencies, undefined, `${name} has optional dependencies`);
   }
 });
+
+// Anthropic's directory takes no local code from organizations that are not Verified: no local MCP
+// server, no scripts, only Markdown, text, JSON, YAML and PNG/JPEG/GIF/WebP/ICO files. This folder
+// is the skills-only plugin submitted there; it mirrors the full plugin so the two never drift.
+test('the directory folder is the skills-only mirror of the plugin', () => {
+  const SKILL_DIR = join(ROOT, 'plugins/agent-guard-check-skill');
+  const mirror = walk(SKILL_DIR)
+    .map(path => relative(SKILL_DIR, path).split(sep).join('/'))
+    .sort();
+  assert.deepEqual(mirror, [
+    '.claude-plugin/plugin.json',
+    'LICENSE',
+    'PRIVACY.md',
+    'README.md',
+    'assets/logo.png',
+    'skills/agent-guard-check/SKILL.md',
+  ]);
+  for (const file of ['skills/agent-guard-check/SKILL.md', 'PRIVACY.md', 'LICENSE', 'assets/logo.png'])
+    assert.ok(
+      readFileSync(join(SKILL_DIR, file)).equals(readFileSync(join(DIR, file))),
+      `${file} differs from the plugin's`,
+    );
+  assert.equal(
+    read('plugins/agent-guard-check-skill/README.md'),
+    readmeFor('openai-skills', read(`${PLUGIN}/README.md`)),
+    'README.md: regenerate it with readmeFor("openai-skills", ...)',
+  );
+  const manifest = json('plugins/agent-guard-check-skill/.claude-plugin/plugin.json');
+  for (const key of ['name', 'displayName', 'version', 'description', 'license', 'repository', 'icon', 'supportUrl'])
+    assert.deepEqual(manifest[key], claude[key], key);
+  assert.equal(manifest.mcpServers, undefined);
+  assert.equal(manifest.hooks, undefined);
+  assert.match(manifest.privacyPolicyUrl, /plugins\/agent-guard-check-skill\/PRIVACY\.md$/);
+});

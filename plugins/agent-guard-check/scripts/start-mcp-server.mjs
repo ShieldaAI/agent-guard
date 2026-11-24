@@ -19,7 +19,7 @@ import { homedir, tmpdir } from 'node:os';
 import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-export const VERSION = '1.6.2';
+export const VERSION = '1.7.0';
 export const PACKAGE = '@shieldaai/agent-guard-check';
 const MIN_NODE_MAJOR = 22;
 

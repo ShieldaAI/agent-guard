@@ -6,7 +6,7 @@ calls through one guard. A call outside what the task was given never runs. A de
 call can wait until a person approves that exact action.
 
 It is a TypeScript library for Node.js 22 or newer (22.13 for the executor and Agent
-Map). The core has no third-party runtime dependencies. Version 1.6.2; licensed under
+Map). The core has no third-party runtime dependencies. Version 1.7.0; licensed under
 Apache-2.0.
 
 It works with Claude, OpenAI, Gemini, Bedrock, the Vercel AI SDK, the OpenAI Agents SDK,
@@ -345,7 +345,7 @@ the model says. An `approverId` records who approved; signing that person in is 
 | [Threat model](docs/threat-model.md) | Who is trusted and what is assumed hostile |
 | [API contract](docs/api-contract.md) and [error codes](docs/errors.md) | Exact signatures, rules and codes |
 | [Scenarios](docs/scenarios.md) | The thirteen hostile and ordinary test cases |
-| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.6.2.md) | What changed |
+| [Changelog](CHANGELOG.md) and [release notes](docs/releases/1.7.0.md) | What changed |
 
 ## Stability
 
@@ -388,6 +388,7 @@ The product is the guard in `packages/core`. Everything else builds on it or sup
 | `packages/agent-map`, `apps/agent-map` | Agent Map (experimental): the inventory service and its browser viewer. |
 | `packages/check` | Agent Guard Check: a scanner for agent configuration files, with a GitHub Action, an MCP server, a pre-commit hook and a container. |
 | `plugins/agent-guard-check` | The Agent Guard Check plugin for Claude Code, Codex and Antigravity: the skill and the MCP server in one folder. `.claude-plugin/` and `.agents/plugins/` at the root list it as a marketplace. |
+| `plugins/agent-guard-check-skill` | The same plugin with the skill only, for Anthropic's plugin directory, which takes no local MCP servers or scripts from organizations it has not verified. |
 | `apps/agent-ops` | Agent Ops: a reference web app for reviewing and approving agent requests. Not an npm package. |
 | `integrations/cartography` | A Python collector that feeds Agent Map from the executor and from AWS. |
 | `deployment` | The Docker isolation profile for untrusted code, and the runbooks for running Agent Ops and the collector. |

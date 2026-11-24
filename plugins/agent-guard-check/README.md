@@ -56,7 +56,7 @@ nothing for it to read.
 ## What it runs, reads and sends
 
 - **Runs:** when a session starts, `scripts/start-mcp-server.mjs` runs
-  `npx --yes --package=@shieldaai/agent-guard-check@1.6.2 -- agent-guard-check-mcp <project>`
+  `npx --yes --package=@shieldaai/agent-guard-check@1.7.0 -- agent-guard-check-mcp <project>`
   with npm from the same Node.js installation. The version is pinned and changes only with a new
   plugin version. The package pins its two dependencies (`yaml`, `smol-toml`) to exact versions
   and neither has dependencies of its own, so a pinned version always runs the same code. npx starts in the plugin's data folder (or a private temporary folder), not in
@@ -71,9 +71,9 @@ nothing for it to read.
 - **Reads:** agent configuration files under the open project, and git objects when
   `check_agent_config_change` compares with a commit. Nothing outside the project.
 - **Sends:** nothing to Shielda or anyone else: no telemetry, nothing stored. Results go only to
-  your agent session. The one network request besides the npm download: in a partial (blobless)
-  clone, comparing with a commit can make git fetch a missing object from the repository's own
-  remote. Versions after 1.6.2 turn that off. See [PRIVACY.md](PRIVACY.md).
+  your agent session. The MCP server also stops git from fetching missing objects from the
+  repository's own remote in a partial (blobless) clone (git 2.44 and later honour this). See
+  [PRIVACY.md](PRIVACY.md).
 - **Never:** runs repository code, writes files or changes settings. The MCP tools only read.
   When you ask the agent to fix a finding, it edits files with its own tools, under the
   permissions you already set.
@@ -84,14 +84,15 @@ configuration, how to read the result and how to fix a finding without silencing
 
 ## Install
 
-Install **Agent Guard Check** from the plugin directory in the ChatGPT desktop app or Codex. It
-needs Node.js 22 or newer with npm on your computer, and runs only in threads that work on your
-local files.
+Install **Agent Guard Check** from your agent's plugin directory. It needs Node.js 22 or newer
+with npm on your computer, and an agent that can run commands there: Claude Code, Cowork, Codex,
+or the ChatGPT desktop app in a thread that works on your local files. In a chat with no access to
+your files there is nothing for it to read.
 
 ## What it runs, reads and sends
 
 - **Runs:** the skill has the agent run
-  `npx --yes @shieldaai/agent-guard-check@1.6.2 <repository>` from a temporary folder outside the
+  `npx --yes @shieldaai/agent-guard-check@1.7.0 <repository>` from a temporary folder outside the
   repository, so the repository's own `.npmrc` or `node_modules` cannot change which scanner
   runs. The version is pinned and changes only with a new plugin version, and the package pins
   its two dependencies exactly (neither has its own), so it always runs the same code. If a sandbox blocks

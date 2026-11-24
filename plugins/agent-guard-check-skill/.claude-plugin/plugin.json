@@ -1,0 +1,19 @@
+{
+  "name": "agent-guard-check",
+  "displayName": "Agent Guard Check",
+  "version": "1.7.0",
+  "description": "Shows what each AI agent in a repository can do and flags authority it does not need, before and after you change its configuration.",
+  "author": {
+    "name": "Shielda",
+    "url": "https://shielda.ai"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/plugins/agent-guard-check-skill#readme",
+  "repository": "https://github.com/ShieldaAI/agent-guard",
+  "license": "Apache-2.0",
+  "keywords": ["security", "ai-agents", "mcp", "permissions", "static-analysis", "code-review", "lethal-trifecta"],
+  "icon": "./assets/logo.png",
+  "documentationUrl": "https://github.com/ShieldaAI/agent-guard/blob/main/packages/check/README.md",
+  "supportUrl": "https://github.com/ShieldaAI/agent-guard/issues",
+  "privacyPolicyUrl": "https://github.com/ShieldaAI/agent-guard/blob/main/plugins/agent-guard-check-skill/PRIVACY.md",
+  "termsOfServiceUrl": "https://github.com/ShieldaAI/agent-guard/blob/main/plugins/agent-guard-check-skill/LICENSE"
+}

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.7.0 — 2026-11-24
 
 ### Agent Guard Check
 
@@ -83,7 +83,8 @@
   `/plugin marketplace add ShieldaAI/agent-guard`, then `/plugin install agent-guard-check@shielda`;
   in Codex with `codex plugin marketplace add ShieldaAI/agent-guard`. The MCP server starts through
   a launcher that runs npx from outside the project, so a repository's own `.npmrc` or
-  `node_modules` cannot choose which scanner checks it.
+  `node_modules` cannot choose which scanner checks it. `plugins/agent-guard-check-skill` is the
+  skill-only copy for Anthropic's plugin directory.
 - `agent-guard-check --mcp [root]` runs the MCP server through the package's default bin, which is
   what MCP registries start (`npx @shieldaai/agent-guard-check --mcp`). `agent-guard-check-mcp`
   still works. `--mcp` must be the first argument.
