@@ -359,7 +359,7 @@ const RUNNERS = new Set(['npx', 'bunx', 'uvx', 'pipx', 'pnpx']);
  * these lists is read as taking no value. Everything after the package belongs to the server.
  */
 const RUNNER_FAMILY: Readonly<Record<string, string>> = {
-  npx: 'npm',
+  npx: 'npx',
   'npm exec': 'npm',
   pnpx: 'pnpm',
   'pnpm dlx': 'pnpm',
@@ -421,7 +421,14 @@ function runnerParts(
   if (main === undefined) return undefined;
   // `--no` / `--no-install` let npx run only an installed copy, which the project's lockfile decides.
   // `--offline` is not one: it runs whatever the cache holds.
-  const localOnly = family === 'npm' && (read.seen.has('--no') || read.seen.has('--no-install'));
+  // npx runs only an installed copy after --no-install, --no, --no-yes or --yes=false (and npm
+  // exec after -n too, which npx drops as a removed option).
+  const options = rest.slice(0, read.at < 0 ? rest.length : read.at);
+  const localOnly =
+    (family === 'npm' || family === 'npx') &&
+    options.some(
+      word => ['--no-install', '--no', '--no-yes', '--yes=false'].includes(word) || (family === 'npm' && word === '-n'),
+    );
   const extras = [
     ...read.main.slice(1),
     ...read.extra.flatMap(value => (family === 'uv' ? splitUvRequirements(value) : [value])),
@@ -490,6 +497,8 @@ export function splitSpec(spec: string): {
   readonly version?: string;
   readonly operator?: string;
 } {
+  // A Python environment marker (`pkg==1.0; python_version<'3.12'`) says when, not what.
+  if (/;/.test(spec) && !spec.startsWith('@')) spec = spec.slice(0, spec.indexOf(';')).trim();
   const python = /^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(===|==|>=|<=|~=|!=|>|<|@)\s*(.+)$/.exec(spec);
   if (python && !spec.startsWith('@')) return { name: python[1]!, version: python[3]!, operator: python[2]! };
   const at = spec.lastIndexOf('@');
@@ -502,8 +511,14 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
   const { version, operator } = splitSpec(spec);
   if (!version) return false;
   if (runner === 'uvx' || runner === 'pipx') {
-    // A git source is fixed only by a full commit: `git+https://host/repo.git@<40 hex>`.
-    if (/^git\+/.test(spec)) return /@[0-9a-f]{40}$/i.test(spec);
+    // A direct source, bare or as PEP 508 `name @ url`, is fixed only by a full git commit
+    // (`git+https://host/repo.git@<40 hex>`) or an archive's sha256 (`https://…/x.whl#sha256=<64 hex>`).
+    const source = /^(git\+|https?:\/\/)/i.test(spec)
+      ? spec
+      : operator === '@' && /:\/\//.test(version)
+        ? version
+        : undefined;
+    if (source !== undefined) return /^git\+.*@[0-9a-f]{40}$/i.test(source) || /#sha256=[0-9a-f]{64}$/i.test(source);
     // uvx also takes `pkg@1.2.3` as an exact version (and `pkg@latest` as none).
     if (runner === 'uvx' && operator === '@')
       return /^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?$/i.test(version);
@@ -527,14 +542,25 @@ export function dockerRun(
   command: string | undefined,
   args: readonly string[],
 ): { readonly image: string; readonly unreadable?: undefined } | { readonly unreadable: string } | undefined {
-  if (!command || !/(^|[\\/])(docker|podman)$/.test(command) || args[0] !== 'run') return undefined;
-  const read = readArgs(args.slice(1), FLAG_TABLES['run']!);
-  if (read.seen.has('--entrypoint')) return undefined;
+  if (!command || !/(^|[\\/])(docker|podman)$/.test(command)) return undefined;
+  // Global options come first (`docker --context x run`), and `container run` is `run`.
+  const global = readArgs(args, FLAG_TABLES['container']!);
+  if (global.unknown)
+    return {
+      unreadable: `starts ${baseName(command)} with ${global.unknown.option}, an option this check does not know, so it cannot tell whether "${global.unknown.word}" is that option's value or the command`,
+    };
+  let at = global.at;
+  if (at >= 0 && args[at] === 'container') at += 1;
+  if (at < 0 || args[at] !== 'run') return undefined;
+  const runArgs = args.slice(at + 1);
+  const read = readArgs(runArgs, FLAG_TABLES['run']!);
+  // A replaced entrypoint runs something else; with --rootfs the word is a folder, not an image.
+  if (read.seen.has('--entrypoint') || read.seen.has('--rootfs')) return undefined;
   if (read.unknown)
     return {
       unreadable: `runs a container with ${read.unknown.option}, an option this check does not know, so it cannot tell whether "${read.unknown.word}" is that option's value or the image`,
     };
-  return read.at >= 0 ? { image: args[read.at + 1]! } : undefined;
+  return read.at >= 0 ? { image: runArgs[read.at]! } : undefined;
 }
 
 /** The image a `docker run` command starts, or undefined. */

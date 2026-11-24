@@ -34,6 +34,21 @@
   `uvx --with a,b` as two packages, and npm's `--no-<option>` as a switch. None of the 536 public
   configs above uses an unknown option. pnpm, yarn, bun and pipx document too few options for a
   full list, so an unknown option there is still read as a switch.
+- Fix: AGC-SUP-001 skipped any npx or bunx package that was also a project dependency, whatever
+  version the config asked for. npx runs the installed copy only for a bare name or the exact
+  installed version; `pkg@2.0.0`, a range or a tag is fetched. A config version now counts as
+  installed only when package.json declares exactly that version.
+- npx and `npm exec` are read by their own rules (npm's `bin/npx-cli.js`): npx drops the removed
+  `-n`, `--npm` and `--node-arg` with their values, and `--no`, `--no-yes` and `--yes=false` mean
+  "installed copy only" like `--no-install`. uv's options come from every option in its CLI source,
+  hidden ones (`--native-tls`) included. Docker's own options before `run` (`--context`, `-H`),
+  `docker container run` and podman's `--rootfs` are read too.
+- Python sources: a PEP 508 direct reference (`pkg @ git+https://…@<commit>` or an archive with
+  `#sha256=`) counts as pinned, and an environment marker (`; python_version<'3.12'`) no longer
+  hides an exact version.
+- Bypass: GitHub identifies organization admins, enterprise owners and deploy keys by type alone,
+  so a null or ignored actor id no longer splits one actor in two. An empty bypass list that
+  contradicts `current_user_can_bypass`, or an `enforce_admins` without a true or false, is unknown.
 - `npx --offline` no longer counts as running the project's installed copy: it runs whatever the
   npm cache holds. An unpinned package there is AGC-SUP-001, a pinned one AGC-SUP-006.
 - Fix: AGC-SUP-001 reported `uvx pkg@1.2.3`, which uv reads as an exact version, and a git source

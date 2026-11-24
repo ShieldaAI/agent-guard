@@ -161,7 +161,10 @@ const MEMBERSHIP: Bypass = {
 function rulesetActor(actor: unknown): [string, string] {
   if (!isRecord(actor)) return ['?', 'someone'];
   const type = String(actor['actor_type'] ?? '?');
-  const key = `${type}:${String(actor['actor_id'] ?? '')}`;
+  // GitHub ignores actor_id for organization admins and enterprise owners and returns null for
+  // deploy keys: each of those is one actor whatever the id says.
+  const byType = type === 'OrganizationAdmin' || type === 'EnterpriseOwner' || type === 'DeployKey';
+  const key = byType ? `${type}:` : `${type}:${String(actor['actor_id'] ?? '')}`;
   switch (type) {
     case 'RepositoryRole':
       return [key, key === ADMINS ? 'repository admins' : 'a repository role'];
@@ -220,7 +223,11 @@ async function rulesetLists(
       continue;
     }
     const actors = isRecord(response.body) ? response.body['bypass_actors'] : undefined;
-    if (response.status !== 200 || !Array.isArray(actors)) {
+    // An empty list while GitHub also says this token's own account may bypass cannot both be true.
+    const mayBypass = isRecord(response.body) ? response.body['current_user_can_bypass'] : undefined;
+    const contradicts =
+      Array.isArray(actors) && !actors.length && typeof mayBypass === 'string' && mayBypass !== 'never';
+    if (response.status !== 200 || !Array.isArray(actors) || contradicts) {
       unread = true;
       continue;
     }
@@ -236,7 +243,7 @@ async function rulesetLists(
 function classicActors(settings: Record<string, unknown>): Actors | undefined {
   const reviews = settings['required_pull_request_reviews'];
   const admins = settings['enforce_admins'];
-  if (!isRecord(admins)) return undefined;
+  if (!isRecord(admins) || typeof admins['enabled'] !== 'boolean') return undefined;
   const actors: Actors = new Map();
   if (admins['enabled'] !== true) actors.set(ADMINS, 'repository admins');
   const allowances = isRecord(reviews) ? reviews['bypass_pull_request_allowances'] : undefined;

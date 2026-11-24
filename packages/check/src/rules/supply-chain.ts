@@ -20,18 +20,22 @@ const USES_PROJECT_INSTALL = new Set(['npx', 'npm exec', 'bunx']);
 /**
  * Whether a runner runs code from the repository rather than the registry: a local path, a run that
  * may not download (`--no-install`), or a project dependency with a runner that prefers it. Then
- * the repository's lockfile, not the config, decides what runs.
+ * the repository's lockfile, not the config, decides what runs. npx runs the installed copy for a
+ * bare name, or for a version that is exactly the installed one (libnpmexec compares the installed
+ * `name@version` with the spec); a range, a tag or another version is fetched. Without reading the
+ * lockfile, "exactly the installed one" is known only when package.json declares that exact version.
  */
 function fromProject(
   project: Project,
   runner: { runner: string; spec: string; localOnly: boolean },
   name: string,
 ): boolean {
-  return (
-    runner.localOnly ||
-    /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec) ||
-    (USES_PROJECT_INSTALL.has(runner.runner) && project.dependencies.has(name))
-  );
+  if (runner.localOnly || /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)) return true;
+  if (!USES_PROJECT_INSTALL.has(runner.runner)) return false;
+  const declared = project.dependencies.get(name);
+  if (declared === undefined) return false;
+  const { version } = splitSpec(runner.spec);
+  return version === undefined || version === declared;
 }
 
 /** How each npm-ecosystem runner starts the copy the lockfile installed, without fetching. */

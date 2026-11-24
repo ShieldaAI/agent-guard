@@ -102,7 +102,8 @@ export interface Project {
   readonly codeowners?: TextFile;
   readonly usesAgentGuard?: Location;
   /** Packages the root package.json depends on: runners resolve these locally. */
-  readonly dependencies: ReadonlySet<string>;
+  /** Root package.json dependencies and devDependencies: name to the version it declares. */
+  readonly dependencies: ReadonlyMap<string, string>;
   readonly agents: readonly Agent[];
   readonly errors: readonly { readonly file: string; readonly message: string }[];
   readonly filesRead: number;
@@ -520,7 +521,7 @@ export function buildProject(
   const scripts: TextFile[] = [];
   let codeowners: TextFile | undefined;
   let usesAgentGuard: Location | undefined;
-  const dependencies = new Set<string>();
+  const dependencies = new Map<string, string>();
   let filesRead = 0;
   const guardFiles: { path: string; text: string; data: unknown }[] = [];
   const others: OtherAgent[] = [];
@@ -959,7 +960,8 @@ export function buildProject(
             ...(isRecord(data['dependencies']) ? data['dependencies'] : {}),
             ...(isRecord(data['devDependencies']) ? data['devDependencies'] : {}),
           };
-          for (const dep of Object.keys(deps)) dependencies.add(dep);
+          for (const [dep, version] of Object.entries(deps))
+            dependencies.set(dep, typeof version === 'string' ? version : '');
           if (Object.keys(deps).some(dep => dep.startsWith('@shieldaai/agent-guard')))
             usesAgentGuard = {
               file: path,
