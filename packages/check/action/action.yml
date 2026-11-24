@@ -138,12 +138,15 @@ runs:
         [ -f "$REPORT" ] || exit 0
         marker='<!-- agent-guard-check -->'
         body="$(printf '%s\n%s' "$marker" "$(cat "$REPORT")")"
+        # A pull request from a fork gets a read-only token: the report stays in the job summary
+        # and the comment is skipped with a warning, instead of failing the check.
+        skip() { echo "::warning::agent-guard-check could not comment on the pull request (a fork's token is read-only); the report is in the job summary."; exit 0; }
         id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" --paginate \
-          --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)"
+          --jq ".[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"$marker\"))) | .id" | head -n1)" || skip
         if [ -n "$id" ]; then
-          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" > /dev/null
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${id}" -f body="$body" > /dev/null || skip
         else
-          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" > /dev/null
+          gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR}/comments" -f body="$body" > /dev/null || skip
         fi
 
     - if: ${{ steps.check.outputs.exit-code != '0' }}

@@ -476,7 +476,10 @@ server for Claude Code, Codex and Antigravity:
 `agent-guard-check-mcp` is a read-only MCP server (stdio) so an agent can check its own
 configuration before it changes it. It scans one root fixed at start-up and never leaves it.
 `agent-guard-check --mcp [root]` starts the same server through the default bin (with `--mcp` as
-the first argument); MCP registries list it as `io.github.ShieldaAI/agent-guard-check`.
+the first argument); MCP registries list it as `io.github.ShieldaAI/agent-guard-check`. A client
+that installs it from a registry runs `npx` in your project, where the project's `.npmrc` and
+`node_modules` can change which package runs; the plugin's launcher avoids that, so prefer the
+plugin when you check repositories you did not write.
 
 ```json
 {

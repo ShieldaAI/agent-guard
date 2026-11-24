@@ -6,16 +6,15 @@ license: Apache-2.0
 
 # Agent Guard Check
 
-Agent Guard Check reads agent configuration and reports, for each agent, whether it can read
-private data, take in untrusted input, write, run code, send data out, spend money or change its
-own instructions, and whether a person is asked first. It flags authority the agent does not need,
-with a file, a line and a fix for each finding. It only reads files: it never runs repository code.
+Agent Guard Check reads agent configuration and lists what each agent is allowed to do (reach
+private data or untrusted input, write, run code, send data out, spend, change itself) and whether
+a person approves it first. It flags authority the agent does not need, with a file, a line and a
+fix for each finding. It only reads files and never runs repository code.
 
-## Use the MCP tools when they are connected
+## Use the MCP tools if you have them
 
-Where the host can start local programs, this plugin connects a read-only MCP server named
-`agent-guard-check` for the open project. When its tools are available, prefer them over the
-command line:
+If the read-only `agent-guard-check` MCP tools are available in this session (the plugin adds
+them where the host can run a local server), prefer them over the command line:
 
 | Task | Tool |
 | --- | --- |
@@ -32,19 +31,24 @@ command line:
 4. If it reports a finding at high or critical severity, fix it or ask the user to accept it
    before you hand the change back. Say which finding it is and why it matters.
 
+If `check_agent_config_change` says git failed (a folder that is not a git repository, or one
+with no commits yet), use `scan_agent_config` before and after instead and compare the two.
+
 ## Without the MCP tools
 
 Run the scanner with npx (Node.js 22 or newer). Start it from a folder outside the repository and
 pass the repository's path, so the repository's own `.npmrc` or `node_modules` cannot change which
-scanner runs:
+scanner runs. The parentheses keep your shell in the repository afterwards:
 
 ```sh
 repo="$(git rev-parse --show-toplevel)"
-cd "$(mktemp -d)" && npx --yes @shieldaai/agent-guard-check@1.6.2 "$repo" --base HEAD
+(cd "$(mktemp -d)" && npx --yes @shieldaai/agent-guard-check@1.6.2 "$repo" --base HEAD)
 ```
 
 Leave out `--base HEAD` to list every finding instead of only what the change added. Exit code 1
 means a finding at or above the fail-on severity (high by default); 2 is a usage or read error.
+The first run downloads the package from npm; if your sandbox blocks network access, ask the user
+to allow this command or to run it themselves.
 
 ## Reading the result
 
@@ -62,8 +66,9 @@ means a finding at or above the fail-on severity (high by default); 2 is a usage
 
 - Prefer removing authority over adding exceptions: narrow an allow rule, move it to ask, pin an
   MCP server to an exact version, drop a bypass mode.
-- On the command line, `--fix-dry-run` prints the safe fixes as a diff and `--fix` applies them.
-  Safe fixes only remove authority or add limits, and each is checked by scanning again.
+- On the command line, `--fix-dry-run` prints the safe fixes as a diff without changing anything.
+  Apply the ones you agree with using your normal edit tools, so the user sees and approves each
+  change, then check again.
 - Never silence a finding to finish a task. If the user accepts one, record why: a comment
   `agc-ignore AGC-XXX-000: <reason>` on the line above it, or an `ignore` entry with a `reason` in
   `.agc.yaml`.

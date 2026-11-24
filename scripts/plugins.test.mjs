@@ -8,10 +8,11 @@ import { existsSync, lstatSync, readdirSync, readFileSync, statSync } from 'node
 import { join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
-import { archives, PLUGIN } from './pack-plugins.mjs';
+import { archives, PLUGIN, readmeFor } from './pack-plugins.mjs';
 import {
   npxArgs,
   npxCli,
+  npxEnv,
   PACKAGE,
   projectRoot,
   VERSION as LAUNCHER_VERSION,
@@ -110,10 +111,17 @@ test('Claude directory: layout, size and file rules', () => {
     const path = join(DIR, file);
     assert.ok(!lstatSync(path).isSymbolicLink(), `${file} is a link`);
     assert.ok(!/(^|\/)(\.DS_Store|Thumbs\.db|desktop\.ini|__MACOSX)$/.test(file), `${file} is a system file`);
-    assert.ok(!/(^|\/)\.npmrc$|bunfig\.toml$|uv\.toml$/.test(file), `${file} sets a package source`);
+    assert.ok(
+      !/(^|\/)(\.npmrc|\.yarnrc|\.yarnrc\.yml|bunfig\.toml|uv\.toml|pip\.conf)$/.test(file),
+      `${file} sets a package source`,
+    );
+    assert.ok(!/(^|\/)\.gitattributes$/.test(file), `${file} can rewrite file contents`);
     assert.ok(/\.(png|svg)$/.test(file) || statSync(path).size < 256 * 1024, `${file} is over 256 KiB`);
     assert.ok(/^[A-Za-z0-9._/-]+$/.test(file), `${file} has a name some systems refuse`);
   }
+  // Two names that differ only in letter case cannot both exist on macOS or Windows.
+  const lower = files.map(file => file.toLowerCase());
+  assert.equal(new Set(lower).size, lower.length, 'names that differ only in case');
   // A top-level bin/ keeps claude.ai and Cowork from installing the plugin.
   assert.ok(!files.some(file => file.startsWith('bin/')));
   // No lockfile install and no package manifest: nothing installs when the plugin does.
@@ -249,8 +257,9 @@ test('launcher: runs npm\u2019s own npx with the pinned package, never PATH', ()
   assert.equal(npxCli(resolve('/nodejs/node.exe'), fs([windows])), windows);
   assert.equal(npxCli(resolve('/nowhere/bin/node'), fs([])), undefined);
   // A sibling npx that is some other program is not used.
-  const other = { exists: () => true, realpath: () => resolve('/tmp/evil/npx') };
-  assert.notEqual(npxCli(resolve('/opt/x/bin/node'), other), resolve('/tmp/evil/npx'));
+  const evil = resolve('/tmp/evil/npx');
+  const other = { exists: path => path === evil, realpath: () => evil };
+  assert.equal(npxCli(resolve('/opt/x/bin/node'), other), undefined);
   assert.deepEqual(npxArgs('npx-cli.js', repoPath), [
     'npx-cli.js',
     '--yes',
@@ -259,4 +268,51 @@ test('launcher: runs npm\u2019s own npx with the pinned package, never PATH', ()
     'agent-guard-check-mcp',
     repoPath,
   ]);
+});
+
+test('launcher: refuses the filesystem root and the home folder, strips npm and Node settings', () => {
+  const home = resolve('/Users/someone');
+  const args = { env: {}, plugin: DIR, home };
+  assert.equal(projectRoot({ ...args, cwd: resolve('/') }), undefined);
+  assert.equal(projectRoot({ ...args, cwd: home }), undefined);
+  assert.equal(projectRoot({ ...args, cwd: resolve('/Users') }), undefined);
+  assert.equal(projectRoot({ ...args, cwd: join(home, 'code', 'app') }), join(home, 'code', 'app'));
+  assert.equal(
+    projectRoot({ ...args, cwd: resolve('/'), env: { CLAUDE_PROJECT_DIR: join(home, 'app') } }),
+    join(home, 'app'),
+  );
+  const env = npxEnv({
+    PATH: '/usr/bin',
+    HOME: home,
+    npm_config_registry: 'http://127.0.0.1:9/',
+    NPM_CONFIG_CACHE: '/repo/cache',
+    NODE_OPTIONS: '--require /repo/x.js',
+    NODE_PATH: '/repo/lib',
+  });
+  assert.equal(env.PATH, '/usr/bin');
+  assert.equal(env.HOME, home);
+  for (const key of ['npm_config_registry', 'NPM_CONFIG_CACHE', 'NODE_OPTIONS', 'NODE_PATH'])
+    assert.equal(env[key], undefined, key);
+  assert.equal(env.npm_config_update_notifier, 'false');
+});
+
+test('each archive documents what it holds, and local links resolve', () => {
+  const readme = read(`${PLUGIN}/README.md`);
+  const skillsOnly = readmeFor('openai-skills', readme);
+  const local = readmeFor('openai-local-mcp', readme);
+  assert.doesNotMatch(skillsOnly, /<!--|scan_agent_config|start-mcp-server|MCP server/);
+  assert.match(skillsOnly, /## Install/);
+  assert.doesNotMatch(local, /<!--/);
+  assert.match(local, /start-mcp-server\.mjs/);
+  assert.equal(readmeFor('claude', readme), local);
+  for (const path of [`${PLUGIN}/README.md`, `${PLUGIN}/PRIVACY.md`, 'packages/check/README.md']) {
+    for (const [, target] of read(path).matchAll(/\]\((?!https?:|mailto:|#)([^)#\s]+)/g))
+      assert.ok(existsSync(join(ROOT, path, '..', target)), `${path} links to ${target}`);
+  }
+});
+
+test('the plugin only reads: no apply-fix instruction, prompts ask to explain', () => {
+  assert.deepEqual(openai.interface.capabilities, ['Read']);
+  assert.doesNotMatch(skillText, /`--fix` applies|run `?--fix`? /);
+  for (const prompt of openai.interface.defaultPrompt) assert.doesNotMatch(prompt, /and fix it/);
 });

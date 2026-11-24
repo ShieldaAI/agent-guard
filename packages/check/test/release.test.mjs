@@ -178,3 +178,43 @@ test(
       }
   },
 );
+
+test(
+  'the comment step warns instead of failing when the token cannot comment (a fork)',
+  { skip: process.platform === 'win32' },
+  async t => {
+    const { mkdtempSync, mkdirSync, writeFileSync, chmodSync, rmSync } = await import('node:fs');
+    const { spawnSync } = await import('node:child_process');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { parse } = await import('yaml');
+    const action = parse(read('../action/action.yml'));
+    const step = action.runs.steps.find(entry => entry.env?.REPORT);
+    const dir = mkdtempSync(join(tmpdir(), 'agc-comment-'));
+    t.after(() => rmSync(dir, { recursive: true, force: true }));
+    const bin = join(dir, 'bin');
+    mkdirSync(bin);
+    const report = join(dir, 'report.md');
+    writeFileSync(report, '### Agent Guard Check\n');
+    const env = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: 'acme/app',
+      PR: '7',
+      REPORT: report,
+    };
+    // gh refusing every call, as it does with a fork's read-only token.
+    writeFileSync(join(bin, 'gh'), '#!/bin/sh\necho "HTTP 403: Resource not accessible by integration" >&2\nexit 1\n');
+    chmodSync(join(bin, 'gh'), 0o755);
+    const refused = spawnSync('bash', ['-c', step.run], { env, encoding: 'utf8' });
+    assert.equal(refused.status, 0, refused.stderr);
+    assert.match(refused.stdout, /::warning::agent-guard-check could not comment/);
+    // gh that lists no comment and accepts the new one: the comment is posted, no warning.
+    const log = join(dir, 'calls.txt');
+    writeFileSync(join(bin, 'gh'), `#!/bin/sh\necho "$@" >> "${log}"\nexit 0\n`);
+    const posted = spawnSync('bash', ['-c', step.run], { env, encoding: 'utf8' });
+    assert.equal(posted.status, 0, posted.stderr);
+    assert.doesNotMatch(posted.stdout, /::warning::/);
+    assert.match(readFileSync(log, 'utf8'), /--method POST repos\/acme\/app\/issues\/7\/comments/);
+  },
+);

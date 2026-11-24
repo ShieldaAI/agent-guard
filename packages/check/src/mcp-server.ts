@@ -242,7 +242,13 @@ export function mcpMain(args: readonly string[]): void {
       `Usage: ${TOOL_NAME}-mcp [root]\n       ${TOOL_NAME} --mcp [root]\n\nA read-only MCP server (stdio) for checking AI agent configuration in one repository.\n`,
     );
   } else if (args.includes('--version')) process.stdout.write(`${TOOL_VERSION}\n`);
-  else serveStdio(resolve(process.cwd(), args.find(arg => !arg.startsWith('-')) ?? '.'));
+  else {
+    // The server makes no network calls. In a partial (blobless) clone, git would otherwise fetch
+    // a missing object from the remote when a tool compares with a commit; git 2.44 and later
+    // honour this and report the object as missing instead.
+    process.env.GIT_NO_LAZY_FETCH = '1';
+    serveStdio(resolve(process.cwd(), args.find(arg => !arg.startsWith('-')) ?? '.'));
+  }
 }
 
 if (isEntry()) mcpMain(process.argv.slice(2));

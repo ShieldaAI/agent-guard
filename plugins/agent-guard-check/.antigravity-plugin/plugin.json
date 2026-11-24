@@ -8,7 +8,7 @@
   "suggestedPrompts": [
     "What can the AI agents in this repository do without asking first?",
     "Check whether my agent settings change gives any agent more authority.",
-    "Find the riskiest agent setting in this repository and fix it."
+    "Find the riskiest agent setting here and explain how to fix it."
   ],
   "author": { "name": "Shielda", "url": "https://shielda.ai" },
   "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/plugins/agent-guard-check#readme",

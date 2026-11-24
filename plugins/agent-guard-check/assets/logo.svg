@@ -9,12 +9,13 @@
       <stop offset="1" stop-color="#1C9BD6"/>
     </linearGradient>
   </defs>
-  <rect width="400" height="400" fill="url(#bg)"/>
-  <!-- Shield, centred so the circular crop keeps it whole -->
-  <path d="M200 74 L292 108 V196 C292 254 254 298 200 322 C146 298 108 254 108 196 V108 Z"
-        fill="none" stroke="url(#shield)" stroke-width="16" stroke-linejoin="round"/>
-  <!-- A gate: two posts, and one call passing through the opening -->
-  <rect x="152" y="160" width="14" height="86" rx="7" fill="#E8F1FA"/>
-  <rect x="234" y="160" width="14" height="86" rx="7" fill="#E8F1FA"/>
-  <circle cx="200" cy="203" r="15" fill="#3EE6C1"/>
+  <!-- Transparent margin of 10% on each side, then the rounded tile. -->
+  <rect x="40" y="40" width="320" height="320" rx="64" fill="url(#bg)"/>
+  <g transform="translate(200 200) scale(0.8) translate(-200 -198)">
+    <path d="M200 74 L292 108 V196 C292 254 254 298 200 322 C146 298 108 254 108 196 V108 Z"
+          fill="none" stroke="url(#shield)" stroke-width="16" stroke-linejoin="round"/>
+    <rect x="152" y="160" width="14" height="86" rx="7" fill="#E8F1FA"/>
+    <rect x="234" y="160" width="14" height="86" rx="7" fill="#E8F1FA"/>
+    <circle cx="200" cy="203" r="15" fill="#3EE6C1"/>
+  </g>
 </svg>

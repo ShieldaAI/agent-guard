@@ -13,7 +13,17 @@
 //     allowlisted for local MCP plugins. It cannot be added later to a skills-only listing.
 
 import { spawnSync } from 'node:child_process';
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,6 +61,21 @@ export function archives(root = ROOT) {
   ];
 }
 
+const MCP_BLOCK = /<!-- mcp:start -->\n[\s\S]*?<!-- mcp:end -->\n/;
+const SKILLS_BLOCK = /<!-- skills-only:\n([\s\S]*?)-->\n/;
+
+/**
+ * The README for one archive. The plugin README describes the MCP server between
+ * `<!-- mcp:start -->` and `<!-- mcp:end -->`, and keeps the skills-only wording in a
+ * `<!-- skills-only: ... -->` comment, so each archive documents exactly what it holds.
+ */
+export function readmeFor(kind, text) {
+  if (!MCP_BLOCK.test(text) || !SKILLS_BLOCK.test(text))
+    throw new Error('README is missing its mcp or skills-only block');
+  if (kind === 'openai-skills') return text.replace(MCP_BLOCK, '').replace(SKILLS_BLOCK, '$1');
+  return text.replace(SKILLS_BLOCK, '').replace(/<!-- mcp:(start|end) -->\n/g, '');
+}
+
 function main() {
   const { version } = JSON.parse(readFileSync(join(ROOT, PLUGIN, 'plugin.json'), 'utf8'));
   const outDir = join(ROOT, 'artifacts', 'plugins');
@@ -60,7 +85,9 @@ function main() {
     try {
       for (const file of files) {
         mkdirSync(join(stage, file, '..'), { recursive: true });
-        cpSync(join(ROOT, PLUGIN, file), join(stage, file));
+        if (file === 'README.md')
+          writeFileSync(join(stage, file), readmeFor(kind, readFileSync(join(ROOT, PLUGIN, file), 'utf8')));
+        else cpSync(join(ROOT, PLUGIN, file), join(stage, file));
       }
       const zip = join(outDir, `agent-guard-check-${version}-${kind}.zip`);
       if (existsSync(zip)) rmSync(zip);

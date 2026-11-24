@@ -9,13 +9,14 @@
 //
 // Why a launcher instead of calling npx directly: npx started inside the project would read the
 // project's .npmrc (which can name another registry) and could run a copy of the scanner from
-// the project's node_modules. The project is what is being checked, so it must not choose the
-// checker. This script starts npx from a folder outside the project instead.
+// the project's node_modules, so the repository under review would pick the tool reviewing it.
+// This script starts npx from a folder outside the project, and drops npm_config_*, NODE_OPTIONS
+// and NODE_PATH from npx's environment, which a project can set through its agent settings.
 
 import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, relative, resolve, isAbsolute } from 'node:path';
+import { homedir, tmpdir } from 'node:os';
+import { dirname, isAbsolute, join, parse, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 export const VERSION = '1.6.2';
@@ -40,14 +41,33 @@ function isInside(child, parent) {
 /**
  * The project to check: an explicit argument, else the project directory the host names
  * (Claude Code sets CLAUDE_PROJECT_DIR), else the working directory the host started us in.
- * Returns undefined when the only candidate is the plugin itself: the host did not say which
- * project is open, and scanning the plugin instead would give a wrong answer that looks right.
+ * Returns undefined when the candidate cannot be the open project: the plugin itself, or a
+ * filesystem root, the home folder or a folder above it (where a host that names no project
+ * starts its servers). Scanning those would give a wrong answer, or read far outside the project.
  */
-export function projectRoot({ argv = [], env = {}, cwd, plugin = pluginRoot }) {
+export function projectRoot({ argv = [], env = {}, cwd, plugin = pluginRoot, home = homedir() }) {
   const candidate = argv[0] ?? env.CLAUDE_PROJECT_DIR ?? cwd;
   if (!candidate) return undefined;
   const root = resolve(cwd ?? '.', candidate);
-  return isInside(root, plugin) ? undefined : root;
+  if (isInside(root, plugin)) return undefined;
+  if (real(root) === parse(real(root)).root) return undefined;
+  if (home && isInside(home, root)) return undefined;
+  return root;
+}
+
+/**
+ * The environment for npx: the host's, without the variables that change which package npm
+ * fetches or how Node runs it (npm_config_*, NODE_OPTIONS, NODE_PATH). A project can set those
+ * through its agent settings; npm still reads your own ~/.npmrc, so a registry or proxy you set
+ * there keeps working.
+ */
+export function npxEnv(env) {
+  const out = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (/^npm_config_/i.test(key) || /^NODE_(OPTIONS|PATH)$/i.test(key)) continue;
+    out[key] = value;
+  }
+  return { ...out, npm_config_update_notifier: 'false', npm_config_fund: 'false', npm_config_audit: 'false' };
 }
 
 /**
@@ -106,7 +126,8 @@ function main() {
   const root = projectRoot({ argv: process.argv.slice(2), env: process.env, cwd: process.cwd() });
   if (!root)
     fail(
-      'could not tell which project is open. Start the server with the project path as its argument: ' +
+      'could not tell which project is open (the host named none, and the working folder is not a project). ' +
+        'Start the server with the project path as its argument: ' +
         `node ${join(pluginRoot, 'scripts', 'start-mcp-server.mjs')} /path/to/project`,
     );
   const cli = npxCli();
@@ -118,7 +139,7 @@ function main() {
   const child = spawn(process.execPath, npxArgs(cli, root), {
     cwd: runner.dir,
     stdio: 'inherit',
-    env: { ...process.env, npm_config_update_notifier: 'false', npm_config_fund: 'false', npm_config_audit: 'false' },
+    env: npxEnv(process.env),
   });
   for (const signal of ['SIGINT', 'SIGTERM', 'SIGHUP']) process.on(signal, () => child.kill(signal));
   child.on('error', error => {
