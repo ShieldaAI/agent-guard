@@ -333,8 +333,10 @@ action does this by default with the workflow's own token (`github-rules: false`
   the scanner cannot tell. A ruleset reads the same for everyone.
 - Who may bypass a rule counts too: anyone on that list can merge without the owners. The bypass
   list of a ruleset, and whether classic protection applies to admins, are readable with admin
-  access only. When the token can read them and every rule that requires code owners lets someone
-  bypass it, AGC-GOV-004 reports who (low). When it cannot, nothing is reported for the bypass.
+  access only. Every rule that requires code owners applies at once, so only an actor on every
+  list gets through. When the token can read the lists and one actor is on all of them,
+  AGC-GOV-004 reports who (low). When it cannot read them, or the lists share no actor but a
+  person could be on each through a team or role, nothing is reported for the bypass.
 - If more rules apply than the scanner reads (ten pages), or GitHub does not say how a protected
   branch is protected, the answer is "cannot tell" (info), never "not required".
 - If GitHub cannot be reached, or refuses the token, the scan warns on stderr and goes on without

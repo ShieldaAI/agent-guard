@@ -650,7 +650,7 @@ Not flagged:
 
 Severity: low. Confidence: high. Evidence: repository files. OWASP Agentic Top 10: ASI04.
 
-An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff.
+An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff. A package that bundles its dependencies or pins each one exactly is the exception: suppress the finding with that reason.
 
 Flagged:
 

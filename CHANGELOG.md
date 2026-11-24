@@ -11,11 +11,27 @@
   lockfile (a dev dependency started with `npx --no-install`, or a locked Python environment) or an
   image digest, so a new or changed tool arrives in a reviewed diff. Unpinned servers stay with
   AGC-SUP-001. From a reader's comment on the "agents as code" article.
-- AGC-GOV-004 now also reports a code-owner requirement that someone can bypass (low): every
-  ruleset that requires code owners has a bypass list, or the branch protection rule that requires
-  them leaves out admins or allows bypass. GitHub shows bypass lists and the admin setting only to
-  a token with admin access; with any other token, the Actions token included, the bypass is not
-  judged and nothing new is reported. `fetchBranchRules` returns `codeOwnerBypass` and `bypassWhy`.
+- AGC-GOV-004 now also reports a code-owner requirement that someone can bypass (low). Every
+  ruleset and branch protection rule that requires code owners applies at once, so only an actor
+  on every bypass list gets through: one empty list means nobody does, and lists that share no
+  actor are judged by whether a person could be on each through a team or role (unknown) or not
+  (apps and deploy keys only). GitHub shows bypass lists and the admin setting only to a token with
+  admin access; with any other token, the Actions token included, the bypass is not judged and
+  nothing new is reported. `fetchBranchRules` returns `codeOwnerBypass` and `bypassWhy`.
+- Fix: AGC-SUP-001 read runner and Docker flag values as the package or image. `uvx --python 3.12
+  pkg` reported "3.12", `npx --registry URL pkg` the URL, `docker run -u 1000:1000 image` the user,
+  and `uvx --with extra==1.0 pkg` hid `pkg` entirely, so an unpinned server went unreported. Each
+  runner's flags are now read by what they take (npm's from npm's own option definitions, uv's
+  from its CLI reference, Docker's from `docker run --help`), and arguments after the package
+  belong to the server: a server's own `--offline` no longer counts as the runner's, and its own
+  `-p value` is no longer reported as a second package. Checked against 536 public `.mcp.json`
+  files: 16 findings changed, each to the right package or image or away from a false one.
+- Fix: AGC-SUP-001 reported `uvx pkg@1.2.3`, which uv reads as an exact version, and a git source
+  pinned to a full commit (`git+https://…/repo.git@<40 hex>`), as unpinned. A branch or tag after
+  `@` still counts as unpinned.
+- Fix: AGC-SUP-001 skipped `pnpm dlx`, `yarn dlx` and `pnpx` when the package was also a project
+  dependency. Those runners always fetch into a temporary folder; only npx, `npm exec` and bunx
+  run the project's installed copy.
 
 ## 1.6.2 — 2026-11-23
 

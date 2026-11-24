@@ -351,27 +351,239 @@ const CATALOG: readonly (CatalogEntry & {
 /** Commands that fetch and run a package named in their arguments. */
 const RUNNERS = new Set(['npx', 'bunx', 'uvx', 'pipx', 'pnpx']);
 
-/** The package a runner command starts, with its version marker, or undefined. */
-export function runnerPackage(
+/**
+ * What each runner's flags mean before the package: which name the package (`npx -p pkg cmd`,
+ * `uvx --from pkg cmd`), which add another package to fetch (`uvx --with pkg`), and which take a
+ * value that is not a package (`uvx --python 3.12`, `npx --registry URL`). A flag left out of
+ * these lists is read as taking no value. Everything after the package belongs to the server.
+ */
+/** npm options that take the next word as their value (npm 11.20 config definitions, read the way npm's parser reads them). */
+const NPM_VALUED = [
+  '--_auth',
+  '--access',
+  '--allow-directory',
+  '--allow-file',
+  '--allow-git',
+  '--allow-remote',
+  '--allow-scripts',
+  '--also',
+  '--audit-level',
+  '--auth-type',
+  '--before',
+  '--browser',
+  '--ca',
+  '--cache',
+  '--cache-max',
+  '--cache-min',
+  '--cafile',
+  '--cert',
+  '--cidr',
+  '--cpu',
+  '--depth',
+  '--diff',
+  '--diff-dst-prefix',
+  '--diff-src-prefix',
+  '--diff-unified',
+  '--editor',
+  '--enjoy-by',
+  '--expect-result-count',
+  '--expires',
+  '--fetch-retries',
+  '--fetch-retry-factor',
+  '--fetch-retry-maxtimeout',
+  '--fetch-retry-mintimeout',
+  '--fetch-timeout',
+  '--git',
+  '--globalconfig',
+  '--heading',
+  '--https-proxy',
+  '--include',
+  '--init-author-email',
+  '--init-author-name',
+  '--init-author-url',
+  '--init-license',
+  '--init-module',
+  '--init-type',
+  '--init-version',
+  '--init.author.email',
+  '--init.author.name',
+  '--init.author.url',
+  '--init.license',
+  '--init.module',
+  '--init.version',
+  '--install-strategy',
+  '--key',
+  '--libc',
+  '--local-address',
+  '--location',
+  '--lockfile-version',
+  '--loglevel',
+  '--logs-dir',
+  '--logs-max',
+  '--maxsockets',
+  '--message',
+  '--min-release-age',
+  '--min-release-age-exclude',
+  '--name',
+  '--node-gyp',
+  '--node-options',
+  '--noproxy',
+  '--omit',
+  '--only',
+  '--orgs',
+  '--orgs-permission',
+  '--os',
+  '--otp',
+  '--pack-destination',
+  '--packages',
+  '--packages-and-scopes-permission',
+  '--password',
+  '--prefix',
+  '--preid',
+  '--provenance-file',
+  '--proxy',
+  '--reg',
+  '--registry',
+  '--replace-registry-host',
+  '--save-prefix',
+  '--sbom-format',
+  '--sbom-type',
+  '--scope',
+  '--scopes',
+  '--script-shell',
+  '--searchexclude',
+  '--searchlimit',
+  '--searchopts',
+  '--searchstaleness',
+  '--shell',
+  '--tag',
+  '--tag-version-prefix',
+  '--token-description',
+  '--umask',
+  '--user-agent',
+  '--userconfig',
+  '--viewer',
+  '--which',
+  '--workspace',
+  '-C',
+  '-L',
+  '-m',
+  '-w',
+];
+/** `uv tool run` options that take a value (uv CLI reference, 2026-11), and the hidden --python-preference. */
+const UV_VALUED = [
+  '--allow-insecure-host',
+  '--build-constraint',
+  '--build-constraints',
+  '--cache-dir',
+  '--color',
+  '--config-file',
+  '--config-setting',
+  '--config-settings',
+  '--config-settings-package',
+  '--constraint',
+  '--constraints',
+  '--default-index',
+  '--directory',
+  '--env-file',
+  '--exclude-newer',
+  '--exclude-newer-package',
+  '--extra-index-url',
+  '--find-links',
+  '--fork-strategy',
+  '--index',
+  '--index-strategy',
+  '--index-url',
+  '--keyring-provider',
+  '--link-mode',
+  '--no-binary-package',
+  '--no-build-isolation-package',
+  '--no-build-package',
+  '--no-sources-package',
+  '--override',
+  '--overrides',
+  '--prerelease',
+  '--prerelease-package',
+  '--project',
+  '--python',
+  '--python-platform',
+  '--python-preference',
+  '--refresh-package',
+  '--reinstall-package',
+  '--resolution',
+  '--torch-backend',
+  '--trusted-host',
+  '--upgrade-group',
+  '--upgrade-package',
+  '--with-requirements',
+  '-C',
+  '-P',
+  '-b',
+  '-c',
+  '-f',
+  '-i',
+  '-p',
+];
+
+/**
+ * What each runner's flags mean before the package: which name the package (`npx -p pkg cmd`,
+ * `uvx --from pkg cmd`), which add another package to fetch (`uvx --with pkg`), and which take a
+ * value that is not a package (`uvx --python 3.12`, `npx --registry URL`). A flag left out of
+ * these lists is read as taking no value, as npm and uv read an unknown flag. Everything after the
+ * package belongs to the server.
+ */
+const RUNNER_FLAGS: Readonly<
+  Record<
+    string,
+    { readonly main: readonly string[]; readonly extra: readonly string[]; readonly valued: readonly string[] }
+  >
+> = {
+  npm: { main: ['-p', '--package'], extra: ['-p', '--package'], valued: [...NPM_VALUED, '-c', '--call'] },
+  pnpm: {
+    main: ['--package'],
+    extra: ['--package'],
+    valued: ['--allow-build', '--registry', '--dir', '-C', '--reporter', '--config-dir'],
+  },
+  yarn: { main: ['-p', '--package'], extra: ['-p', '--package'], valued: [] },
+  bun: { main: ['-p', '--package'], extra: ['-p', '--package'], valued: ['--registry', '--cwd'] },
+  uv: { main: ['--from'], extra: ['--with', '-w', '--with-editable'], valued: UV_VALUED },
+  pipx: { main: ['--spec'], extra: [], valued: ['--python', '--index-url', '-i', '--pip-args'] },
+};
+const RUNNER_FAMILY: Readonly<Record<string, string>> = {
+  npx: 'npm',
+  'npm exec': 'npm',
+  pnpx: 'pnpm',
+  'pnpm dlx': 'pnpm',
+  'yarn dlx': 'yarn',
+  bunx: 'bun',
+  uvx: 'uv',
+  pipx: 'pipx',
+};
+
+interface RunnerSpec {
+  readonly runner: string;
+  readonly spec: string;
+  readonly localOnly: boolean;
+}
+
+/**
+ * The package a runner command starts and the extra packages it fetches with it, read from the
+ * runner's own flags only, or undefined when the command is not a runner.
+ */
+function runnerParts(
   command: string | undefined,
   args: readonly string[],
-):
-  | {
-      readonly runner: string;
-      readonly spec: string;
-      readonly localOnly: boolean;
-    }
-  | undefined {
+): { readonly first: RunnerSpec; readonly extras: readonly string[] } | undefined {
   if (!command) return undefined;
   const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
   // Launchers that run a command line: `cmd /c npx -y pkg` (the documented Windows form) and `sh -c "npx -y pkg"`.
   if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
     const line = args.length === 2 ? splitShell(args[1]) : args.slice(1);
-    return runnerPackage(line[0], line.slice(1));
+    return runnerParts(line[0], line.slice(1));
   }
   if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args[0] === '-c' && args[1] !== undefined) {
     const line = splitShell(args[1]);
-    return runnerPackage(line[0], line.slice(1));
+    return runnerParts(line[0], line.slice(1));
   }
   let rest = [...args];
   let runner = base;
@@ -384,26 +596,49 @@ export function runnerPackage(
     runner = 'npm exec';
     rest = rest.slice(1);
   } else if (!RUNNERS.has(base)) return undefined;
-  // `--no` / `--no-install` / `--offline` forbid downloading: only an installed copy can run.
-  const localOnly = rest.some(arg => arg === '--no' || arg === '--no-install' || arg === '--offline');
-  const found = (spec: string) => ({ runner, spec, localOnly });
+  const flags = RUNNER_FLAGS[RUNNER_FAMILY[runner]!]!;
+  let main: string | undefined;
+  const extras: string[] = [];
+  let localOnly = false;
+  let positional = false;
   for (let i = 0; i < rest.length; i += 1) {
     const arg = rest[i]!;
-    if (arg === '--') continue;
-    if (arg === '-p' || arg === '--package' || arg === '--from') {
-      const next = rest[i + 1];
-      return next ? found(next) : undefined;
+    if (arg === '--') {
+      positional = true;
+      continue;
     }
-    if (arg.startsWith('--package=') || arg.startsWith('--from=')) return found(arg.split('=', 2)[1]!);
-    if (arg.startsWith('-')) continue;
-    return found(arg);
+    if (!positional && arg.startsWith('-')) {
+      const [flag, inline] =
+        arg.startsWith('--') && arg.includes('=')
+          ? [arg.slice(0, arg.indexOf('=')), arg.slice(arg.indexOf('=') + 1)]
+          : [arg, undefined];
+      const takesValue = flags.main.includes(flag) || flags.extra.includes(flag) || flags.valued.includes(flag);
+      // The value is inline (`--from=pkg`) or the next word (`--from pkg`), which is then skipped.
+      const value = !takesValue ? undefined : (inline ?? rest[(i += 1)]);
+      // `--no` / `--no-install` / `--offline` forbid downloading: only an installed copy can run.
+      if (flag === '--no' || flag === '--no-install' || flag === '--offline') localOnly = true;
+      if (value === undefined) continue;
+      if (flags.main.includes(flag) && main === undefined) main = value;
+      else if (flags.extra.includes(flag)) extras.push(value);
+      continue;
+    }
+    // The first word that is not a flag is the package, unless a flag already named it; then it is
+    // the command to run. Either way, what follows is the server's own.
+    main ??= arg;
+    break;
   }
-  return undefined;
+  if (main === undefined) return undefined;
+  return { first: { runner, spec: main, localOnly }, extras: extras.filter(spec => spec !== main) };
+}
+
+/** The package a runner command starts, with its version marker, or undefined. */
+export function runnerPackage(command: string | undefined, args: readonly string[]): RunnerSpec | undefined {
+  return runnerParts(command, args)?.first;
 }
 
 /**
- * Every package a runner command fetches: the one it runs and any `-p`/`--package`/`--from`/`--with`
- * extras, each with its runner. `unverifiable` when a shell line runs more than one command, so what
+ * Every package a runner command fetches: the one it runs and any extras its runner's flags add
+ * (`-p`/`--package` for npm runners, `--with` for uvx), each with its runner. `unverifiable` when a shell line runs more than one command, so what
  * it fetches cannot be read from the config.
  */
 export function runnerSpecs(
@@ -429,18 +664,9 @@ export function runnerSpecs(
     const line = splitShell(script);
     return runnerSpecs(line[0], line.slice(1));
   }
-  const first = runnerPackage(command, args);
-  if (!first) return { specs: [], unverifiable: false };
-  const specs = [first];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i]!;
-    const value = ['-p', '--package', '--from', '--with'].includes(arg)
-      ? args[i + 1]
-      : /^--(package|from|with)=/.test(arg)
-        ? arg.split('=', 2)[1]
-        : undefined;
-    if (value !== undefined && value !== first.spec) specs.push({ ...first, spec: value });
-  }
+  const parts = runnerParts(command, args);
+  if (!parts) return { specs: [], unverifiable: false };
+  const specs = [parts.first, ...[...new Set(parts.extras)].map(spec => ({ ...parts.first, spec }))];
   return { specs, unverifiable: false };
 }
 
@@ -474,6 +700,11 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
   const { version, operator } = splitSpec(spec);
   if (!version) return false;
   if (runner === 'uvx' || runner === 'pipx') {
+    // A git source is fixed only by a full commit: `git+https://host/repo.git@<40 hex>`.
+    if (/^git\+/.test(spec)) return /@[0-9a-f]{40}$/.test(spec);
+    // uvx also takes `pkg@1.2.3` as an exact version (and `pkg@latest` as none).
+    if (runner === 'uvx' && operator === '@')
+      return /^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?$/i.test(version);
     // A Python requirement: only == (or ===) with a version that has no wildcard.
     return (
       (operator === '==' || operator === '===') &&
@@ -485,15 +716,123 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
   return operator === '@' && /^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.test(version);
 }
 
+/**
+ * Every `docker run` (and `podman run`) flag that takes a value as the next word, so that value
+ * (`-u 1000:1000`, `--add-host host:gateway`) is never read as the image. A flag left out is read as
+ * taking no value; the `--flag=value` form is one word either way.
+ */
+const RUN_VALUED = new Set([
+  '--cpu-count',
+  '--cpu-percent',
+  '--io-maxbandwidth',
+  '--io-maxiops',
+  '--umask',
+  '--add-host',
+  '--annotation',
+  '-a',
+  '--attach',
+  '--blkio-weight',
+  '--blkio-weight-device',
+  '--cap-add',
+  '--cap-drop',
+  '--cgroup-parent',
+  '--cgroupns',
+  '--cidfile',
+  '--cpu-period',
+  '--cpu-quota',
+  '--cpu-rt-period',
+  '--cpu-rt-runtime',
+  '-c',
+  '--cpu-shares',
+  '--cpus',
+  '--cpuset-cpus',
+  '--cpuset-mems',
+  '--detach-keys',
+  '--device',
+  '--device-cgroup-rule',
+  '--device-read-bps',
+  '--device-read-iops',
+  '--device-write-bps',
+  '--device-write-iops',
+  '--dns',
+  '--dns-option',
+  '--dns-search',
+  '--domainname',
+  '--entrypoint',
+  '-e',
+  '--env',
+  '--env-file',
+  '--expose',
+  '--gpus',
+  '--group-add',
+  '--health-cmd',
+  '--health-interval',
+  '--health-retries',
+  '--health-start-interval',
+  '--health-start-period',
+  '--health-timeout',
+  '-h',
+  '--hostname',
+  '--ip',
+  '--ip6',
+  '--ipc',
+  '--isolation',
+  '--kernel-memory',
+  '-l',
+  '--label',
+  '--label-file',
+  '--link',
+  '--link-local-ip',
+  '--log-driver',
+  '--log-opt',
+  '--mac-address',
+  '-m',
+  '--memory',
+  '--memory-reservation',
+  '--memory-swap',
+  '--memory-swappiness',
+  '--mount',
+  '--name',
+  '--network',
+  '--net',
+  '--network-alias',
+  '--oom-score-adj',
+  '--pid',
+  '--pids-limit',
+  '--platform',
+  '-p',
+  '--publish',
+  '--pull',
+  '--restart',
+  '--runtime',
+  '--security-opt',
+  '--shm-size',
+  '--stop-signal',
+  '--stop-timeout',
+  '--storage-opt',
+  '--sysctl',
+  '--tmpfs',
+  '--ulimit',
+  '-u',
+  '--user',
+  '--userns',
+  '--uts',
+  '-v',
+  '--volume',
+  '--volume-driver',
+  '--volumes-from',
+  '-w',
+  '--workdir',
+]);
+
 /** The image a `docker run` command starts, or undefined. */
 export function dockerImage(command: string | undefined, args: readonly string[]): string | undefined {
   if (!command || !/(^|[\\/])(docker|podman)$/.test(command) || args[0] !== 'run') return undefined;
   // A replaced entrypoint runs something else inside the image: it is not that image's server.
   if (args.some(arg => arg === '--entrypoint' || arg.startsWith('--entrypoint='))) return undefined;
-  const valued = new Set(['-e', '--env', '-v', '--volume', '--name', '-p', '--publish', '--network', '-w', '--user']);
   for (let i = 1; i < args.length; i += 1) {
     const arg = args[i]!;
-    if (valued.has(arg)) {
+    if (RUN_VALUED.has(arg)) {
       i += 1;
       continue;
     }

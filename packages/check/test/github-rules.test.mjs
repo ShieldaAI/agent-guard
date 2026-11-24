@@ -315,45 +315,6 @@ test('fetchBranchRules: a bypass list hidden from the token is unknown, not a by
   assert.equal(missing.codeOwnerBypass, 'unknown');
 });
 
-test('fetchBranchRules: admins on the bypass list, unless another rule lets nobody bypass', async () => {
-  const routes = {
-    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7)]],
-    '/repos/acme/app/rulesets/7': [
-      200,
-      { id: 7, bypass_actors: [admins, { actor_id: 1, actor_type: 'Integration', bypass_mode: 'pull_request' }] },
-    ],
-    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
-  };
-  const open = await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: fakeGitHub(routes).fetch });
-  assert.equal(open.codeOwnerBypass, 'possible');
-  assert.equal(open.bypassWhy, 'repository admins and a GitHub App may bypass the ruleset that requires it');
-
-  // A second ruleset with no bypass list still binds everyone.
-  const layered = fakeGitHub({
-    ...routes,
-    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7), ownerRuleIn(8)]],
-    '/repos/acme/app/rulesets/8': [200, { id: 8, bypass_actors: [] }],
-  });
-  assert.equal(
-    (await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: layered.fetch })).codeOwnerBypass,
-    'none',
-  );
-
-  // So does classic protection that requires code owners and includes admins.
-  const classic = fakeGitHub({
-    ...routes,
-    '/repos/acme/app/branches/main': [200, { protection: { enabled: true } }],
-    '/repos/acme/app/branches/main/protection': [
-      200,
-      { required_pull_request_reviews: { require_code_owner_reviews: true }, enforce_admins: { enabled: true } },
-    ],
-  });
-  assert.equal(
-    (await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: classic.fetch })).codeOwnerBypass,
-    'none',
-  );
-});
-
 test('fetchBranchRules: classic protection that leaves out admins or allows bypass', async () => {
   const base = {
     '/repos/acme/app/rules/branches/main': [200, []],

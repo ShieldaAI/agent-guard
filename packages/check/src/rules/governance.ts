@@ -135,7 +135,7 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
             message: `${github.branch} requires code owners to approve, but ${github.bypassWhy ?? 'someone may bypass the rule'}, so a change to an agent can still merge without them.`,
             location: { file: project.codeowners.path, line },
             subject: 'code-owner-review:bypass',
-            fix: 'Remove the bypass list from the rule that requires code owners, or keep it to one break-glass account. For a branch protection rule, turn on "Do not allow bypassing the above settings".',
+            fix: 'Empty the bypass list of a ruleset that requires code owners, or keep it to one break-glass account. In a branch protection rule, turn on "Do not allow bypassing the above settings" and clear "Allow specified actors to bypass required pull requests".',
           });
         return;
       }

@@ -10,12 +10,34 @@ import {
   serverLabel,
 } from './common.js';
 import type { Rule } from './common.js';
+import type { Project } from '../model.js';
 import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
+
+/** Runners that run a project's installed copy of a package when there is one; dlx always fetches. */
+const USES_PROJECT_INSTALL = new Set(['npx', 'npm exec', 'bunx']);
+
+/**
+ * Whether a runner runs code from the repository rather than the registry: a local path, a run that
+ * may not download (`--no-install`), or a project dependency with a runner that prefers it. Then
+ * the repository's lockfile, not the config, decides what runs.
+ */
+function fromProject(
+  project: Project,
+  runner: { runner: string; spec: string; localOnly: boolean },
+  name: string,
+): boolean {
+  return (
+    runner.localOnly ||
+    /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec) ||
+    (USES_PROJECT_INSTALL.has(runner.runner) && project.dependencies.has(name))
+  );
+}
 
 /** How each npm-ecosystem runner starts the copy the lockfile installed, without fetching. */
 const INSTALLED_RUN: Readonly<Record<string, string>> = {
   'pnpm dlx': 'pnpm exec',
+  pnpx: 'pnpm exec',
   'yarn dlx': 'yarn run',
   bunx: 'bun run',
 };
@@ -44,13 +66,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
         }
         for (const runner of specs) {
           const { name } = splitSpec(runner.spec);
-          // A project dependency or a local path resolves inside the repo, not from the registry.
-          if (
-            runner.localOnly ||
-            project.dependencies.has(name) ||
-            /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)
-          )
-            continue;
+          if (fromProject(project, runner, name)) continue;
           if (!isPinnedSpec(runner.runner, runner.spec))
             report({
               message: `${serverLabel(server)} starts "${runner.spec}" with ${runner.runner} and no pinned version, so every new release runs automatically.`,
@@ -239,7 +255,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
       severity: 'low',
       confidence: 'high',
       owasp: [ASI.supply],
-      help: 'An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff.',
+      help: 'An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff. A package that bundles its dependencies or pins each one exactly is the exception: suppress the finding with that reason.',
     },
     (project, report) => {
       for (const server of agentServers(project)) {
@@ -247,17 +263,11 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
         if (unverifiable) continue; // AGC-SUP-001
         for (const runner of specs) {
           const { name } = splitSpec(runner.spec);
-          // Installed from the repository's own dependencies: its lockfile decides the whole tree.
-          if (
-            runner.localOnly ||
-            project.dependencies.has(name) ||
-            /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)
-          )
-            continue;
+          if (fromProject(project, runner, name)) continue;
           if (!isPinnedSpec(runner.runner, runner.spec)) continue; // AGC-SUP-001
           const python = runner.runner === 'uvx' || runner.runner === 'pipx';
           report({
-            message: `${serverLabel(server)} pins "${runner.spec}", but ${runner.runner} resolves its dependencies again on every fresh install, so a new release of one of them runs with no change to this file.`,
+            message: `${serverLabel(server)} pins "${runner.spec}", but ${runner.runner} resolves its dependencies again on every fresh install, so unless the package fixes every dependency version, a new release of one of them can run with no change to this file.`,
             location: server.location,
             subject:
               specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
