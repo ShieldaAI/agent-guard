@@ -1,5 +1,22 @@
 # Changelog
 
+## Unreleased
+
+### Agent Guard Check
+
+- New AGC-SUP-006 (low): an MCP server pinned to an exact version whose code can still change.
+  npx, uvx and the other runners resolve the pinned package's own dependencies again on every
+  fresh install, so a new release of one of them runs with no change to the config. A Docker image
+  pinned by tag can be moved to another image by whoever can push to that repository. The fix is a
+  lockfile (a dev dependency started with `npx --no-install`, or a locked Python environment) or an
+  image digest, so a new or changed tool arrives in a reviewed diff. Unpinned servers stay with
+  AGC-SUP-001. From a reader's comment on the "agents as code" article.
+- AGC-GOV-004 now also reports a code-owner requirement that someone can bypass (low): every
+  ruleset that requires code owners has a bypass list, or the branch protection rule that requires
+  them leaves out admins or allows bypass. GitHub shows bypass lists and the admin setting only to
+  a token with admin access; with any other token, the Actions token included, the bypass is not
+  judged and nothing new is reported. `fetchBranchRules` returns `codeOwnerBypass` and `bypassWhy`.
+
 ## 1.6.2 — 2026-11-23
 
 ### Agent Guard Check

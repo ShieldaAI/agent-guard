@@ -13,6 +13,13 @@ import type { Rule } from './common.js';
 import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
 
+/** How each npm-ecosystem runner starts the copy the lockfile installed, without fetching. */
+const INSTALLED_RUN: Readonly<Record<string, string>> = {
+  'pnpm dlx': 'pnpm exec',
+  'yarn dlx': 'yarn run',
+  bunx: 'bun run',
+};
+
 export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
   rule(
     {
@@ -222,6 +229,52 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
           severity: source.autoUpdate && !source.ref ? 'high' : source.autoUpdate ? 'medium' : 'low',
           fix: 'Set "ref" to a release tag and autoUpdate to false; pin each plugin in the marketplace with a sha.',
         });
+      }
+    },
+  ),
+  rule(
+    {
+      id: 'AGC-SUP-006',
+      title: 'Pinned MCP server can still change',
+      severity: 'low',
+      confidence: 'high',
+      owasp: [ASI.supply],
+      help: 'An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff.',
+    },
+    (project, report) => {
+      for (const server of agentServers(project)) {
+        const { specs, unverifiable } = runnerSpecs(server.command, server.args);
+        if (unverifiable) continue; // AGC-SUP-001
+        for (const runner of specs) {
+          const { name } = splitSpec(runner.spec);
+          // Installed from the repository's own dependencies: its lockfile decides the whole tree.
+          if (
+            runner.localOnly ||
+            project.dependencies.has(name) ||
+            /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)
+          )
+            continue;
+          if (!isPinnedSpec(runner.runner, runner.spec)) continue; // AGC-SUP-001
+          const python = runner.runner === 'uvx' || runner.runner === 'pipx';
+          report({
+            message: `${serverLabel(server)} pins "${runner.spec}", but ${runner.runner} resolves its dependencies again on every fresh install, so a new release of one of them runs with no change to this file.`,
+            location: server.location,
+            subject:
+              specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
+            fix: python
+              ? `Install ${name} into a locked environment (uv.lock or a hashed requirements file) and start that copy.`
+              : `Add ${name} to devDependencies so the lockfile fixes its dependencies, and start the installed copy with "${INSTALLED_RUN[runner.runner] ?? 'npx --no-install'} ${name}".`,
+          });
+        }
+        if (specs.length) continue;
+        const image = dockerImage(server.command, server.args);
+        if (image && !image.includes('@sha256:') && /:[^/:]+$/.test(image) && !image.endsWith(':latest'))
+          report({
+            message: `${serverLabel(server)} runs image "${image}" by tag. Whoever can push to that repository can move the tag to another image.`,
+            location: server.location,
+            subject: `server:${serverKey(server)}`,
+            fix: `Pin the digest of the image you reviewed: ${image.replace(/:[^/:]+$/, '')}@sha256:<digest>.`,
+          });
       }
     },
   ),

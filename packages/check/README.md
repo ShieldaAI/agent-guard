@@ -70,10 +70,10 @@ grants it. An unknown capability is never treated as safe.
 
 | Evidence            | When it runs                                                                                                                                                                      | What it adds                                                                                                                                                                                                                           |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 36 rules on configuration                                                                                                                                                                               |
+| Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 37 rules on configuration                                                                                                                                                                               |
 | Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
 | Live Agent Map      | Only with `--live` or `--agent-map-url` and a read-only token                                                                                                                     | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory                                                                             |
-| GitHub branch rules | With `--github-repo` (on by default in the GitHub Action from 1.6.0)                                                                                                              | 1 rule (AGC-GOV-004): CODEOWNERS names an owner for agent configuration, but the branch does not require the owner's approval                                                                                                          |
+| GitHub branch rules | With `--github-repo` (on by default in the GitHub Action from 1.6.0)                                                                                                              | 1 rule (AGC-GOV-004): CODEOWNERS names an owner for agent configuration, but the branch does not require the owner's approval, or lets someone bypass it                                                                                                          |
 
 Files named `agent-guard*.json` are read automatically, and what each one is (describe() output,
 inventory snapshot or manifest) is recognised from its content. Name any other path in
@@ -331,7 +331,10 @@ action does this by default with the workflow's own token (`github-rules: false`
 - Classic branch protection settings need admin access to read, and the Actions token cannot have
   it. A branch with classic protection and no ruleset requiring code owners is reported at info:
   the scanner cannot tell. A ruleset reads the same for everyone.
-- Who may bypass a ruleset is not visible to the scanner. Keep that list short.
+- Who may bypass a rule counts too: anyone on that list can merge without the owners. The bypass
+  list of a ruleset, and whether classic protection applies to admins, are readable with admin
+  access only. When the token can read them and every rule that requires code owners lets someone
+  bypass it, AGC-GOV-004 reports who (low). When it cannot, nothing is reported for the bypass.
 - If more rules apply than the scanner reads (ten pages), or GitHub does not say how a protected
   branch is protected, the answer is "cannot tell" (info), never "not required".
 - If GitHub cannot be reached, or refuses the token, the scan warns on stderr and goes on without
@@ -595,6 +598,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-SUP-003  | High                    | Remote content loaded into the agent at runtime                         | ASI04, ASI01 |
 | AGC-SUP-004  | Critical                | Download piped into a shell                                             | ASI04, ASI05 |
 | AGC-SUP-005  | Medium                  | Plugin or marketplace not pinned                                        | ASI04        |
+| AGC-SUP-006  | Low                     | Pinned MCP server can still change                                      | ASI04        |
 | AGC-PER-001  | High                    | Agent can rewrite its own instructions                                  | ASI06, ASI10 |
 | AGC-PER-002  | High                    | Agent can change its own permissions or hooks                           | ASI10        |
 | AGC-SEC-001  | Critical                | Hardcoded credential                                                    | ASI03        |

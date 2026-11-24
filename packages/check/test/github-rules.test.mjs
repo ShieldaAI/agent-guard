@@ -286,3 +286,120 @@ test('AGC-GOV-004 in a pull request: not new for adding or moving CODEOWNERS; ne
   assert.ok(renewal.reviews.length > 0);
   assert.equal(findingsFor({ findings: renewal.added }, 'AGC-GOV-004').length, 1, 'an edited review record');
 });
+
+const ownerRuleIn = id => ({ ...ownerRule(), ruleset_id: id, ruleset_source_type: 'Repository' });
+const admins = { actor_id: 5, actor_type: 'RepositoryRole', bypass_mode: 'always' };
+
+test('fetchBranchRules: a ruleset that requires code owners and lets nobody bypass it', async () => {
+  const github = fakeGitHub({
+    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7)]],
+    '/repos/acme/app/rulesets/7': [200, { id: 7, bypass_actors: [] }],
+  });
+  const rules = await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: github.fetch });
+  assert.equal(rules.codeOwnerReview, 'required');
+  assert.equal(rules.codeOwnerBypass, 'none');
+});
+
+test('fetchBranchRules: a bypass list hidden from the token is unknown, not a bypass', async () => {
+  const github = fakeGitHub({
+    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7)]],
+    '/repos/acme/app/rulesets/7': [200, { id: 7, current_user_can_bypass: 'never' }],
+  });
+  const rules = await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: github.fetch });
+  assert.equal(rules.codeOwnerReview, 'required');
+  assert.equal(rules.codeOwnerBypass, 'unknown');
+  assert.match(rules.bypassWhy, /admin access/);
+  const failing = fakeGitHub({ '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7)]] });
+  const missing = await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: failing.fetch });
+  assert.equal(missing.codeOwnerReview, 'required', 'an unreadable ruleset never undoes the requirement');
+  assert.equal(missing.codeOwnerBypass, 'unknown');
+});
+
+test('fetchBranchRules: admins on the bypass list, unless another rule lets nobody bypass', async () => {
+  const routes = {
+    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7)]],
+    '/repos/acme/app/rulesets/7': [
+      200,
+      { id: 7, bypass_actors: [admins, { actor_id: 1, actor_type: 'Integration', bypass_mode: 'pull_request' }] },
+    ],
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+  };
+  const open = await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: fakeGitHub(routes).fetch });
+  assert.equal(open.codeOwnerBypass, 'possible');
+  assert.equal(open.bypassWhy, 'repository admins and a GitHub App may bypass the ruleset that requires it');
+
+  // A second ruleset with no bypass list still binds everyone.
+  const layered = fakeGitHub({
+    ...routes,
+    '/repos/acme/app/rules/branches/main': [200, [ownerRuleIn(7), ownerRuleIn(8)]],
+    '/repos/acme/app/rulesets/8': [200, { id: 8, bypass_actors: [] }],
+  });
+  assert.equal(
+    (await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: layered.fetch })).codeOwnerBypass,
+    'none',
+  );
+
+  // So does classic protection that requires code owners and includes admins.
+  const classic = fakeGitHub({
+    ...routes,
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: true } }],
+    '/repos/acme/app/branches/main/protection': [
+      200,
+      { required_pull_request_reviews: { require_code_owner_reviews: true }, enforce_admins: { enabled: true } },
+    ],
+  });
+  assert.equal(
+    (await fetchBranchRules({ repo: 'acme/app', branch: 'main', fetch: classic.fetch })).codeOwnerBypass,
+    'none',
+  );
+});
+
+test('fetchBranchRules: classic protection that leaves out admins or allows bypass', async () => {
+  const base = {
+    '/repos/acme/app/rules/branches/main': [200, []],
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: true } }],
+  };
+  const withSettings = settingsBody =>
+    fetchBranchRules({
+      repo: 'acme/app',
+      branch: 'main',
+      fetch: fakeGitHub({ ...base, '/repos/acme/app/branches/main/protection': [200, settingsBody] }).fetch,
+    });
+  const noAdmins = await withSettings({
+    required_pull_request_reviews: { require_code_owner_reviews: true },
+    enforce_admins: { enabled: false },
+  });
+  assert.equal(noAdmins.codeOwnerBypass, 'possible');
+  assert.match(noAdmins.bypassWhy, /^repository admins may bypass/);
+  const allowances = await withSettings({
+    required_pull_request_reviews: {
+      require_code_owner_reviews: true,
+      bypass_pull_request_allowances: { users: [{ login: 'release-bot' }], teams: [], apps: [] },
+    },
+    enforce_admins: { enabled: true },
+  });
+  assert.equal(allowances.bypassWhy, 'named users may bypass the branch protection rule that requires it');
+  const strict = await withSettings({
+    required_pull_request_reviews: { require_code_owner_reviews: true },
+    enforce_admins: { enabled: true },
+  });
+  assert.equal(strict.codeOwnerBypass, 'none');
+});
+
+test('AGC-GOV-004: reports a bypass GitHub confirmed, and only that', () => {
+  const files = { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' };
+  const github = state => ({
+    repo: 'acme/app',
+    branch: 'main',
+    codeOwnerReview: 'required',
+    why: 'an active ruleset on main requires review from code owners',
+    codeOwnerBypass: state,
+    bypassWhy: 'repository admins may bypass the ruleset that requires it',
+  });
+  const found = findingsFor(scanWith(files, github('possible')), 'AGC-GOV-004');
+  assert.equal(found.length, 1);
+  assert.equal(found[0].severity, 'low');
+  assert.match(found[0].message, /repository admins may bypass/);
+  for (const state of ['none', 'unknown', undefined])
+    assert.equal(findingsFor(scanWith(files, github(state)), 'AGC-GOV-004').length, 0, state);
+});

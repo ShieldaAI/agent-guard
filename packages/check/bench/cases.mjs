@@ -461,6 +461,48 @@ export const CASES = [
     files: { '.mcp.json': mcp({ s: { command: 'npx', args: ['--no-install', 'local-mcp'] } }) },
   },
   {
+    id: 'sup6-pinned-npx',
+    rule: 'AGC-SUP-006',
+    expect: true,
+    files: { '.mcp.json': mcp({ db: pinned }) },
+  },
+  {
+    id: 'sup6-pinned-uvx',
+    rule: 'AGC-SUP-006',
+    expect: true,
+    files: { '.mcp.json': mcp({ s: { command: 'uvx', args: ['some-mcp-server==1.4.2'] } }) },
+  },
+  {
+    id: 'sup6-image-tag',
+    rule: 'AGC-SUP-006',
+    expect: true,
+    files: { '.mcp.json': mcp({ s: { command: 'docker', args: ['run', '-i', '--rm', 'ghcr.io/o/mcp:1.4.2'] } }) },
+  },
+  {
+    id: 'sup6-installed',
+    rule: 'AGC-SUP-006',
+    expect: false,
+    files: {
+      '.mcp.json': mcp({ db: { command: 'npx', args: ['--no-install', '@modelcontextprotocol/server-postgres'] } }),
+    },
+  },
+  {
+    id: 'sup6-image-digest',
+    rule: 'AGC-SUP-006',
+    expect: false,
+    files: {
+      '.mcp.json': mcp({
+        s: { command: 'docker', args: ['run', '-i', '--rm', `ghcr.io/o/mcp:1.4.2@sha256:${'a'.repeat(64)}`] },
+      }),
+    },
+  },
+  {
+    id: 'sup6-unpinned-left-to-sup1',
+    rule: 'AGC-SUP-006',
+    expect: false,
+    files: { '.mcp.json': mcp({ s: { command: 'npx', args: ['-y', 'some-mcp-server'] } }) },
+  },
+  {
     id: 'sup2-http',
     rule: 'AGC-SUP-002',
     expect: true,
@@ -786,7 +828,42 @@ export const CASES = [
     rule: 'AGC-GOV-004',
     expect: false,
     files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
-    github: { repo: 'acme/app', branch: 'main', codeOwnerReview: 'required', why: 'a ruleset requires it' },
+    github: {
+      repo: 'acme/app',
+      branch: 'main',
+      codeOwnerReview: 'required',
+      why: 'a ruleset requires it',
+      codeOwnerBypass: 'none',
+      bypassWhy: 'a ruleset that requires code owners lets nobody bypass it',
+    },
+  },
+  {
+    id: 'gov4-bypassable',
+    rule: 'AGC-GOV-004',
+    expect: true,
+    files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
+    github: {
+      repo: 'acme/app',
+      branch: 'main',
+      codeOwnerReview: 'required',
+      why: 'a ruleset requires it',
+      codeOwnerBypass: 'possible',
+      bypassWhy: 'repository admins may bypass the ruleset that requires it',
+    },
+  },
+  {
+    id: 'gov4-bypass-unreadable',
+    rule: 'AGC-GOV-004',
+    expect: false,
+    files: { '.claude/settings.json': settings({}), '.github/CODEOWNERS': '/.claude/ @org/platform\n' },
+    github: {
+      repo: 'acme/app',
+      branch: 'main',
+      codeOwnerReview: 'required',
+      why: 'a ruleset requires it',
+      codeOwnerBypass: 'unknown',
+      bypassWhy: 'who may bypass the ruleset needs admin access to read',
+    },
   },
   {
     id: 'gov2-no-description',
