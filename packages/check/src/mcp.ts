@@ -1,4 +1,4 @@
-import { FLAG_TABLES, readArgs, splitUvRequirements } from './runner-flags.js';
+import { FLAG_TABLES, npxArgv, readArgs, splitUvRequirements } from './runner-flags.js';
 import type { Capability, Location } from './types.js';
 import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
 
@@ -379,7 +379,8 @@ interface RunnerSpec {
 /** `exec` in front of a shell line's command replaces the shell with it: the command is what runs. */
 function withoutExec(line: readonly string[]): string[] {
   let at = 0;
-  if (line[0] === 'exec') for (at = 1; line[at]?.startsWith('-'); at += 1);
+  // bash's exec takes -c, -l and -a NAME before the command.
+  if (line[0] === 'exec') for (at = 1; line[at]?.startsWith('-'); at += line[at] === '-a' ? 2 : 1);
   return line.slice(at);
 }
 
@@ -388,19 +389,14 @@ export const isUvRunner = (runner: string) => runner === 'uvx' || runner === 'uv
 export const isPythonRunner = (runner: string) => isUvRunner(runner) || runner === 'pipx';
 
 /**
- * Whether npx or npm exec may only run an installed copy. The last option that says so wins, as
- * npm reads it. npx turns --no-install into --yes=false; npm exec does not know --no-install, and
- * reads -n as --no-yes, which npx drops as a removed option.
+ * Whether npm exec may only run an installed copy. The last option that says so wins, as npm reads
+ * it. npm exec does not know --no-install (npx turns it into --yes=false first), and reads -n as
+ * --no-yes (npx drops -n as a removed option).
  */
-function installedOnly(family: string, options: readonly string[]): boolean {
+function installedOnly(options: readonly string[]): boolean {
   let local = false;
   for (const word of options) {
-    if (
-      ['--no', '--no-yes', '--yes=false'].includes(word) ||
-      (family === 'npx' && word === '--no-install') ||
-      (family === 'npm' && word === '-n')
-    )
-      local = true;
+    if (['--no', '--no-yes', '--yes=false', '-n'].includes(word)) local = true;
     else if (['-y', '--yes', '--yes=true'].includes(word)) local = false;
   }
   return local;
@@ -425,8 +421,10 @@ function runnerParts(
     const line = withoutExec(args.length === 2 ? splitShell(args[1]) : args.slice(1));
     return runnerParts(line[0], line.slice(1));
   }
-  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args[0] === '-c' && args[1] !== undefined) {
-    const line = withoutExec(splitShell(args[1]));
+  // `-c`, or joined short flags ending in c (`-lc`, `-ic`), takes the script, as in runnerSpecs.
+  const script = ['sh', 'bash', 'zsh', 'dash'].includes(base) ? args.findIndex(arg => /^-[a-z]*c$/.test(arg)) : -1;
+  if (script >= 0 && args[script + 1] !== undefined) {
+    const line = withoutExec(splitShell(args[script + 1]!));
     return runnerParts(line[0], line.slice(1));
   }
   let rest = [...args];
@@ -443,7 +441,10 @@ function runnerParts(
     runner = 'uv tool run';
     rest = rest.slice(2);
   } else if (!RUNNERS.has(base)) return undefined;
-  const family = RUNNER_FAMILY[runner]!;
+  // npx is npm exec after npx-cli's own pass over the options (npxArgv).
+  const npx = RUNNER_FAMILY[runner] === 'npx';
+  if (npx) rest = npxArgv(rest);
+  const family = npx ? 'npm' : RUNNER_FAMILY[runner]!;
   const table = FLAG_TABLES[family]!;
   const unreadable = (option: string, word: string) => ({
     unreadable: `starts ${runner} with ${option}, an option this check does not know, so it cannot tell whether "${word}" is that option's value or the package to run`,
@@ -474,7 +475,13 @@ function runnerParts(
   // A flag naming the package makes the first plain word the command; otherwise that word is the package.
   const main = mains[0] ?? positionals[0];
   if (main === undefined) return undefined;
-  const localOnly = (family === 'npm' || family === 'npx') && installedOnly(family, options);
+  // Packages listed in a file, or handed to pip, are not in the config: what they pin cannot be read.
+  const listed = options.find(word => /^(--with-requirements|--pip-args)(=|$)/.test(word));
+  if (listed)
+    return {
+      unreadable: `starts ${runner} with ${listed.split('=')[0]}, which installs packages this check does not read`,
+    };
+  const localOnly = family === 'npm' && installedOnly(options);
   const extras = [
     ...mains.slice(1),
     ...extraValues.flatMap(value => (family === 'uv' ? splitUvRequirements(value) : [value])),
@@ -597,9 +604,10 @@ export function dockerRun(
     const line = withoutExec(splitShell(words));
     return dockerRun(line[0], line.slice(1));
   }
-  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args[0] === '-c' && args[1] !== undefined) {
-    if (/[;&|`$<>(){}\n\r]/.test(args[1])) return undefined;
-    const line = withoutExec(splitShell(args[1]));
+  const script = ['sh', 'bash', 'zsh', 'dash'].includes(base) ? args.findIndex(arg => /^-[a-z]*c$/.test(arg)) : -1;
+  if (script >= 0 && args[script + 1] !== undefined) {
+    if (/[;&|`$<>(){}\n\r]/.test(args[script + 1]!)) return undefined;
+    const line = withoutExec(splitShell(args[script + 1]!));
     return dockerRun(line[0], line.slice(1));
   }
   if (base !== 'docker' && base !== 'podman') return undefined;

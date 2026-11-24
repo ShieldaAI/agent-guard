@@ -44,6 +44,15 @@
 - Fix: `npm exec --no-install` fetches (npm exec does not know the option; only npx does), the last
   of `--yes` and `--no` wins, `npm exec` reads options after the package up to `--`, and its `-p` is
   `--parseable`, not `--package`.
+- npx is read as npm's `bin/npx-cli.js` reads it: a replica of its loop (tested against npm's own
+  file on 20,000 generated command lines) decides where options end, so an option npx counts as
+  taking a value (`--no-color`) swallows the next word, and npm exec's own reading follows. bunx
+  uses the project's copy only for a bare name, as bun's `bunx_command.rs` does.
+- `uvx --with-requirements FILE` and `pipx --pip-args` install packages the config does not name:
+  AGC-SUP-001 reports them as unreadable instead of judging only the package it can see.
+- The semver reader refuses ranges it cannot read with certainty (a wildcard before a number, a
+  prerelease on a partial version, build metadata), so those packages are reported rather than
+  assumed installed; on every range it reads it agrees with node-semver (13 million fuzzed pairs).
 - AGC-SUP-001 and AGC-SUP-006 now also read `uv tool run`, `exec` in front of a shell line's
   command (`bash -l -c "exec npx …"`), `docker.exe`, and docker inside `cmd /c` or `sh -c`.
 - npx and `npm exec` are read by their own rules (npm's `bin/npx-cli.js`): npx drops the removed

@@ -25,7 +25,7 @@ const USES_PROJECT_INSTALL = new Set(['npx', 'npm exec', 'bunx']);
  *
  * npx (libnpmexec's missingFromTree) runs an installed copy, at any depth, for a bare name, for the
  * exact version installed, or for a range an installed version satisfies; a tag (`@latest`) is
- * always fetched. The installed versions come from the root lockfile, or from package.json when it
+ * always fetched. bunx runs the project's copy only for a bare name. The installed versions come from the root lockfile, or from package.json when it
  * declares an exact version; a declared range says only that some version is installed.
  */
 function fromProject(
@@ -40,9 +40,11 @@ function fromProject(
   if (declared === undefined && !locked.length) return false;
   const { version: wanted } = splitSpec(runner.spec);
   if (wanted === undefined) return true;
-  const installed = locked.length ? locked : declared !== undefined && parseVersion(declared) ? [declared] : [];
-  if (parseVersion(wanted)) return installed.some(version => version === wanted.replace(/^v/, ''));
+  // bunx skips the project's copy whenever a version, tag or URL is given (bun's bunx_command.rs).
+  if (runner.runner === 'bunx') return false;
   if (!parseRange(wanted)) return false; // a tag
+  // An exact version is a range too: npx accepts an installed version that satisfies it.
+  const installed = locked.length ? locked : declared !== undefined && parseVersion(declared) ? [declared] : [];
   return installed.some(version => satisfies(version, wanted));
 }
 
@@ -75,7 +77,9 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
             subject: `server:${serverKey(server)}:${shell ? 'shell' : 'options'}`,
             fix: shell
               ? 'Start the server with one command, with its package pinned to an exact version.'
-              : 'Write that option as --option=value, so its value is one word, and pin the package to an exact version.',
+              : /installs packages this check does not read/.test(unverifiable)
+                ? 'Name each package in the config with an exact version (uvx --with pkg==1.2.3), or install from a locked environment.'
+                : 'Write that option as --option=value, so its value is one word, and pin the package to an exact version.',
           });
           continue;
         }

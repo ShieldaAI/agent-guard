@@ -5,12 +5,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diffScans, fetchBranchRules, runCli } from '@shieldaai/agent-guard-check';
-import { FLAG_TABLES } from '../dist/runner-flags.js';
+import { FLAG_TABLES, npxArgv } from '../dist/runner-flags.js';
 import { lockfileVersions } from '../dist/model.js';
 import { findingsFor, json, mcp, scanFiles, settings } from './helpers.mjs';
 
@@ -102,7 +102,9 @@ test('AGC-SUP-001/006: dlx runners fetch even when the repository has the packag
     // [command, args, rule expected with pkg in devDependencies]
     ['npx', ['-y', 'pkg@1.2.3'], 'none'],
     ['npm', ['exec', '--yes', '--', 'pkg@1.2.3'], 'none'],
-    ['bunx', ['pkg@1.2.3'], 'none'],
+    // bunx uses the project's copy only for a bare name (bun's bunx_command.rs).
+    ['bunx', ['pkg@1.2.3'], '006'],
+    ['bunx', ['pkg'], 'none'],
     ['npx', ['-y', 'pkg'], 'none'],
     ['pnpm', ['dlx', 'pkg@1.2.3'], '006'],
     ['yarn', ['dlx', 'pkg@1.2.3'], '006'],
@@ -991,11 +993,10 @@ test('project install: npx runs the installed copy only for a bare name or the e
   ];
   for (const [declared, spec, expected] of cases) {
     assert.deepEqual(reported('npx', ['-y', spec], dep(declared)), expected, `${declared} / npx ${spec}`);
-    assert.deepEqual(
-      reported('bunx', [spec], dep(declared)),
-      expected.map(x => x.replace('npx', 'bunx')),
-      `${declared} / bunx ${spec}`,
-    );
+    // bunx: the project's copy for a bare name only; any version, range or tag is fetched.
+    // An exact version is pinned (AGC-SUP-006); a range or a tag is not (AGC-SUP-001).
+    const bunx = spec === 'pkg' ? [] : [`${/@\d/.test(spec) ? '006' : '001'} ${spec}`];
+    assert.deepEqual(reported('bunx', [spec], dep(declared)), bunx, `${declared} / bunx ${spec}`);
   }
 });
 
@@ -1415,12 +1416,9 @@ test('option lists: npm shorthands and docker’s own options', t => {
       const npmTakes = single !== undefined && (!types(single).includes(Boolean) || types(single).includes(String));
       if (name !== '-p')
         assert.equal(FLAG_TABLES.npm.valued.has(name), npmTakes, `npm exec ${name} → ${expansion.join(' ')}`);
-      // npx-cli: -p is --package, -n is removed with its value, others follow npx's switch rule.
-      const npxTakes = name === '-n' || (single !== undefined && !types(single).includes(Boolean));
-      if (name !== '-p')
-        assert.equal(FLAG_TABLES.npx.valued.has(name), npxTakes, `npx ${name} → ${expansion.join(' ')}`);
     }
-    assert.ok(FLAG_TABLES.npx.main.has('-p') && !FLAG_TABLES.npm.main.has('-p'));
+    // npx's own reading is compared with npm's npx-cli.js in its own test.
+    assert.ok(!FLAG_TABLES.npm.main.has('-p'));
   } else t.diagnostic('npm definitions not found');
   const help = spawnSync('docker', ['--help'], { encoding: 'utf8' });
   if (help.status !== 0) return t.skip('docker not installed');
@@ -1439,4 +1437,195 @@ test('option lists: npm shorthands and docker’s own options', t => {
     }
   }
   assert.ok(checked >= 10, `read ${checked} options from docker --help`);
+});
+
+// ---------------------------------------------------------------- fourth review: npx as npm wrote it
+
+/** npm's own bin/npx-cli.js, run with its final hand-over to npm stubbed: what it passes to npm exec. */
+function realNpx() {
+  const root = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' }).stdout?.trim();
+  const file = root && join(root, 'npm', 'bin', 'npx-cli.js');
+  if (!file || !existsSync(file)) return undefined;
+  const source = readFileSync(file, 'utf8').replace(/^#!.*\n/, '');
+  const real = createRequire(file);
+  return args => {
+    let handed;
+    const require = Object.assign(id => (id === '../lib/cli.js' ? proc => (handed = proc.argv.slice(3)) : real(id)), {
+      resolve: real.resolve,
+    });
+    const proc = { argv: ['node', 'npx', ...args] };
+    new Function('require', 'process', 'console', source)(require, proc, { error() {}, log() {} });
+    return handed;
+  };
+}
+
+test('npxArgv matches npm’s own npx-cli.js on generated command lines', t => {
+  const npx = realNpx();
+  if (!npx) return t.skip('npm’s npx-cli.js not found');
+  const words = [
+    '-y',
+    '--yes',
+    '--yes=false',
+    '-p',
+    '-p=a@1.0.0',
+    '-pfoo',
+    '--p=bar',
+    '--package',
+    '--package=evil',
+    'pkg@1.0.0',
+    'pkg',
+    'x',
+    '--no-color',
+    '--no-audit',
+    '--no-install',
+    '--no',
+    '-n',
+    '--npm',
+    '--node-arg',
+    '--registry',
+    'https://r.example',
+    '-c',
+    'echo hi',
+    '--call',
+    '--shell',
+    'sh',
+    '-d',
+    '-dd',
+    '-w',
+    'api',
+    '--cache',
+    '/c',
+    '--frobnicate',
+    'val',
+    '-q',
+    '--quiet',
+    '--',
+    '-',
+    '--loglevel=warn',
+    '--browser',
+    '-yq',
+    '--always-spawn',
+  ];
+  let seed = 7;
+  const random = n => ((seed = (seed * 1103515245 + 12345) % 2 ** 31), seed % n);
+  let compared = 0;
+  for (let round = 0; round < 20_000; round += 1) {
+    const args = Array.from({ length: random(7) }, () => words[random(words.length)]);
+    assert.deepEqual(npxArgv(args), npx(args), JSON.stringify(args));
+    compared += 1;
+  }
+  assert.equal(compared, 20_000);
+});
+
+test('npx: the options npx-cli swallows, and what npm exec then runs', () => {
+  const cases = [
+    // npx-cli counts --no-color as taking a value: pkg@1.0.0 is its value, and npm exec then reads
+    // --package=evil as the package to install.
+    [['npx', ['--no-color', 'pkg@1.0.0', '--package=evil']], ['001 evil']],
+    [['npx', ['--no-audit', '--no-fund', 'pkg@1.0.0']], ['006 pkg@1.0.0']],
+    // npm then reads --no-color as a switch, so pkg@1.0.0 is still the package.
+    [['npx', ['--no-color', 'pkg@1.0.0']], ['006 pkg@1.0.0']],
+    // npx-cli takes x as --frobnicate's value; npm, not knowing the option, would run x. Unreadable.
+    [['npx', ['--frobnicate', 'x', 'pkg@1.0.0']], ['001 ?']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+});
+
+test('fourth review: remaining branches', () => {
+  const lock = (extra = {}) =>
+    json({ lockfileVersion: 3, packages: { '': { name: 'app' }, 'node_modules/pkg': { version: '1.1.0' }, ...extra } });
+  const cases = [
+    // npm-shrinkwrap.json is read like package-lock.json.
+    [['npx', ['-y', 'pkg@1.1.0']], { 'npm-shrinkwrap.json': lock() }, []],
+    // The lockfile wins over a stale exact version in package.json.
+    [
+      ['npx', ['-y', 'pkg@1.0.0']],
+      { 'package.json': json({ devDependencies: { pkg: '1.0.0' } }), 'package-lock.json': lock() },
+      ['006 pkg@1.0.0'],
+    ],
+    [
+      ['npx', ['-y', 'pkg@1.1.0']],
+      { 'package.json': json({ devDependencies: { pkg: '1.0.0' } }), 'package-lock.json': lock() },
+      [],
+    ],
+    // npx compares versions as ranges: v1.1.0 is 1.1.0.
+    [['npx', ['-y', 'pkg@v1.1.0']], { 'package-lock.json': lock() }, []],
+    // A link is found by its target's name.
+    [
+      ['npx', ['-y', 'real-name@0.1.0']],
+      {
+        'package-lock.json': lock({
+          'node_modules/folder': { link: true, resolved: 'tools/x' },
+          'tools/x': { name: 'real-name', version: '0.1.0' },
+        }),
+      },
+      [],
+    ],
+    // Docker: joined letters with =, a metacharacter after cmd /c, and -lc.
+    [['docker', ['run', '-ie=A=1', 'ghcr.io/o/mcp:1']], {}, ['006 ghcr.io/o/mcp:1']],
+    [['bash', ['-lc', 'docker run -i ghcr.io/o/mcp']], {}, ['001 ghcr.io/o/mcp']],
+    [['bash', ['-lc', 'exec -a mcp npx -y pkg@1.2.3']], {}, ['006 pkg@1.2.3']],
+    [['bash', ['-c', 'exec -l -c npx -y pkg@1.2.3']], {}, ['006 pkg@1.2.3']],
+    // uv tool install installs, it does not run a server.
+    [['uv', ['tool', 'install', 'pkg']], {}, []],
+  ];
+  for (const [[command, args], files, expected] of cases)
+    assert.deepEqual(
+      reported(command, args, files),
+      expected,
+      `${command} ${args.join(' ')} ${Object.keys(files).join(',')}`,
+    );
+  const [shell] = findingsFor(scanFiles(server('cmd', ['/c', 'docker run -i ghcr.io/o/mcp:1 & calc'])), 'AGC-SUP-001');
+  assert.match(shell.message, /shell line with more than one command/);
+  // Packages from a file or handed to pip cannot be read.
+  for (const args of [
+    ['--with-requirements', 'reqs.txt', 'pkg@1.0.0'],
+    ['--with-requirements=reqs.txt', 'pkg==1.0.0'],
+  ]) {
+    const found = scanFiles(server('uvx', args)).findings.filter(f => /AGC-SUP-00[16]/.test(f.ruleId));
+    assert.deepEqual(
+      found.map(f => f.ruleId),
+      ['AGC-SUP-001'],
+      args.join(' '),
+    );
+    assert.match(found[0].message, /with --with-requirements, which installs packages this check does not read/);
+    assert.match(found[0].fix, /uvx --with pkg==1.2.3/);
+  }
+  const [pip] = findingsFor(scanFiles(server('pipx', ['run', '--pip-args', '-r reqs.txt', 'pkg==1.0'])), 'AGC-SUP-001');
+  assert.match(pip.message, /with --pip-args, which installs packages/);
+  // A deep v1 lockfile is read to a limit, without failing.
+  let deep = { version: '1.0.0' };
+  for (let i = 0; i < 100; i += 1) deep = { version: '1.0.0', dependencies: { [`d${i}`]: deep } };
+  assert.ok(lockfileVersions({ dependencies: { top: deep } }).length <= 66);
+});
+
+test('bypass: enterprise owners are one actor, and the bypass finding has its own fingerprint', async () => {
+  const owner = id => ({ actor_id: id, actor_type: 'EnterpriseOwner', bypass_mode: 'always' });
+  const rules = await read({
+    ...rulesOn([ownerRule(1), ownerRule(2)], {
+      '/repos/acme/app/rulesets/1': ruleset(1, [owner(3)]),
+      '/repos/acme/app/rulesets/2': ruleset(2, [owner(9)]),
+    }),
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+  });
+  assert.equal(rules.codeOwnerBypass, 'possible');
+  assert.match(rules.bypassWhy, /^enterprise owners may bypass/);
+  // A baseline that holds the "not required" finding must not hide a later bypass finding.
+  const gov = github => findingsFor(scanFiles(agentRepo, { github }), 'AGC-GOV-004')[0];
+  const notRequired = gov({
+    repo: 'acme/app',
+    branch: 'main',
+    codeOwnerReview: 'not-required',
+    why: 'no rule requires it',
+  });
+  const bypass = gov(evidence('possible'));
+  assert.notEqual(notRequired.fingerprint, bypass.fingerprint);
+  assert.equal(
+    bypass.fingerprint,
+    createHash('sha256')
+      .update(`AGC-GOV-004\0${bypass.agentId ?? ''}\0.github/CODEOWNERS\0code-owner-review:bypass`)
+      .digest('hex')
+      .slice(0, 20),
+  );
 });
