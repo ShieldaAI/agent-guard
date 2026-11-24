@@ -355,9 +355,11 @@ export async function fetchBranchRules(options: BranchRulesOptions): Promise<Bra
       ),
     ];
     const read = await rulesetLists(options, repoUrl, ids);
+    // A requiring rule GitHub gave no ruleset id for is a list this check cannot read.
+    const unnamed = requiring.some(item => !Number.isSafeInteger((item as Record<string, unknown>)['ruleset_id']));
     // An empty list among those read settles it; anything else needs every list, classic's included.
     if (read.lists.some(list => list.size === 0)) return result('required', why, NO_BYPASS);
-    if (read.unread || unread)
+    if (read.unread || unread || unnamed)
       return result('required', why, { state: 'unknown', why: 'who may bypass the rule needs admin access to read' });
     const classic = await classicRequiring(options, repoUrl, path);
     if (classic === 'unread')

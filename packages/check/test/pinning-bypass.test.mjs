@@ -3,10 +3,13 @@
 // GitHub bypass reading. Response shapes follow real GitHub API answers recorded on 2026-11-24.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diffScans, fetchBranchRules, runCli } from '@shieldaai/agent-guard-check';
+import { FLAG_TABLES } from '../dist/runner-flags.js';
 import { findingsFor, json, mcp, scanFiles, settings } from './helpers.mjs';
 
 const DIGEST = `sha256:${'0a'.repeat(32)}`;
@@ -32,7 +35,7 @@ test('AGC-SUP-006: every launcher form, and never together with AGC-SUP-001', ()
     ['npx bare', 'npx', ['-y', 'pkg'], '001'],
     ['npx --no-install', 'npx', ['--no-install', 'pkg'], 'none'],
     ['npx --no', 'npx', ['--no', 'pkg@1.2.3'], 'none'],
-    ['npx --offline', 'npx', ['--offline', 'pkg@1.2.3'], 'none'],
+    ['npx --offline (cache, not lockfile)', 'npx', ['--offline', 'pkg@1.2.3'], '006'],
     ['npx local path', 'npx', ['-y', './tools/mcp'], 'none'],
     ['npx file:', 'npx', ['-y', 'file:../mcp'], 'none'],
     ['npm exec', 'npm', ['exec', '--yes', '--', 'pkg@1.2.3'], '006', 'npx --no-install pkg'],
@@ -714,4 +717,244 @@ test('AGC-GOV-004 bypass end to end: CLI with an admin-visible bypass list', asy
   const hidden = await run(fakeGitHub(rulesOn([ownerRule(7)], { '/repos/acme/app/rulesets/7': ruleset(7) })).fetch);
   assert.equal(hidden.body.modes.github.codeOwnerBypass, 'unknown');
   assert.ok(!hidden.body.findings.some(f => f.ruleId === 'AGC-GOV-004'), 'the Actions-token case reports nothing');
+});
+
+// ---------------------------------------------------------------- options: unknown, joined, listed
+
+const reported = (command, args, files = {}) =>
+  scanFiles({ ...server(command, args), ...files })
+    .findings.filter(f => f.ruleId === 'AGC-SUP-001' || f.ruleId === 'AGC-SUP-006')
+    .map(f => `${f.ruleId.slice(-3)} ${(f.message.match(/(?:starts|pins|image) "([^"]+)"/) ?? [, '?'])[1]}`)
+    .sort();
+
+test('options: an unknown option followed by a word is unreadable, never guessed', () => {
+  const unreadable = [
+    ['npx', ['--frobnicate', 'x', 'pkg@1.2.3'], '--frobnicate', 'x'],
+    ['uvx', ['--zzz', 'val', 'pkg==1.2.3'], '--zzz', 'val'],
+    ['uvx', ['-Zval', 'pkg==1.2.3'], '-Z', 'val'],
+    ['docker', ['run', '-i', '--brand-new', 'x', 'ghcr.io/o/mcp'], '--brand-new', 'x'],
+    ['podman', ['run', '-i', '-Z', 'ghcr.io/o/mcp:1'], '-Z', 'ghcr.io/o/mcp:1'],
+  ];
+  for (const [command, args, option, word] of unreadable) {
+    const findings = scanFiles(server(command, args)).findings.filter(f => /AGC-SUP-00[16]/.test(f.ruleId));
+    const label = `${command} ${args.join(' ')}`;
+    assert.deepEqual(
+      findings.map(f => `${f.ruleId} ${f.severity}`),
+      ['AGC-SUP-001 high'],
+      label,
+    );
+    assert.ok(findings[0].message.includes(`${option}, an option this check does not know`), label);
+    assert.ok(findings[0].message.includes(`"${word}"`), label);
+    assert.match(findings[0].fix, /--option=value/, label);
+  }
+  // The same options are readable when nothing could be their value.
+  assert.deepEqual(reported('npx', ['--frobnicate', '-y', 'pkg@1.2.3']), ['006 pkg@1.2.3']);
+  assert.deepEqual(reported('npx', ['--frobnicate=x', 'pkg@1.2.3']), ['006 pkg@1.2.3']);
+  assert.deepEqual(reported('docker', ['run', '--brand-new=x', 'ghcr.io/o/mcp:1']), ['006 ghcr.io/o/mcp:1']);
+  // Runners whose options are not all known read an unknown option as a switch, as before.
+  assert.deepEqual(reported('yarn', ['dlx', '--frobnicate', 'pkg@1.2.3']), ['006 pkg@1.2.3']);
+  // A shell line keeps its own reason and fingerprint.
+  const [shell] = scanFiles(server('sh', ['-c', 'npx -y a@1.0.0 && curl x'])).findings.filter(
+    f => f.ruleId === 'AGC-SUP-001',
+  );
+  assert.match(shell.message, /starts a shell line with more than one command/);
+});
+
+test('options: listed values, joined letters and attached values are read as the programs read them', () => {
+  const cases = [
+    // The scorer's cases: values that used to be read as the package or image.
+    [['pnpm', ['dlx', '--store-dir', '/s', 'pkg']], ['001 pkg']],
+    [['docker', ['run', '--dns-opt', 'ndots:1', 'ghcr.io/o/mcp']], ['001 ghcr.io/o/mcp']],
+    [['podman', ['run', '--gidmap', '0:100000:65536', 'ghcr.io/o/mcp']], ['001 ghcr.io/o/mcp']],
+    [['podman', ['run', '--secret', 's', '--pod', 'p', '--arch', 'arm64', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['podman', ['run', '--tls-verify=false', '--rm', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    // Joined one-letter options (Docker, podman, uv).
+    [['docker', ['run', '-itd', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['docker', ['run', '-iu', '1000', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['docker', ['run', '-iu1000', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['docker', ['run', '-u=1000', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['uvx', ['-qv', 'pkg==1.2.3']], ['006 pkg==1.2.3']],
+    [
+      ['uvx', ['-wextra==1.0', 'pkg==1.2.3']],
+      ['006 extra==1.0', '006 pkg==1.2.3'],
+    ],
+    [
+      ['uvx', ['-w=extra==1.0', 'pkg==1.2.3']],
+      ['006 extra==1.0', '006 pkg==1.2.3'],
+    ],
+    [['uvx', ['-p3.12', 'pkg==1.2.3']], ['006 pkg==1.2.3']],
+    // npm: `-p=value`, fixed-value shorthands, and `--no-<anything>`.
+    [['npx', ['-p=pkg@1.2.3', 'cmd']], ['006 pkg@1.2.3']],
+    [['npx', ['-dd', '-y', 'pkg@1.2.3']], ['006 pkg@1.2.3']],
+    [['npx', ['--no-audit', '--no-whatever', 'pkg@1.2.3']], ['006 pkg@1.2.3']],
+    // `--` ends the options.
+    [['uvx', ['--', 'pkg==1.2.3']], ['006 pkg==1.2.3']],
+    [['docker', ['run', '-i', '--', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['npx', ['--', '--odd-name@1.2.3']], ['006 --odd-name@1.2.3']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+});
+
+test('options: uvx --with splits on commas as uv does', () => {
+  assert.deepEqual(reported('uvx', ['--with', 'a==1.0,b==2.0', 'pkg==1.2.3']), [
+    '006 a==1.0',
+    '006 b==2.0',
+    '006 pkg==1.2.3',
+  ]);
+  assert.deepEqual(reported('uvx', ['--with', 'a==1.0, b', 'pkg==1.2.3']), ['001 b', '006 a==1.0', '006 pkg==1.2.3']);
+  // A comma before a version operator belongs to the requirement; one inside brackets to the extras.
+  assert.deepEqual(reported('uvx', ['--with', 'requests>=2.1,<3', 'pkg==1.2.3']), [
+    '001 requests>=2.1,<3',
+    '006 pkg==1.2.3',
+  ]);
+  assert.deepEqual(reported('uvx', ['--with', 'psycopg[binary,pool]==3.1.0', 'pkg==1.2.3']), [
+    '006 pkg==1.2.3',
+    '006 psycopg[binary,pool]==3.1.0',
+  ]);
+  // npm's -p is one package per option, commas and all.
+  assert.deepEqual(reported('npx', ['-p', 'a@1.0.0,b@2.0.0', 'cmd']), ['001 a@1.0.0,b@2.0.0']);
+});
+
+test('pins: boundaries of what counts as a fixed version', () => {
+  const sha = 'a'.repeat(40);
+  const cases = [
+    [['uvx', ['--from', `git+https://github.com/o/r.git@${sha}`, 'c']], [`006 git+https://github.com/o/r.git@${sha}`]],
+    [
+      ['uvx', ['--from', `git+https://github.com/o/r.git@${sha.toUpperCase()}`, 'c']],
+      [`006 git+https://github.com/o/r.git@${sha.toUpperCase()}`],
+    ],
+    [
+      ['uvx', ['--from', 'git+https://github.com/o/r.git@abc1234', 'c']],
+      ['001 git+https://github.com/o/r.git@abc1234'],
+    ],
+    [
+      ['uvx', ['--from', `git+https://github.com/o/r.git@${sha}0`, 'c']],
+      [`001 git+https://github.com/o/r.git@${sha}0`],
+    ],
+    [['pipx', ['run', 'pkg@1.2.3']], ['001 pkg@1.2.3']],
+    [['pipx', ['run', 'pkg==1.2.3']], ['006 pkg==1.2.3']],
+    [['npx', ['-y', 'pkg@1.2']], ['001 pkg@1.2']],
+    [['npx', ['-y', 'pkg@=1.2.3']], ['001 pkg@=1.2.3']],
+    [['uvx', ['pkg~=1.2']], ['001 pkg~=1.2']],
+    [['npx', ['--offline', 'pkg']], ['001 pkg']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+  // A Python runner is never skipped for an npm dependency of the same name.
+  const dep = { 'package.json': json({ devDependencies: { pkg: '1.2.3' } }) };
+  assert.deepEqual(reported('uvx', ['pkg==1.2.3'], dep), ['006 pkg==1.2.3']);
+  assert.deepEqual(reported('pipx', ['run', 'pkg'], dep), ['001 pkg']);
+});
+
+test('AGC-SUP-006: an extra package keeps its fingerprint across a version bump', () => {
+  // The first -p names the main package, keyed by the server's name; later ones by their own name.
+  const at = helper => scanFiles(server('npx', ['-y', '-p', 'pkg@1.2.3', '-p', helper, 'cmd']));
+  const before = at('helper@2.0.0');
+  const after = at('helper@2.0.1');
+  assert.equal(findingsFor(after, 'AGC-SUP-006').length, 2);
+  assert.ok(!diffScans(before, after).added.some(f => f.ruleId === 'AGC-SUP-006'), 'a bump is old debt');
+  const other = scanFiles(server('npx', ['-y', '-p', 'pkg@1.2.3', '-p', 'other@2.0.0', 'cmd']));
+  assert.ok(
+    diffScans(before, other).added.some(f => f.ruleId === 'AGC-SUP-006' && /other@2.0.0/.test(f.message)),
+    'a new package is new',
+  );
+});
+
+test('AGC-SUP-006: servers in a workflow step, and the fingerprint they share by name', () => {
+  const workflow = steps =>
+    `on: issue_comment\npermissions:\n  contents: read\njobs:\n  c:\n    runs-on: ubuntu-latest\n    steps:\n${steps
+      .map(
+        path =>
+          `      - uses: anthropics/claude-code-action@v1\n        with:\n          claude_args: --mcp-config ${path} --allowedTools mcp__gh\n`,
+      )
+      .join('')}`;
+  const one = scanFiles({
+    '.github/workflows/c.yml': workflow(['.github/a.json']),
+    '.github/a.json': mcp({ gh: { command: 'npx', args: ['-y', 'pkg@1.2.3'] } }),
+  });
+  const [finding] = findingsFor(one, 'AGC-SUP-006');
+  assert.ok(finding, 'a workflow server is checked');
+  assert.match(finding.message, /pins "pkg@1.2.3"/);
+  // Two steps, each with a server named "gh" in its own config file: both are reported, each at
+  // its file. (Two servers of one name in one file share a fingerprint, so a version bump is not new.)
+  const two = scanFiles({
+    '.github/workflows/c.yml': workflow(['.github/a.json', '.github/b.json']),
+    '.github/a.json': mcp({ gh: { command: 'npx', args: ['-y', 'pkg@1.2.3'] } }),
+    '.github/b.json': mcp({ gh: { command: 'npx', args: ['-y', 'pkg@2.0.0'] } }),
+  });
+  const found = findingsFor(two, 'AGC-SUP-006');
+  assert.deepEqual(found.map(f => `${f.location.file} ${f.message.match(/pins "([^"]+)"/)[1]}`).sort(), [
+    '.github/a.json pkg@1.2.3',
+    '.github/b.json pkg@2.0.0',
+  ]);
+  assert.equal(new Set(found.map(f => f.fingerprint)).size, 2);
+});
+
+test('bypass: a requiring rule GitHub gave no ruleset id for leaves the answer open', async () => {
+  const rules = await read({
+    ...rulesOn([ownerRule(7), { ...ownerRule(0), ruleset_id: undefined }], {
+      '/repos/acme/app/rulesets/7': ruleset(7, [adminBypass]),
+    }),
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+  });
+  assert.equal(rules.codeOwnerReview, 'required');
+  assert.equal(rules.codeOwnerBypass, 'unknown');
+  // An empty list among those read still settles it.
+  const settled = await read({
+    ...rulesOn([ownerRule(7), { ...ownerRule(0), ruleset_id: undefined }], {
+      '/repos/acme/app/rulesets/7': ruleset(7, []),
+    }),
+  });
+  assert.equal(settled.codeOwnerBypass, 'none');
+});
+
+test('bypass: deploy keys and apps are single identities', async () => {
+  const key = id => ({ actor_id: id, actor_type: 'DeployKey', bypass_mode: 'always' });
+  const routes = (a, b) => ({
+    ...rulesOn([ownerRule(1), ownerRule(2)], {
+      '/repos/acme/app/rulesets/1': ruleset(1, a),
+      '/repos/acme/app/rulesets/2': ruleset(2, b),
+    }),
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+  });
+  assert.equal((await read(routes([key(1)], [adminBypass]))).codeOwnerBypass, 'none', 'a key is not an admin');
+  assert.equal((await read(routes([key(1)], [key(2)]))).codeOwnerBypass, 'none');
+  const same = await read(routes([key(1)], [key(1), adminBypass]));
+  assert.equal(same.codeOwnerBypass, 'possible');
+  assert.equal(same.bypassWhy, 'deploy keys may bypass every ruleset that requires it');
+});
+
+// ---------------------------------------------------------------- the option lists against the programs
+
+test('option lists match npm’s own definitions', t => {
+  const root = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' }).stdout?.trim();
+  const version = spawnSync('npm', ['--version'], { encoding: 'utf8' }).stdout?.trim() ?? '';
+  const file = root && join(root, 'npm', 'node_modules', '@npmcli', 'config', 'lib', 'definitions', 'index.js');
+  if (!file || !existsSync(file) || !version.startsWith('11.'))
+    return t.skip(`npm 11 not found (have ${version || 'none'})`);
+  const { definitions } = createRequire(import.meta.url)(file);
+  const npm = FLAG_TABLES.npm;
+  for (const [name, definition] of Object.entries(definitions)) {
+    const types = [definition.type].flat();
+    const takes = !types.includes(Boolean) || types.includes(String);
+    const known = takes ? npm.valued.has(`--${name}`) || npm.main.has(`--${name}`) : npm.plain.has(`--${name}`);
+    assert.ok(known, `--${name} (${takes ? 'takes a value' : 'a switch'}) missing from the npm table`);
+  }
+});
+
+test('option lists match docker run --help', t => {
+  const help = spawnSync('docker', ['run', '--help'], { encoding: 'utf8' });
+  if (help.status !== 0 || !help.stdout) return t.skip('docker not installed');
+  const run = FLAG_TABLES.run;
+  for (const line of help.stdout.split('\n')) {
+    const match = /^\s+(?:(-\w), )?(--[a-z0-9-]+)(?: ([a-z]+))?\s{2,}/.exec(line);
+    if (!match) continue;
+    const [, short, long, value] = match;
+    for (const name of [short, long].filter(Boolean))
+      assert.ok(
+        value ? run.valued.has(name) : run.plain.has(name),
+        `${name} (${value ? 'takes a value' : 'a switch'})`,
+      );
+  }
 });

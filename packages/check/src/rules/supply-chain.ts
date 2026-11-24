@@ -11,7 +11,7 @@ import {
 } from './common.js';
 import type { Rule } from './common.js';
 import type { Project } from '../model.js';
-import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
+import { dockerImage, dockerRun, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
 
 /** Runners that run a project's installed copy of a package when there is one; dlx always fetches. */
@@ -56,11 +56,14 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
       for (const server of agentServers(project)) {
         const { specs, unverifiable } = runnerSpecs(server.command, server.args);
         if (unverifiable) {
+          const shell = unverifiable.startsWith('starts a shell line');
           report({
-            message: `${serverLabel(server)} starts a shell line with more than one command, so what it fetches and runs cannot be checked.`,
+            message: `${serverLabel(server)} ${unverifiable}.`,
             location: server.location,
-            subject: `server:${serverKey(server)}:shell`,
-            fix: 'Start the server with one command, with its package pinned to an exact version.',
+            subject: `server:${serverKey(server)}:${shell ? 'shell' : 'options'}`,
+            fix: shell
+              ? 'Start the server with one command, with its package pinned to an exact version.'
+              : 'Write that option as --option=value, so its value is one word, and pin the package to an exact version.',
           });
           continue;
         }
@@ -77,7 +80,17 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
             });
         }
         if (specs.length) continue;
-        const image = dockerImage(server.command, server.args);
+        const run = dockerRun(server.command, server.args);
+        if (run && !('image' in run)) {
+          report({
+            message: `${serverLabel(server)} ${run.unreadable}.`,
+            location: server.location,
+            subject: `server:${serverKey(server)}:options`,
+            fix: 'Write that option as --option=value, so its value is one word, and pin the image by digest.',
+          });
+          continue;
+        }
+        const image = run?.image;
         if (image && !image.includes('@sha256:') && (!/:[^/:]+$/.test(image) || image.endsWith(':latest')))
           report({
             message: `${serverLabel(server)} runs image "${image}" with no fixed tag or digest.`,

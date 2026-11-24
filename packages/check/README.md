@@ -572,7 +572,8 @@ an index. Settings that do not redirect (`engine-strict`, hoisting) change nothi
 redirect applies only to its own folder and below; one that is too large or a link out of the
 repository is assumed to redirect. The policy rule (AGC-POL-001) matches servers the same way,
 also by remote host, and AGC-SUP-001 checks every package a command fetches, reporting a shell
-line it cannot read. A server that is not identified may read private data, take in untrusted
+line it cannot read, or a runner or container option it does not know where the next word may be
+that option's value or the package (`--option=value` is always readable). A server that is not identified may read private data, take in untrusted
 input, send data out, write and run code: all unknown.
 
 In Markdown, YAML and scripts, a comment on the same line or the line above suppresses one

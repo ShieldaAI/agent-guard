@@ -26,9 +26,19 @@
   belong to the server: a server's own `--offline` no longer counts as the runner's, and its own
   `-p value` is no longer reported as a second package. Checked against 536 public `.mcp.json`
   files: 16 findings changed, each to the right package or image or away from a false one.
+- AGC-SUP-001 now fails closed on a runner or container option it does not know. npm, uv, Docker
+  and podman options are listed in full from those programs' own definitions; an option in
+  neither list followed by a word makes the command unreadable, since that word may be the
+  option's value or the package, and AGC-SUP-001 says so (high) instead of guessing. Joined and
+  attached short options (`-it`, `-u1000`, `-wpkg`, `-p=pkg`) are read as the programs read them,
+  `uvx --with a,b` as two packages, and npm's `--no-<option>` as a switch. None of the 536 public
+  configs above uses an unknown option. pnpm, yarn, bun and pipx document too few options for a
+  full list, so an unknown option there is still read as a switch.
+- `npx --offline` no longer counts as running the project's installed copy: it runs whatever the
+  npm cache holds. An unpinned package there is AGC-SUP-001, a pinned one AGC-SUP-006.
 - Fix: AGC-SUP-001 reported `uvx pkg@1.2.3`, which uv reads as an exact version, and a git source
   pinned to a full commit (`git+https://…/repo.git@<40 hex>`), as unpinned. A branch or tag after
-  `@` still counts as unpinned.
+  `@` still counts as unpinned. A full commit counts in either letter case; a short one does not.
 - Fix: AGC-SUP-001 skipped `pnpm dlx`, `yarn dlx` and `pnpx` when the package was also a project
   dependency. Those runners always fetch into a temporary folder; only npx, `npm exec` and bunx
   run the project's installed copy.
