@@ -12,7 +12,7 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
    Never publish changed source under an existing version. The check's pinned version moves too:
    the Action, the skill, the pre-commit hook, the README, `packages/check/server.json` and the
    plugin in `plugins/agent-guard-check` (its three manifests, the skill, the README and
-   `VERSION` in `scripts/start-mcp-server.mjs`). `scripts/plugins.test.mjs` and
+   `VERSION` in `scripts/start-mcp-server.mjs`), and its skills-only copy in `plugins/agent-guard-check-skill` (manifest, and the README regenerated with `readmeFor`). `scripts/plugins.test.mjs` and
    `packages/check/test/release.test.mjs` fail until every pin matches.
 3. Run the checks and pack; tarballs in `artifacts/` hold only JS, declarations, metadata, README, license.
 4. In the same release pull request, set `release-state.json` to `schemaVersion: 1`, the exact `version`,

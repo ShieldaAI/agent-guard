@@ -388,6 +388,7 @@ The product is the guard in `packages/core`. Everything else builds on it or sup
 | `packages/agent-map`, `apps/agent-map` | Agent Map (experimental): the inventory service and its browser viewer. |
 | `packages/check` | Agent Guard Check: a scanner for agent configuration files, with a GitHub Action, an MCP server, a pre-commit hook and a container. |
 | `plugins/agent-guard-check` | The Agent Guard Check plugin for Claude Code, Codex and Antigravity: the skill and the MCP server in one folder. `.claude-plugin/` and `.agents/plugins/` at the root list it as a marketplace. |
+| `plugins/agent-guard-check-skill` | The same plugin with the skill only, for Anthropic's plugin directory, which takes no local MCP servers or scripts from organizations it has not verified. |
 | `apps/agent-ops` | Agent Ops: a reference web app for reviewing and approving agent requests. Not an npm package. |
 | `integrations/cartography` | A Python collector that feeds Agent Map from the executor and from AWS. |
 | `deployment` | The Docker isolation profile for untrusted code, and the runbooks for running Agent Ops and the collector. |

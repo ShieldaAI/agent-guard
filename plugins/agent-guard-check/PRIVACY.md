@@ -17,8 +17,8 @@ record of what it scanned.
   (package name and version, your IP address, npm's user agent) and nothing from your project.
   The scanner makes no requests of its own. One case to know: in a partial (blobless) git clone,
   comparing with a commit could make git fetch a missing object from the repository's own remote,
-  as any git command there would. The MCP server turns that off; git 2.44 and later honour it,
-  and with older git that fetch can still happen.
+  as any git command there would. Where the plugin runs the scanner as an MCP server, it turns
+  that off (git 2.44 and later honour this); a command-line run does not.
 - **Your agent's model provider:** findings returned to your agent become part of your session,
   which your agent host handles under its own terms, like any other tool output.
 - **Personal data and children:** this is a developer tool. It does not set out to process

@@ -84,9 +84,10 @@ configuration, how to read the result and how to fix a finding without silencing
 
 ## Install
 
-Install **Agent Guard Check** from the plugin directory in the ChatGPT desktop app or Codex. It
-needs Node.js 22 or newer with npm on your computer, and runs only in threads that work on your
-local files.
+Install **Agent Guard Check** from your agent's plugin directory. It needs Node.js 22 or newer
+with npm on your computer, and an agent that can run commands there: Claude Code, Cowork, Codex,
+or the ChatGPT desktop app in a thread that works on your local files. In a chat with no access to
+your files there is nothing for it to read.
 
 ## What it runs, reads and sends
 
