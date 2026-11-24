@@ -231,12 +231,18 @@ function isEntry(): boolean {
   }
 }
 
-if (isEntry()) {
-  const args = process.argv.slice(2);
+/**
+ * Starts the server from command-line arguments: `agent-guard-check-mcp [root]`, or
+ * `agent-guard-check --mcp [root]` through the package's default bin, which is what MCP registries
+ * and `npx @shieldaai/agent-guard-check` run.
+ */
+export function mcpMain(args: readonly string[]): void {
   if (args.includes('--help')) {
     process.stdout.write(
-      `Usage: ${TOOL_NAME}-mcp [root]\n\nA read-only MCP server (stdio) for checking AI agent configuration in one repository.\n`,
+      `Usage: ${TOOL_NAME}-mcp [root]\n       ${TOOL_NAME} --mcp [root]\n\nA read-only MCP server (stdio) for checking AI agent configuration in one repository.\n`,
     );
   } else if (args.includes('--version')) process.stdout.write(`${TOOL_VERSION}\n`);
   else serveStdio(resolve(process.cwd(), args.find(arg => !arg.startsWith('-')) ?? '.'));
 }
+
+if (isEntry()) mcpMain(process.argv.slice(2));

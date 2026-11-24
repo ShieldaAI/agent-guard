@@ -463,10 +463,20 @@ actually reviewed the agent before moving the date. That decision belongs to the
 approve the pull request, ideally the owner through CODEOWNERS. What the scanner does is put the
 capabilities in front of them.
 
-## Other agents: MCP server and skill
+## Other agents: plugin, MCP server and skill
+
+The [Agent Guard Check plugin](../../plugins/agent-guard-check) packages the skill and the MCP
+server for Claude Code, Codex and Antigravity:
+
+```text
+/plugin marketplace add ShieldaAI/agent-guard
+/plugin install agent-guard-check@shielda
+```
 
 `agent-guard-check-mcp` is a read-only MCP server (stdio) so an agent can check its own
 configuration before it changes it. It scans one root fixed at start-up and never leaves it.
+`agent-guard-check --mcp [root]` starts the same server through the default bin (with `--mcp` as
+the first argument); MCP registries list it as `io.github.ShieldaAI/agent-guard-check`.
 
 ```json
 {

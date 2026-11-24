@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased
+
+### Agent Guard Check
+
+- Plugin for Claude Code, Codex and Antigravity in `plugins/agent-guard-check`: the skill and the
+  read-only MCP server in one folder, with a manifest for each host. Install in Claude Code with
+  `/plugin marketplace add ShieldaAI/agent-guard`, then `/plugin install agent-guard-check@shielda`;
+  in Codex with `codex plugin marketplace add ShieldaAI/agent-guard`. The MCP server starts through
+  a launcher that runs npx from outside the project, so a repository's own `.npmrc` or
+  `node_modules` cannot choose which scanner checks it.
+- `agent-guard-check --mcp [root]` runs the MCP server through the package's default bin, which is
+  what MCP registries start (`npx @shieldaai/agent-guard-check --mcp`). `agent-guard-check-mcp`
+  still works. `--mcp` must be the first argument.
+- The package declares `mcpName` (`io.github.ShieldaAI/agent-guard-check`) for the official MCP
+  Registry; `packages/check/server.json` is the registry entry.
+
 ## 1.6.2 — 2026-11-23
 
 ### Agent Guard Check

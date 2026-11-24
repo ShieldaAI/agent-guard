@@ -1,0 +1,40 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "agent-guard-check",
+  "version": "1.6.2",
+  "description": "Shows what each AI agent in a repository can do and flags authority it does not need, before and after you change its configuration.",
+  "author": {
+    "name": "Shielda",
+    "email": "support@shielda.ai",
+    "url": "https://shielda.ai"
+  },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/plugins/agent-guard-check#readme",
+  "repository": "https://github.com/ShieldaAI/agent-guard",
+  "license": "Apache-2.0",
+  "keywords": ["security", "ai-agents", "mcp", "permissions", "static-analysis", "code-review", "lethal-trifecta"],
+  "extensions": {
+    "com.openai": {
+      "requires_local_executor": true,
+      "interface": {
+        "displayName": "Agent Guard Check",
+        "shortDescription": "Check what AI agents can do",
+        "longDescription": "Agent Guard Check reads the AI agent configuration in a repository (Codex and Claude Code settings, MCP server configs, subagents, Copilot custom agents, Gemini settings, plugin marketplaces and GitHub workflows that run agents) and shows what each agent can do: read private data, take in untrusted input, write, run code, send data out, spend money or change its own instructions, and whether a person is asked first.\n\nIt flags authority an agent does not need, such as an agent that can read private data, read untrusted input and send data out without approval (the lethal trifecta), unpinned MCP servers, bypass modes and broad shell rules. Every finding names a file, a line and a fix.\n\nUse it before and after you change agent configuration: it compares the working tree with a git commit and reports only what the change made worse. It reads files only. It never runs repository code and sends nothing anywhere; npm downloads the open-source scanner (@shieldaai/agent-guard-check, Apache-2.0) the first time it runs.",
+        "developerName": "Shielda",
+        "category": "Developer Tools",
+        "capabilities": ["Read"],
+        "websiteURL": "https://github.com/ShieldaAI/agent-guard/tree/main/plugins/agent-guard-check#readme",
+        "supportURL": "https://github.com/ShieldaAI/agent-guard/issues",
+        "privacyPolicyURL": "https://github.com/ShieldaAI/agent-guard/blob/main/plugins/agent-guard-check/PRIVACY.md",
+        "termsOfServiceURL": "https://github.com/ShieldaAI/agent-guard/blob/main/plugins/agent-guard-check/LICENSE",
+        "defaultPrompt": [
+          "What can the AI agents in this repository do without asking first?",
+          "Check whether my agent settings change gives any agent more authority.",
+          "Find the riskiest agent setting in this repository and fix it."
+        ],
+        "brandColor": "#1C9BD6",
+        "composerIcon": "./assets/icon.png",
+        "logo": "./assets/logo.png"
+      }
+    }
+  }
+}

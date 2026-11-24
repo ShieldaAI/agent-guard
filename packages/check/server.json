@@ -1,0 +1,45 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.ShieldaAI/agent-guard-check",
+  "title": "Agent Guard Check",
+  "description": "Shows what each AI agent configured in a repository can do and flags authority it does not need.",
+  "version": "1.6.2",
+  "websiteUrl": "https://github.com/ShieldaAI/agent-guard/tree/main/packages/check#readme",
+  "repository": {
+    "url": "https://github.com/ShieldaAI/agent-guard",
+    "source": "github",
+    "subfolder": "packages/check"
+  },
+  "icons": [
+    {
+      "src": "https://raw.githubusercontent.com/ShieldaAI/agent-guard/main/plugins/agent-guard-check/assets/logo.png",
+      "mimeType": "image/png",
+      "sizes": ["400x400"]
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@shieldaai/agent-guard-check",
+      "version": "1.6.2",
+      "runtimeHint": "npx",
+      "transport": { "type": "stdio" },
+      "packageArguments": [
+        {
+          "type": "positional",
+          "value": "--mcp",
+          "description": "Run the MCP server instead of a one-off scan. Must come first."
+        },
+        {
+          "type": "positional",
+          "valueHint": "repository",
+          "format": "filepath",
+          "description": "The repository to check. Default: the working directory the client starts the server in.",
+          "isRequired": false,
+          "default": "."
+        }
+      ]
+    }
+  ]
+}

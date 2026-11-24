@@ -1,0 +1,20 @@
+{
+  "name": "shielda",
+  "owner": {
+    "name": "Shielda",
+    "email": "support@shielda.ai",
+    "url": "https://shielda.ai"
+  },
+  "metadata": {
+    "description": "Security plugins from Shielda for AI coding agents."
+  },
+  "plugins": [
+    {
+      "name": "agent-guard-check",
+      "source": "./plugins/agent-guard-check",
+      "description": "Shows what each AI agent in a repository can do and flags authority it does not need, before and after you change its configuration.",
+      "category": "security",
+      "tags": ["security", "mcp", "permissions", "code-review"]
+    }
+  ]
+}

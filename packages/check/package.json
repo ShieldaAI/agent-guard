@@ -2,6 +2,7 @@
   "name": "@shieldaai/agent-guard-check",
   "version": "1.6.2",
   "description": "Static scanner for AI agent configuration: shows what each agent in a repo can do, flags authority it does not need, and reports what a pull request widened.",
+  "mcpName": "io.github.ShieldaAI/agent-guard-check",
   "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/index.js",
