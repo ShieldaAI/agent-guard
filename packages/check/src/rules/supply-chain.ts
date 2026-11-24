@@ -10,8 +10,53 @@ import {
   serverLabel,
 } from './common.js';
 import type { Rule } from './common.js';
-import { dockerImage, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
+import type { Project } from '../model.js';
+import { parseRange, parseVersion, satisfies } from '../semver.js';
+import { dockerImage, dockerRun, isPinnedSpec, isPythonRunner, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
+
+/** Runners that run a project's installed copy of a package when there is one; dlx always fetches. */
+const USES_PROJECT_INSTALL = new Set(['npx', 'npm exec', 'bunx']);
+
+/**
+ * Whether a runner runs code from the repository rather than the registry: a local path, a run that
+ * may not download (`--no-install`), or an installed package with a runner that prefers it. Then
+ * the repository's lockfile, not the config, decides what runs.
+ *
+ * npx (libnpmexec's missingFromTree) runs an installed copy, at any depth, for a bare name, for the
+ * exact version installed, or for a range an installed version satisfies; a tag (`@latest`) is
+ * always fetched. bunx runs the project's copy only for a bare name. The installed versions come from the root lockfile, or from package.json when it
+ * declares an exact version; a declared range says only that some version is installed.
+ */
+function fromProject(
+  project: Project,
+  runner: { runner: string; spec: string; localOnly: boolean },
+  name: string,
+): boolean {
+  if (runner.localOnly || /^(\.{1,2}$|\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)) return true;
+  if (!USES_PROJECT_INSTALL.has(runner.runner)) return false;
+  // An alias (`"foo": "npm:bar@1.0.0"`) installs bar, not foo: npx looks packages up by real name.
+  const raw = project.dependencies.get(name);
+  const declared = raw?.startsWith('npm:') ? undefined : raw;
+  const locked = project.lockedVersions.get(name) ?? [];
+  if (declared === undefined && !locked.length) return false;
+  const { version: wanted } = splitSpec(runner.spec);
+  if (wanted === undefined) return true;
+  // bunx skips the project's copy whenever a version, tag or URL is given (bun's bunx_command.rs).
+  if (runner.runner === 'bunx') return false;
+  if (!parseRange(wanted)) return false; // a tag
+  // An exact version is a range too: npx accepts an installed version that satisfies it.
+  const installed = locked.length ? locked : declared !== undefined && parseVersion(declared) ? [declared] : [];
+  return installed.some(version => satisfies(version, wanted));
+}
+
+/** How each npm-ecosystem runner starts the copy the lockfile installed, without fetching. */
+const INSTALLED_RUN: Readonly<Record<string, string>> = {
+  'pnpm dlx': 'pnpm exec',
+  pnpx: 'pnpm exec',
+  'yarn dlx': 'yarn run',
+  bunx: 'bun run',
+};
 
 export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
   rule(
@@ -27,34 +72,43 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
       for (const server of agentServers(project)) {
         const { specs, unverifiable } = runnerSpecs(server.command, server.args);
         if (unverifiable) {
+          const shell = unverifiable.startsWith('starts a shell line');
           report({
-            message: `${serverLabel(server)} starts a shell line with more than one command, so what it fetches and runs cannot be checked.`,
+            message: `${serverLabel(server)} ${unverifiable}.`,
             location: server.location,
-            subject: `server:${serverKey(server)}:shell`,
-            fix: 'Start the server with one command, with its package pinned to an exact version.',
+            subject: `server:${serverKey(server)}:${shell ? 'shell' : 'options'}`,
+            fix: shell
+              ? 'Start the server with one command, with its package pinned to an exact version.'
+              : /installs packages this check does not read/.test(unverifiable)
+                ? 'Name each package in the config with an exact version (uvx --with pkg==1.2.3), or install from a locked environment.'
+                : 'Write that option as --option=value, so its value is one word, and pin the package to an exact version.',
           });
           continue;
         }
         for (const runner of specs) {
           const { name } = splitSpec(runner.spec);
-          // A project dependency or a local path resolves inside the repo, not from the registry.
-          if (
-            runner.localOnly ||
-            project.dependencies.has(name) ||
-            /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)
-          )
-            continue;
+          if (fromProject(project, runner, name)) continue;
           if (!isPinnedSpec(runner.runner, runner.spec))
             report({
               message: `${serverLabel(server)} starts "${runner.spec}" with ${runner.runner} and no pinned version, so every new release runs automatically.`,
               location: server.location,
               subject:
                 specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
-              fix: `Pin an exact version, for example "${name}${runner.runner === 'uvx' || runner.runner === 'pipx' ? '==' : '@'}<version>".`,
+              fix: `Pin an exact version, for example "${name}${isPythonRunner(runner.runner) ? '==' : '@'}<version>".`,
             });
         }
         if (specs.length) continue;
-        const image = dockerImage(server.command, server.args);
+        const run = dockerRun(server.command, server.args);
+        if (run && !('image' in run)) {
+          report({
+            message: `${serverLabel(server)} ${run.unreadable}.`,
+            location: server.location,
+            subject: `server:${serverKey(server)}:options`,
+            fix: 'Write that option as --option=value, so its value is one word, and pin the image by digest.',
+          });
+          continue;
+        }
+        const image = run?.image;
         if (image && !image.includes('@sha256:') && (!/:[^/:]+$/.test(image) || image.endsWith(':latest')))
           report({
             message: `${serverLabel(server)} runs image "${image}" with no fixed tag or digest.`,
@@ -222,6 +276,46 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
           severity: source.autoUpdate && !source.ref ? 'high' : source.autoUpdate ? 'medium' : 'low',
           fix: 'Set "ref" to a release tag and autoUpdate to false; pin each plugin in the marketplace with a sha.',
         });
+      }
+    },
+  ),
+  rule(
+    {
+      id: 'AGC-SUP-006',
+      title: 'Pinned MCP server can still change',
+      severity: 'low',
+      confidence: 'high',
+      owasp: [ASI.supply],
+      help: 'An exact version fixes the package, not what comes with it. npx, uvx and the other runners resolve the package’s own dependencies again on every fresh install, and a Docker tag can be moved to another image. A lockfile or a digest fixes all of it, so a new tool or a changed one arrives in a reviewed diff. A package that bundles its dependencies or pins each one exactly is the exception: suppress the finding with that reason.',
+    },
+    (project, report) => {
+      for (const server of agentServers(project)) {
+        const { specs, unverifiable } = runnerSpecs(server.command, server.args);
+        if (unverifiable) continue; // AGC-SUP-001
+        for (const runner of specs) {
+          const { name } = splitSpec(runner.spec);
+          if (fromProject(project, runner, name)) continue;
+          if (!isPinnedSpec(runner.runner, runner.spec)) continue; // AGC-SUP-001
+          const python = isPythonRunner(runner.runner);
+          report({
+            message: `${serverLabel(server)} pins "${runner.spec}", but ${runner.runner} resolves its dependencies again on every fresh install, so unless the package fixes every dependency version, a new release of one of them can run with no change to this file.`,
+            location: server.location,
+            // Keyed by package name: another package is a new finding, a new version of it is not.
+            subject: `server:${server.name}:${name}`,
+            fix: python
+              ? `Install ${name} into a locked environment (uv.lock or a hashed requirements file) and start that copy.`
+              : `Add ${name} to devDependencies so the lockfile fixes its dependencies, and start the installed copy with "${INSTALLED_RUN[runner.runner] ?? 'npx --no-install'} ${name}".`,
+          });
+        }
+        if (specs.length) continue;
+        const image = dockerImage(server.command, server.args);
+        if (image && !image.includes('@sha256:') && /:[^/:]+$/.test(image) && !image.endsWith(':latest'))
+          report({
+            message: `${serverLabel(server)} runs image "${image}" by tag. Whoever can push to that repository can move the tag to another image.`,
+            location: server.location,
+            subject: `server:${serverKey(server)}`,
+            fix: `Pin the digest of the image you reviewed: ${image.replace(/:[^/:]+$/, '')}@sha256:<digest>.`,
+          });
       }
     },
   ),

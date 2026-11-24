@@ -187,6 +187,8 @@ export interface ScanResult {
       readonly branch: string;
       readonly codeOwnerReview: 'required' | 'not-required' | 'unknown';
       readonly why: string;
+      readonly codeOwnerBypass?: 'none' | 'possible' | 'unknown';
+      readonly bypassWhy?: string;
     };
   };
   /**

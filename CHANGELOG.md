@@ -4,6 +4,80 @@
 
 ### Agent Guard Check
 
+- New AGC-SUP-006 (low): an MCP server pinned to an exact version whose code can still change.
+  npx, uvx and the other runners resolve the pinned package's own dependencies again on every
+  fresh install, so a new release of one of them runs with no change to the config. A Docker image
+  pinned by tag can be moved to another image by whoever can push to that repository. The fix is a
+  lockfile (a dev dependency started with `npx --no-install`, or a locked Python environment) or an
+  image digest, so a new or changed tool arrives in a reviewed diff. Unpinned servers stay with
+  AGC-SUP-001. From a reader's comment on the "agents as code" article.
+- AGC-GOV-004 now also reports a code-owner requirement that someone can bypass (low). Every
+  ruleset and branch protection rule that requires code owners applies at once, so only an actor
+  on every bypass list gets through: one empty list means nobody does, and lists that share no
+  actor are judged by whether a person could be on each through a team or role (unknown) or not
+  (apps and deploy keys only). GitHub shows bypass lists and the admin setting only to a token with
+  admin access; with any other token, the Actions token included, the bypass is not judged and
+  nothing new is reported. `fetchBranchRules` returns `codeOwnerBypass` and `bypassWhy`.
+- Fix: AGC-SUP-001 read runner and Docker flag values as the package or image. `uvx --python 3.12
+  pkg` reported "3.12", `npx --registry URL pkg` the URL, `docker run -u 1000:1000 image` the user,
+  and `uvx --with extra==1.0 pkg` hid `pkg` entirely, so an unpinned server went unreported. Each
+  runner's flags are now read by what they take (npm's from npm's own option definitions, uv's
+  from its CLI reference, Docker's from `docker run --help`), and arguments after the package
+  belong to the server: a server's own `--offline` no longer counts as the runner's, and its own
+  `-p value` is no longer reported as a second package. Checked against 536 public `.mcp.json`
+  files: 16 findings changed, each to the right package or image or away from a false one.
+- AGC-SUP-001 now fails closed on a runner or container option it does not know. npm, uv, Docker
+  and podman options are listed in full from those programs' own definitions; an option in
+  neither list followed by a word makes the command unreadable, since that word may be the
+  option's value or the package, and AGC-SUP-001 says so (high) instead of guessing. Joined and
+  attached short options (`-it`, `-u1000`, `-wpkg`, `-p=pkg`) are read as the programs read them,
+  `uvx --with a,b` as two packages, and npm's `--no-<option>` as a switch. None of the 536 public
+  configs above uses an unknown option. pnpm, yarn, bun and pipx document too few options for a
+  full list, so an unknown option there is still read as a switch.
+- Fix: AGC-SUP-001 skipped any npx or bunx package that was also a project dependency, whatever
+  version the config asked for. It now follows npx (libnpmexec): an installed copy, at any depth,
+  runs for a bare name, the exact installed version or a range it satisfies; a tag (`@latest`) or
+  any other version is fetched. Installed versions come from the root `package-lock.json` or
+  `npm-shrinkwrap.json` (workspace links at their target's version), or from package.json when it
+  declares an exact version. Ranges are checked by a small semver reader that the tests compare
+  with npm's own node-semver on over 10,000 pairs.
+- Fix: `npm exec --no-install` fetches (npm exec does not know the option; only npx does), the last
+  of `--yes` and `--no` wins, `npm exec` reads options after the package up to `--`, and its `-p` is
+  `--parseable`, not `--package`.
+- npx is read as npm's `bin/npx-cli.js` reads it: a replica of its loop (tested against npm's own
+  file on 20,000 generated command lines) decides where options end, so an option npx counts as
+  taking a value (`--no-color`) swallows the next word, and npm exec's own reading follows. bunx
+  uses the project's copy only for a bare name, as bun's `bunx_command.rs` does.
+- A `package-lock.json` or `npm-shrinkwrap.json` over 1 MiB is not agent configuration: it is
+  skipped without a finding, and installed versions then come from package.json. A package.json
+  alias (`"foo": "npm:bar@1.0.0"`) does not count as installing `foo`. `uv` options before `tool run`,
+  a bare `.` or `..` as a local path, and npm's `--yes false` are read.
+- `uvx --with-requirements FILE` and `pipx --pip-args` install packages the config does not name:
+  AGC-SUP-001 reports them as unreadable instead of judging only the package it can see.
+- The semver reader refuses ranges it cannot read with certainty (a wildcard before a number, a
+  prerelease on a partial version, build metadata), so those packages are reported rather than
+  assumed installed; on every range it reads it agrees with node-semver (13 million fuzzed pairs).
+- AGC-SUP-001 and AGC-SUP-006 now also read `uv tool run`, `exec` in front of a shell line's
+  command (`bash -l -c "exec npx …"`), `docker.exe`, and docker inside `cmd /c` or `sh -c`.
+- npx and `npm exec` are read by their own rules (npm's `bin/npx-cli.js`): npx drops the removed
+  `-n`, `--npm` and `--node-arg` with their values, and `--no`, `--no-yes` and `--yes=false` mean
+  "installed copy only" like `--no-install`. uv's options come from every option in its CLI source,
+  hidden ones (`--native-tls`) included. Docker's own options before `run` (`--context`, `-H`),
+  `docker container run` and podman's `--rootfs` are read too.
+- Python sources: a PEP 508 direct reference (`pkg @ git+https://…@<commit>` or an archive with
+  `#sha256=`) counts as pinned, and an environment marker (`; python_version<'3.12'`) no longer
+  hides an exact version.
+- Bypass: GitHub identifies organization admins, enterprise owners and deploy keys by type alone,
+  so a null or ignored actor id no longer splits one actor in two. An empty bypass list that
+  contradicts `current_user_can_bypass`, or an `enforce_admins` without a true or false, is unknown.
+- `npx --offline` no longer counts as running the project's installed copy: it runs whatever the
+  npm cache holds. An unpinned package there is AGC-SUP-001, a pinned one AGC-SUP-006.
+- Fix: AGC-SUP-001 reported `uvx pkg@1.2.3`, which uv reads as an exact version, and a git source
+  pinned to a full commit (`git+https://…/repo.git@<40 hex>`), as unpinned. A branch or tag after
+  `@` still counts as unpinned. A full commit counts in either letter case; a short one does not.
+- Fix: AGC-SUP-001 skipped `pnpm dlx`, `yarn dlx` and `pnpx` when the package was also a project
+  dependency. Those runners always fetch into a temporary folder; only npx, `npm exec` and bunx
+  run the project's installed copy.
 - Plugin for Claude Code, Codex and Antigravity in `plugins/agent-guard-check`: the skill and the
   read-only MCP server in one folder, with a manifest for each host. Install in Claude Code with
   `/plugin marketplace add ShieldaAI/agent-guard`, then `/plugin install agent-guard-check@shielda`;
@@ -15,6 +89,10 @@
   still works. `--mcp` must be the first argument.
 - The package declares `mcpName` (`io.github.ShieldaAI/agent-guard-check`) for the official MCP
   Registry; `packages/check/server.json` is the registry entry.
+- The GitHub Action's pull-request comment now warns and goes on when the token cannot comment
+  (pull requests from forks get a read-only token); before, the comment step failed the check.
+- The MCP server sets `GIT_NO_LAZY_FETCH`, so comparing with a commit in a partial (blobless) clone
+  no longer makes git fetch missing objects from the remote (git 2.44 and later).
 
 ## 1.6.2 — 2026-11-23
 

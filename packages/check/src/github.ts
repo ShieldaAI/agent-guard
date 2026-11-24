@@ -21,6 +21,15 @@ export interface BranchRules {
   readonly codeOwnerReview: 'required' | 'not-required' | 'unknown';
   /** One sentence on what decided it. */
   readonly why: string;
+  /**
+   * Only when `codeOwnerReview` is `required`: whether someone may merge without it.
+   * - `none`: a rule that requires code owners lets nobody bypass it.
+   * - `possible`: every rule that requires code owners names someone who may bypass it.
+   * - `unknown`: who may bypass could not be read (it needs admin access to the repository).
+   */
+  readonly codeOwnerBypass?: 'none' | 'possible' | 'unknown';
+  /** One sentence on who may bypass, when `codeOwnerBypass` is set. */
+  readonly bypassWhy?: string;
 }
 
 export interface BranchRulesOptions {
@@ -130,6 +139,159 @@ function failure(what: string, response: Response): GitHubError {
   );
 }
 
+type Bypass = { readonly state: 'none' | 'possible' | 'unknown'; readonly why: string };
+
+/**
+ * Who may bypass one rule, keyed by identity (`Team:42`), with a name for each. The repository admin
+ * role is `RepositoryRole:5` in rulesets (GitHub's built-in id) and is the same people classic
+ * protection lets through when it does not apply to admins.
+ */
+type Actors = Map<string, string>;
+
+const ADMINS = 'RepositoryRole:5';
+/** Identities that are not people, so they cannot also be on a list through a team or a role. */
+const NOT_PEOPLE = /^(Integration|DeployKey):/;
+const NO_BYPASS: Bypass = { state: 'none', why: 'a rule that requires code owners lets nobody bypass it' };
+const MEMBERSHIP: Bypass = {
+  state: 'unknown',
+  why: 'each rule that requires code owners lets different actors bypass it, and whether one person is on every list depends on team and role membership',
+};
+
+/** A ruleset bypass actor: its identity and, in words, who it is. Other role ids are not documented, so they are not named. */
+function rulesetActor(actor: unknown): [string, string] {
+  if (!isRecord(actor)) return ['?', 'someone'];
+  const type = String(actor['actor_type'] ?? '?');
+  // GitHub ignores actor_id for organization admins and enterprise owners and returns null for
+  // deploy keys: each of those is one actor whatever the id says.
+  const byType = type === 'OrganizationAdmin' || type === 'EnterpriseOwner' || type === 'DeployKey';
+  const key = byType ? `${type}:` : `${type}:${String(actor['actor_id'] ?? '')}`;
+  switch (type) {
+    case 'RepositoryRole':
+      return [key, key === ADMINS ? 'repository admins' : 'a repository role'];
+    case 'OrganizationAdmin':
+      return [key, 'organization admins'];
+    case 'EnterpriseOwner':
+      return [key, 'enterprise owners'];
+    case 'Team':
+      return [key, 'a team'];
+    case 'Integration':
+      return [key, 'a GitHub App'];
+    case 'DeployKey':
+      return [key, 'deploy keys'];
+    default:
+      return [key, 'someone'];
+  }
+}
+
+function listWords(words: Iterable<string>): string {
+  const unique = [...new Set(words)];
+  return unique.length <= 1 ? (unique[0] ?? '') : `${unique.slice(0, -1).join(', ')} and ${unique.at(-1)}`;
+}
+
+/**
+ * Whether anyone can get past every rule that requires code owners. Every rule applies at once, so
+ * only an actor on every bypass list gets through. An empty list anywhere means nobody does. Lists
+ * with no actor in common still leave a person who is in one list's team and another's role, so
+ * that is unknown, unless some list names only apps and deploy keys: nobody else is on it.
+ */
+function combine(lists: readonly Actors[], where: string): Bypass {
+  if (lists.some(list => list.size === 0)) return NO_BYPASS;
+  const common = [...lists[0]!.keys()].filter(key => lists.every(list => list.has(key)));
+  if (common.length)
+    return { state: 'possible', why: `${listWords(common.map(key => lists[0]!.get(key)!))} may bypass ${where}` };
+  // A person could be on every list through different teams and roles; an app or a deploy key cannot.
+  return lists.every(list => [...list.keys()].some(key => !NOT_PEOPLE.test(key))) ? MEMBERSHIP : NO_BYPASS;
+}
+
+/**
+ * The bypass list of each ruleset that requires code owners. The lists are returned only to a token
+ * that may edit the ruleset, so most tokens, the Actions token included, read none of them.
+ */
+async function rulesetLists(
+  options: BranchRulesOptions,
+  repoUrl: string,
+  ids: readonly number[],
+): Promise<{ readonly lists: readonly Actors[]; readonly unread: boolean }> {
+  const lists: Actors[] = [];
+  let unread = ids.length === 0 || ids.length > MAX_PAGES;
+  for (const id of ids.slice(0, MAX_PAGES)) {
+    let response: Response;
+    try {
+      response = await get(options, `${repoUrl}/rulesets/${id}`);
+    } catch {
+      unread = true;
+      continue;
+    }
+    const actors = isRecord(response.body) ? response.body['bypass_actors'] : undefined;
+    // An empty list while GitHub also says this token's own account may bypass cannot both be true.
+    const mayBypass = isRecord(response.body) ? response.body['current_user_can_bypass'] : undefined;
+    const contradicts =
+      Array.isArray(actors) && !actors.length && typeof mayBypass === 'string' && mayBypass !== 'never';
+    if (response.status !== 200 || !Array.isArray(actors) || contradicts) {
+      unread = true;
+      continue;
+    }
+    lists.push(new Map(actors.map(rulesetActor)));
+  }
+  return { lists, unread };
+}
+
+/**
+ * Who may bypass classic branch protection that requires code owners, or undefined when GitHub
+ * does not say whether it applies to admins.
+ */
+function classicActors(settings: Record<string, unknown>): Actors | undefined {
+  const reviews = settings['required_pull_request_reviews'];
+  const admins = settings['enforce_admins'];
+  if (!isRecord(admins) || typeof admins['enabled'] !== 'boolean') return undefined;
+  const actors: Actors = new Map();
+  if (admins['enabled'] !== true) actors.set(ADMINS, 'repository admins');
+  const allowances = isRecord(reviews) ? reviews['bypass_pull_request_allowances'] : undefined;
+  const kinds = [
+    ['users', 'User', 'named users'],
+    ['teams', 'Team', 'named teams'],
+    ['apps', 'Integration', 'named GitHub Apps'],
+  ] as const;
+  if (isRecord(allowances))
+    for (const [field, type, name] of kinds) {
+      const list = allowances[field];
+      if (Array.isArray(list))
+        list.forEach((item, index) =>
+          actors.set(`${type}:${isRecord(item) ? String(item['id'] ?? `#${index}`) : `#${index}`}`, name),
+        );
+    }
+  return actors;
+}
+
+/** Who may bypass classic protection on its own, when it is the only rule that requires code owners. */
+function classicBypass(settings: Record<string, unknown>): Bypass {
+  const actors = classicActors(settings);
+  return actors
+    ? combine([actors], 'the branch protection rule that requires it')
+    : { state: 'unknown', why: 'GitHub did not say whether admins are included' };
+}
+
+/** Whether the branch's classic protection settings require code owners: the settings, or why not known. */
+async function classicRequiring(
+  options: BranchRulesOptions,
+  repoUrl: string,
+  path: string,
+): Promise<Record<string, unknown> | 'none' | 'unread'> {
+  try {
+    const info = await get(options, `${repoUrl}/branches/${path}`);
+    if (info.status !== 200 || !isRecord(info.body)) return 'unread';
+    const protection = info.body['protection'];
+    if (!isRecord(protection)) return info.body['protected'] === false ? 'none' : 'unread';
+    if (protection['enabled'] !== true) return 'none';
+    const settings = await get(options, `${repoUrl}/branches/${path}/protection`);
+    if (settings.status !== 200 || !isRecord(settings.body)) return 'unread';
+    const reviews = settings.body['required_pull_request_reviews'];
+    return isRecord(reviews) && reviews['require_code_owner_reviews'] === true ? settings.body : 'none';
+  } catch {
+    return 'unread';
+  }
+}
+
 /** Which rules apply to `branch`, and whether any of them requires a code owner's approval. */
 export async function fetchBranchRules(options: BranchRulesOptions): Promise<BranchRules> {
   if (!isRepoName(options.repo)) throw new GitHubError(`"${options.repo}" is not an owner/name repository`, null);
@@ -176,20 +338,48 @@ export async function fetchBranchRules(options: BranchRulesOptions): Promise<Bra
     unread = response.next !== undefined && !response.next.startsWith(`${api}/`);
     url = unread ? undefined : response.next;
   }
-  const result = (codeOwnerReview: BranchRules['codeOwnerReview'], why: string): BranchRules => ({
+  const result = (codeOwnerReview: BranchRules['codeOwnerReview'], why: string, bypass?: Bypass): BranchRules => ({
     repo: options.repo,
     branch: branch!,
     codeOwnerReview,
     why,
+    ...(bypass ? { codeOwnerBypass: bypass.state, bypassWhy: bypass.why } : {}),
   });
-  const byRuleset = rules.some(
+  const requiring = rules.filter(
     item =>
       isRecord(item) &&
       item['type'] === 'pull_request' &&
       isRecord(item['parameters']) &&
       item['parameters']['require_code_owner_review'] === true,
   );
-  if (byRuleset) return result('required', `an active ruleset on ${branch} requires review from code owners`);
+  if (requiring.length) {
+    const why = `an active ruleset on ${branch} requires review from code owners`;
+    const ids = [
+      ...new Set(
+        requiring
+          .map(item => (item as Record<string, unknown>)['ruleset_id'])
+          .filter((id): id is number => Number.isSafeInteger(id)),
+      ),
+    ];
+    const read = await rulesetLists(options, repoUrl, ids);
+    // A requiring rule GitHub gave no ruleset id for is a list this check cannot read.
+    const unnamed = requiring.some(item => !Number.isSafeInteger((item as Record<string, unknown>)['ruleset_id']));
+    // An empty list among those read settles it; anything else needs every list, classic's included.
+    if (read.lists.some(list => list.size === 0)) return result('required', why, NO_BYPASS);
+    if (read.unread || unread || unnamed)
+      return result('required', why, { state: 'unknown', why: 'who may bypass the rule needs admin access to read' });
+    const classic = await classicRequiring(options, repoUrl, path);
+    if (classic === 'unread')
+      return result('required', why, {
+        state: 'unknown',
+        why: `the branch protection rule on ${branch} needs admin access to read`,
+      });
+    if (classic === 'none') return result('required', why, combine(read.lists, 'every ruleset that requires it'));
+    const fromClassic = classicActors(classic);
+    if (!fromClassic)
+      return result('required', why, { state: 'unknown', why: 'GitHub did not say whether admins are included' });
+    return result('required', why, combine([...read.lists, fromClassic], 'every rule that requires it'));
+  }
   if (unread) return result('unknown', `not every rule that applies to ${branch} could be read`);
 
   const info = await get(options, `${repoUrl}/branches/${path}`);
@@ -206,7 +396,11 @@ export async function fetchBranchRules(options: BranchRulesOptions): Promise<Bra
   if (settings.status === 200 && isRecord(settings.body)) {
     const reviews = settings.body['required_pull_request_reviews'];
     return isRecord(reviews) && reviews['require_code_owner_reviews'] === true
-      ? result('required', `the branch protection rule on ${branch} requires review from code owners`)
+      ? result(
+          'required',
+          `the branch protection rule on ${branch} requires review from code owners`,
+          classicBypass(settings.body),
+        )
       : result('not-required', `the branch protection rule on ${branch} does not require review from code owners`);
   }
   return result(

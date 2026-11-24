@@ -316,3 +316,19 @@ test('the plugin only reads: no apply-fix instruction, prompts ask to explain', 
   assert.doesNotMatch(skillText, /`--fix` applies|run `?--fix`? /);
   for (const prompt of openai.interface.defaultPrompt) assert.doesNotMatch(prompt, /and fix it/);
 });
+
+// The plugin and the registry entry run a pinned npx package. AGC-SUP-006 warns that npx resolves
+// a package's dependencies again on each install; for this package that changes nothing only while
+// every dependency is an exact version with no dependencies of its own. Keep it that way, or say
+// otherwise in the plugin README.
+test('the scanner package pins every dependency exactly, and they have none of their own', () => {
+  const deps = json('packages/check/package.json').dependencies;
+  const lock = json('package-lock.json').packages;
+  for (const [name, range] of Object.entries(deps)) {
+    assert.match(range, /^\d+\.\d+\.\d+$/, `${name} is pinned exactly`);
+    const entry = lock[`node_modules/${name}`];
+    assert.equal(entry?.version, range, `${name} in the lockfile`);
+    assert.equal(entry.dependencies, undefined, `${name} has dependencies of its own`);
+    assert.equal(entry.optionalDependencies, undefined, `${name} has optional dependencies`);
+  }
+});

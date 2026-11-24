@@ -58,7 +58,8 @@ nothing for it to read.
 - **Runs:** when a session starts, `scripts/start-mcp-server.mjs` runs
   `npx --yes --package=@shieldaai/agent-guard-check@1.6.2 -- agent-guard-check-mcp <project>`
   with npm from the same Node.js installation. The version is pinned and changes only with a new
-  plugin version. npx starts in the plugin's data folder (or a private temporary folder), not in
+  plugin version. The package pins its two dependencies (`yaml`, `smol-toml`) to exact versions
+  and neither has dependencies of its own, so a pinned version always runs the same code. npx starts in the plugin's data folder (or a private temporary folder), not in
   the project, so the project's `.npmrc` and `node_modules` cannot change which scanner runs; npm
   settings passed in environment variables (`npm_config_*`) are dropped too, and npm reads only
   your own `~/.npmrc`.
@@ -92,7 +93,8 @@ local files.
 - **Runs:** the skill has the agent run
   `npx --yes @shieldaai/agent-guard-check@1.6.2 <repository>` from a temporary folder outside the
   repository, so the repository's own `.npmrc` or `node_modules` cannot change which scanner
-  runs. The version is pinned and changes only with a new plugin version. If a sandbox blocks
+  runs. The version is pinned and changes only with a new plugin version, and the package pins
+  its two dependencies exactly (neither has its own), so it always runs the same code. If a sandbox blocks
   network access, the agent asks you before the first run.
 - **Downloads:** npm fetches the package from the registry in your own npm settings
   (`registry.npmjs.org` unless you changed it) the first time, then uses its cache. The package

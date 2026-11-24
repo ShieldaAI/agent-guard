@@ -102,7 +102,10 @@ export interface Project {
   readonly codeowners?: TextFile;
   readonly usesAgentGuard?: Location;
   /** Packages the root package.json depends on: runners resolve these locally. */
-  readonly dependencies: ReadonlySet<string>;
+  /** Root package.json dependencies and devDependencies: name to the version it declares. */
+  readonly dependencies: ReadonlyMap<string, string>;
+  /** Every version the root lockfile installs, at any depth, by package name. */
+  readonly lockedVersions: ReadonlyMap<string, readonly string[]>;
   readonly agents: readonly Agent[];
   readonly errors: readonly { readonly file: string; readonly message: string }[];
   readonly filesRead: number;
@@ -492,6 +495,8 @@ const SHELL_LOADER =
 function isConfigPath(path: string, inputs: readonly { readonly path: string }[]): boolean {
   const parts = path.split('/');
   const name = parts.at(-1)!;
+  // A lockfile is read only for installed versions: one that cannot be read leaves them unknown.
+  if (name === 'package-lock.json' || name === 'npm-shrinkwrap.json') return false;
   if (name !== 'mcp.json' && name !== 'plugin.json') return true;
   if (['.vscode', '.cursor', '.claude-plugin', 'settings'].includes(parts.at(-2) ?? '')) return true;
   const folder = parts.slice(0, -1).join('/');
@@ -520,7 +525,8 @@ export function buildProject(
   const scripts: TextFile[] = [];
   let codeowners: TextFile | undefined;
   let usesAgentGuard: Location | undefined;
-  const dependencies = new Set<string>();
+  const dependencies = new Map<string, string>();
+  const lockedVersions = new Map<string, string[]>();
   let filesRead = 0;
   const guardFiles: { path: string; text: string; data: unknown }[] = [];
   const others: OtherAgent[] = [];
@@ -952,14 +958,23 @@ export function buildProject(
         });
         workflows.push(...(compiled ? steps.filter(step => step.uses !== undefined) : steps));
       } else if (name === 'CODEOWNERS') codeowners ??= { path, text };
-      else if (path === 'package.json') {
+      else if (path === 'package-lock.json' || path === 'npm-shrinkwrap.json') {
+        // Not agent configuration: one that cannot be read only leaves the versions unknown.
+        try {
+          for (const [dep, version] of lockfileVersions(JSON.parse(text) as unknown))
+            lockedVersions.set(dep, [...(lockedVersions.get(dep) ?? []), version]);
+        } catch {
+          // ignored
+        }
+      } else if (path === 'package.json') {
         const data = JSON.parse(text) as unknown;
         if (isRecord(data)) {
           const deps = {
             ...(isRecord(data['dependencies']) ? data['dependencies'] : {}),
             ...(isRecord(data['devDependencies']) ? data['devDependencies'] : {}),
           };
-          for (const dep of Object.keys(deps)) dependencies.add(dep);
+          for (const [dep, version] of Object.entries(deps))
+            dependencies.set(dep, typeof version === 'string' ? version : '');
           if (Object.keys(deps).some(dep => dep.startsWith('@shieldaai/agent-guard')))
             usesAgentGuard = {
               file: path,
@@ -1659,6 +1674,7 @@ export function buildProject(
     ...(codeowners ? { codeowners } : {}),
     ...(usesAgentGuard ? { usesAgentGuard } : {}),
     dependencies,
+    lockedVersions,
     agents,
     errors,
     filesRead,
@@ -1687,4 +1703,38 @@ export function buildProject(
     caseVariants: [...(source.caseVariants ?? [])],
     caseCollisions: [...(source.caseCollisions ?? [])],
   };
+}
+
+/**
+ * Every installed package and version a lockfile records: `packages` (lockfile v2 and v3, keyed
+ * `node_modules/a/node_modules/b`) or the nested `dependencies` of v1. A link (a workspace package)
+ * is installed at its target's version; the root is left out.
+ */
+export function lockfileVersions(data: unknown): [string, string][] {
+  const out: [string, string][] = [];
+  if (!isRecord(data)) return out;
+  const packages = data['packages'];
+  if (isRecord(packages)) {
+    for (const [key, entry] of Object.entries(packages)) {
+      const at = key.lastIndexOf('node_modules/');
+      if (at < 0 || !isRecord(entry)) continue;
+      const target =
+        entry['link'] === true && typeof entry['resolved'] === 'string' ? packages[entry['resolved']] : entry;
+      if (!isRecord(target) || typeof target['version'] !== 'string') continue;
+      const named = typeof target['name'] === 'string' ? target['name'] : entry['name'];
+      out.push([typeof named === 'string' ? named : key.slice(at + 'node_modules/'.length), target['version']]);
+    }
+    return out;
+  }
+  const walk = (deps: unknown, depth: number) => {
+    if (!isRecord(deps) || depth > 64) return;
+    for (const [dep, entry] of Object.entries(deps)) {
+      if (!isRecord(entry)) continue;
+      if (typeof entry['version'] === 'string' && !/^(file|link):/.test(entry['version']))
+        out.push([dep, entry['version']]);
+      walk(entry['dependencies'], depth + 1);
+    }
+  };
+  walk(data['dependencies'], 0);
+  return out;
 }

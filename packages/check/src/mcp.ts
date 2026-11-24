@@ -1,3 +1,4 @@
+import { FLAG_TABLES, npxArgv, readArgs, splitUvRequirements } from './runner-flags.js';
 import type { Capability, Location } from './types.js';
 import { asString, asStringArray, isRecord, lineLocator, lineOf, parseJsonc } from './text.js';
 
@@ -351,27 +352,83 @@ const CATALOG: readonly (CatalogEntry & {
 /** Commands that fetch and run a package named in their arguments. */
 const RUNNERS = new Set(['npx', 'bunx', 'uvx', 'pipx', 'pnpx']);
 
-/** The package a runner command starts, with its version marker, or undefined. */
-export function runnerPackage(
+/**
+ * What each runner's flags mean before the package: which name the package (`npx -p pkg cmd`,
+ * `uvx --from pkg cmd`), which add another package to fetch (`uvx --with pkg`), and which take a
+ * value that is not a package (`uvx --python 3.12`, `npx --registry URL`). A flag left out of
+ * these lists is read as taking no value. Everything after the package belongs to the server.
+ */
+const RUNNER_FAMILY: Readonly<Record<string, string>> = {
+  npx: 'npx',
+  'uv tool run': 'uv',
+  'npm exec': 'npm',
+  pnpx: 'pnpm',
+  'pnpm dlx': 'pnpm',
+  'yarn dlx': 'yarn',
+  bunx: 'bun',
+  uvx: 'uv',
+  pipx: 'pipx',
+};
+
+interface RunnerSpec {
+  readonly runner: string;
+  readonly spec: string;
+  readonly localOnly: boolean;
+}
+
+/** `exec` in front of a shell line's command replaces the shell with it: the command is what runs. */
+function withoutExec(line: readonly string[]): string[] {
+  let at = 0;
+  // bash's exec takes -c, -l and -a NAME before the command.
+  if (line[0] === 'exec') for (at = 1; line[at]?.startsWith('-'); at += line[at] === '-a' ? 2 : 1);
+  return line.slice(at);
+}
+
+/** Whether a runner is uv's (`uvx` is `uv tool run`), or reads Python requirements. */
+export const isUvRunner = (runner: string) => runner === 'uvx' || runner === 'uv tool run';
+export const isPythonRunner = (runner: string) => isUvRunner(runner) || runner === 'pipx';
+
+/**
+ * Whether npm exec may only run an installed copy. The last option that says so wins, as npm reads
+ * it. npm exec does not know --no-install (npx turns it into --yes=false first), and reads -n as
+ * --no-yes (npx drops -n as a removed option).
+ */
+function installedOnly(options: readonly string[]): boolean {
+  let local = false;
+  options.forEach((word, at) => {
+    if (['--no', '--no-yes', '--yes=false', '-n'].includes(word)) local = true;
+    else if (['-y', '--yes', '--yes=true'].includes(word)) local = false;
+    // npm reads a switch's following `true` or `false` as its value (`--yes false`).
+    else if ((word === 'false' || word === 'true') && ['-y', '--yes'].includes(options[at - 1] ?? ''))
+      local = word === 'false';
+  });
+  return local;
+}
+
+/**
+ * The package a runner command starts and the extra packages it fetches with it, read from the
+ * runner's own options only; `unreadable` when an option this check does not know may take the
+ * next word as its value; undefined when the command is not a runner.
+ */
+function runnerParts(
   command: string | undefined,
   args: readonly string[],
 ):
-  | {
-      readonly runner: string;
-      readonly spec: string;
-      readonly localOnly: boolean;
-    }
+  | { readonly first: RunnerSpec; readonly extras: readonly string[]; readonly unreadable?: undefined }
+  | { readonly unreadable: string }
   | undefined {
   if (!command) return undefined;
   const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
   // Launchers that run a command line: `cmd /c npx -y pkg` (the documented Windows form) and `sh -c "npx -y pkg"`.
   if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
-    const line = args.length === 2 ? splitShell(args[1]) : args.slice(1);
-    return runnerPackage(line[0], line.slice(1));
+    const line = withoutExec(args.length === 2 ? splitShell(args[1]) : args.slice(1));
+    return runnerParts(line[0], line.slice(1));
   }
-  if (['sh', 'bash', 'zsh', 'dash'].includes(base) && args[0] === '-c' && args[1] !== undefined) {
-    const line = splitShell(args[1]);
-    return runnerPackage(line[0], line.slice(1));
+  // `-c`, or joined short flags ending in c (`-lc`, `-ic`), takes the script, as in runnerSpecs.
+  const script = ['sh', 'bash', 'zsh', 'dash'].includes(base) ? args.findIndex(arg => /^-[a-z]*c$/.test(arg)) : -1;
+  if (script >= 0 && args[script + 1] !== undefined) {
+    const line = withoutExec(splitShell(args[script + 1]!));
+    return runnerParts(line[0], line.slice(1));
   }
   let rest = [...args];
   let runner = base;
@@ -383,65 +440,105 @@ export function runnerPackage(
   } else if (base === 'npm' && rest[0] === 'exec') {
     runner = 'npm exec';
     rest = rest.slice(1);
+  } else if (base === 'uv') {
+    // uv's own options may come before `tool` and between `tool` and `run` (`uv -q tool run pkg`).
+    const before = readArgs(rest, FLAG_TABLES['uv']!);
+    if (before.unknown || before.at < 0 || rest[before.at] !== 'tool') return undefined;
+    const after = readArgs(rest.slice(before.at + 1), FLAG_TABLES['uv']!);
+    const at = before.at + 1 + after.at;
+    if (after.unknown || after.at < 0 || rest[at] !== 'run') return undefined;
+    runner = 'uv tool run';
+    rest = [...rest.slice(0, before.at), ...rest.slice(before.at + 1, at), ...rest.slice(at + 1)];
   } else if (!RUNNERS.has(base)) return undefined;
-  // `--no` / `--no-install` / `--offline` forbid downloading: only an installed copy can run.
-  const localOnly = rest.some(arg => arg === '--no' || arg === '--no-install' || arg === '--offline');
-  const found = (spec: string) => ({ runner, spec, localOnly });
-  for (let i = 0; i < rest.length; i += 1) {
-    const arg = rest[i]!;
-    if (arg === '--') continue;
-    if (arg === '-p' || arg === '--package' || arg === '--from') {
-      const next = rest[i + 1];
-      return next ? found(next) : undefined;
+  // npx is npm exec after npx-cli's own pass over the options (npxArgv).
+  const npx = RUNNER_FAMILY[runner] === 'npx';
+  if (npx) rest = npxArgv(rest);
+  const family = npx ? 'npm' : RUNNER_FAMILY[runner]!;
+  const table = FLAG_TABLES[family]!;
+  const unreadable = (option: string, word: string) => ({
+    unreadable: `starts ${runner} with ${option}, an option this check does not know, so it cannot tell whether "${word}" is that option's value or the package to run`,
+  });
+  // npm exec reads options anywhere before `--` (npm's own parser); every other runner, and npx,
+  // which puts `--` before the first plain word, stop at the package. What follows is the server's.
+  const mains: string[] = [];
+  const extraValues: string[] = [];
+  const options: string[] = [];
+  const positionals: string[] = [];
+  let words = rest;
+  for (;;) {
+    const read = readArgs(words, table);
+    if (read.unknown) return unreadable(read.unknown.option, read.unknown.word);
+    mains.push(...read.main);
+    extraValues.push(...read.extra);
+    const end = read.at < 0 ? words.length : read.at;
+    const ended = end > 0 && words[end - 1] === '--' && !options.includes('--');
+    options.push(...words.slice(0, end));
+    if (read.at < 0) break;
+    if (family !== 'npm' || ended) {
+      positionals.push(...words.slice(read.at));
+      break;
     }
-    if (arg.startsWith('--package=') || arg.startsWith('--from=')) return found(arg.split('=', 2)[1]!);
-    if (arg.startsWith('-')) continue;
-    return found(arg);
+    positionals.push(words[read.at]!);
+    words = words.slice(read.at + 1);
   }
-  return undefined;
+  // A flag naming the package makes the first plain word the command; otherwise that word is the package.
+  const main = mains[0] ?? positionals[0];
+  if (main === undefined) return undefined;
+  // Packages listed in a file, or handed to pip, are not in the config: what they pin cannot be read.
+  const listed = options.find(word => /^(--with-requirements|--pip-args)(=|$)/.test(word));
+  if (listed)
+    return {
+      unreadable: `starts ${runner} with ${listed.split('=')[0]}, which installs packages this check does not read`,
+    };
+  const localOnly = family === 'npm' && installedOnly(options);
+  const extras = [
+    ...mains.slice(1),
+    ...extraValues.flatMap(value => (family === 'uv' ? splitUvRequirements(value) : [value])),
+  ];
+  return { first: { runner, spec: main, localOnly }, extras: extras.filter(spec => spec !== main) };
+}
+
+/** The package a runner command starts, with its version marker, or undefined. */
+export function runnerPackage(command: string | undefined, args: readonly string[]): RunnerSpec | undefined {
+  const parts = runnerParts(command, args);
+  return parts && 'first' in parts ? parts.first : undefined;
 }
 
 /**
- * Every package a runner command fetches: the one it runs and any `-p`/`--package`/`--from`/`--with`
- * extras, each with its runner. `unverifiable` when a shell line runs more than one command, so what
- * it fetches cannot be read from the config.
+ * Every package a runner command fetches: the one it runs and any extras its runner's options add
+ * (`-p`/`--package` for npm runners, `--with` for uvx), each with its runner. `unverifiable` says
+ * why what it fetches cannot be read from the config: a shell line that runs more than one
+ * command, or an option this check does not know.
  */
 export function runnerSpecs(
   command: string | undefined,
   args: readonly string[],
 ): {
-  readonly specs: readonly { readonly runner: string; readonly spec: string; readonly localOnly: boolean }[];
-  readonly unverifiable: boolean;
+  readonly specs: readonly RunnerSpec[];
+  readonly unverifiable: string | undefined;
 } {
-  if (!command) return { specs: [], unverifiable: false };
+  const SHELL = 'starts a shell line with more than one command, so what it fetches and runs cannot be checked';
+  if (!command) return { specs: [], unverifiable: undefined };
   const base = (command.split(/[\\/]/).at(-1) ?? command).replace(/\.(cmd|exe|bat|ps1)$/i, '').toLowerCase();
   if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
     const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
-    if (/[;&|`$<>(){}\n\r^]/.test(words)) return { specs: [], unverifiable: true };
-    const line = splitShell(words);
+    if (/[;&|`$<>(){}\n\r^]/.test(words)) return { specs: [], unverifiable: SHELL };
+    const line = withoutExec(splitShell(words));
     return runnerSpecs(line[0], line.slice(1));
   }
   // `-c`, or combined short flags ending in c (`-lc`, `-ic`), takes the script.
   const scriptFlag = args.findIndex(arg => /^-[a-z]*c$/.test(arg));
   if (['sh', 'bash', 'zsh', 'dash'].includes(base) && scriptFlag >= 0) {
     const script = args[scriptFlag + 1] ?? '';
-    if (/[;&|`$<>(){}\n\r]/.test(script)) return { specs: [], unverifiable: true };
-    const line = splitShell(script);
+    if (/[;&|`$<>(){}\n\r]/.test(script)) return { specs: [], unverifiable: SHELL };
+    const line = withoutExec(splitShell(script));
     return runnerSpecs(line[0], line.slice(1));
   }
-  const first = runnerPackage(command, args);
-  if (!first) return { specs: [], unverifiable: false };
-  const specs = [first];
-  for (let i = 0; i < args.length; i += 1) {
-    const arg = args[i]!;
-    const value = ['-p', '--package', '--from', '--with'].includes(arg)
-      ? args[i + 1]
-      : /^--(package|from|with)=/.test(arg)
-        ? arg.split('=', 2)[1]
-        : undefined;
-    if (value !== undefined && value !== first.spec) specs.push({ ...first, spec: value });
-  }
-  return { specs, unverifiable: false };
+  const parts = runnerParts(command, args);
+  if (!parts) return { specs: [], unverifiable: undefined };
+  if (!('first' in parts)) return { specs: [], unverifiable: parts.unreadable };
+  const specs = [parts.first, ...[...new Set(parts.extras)].map(spec => ({ ...parts.first, spec }))];
+  return { specs, unverifiable: undefined };
 }
 
 /** Splits a shell command line into words, honouring quotes. */
@@ -462,6 +559,8 @@ export function splitSpec(spec: string): {
   readonly version?: string;
   readonly operator?: string;
 } {
+  // A Python environment marker (`pkg==1.0; python_version<'3.12'`) says when, not what.
+  if (/;/.test(spec) && !spec.startsWith('@')) spec = spec.slice(0, spec.indexOf(';')).trim();
   const python = /^([A-Za-z0-9._-]+)(?:\[[^\]]*\])?\s*(===|==|>=|<=|~=|!=|>|<|@)\s*(.+)$/.exec(spec);
   if (python && !spec.startsWith('@')) return { name: python[1]!, version: python[3]!, operator: python[2]! };
   const at = spec.lastIndexOf('@');
@@ -473,7 +572,18 @@ export function splitSpec(spec: string): {
 export function isPinnedSpec(runner: string, spec: string): boolean {
   const { version, operator } = splitSpec(spec);
   if (!version) return false;
-  if (runner === 'uvx' || runner === 'pipx') {
+  if (isPythonRunner(runner)) {
+    // A direct source, bare or as PEP 508 `name @ url`, is fixed only by a full git commit
+    // (`git+https://host/repo.git@<40 hex>`) or an archive's sha256 (`https://…/x.whl#sha256=<64 hex>`).
+    const source = /^(git\+|https?:\/\/)/i.test(spec)
+      ? spec
+      : operator === '@' && /:\/\//.test(version)
+        ? version
+        : undefined;
+    if (source !== undefined) return /^git\+.*@[0-9a-f]{40}$/i.test(source) || /#sha256=[0-9a-f]{64}$/i.test(source);
+    // uvx also takes `pkg@1.2.3` as an exact version (and `pkg@latest` as none).
+    if (isUvRunner(runner) && operator === '@')
+      return /^\d+(\.\d+)*((a|b|rc)\d+)?(\.post\d+)?(\.dev\d+)?$/i.test(version);
     // A Python requirement: only == (or ===) with a version that has no wildcard.
     return (
       (operator === '==' || operator === '===') &&
@@ -485,22 +595,55 @@ export function isPinnedSpec(runner: string, spec: string): boolean {
   return operator === '@' && /^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$/.test(version);
 }
 
+/**
+ * The image a `docker run` or `podman run` command starts; `unreadable` when an option this check
+ * does not know may take the next word as its value; undefined when it is not one, or replaces the
+ * entrypoint (then it runs something else inside the image, not that image's server).
+ */
+export function dockerRun(
+  command: string | undefined,
+  args: readonly string[],
+): { readonly image: string; readonly unreadable?: undefined } | { readonly unreadable: string } | undefined {
+  if (!command) return undefined;
+  const base = baseName(command);
+  // The same launchers as runners: `cmd /c docker run …` and `sh -c "docker run …"`, one command only.
+  if (base === 'cmd' && /^\/[ck]$/i.test(args[0] ?? '') && args[1] !== undefined) {
+    const words = args.length === 2 ? args[1] : args.slice(1).join(' ');
+    if (/[;&|`$<>(){}\n\r^]/.test(words)) return undefined;
+    const line = withoutExec(splitShell(words));
+    return dockerRun(line[0], line.slice(1));
+  }
+  const script = ['sh', 'bash', 'zsh', 'dash'].includes(base) ? args.findIndex(arg => /^-[a-z]*c$/.test(arg)) : -1;
+  if (script >= 0 && args[script + 1] !== undefined) {
+    if (/[;&|`$<>(){}\n\r]/.test(args[script + 1]!)) return undefined;
+    const line = withoutExec(splitShell(args[script + 1]!));
+    return dockerRun(line[0], line.slice(1));
+  }
+  if (base !== 'docker' && base !== 'podman') return undefined;
+  // Global options come first (`docker --context x run`), and `container run` is `run`.
+  const global = readArgs(args, FLAG_TABLES['container']!);
+  if (global.unknown)
+    return {
+      unreadable: `starts ${baseName(command)} with ${global.unknown.option}, an option this check does not know, so it cannot tell whether "${global.unknown.word}" is that option's value or the command`,
+    };
+  let at = global.at;
+  if (at >= 0 && args[at] === 'container') at += 1;
+  if (at < 0 || args[at] !== 'run') return undefined;
+  const runArgs = args.slice(at + 1);
+  const read = readArgs(runArgs, FLAG_TABLES['run']!);
+  // A replaced entrypoint runs something else; with --rootfs the word is a folder, not an image.
+  if (read.seen.has('--entrypoint') || read.seen.has('--rootfs')) return undefined;
+  if (read.unknown)
+    return {
+      unreadable: `runs a container with ${read.unknown.option}, an option this check does not know, so it cannot tell whether "${read.unknown.word}" is that option's value or the image`,
+    };
+  return read.at >= 0 ? { image: runArgs[read.at]! } : undefined;
+}
+
 /** The image a `docker run` command starts, or undefined. */
 export function dockerImage(command: string | undefined, args: readonly string[]): string | undefined {
-  if (!command || !/(^|[\\/])(docker|podman)$/.test(command) || args[0] !== 'run') return undefined;
-  // A replaced entrypoint runs something else inside the image: it is not that image's server.
-  if (args.some(arg => arg === '--entrypoint' || arg.startsWith('--entrypoint='))) return undefined;
-  const valued = new Set(['-e', '--env', '-v', '--volume', '--name', '-p', '--publish', '--network', '-w', '--user']);
-  for (let i = 1; i < args.length; i += 1) {
-    const arg = args[i]!;
-    if (valued.has(arg)) {
-      i += 1;
-      continue;
-    }
-    if (arg.startsWith('-')) continue;
-    return arg;
-  }
-  return undefined;
+  const run = dockerRun(command, args);
+  return run && 'image' in run ? run.image : undefined;
 }
 
 /** Runner flags that change neither what is fetched nor what runs. Any other flag ends identification. */
