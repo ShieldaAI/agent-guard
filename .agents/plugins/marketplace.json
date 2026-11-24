@@ -1,0 +1,20 @@
+{
+  "name": "shielda",
+  "interface": {
+    "displayName": "Shielda"
+  },
+  "plugins": [
+    {
+      "name": "agent-guard-check",
+      "source": {
+        "source": "local",
+        "path": "./plugins/agent-guard-check"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Developer Tools"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { settings } from './helpers.mjs';
 
 const SERVER = fileURLToPath(new URL('../dist/mcp-server.js', import.meta.url));
+const CLI = fileURLToPath(new URL('../dist/cli.js', import.meta.url));
 
 function repo(t, files) {
   const dir = mkdtempSync(join(tmpdir(), 'agc-mcp-'));
@@ -20,8 +21,8 @@ function repo(t, files) {
 }
 
 /** Starts the server, sends messages one per line, and collects one response per request. */
-async function session(root, messages) {
-  const child = spawn(process.execPath, [SERVER, root], { stdio: ['pipe', 'pipe', 'pipe'] });
+async function session(root, messages, args = [SERVER, root]) {
+  const child = spawn(process.execPath, args, { stdio: ['pipe', 'pipe', 'pipe'] });
   const expected =
     messages.filter(message => typeof message !== 'string' && message.id !== undefined).length +
     messages.filter(message => typeof message === 'string').length;
@@ -135,4 +136,37 @@ test('MCP: malformed input gets JSON-RPC errors, and unknown methods are reporte
   assert.equal(parse.error.code, -32700);
   assert.equal(unknown.error.code, -32601);
   assert.equal(tool.error.code, -32602);
+});
+
+// MCP registries start an npm package through its default bin (npx <package>), so the CLI serves
+// MCP when --mcp comes first.
+test('MCP: agent-guard-check --mcp serves the same tools through the default bin', async t => {
+  const dir = repo(t, { '.claude/settings.json': settings({ defaultMode: 'bypassPermissions' }) });
+  const [hello, list, scanned] = await session(
+    dir,
+    [
+      init,
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list' },
+      call(3, 'scan_agent_config', {}),
+    ],
+    [CLI, '--mcp', dir],
+  );
+  assert.equal(hello.result.serverInfo.name, 'agent-guard-check-mcp');
+  assert.deepEqual(
+    list.result.tools.map(tool => tool.name),
+    ['scan_agent_config', 'check_agent_config_change', 'explain_agent_rule'],
+  );
+  assert.match(scanned.result.content[0].text, /AGC-PERM-001/);
+});
+
+test('MCP: --mcp anywhere but first is a usage error, and help names it', () => {
+  const misplaced = spawnSync(process.execPath, [CLI, '.', '--mcp'], { encoding: 'utf8' });
+  assert.equal(misplaced.status, 2);
+  assert.match(misplaced.stderr, /--mcp must be the first argument/);
+  assert.equal(misplaced.stdout, '');
+  const help = spawnSync(process.execPath, [CLI, '--help'], { encoding: 'utf8' });
+  assert.match(help.stdout, /--mcp \[root\]/);
+  const mcpHelp = spawnSync(process.execPath, [CLI, '--mcp', '--help'], { encoding: 'utf8' });
+  assert.match(mcpHelp.stdout, /agent-guard-check --mcp \[root\]/);
 });

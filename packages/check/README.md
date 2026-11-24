@@ -70,10 +70,10 @@ grants it. An unknown capability is never treated as safe.
 
 | Evidence            | When it runs                                                                                                                                                                      | What it adds                                                                                                                                                                                                                           |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 36 rules on configuration                                                                                                                                                                               |
+| Repository files    | Always                                                                                                                                                                            | Agents, their capabilities and 37 rules on configuration                                                                                                                                                                               |
 | Agent Guard records | When `guard.describe()` output, an executor inventory snapshot or a host manifest is in an `agent-guard*.json` file, named in `agent_guard.files`, or passed with `--agent-guard` | 8 rules (AGC-AGX-*) on the guard itself: tasks exposed to the dangerous three, unapproved or unlabeled tools, wildcard grants, long budgets, unowned agents, access declared outside the guard, MCP servers reachable around the guard |
 | Live Agent Map      | Only with `--live` or `--agent-map-url` and a read-only token                                                                                                                     | 4 rules (AGC-DRF-*): activity no declared agent accounts for, unclaimed cloud identities, agents Agent Map flags as exposed in production, stale inventory                                                                             |
-| GitHub branch rules | With `--github-repo` (on by default in the GitHub Action from 1.6.0)                                                                                                              | 1 rule (AGC-GOV-004): CODEOWNERS names an owner for agent configuration, but the branch does not require the owner's approval                                                                                                          |
+| GitHub branch rules | With `--github-repo` (on by default in the GitHub Action from 1.6.0)                                                                                                              | 1 rule (AGC-GOV-004): CODEOWNERS names an owner for agent configuration, but the branch does not require the owner's approval, or lets someone bypass it                                                                                                          |
 
 Files named `agent-guard*.json` are read automatically, and what each one is (describe() output,
 inventory snapshot or manifest) is recognised from its content. Name any other path in
@@ -114,7 +114,7 @@ URL. The URL must use `https` (plain `http` only for localhost).
 | Kiro                     | `.kiro/settings/mcp.json` (`autoApprove`, `disabled`); `.kiro/steering/*.md` for the text rules                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
 | Windsurf                 | `.windsurfrules` and `.windsurf/rules/*.md`, for the text rules (its MCP and permission settings live outside the repository)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | Agent Guard              | `agent-guard*.json` records, or files named in `.agc.yaml` or on the command line                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
-| Repository               | `CODEOWNERS`, `package.json` files (names and dependencies) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| Repository               | `CODEOWNERS`, `package.json` files (names and dependencies), the root `package-lock.json` or `npm-shrinkwrap.json` (installed versions, for AGC-SUP-001/006) and package-source files (`.npmrc`, `.yarnrc`, `.yarnrc.yml`, `bunfig.toml`, `uv.toml`, `pip.conf`, `pyproject.toml`) for identification, `.agc.yaml`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | Your own settings        | Only with `--include-user`: `~/.claude/settings.json`, user and local-scope servers in `~/.claude.json`, `~/.codex/config.toml`, `~/.gemini/settings.json` and Claude Code managed settings                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 
 `node_modules`, `.git` and virtual environments are skipped. Build output and vendored code
@@ -331,7 +331,12 @@ action does this by default with the workflow's own token (`github-rules: false`
 - Classic branch protection settings need admin access to read, and the Actions token cannot have
   it. A branch with classic protection and no ruleset requiring code owners is reported at info:
   the scanner cannot tell. A ruleset reads the same for everyone.
-- Who may bypass a ruleset is not visible to the scanner. Keep that list short.
+- Who may bypass a rule counts too: anyone on that list can merge without the owners. The bypass
+  list of a ruleset, and whether classic protection applies to admins, are readable with admin
+  access only. Every rule that requires code owners applies at once, so only an actor on every
+  list gets through. When the token can read the lists and one actor is on all of them,
+  AGC-GOV-004 reports who (low). When it cannot read them, or the lists share no actor but a
+  person could be on each through a team or role, nothing is reported for the bypass.
 - If more rules apply than the scanner reads (ten pages), or GitHub does not say how a protected
   branch is protected, the answer is "cannot tell" (info), never "not required".
 - If GitHub cannot be reached, or refuses the token, the scan warns on stderr and goes on without
@@ -463,10 +468,23 @@ actually reviewed the agent before moving the date. That decision belongs to the
 approve the pull request, ideally the owner through CODEOWNERS. What the scanner does is put the
 capabilities in front of them.
 
-## Other agents: MCP server and skill
+## Other agents: plugin, MCP server and skill
+
+The [Agent Guard Check plugin](../../plugins/agent-guard-check) packages the skill and the MCP
+server for Claude Code, Codex and Antigravity:
+
+```text
+/plugin marketplace add ShieldaAI/agent-guard
+/plugin install agent-guard-check@shielda
+```
 
 `agent-guard-check-mcp` is a read-only MCP server (stdio) so an agent can check its own
 configuration before it changes it. It scans one root fixed at start-up and never leaves it.
+`agent-guard-check --mcp [root]` starts the same server through the default bin (with `--mcp` as
+the first argument); MCP registries list it as `io.github.ShieldaAI/agent-guard-check`. A client
+that installs it from a registry runs `npx` in your project, where the project's `.npmrc` and
+`node_modules` can change which package runs; the plugin's launcher avoids that, so prefer the
+plugin when you check repositories you did not write.
 
 ```json
 {
@@ -478,6 +496,12 @@ configuration before it changes it. It scans one root fixed at start-up and neve
   }
 }
 ```
+
+The scanner reports that configuration as AGC-SUP-006 (low), as it does any pinned npx server:
+it cannot see from the config that this package pins its only two dependencies exactly and that
+neither has dependencies of its own. To have the lockfile fix it anyway, add the package to your
+dev dependencies and start it with
+`"command": "npx", "args": ["--no-install", "-p", "@shieldaai/agent-guard-check", "agent-guard-check-mcp", "."]`.
 
 Tools: `scan_agent_config`, `check_agent_config_change` (compare with a git ref) and
 `explain_agent_rule`. A Claude Code skill that tells the agent when to run the check is in
@@ -567,7 +591,8 @@ an index. Settings that do not redirect (`engine-strict`, hoisting) change nothi
 redirect applies only to its own folder and below; one that is too large or a link out of the
 repository is assumed to redirect. The policy rule (AGC-POL-001) matches servers the same way,
 also by remote host, and AGC-SUP-001 checks every package a command fetches, reporting a shell
-line it cannot read. A server that is not identified may read private data, take in untrusted
+line it cannot read, or a runner or container option it does not know where the next word may be
+that option's value or the package (`--option=value` is always readable). A server that is not identified may read private data, take in untrusted
 input, send data out, write and run code: all unknown.
 
 In Markdown, YAML and scripts, a comment on the same line or the line above suppresses one
@@ -595,6 +620,7 @@ for every rule, a configuration it flags and a look-alike it does not.
 | AGC-SUP-003  | High                    | Remote content loaded into the agent at runtime                         | ASI04, ASI01 |
 | AGC-SUP-004  | Critical                | Download piped into a shell                                             | ASI04, ASI05 |
 | AGC-SUP-005  | Medium                  | Plugin or marketplace not pinned                                        | ASI04        |
+| AGC-SUP-006  | Low                     | Pinned MCP server can still change                                      | ASI04        |
 | AGC-PER-001  | High                    | Agent can rewrite its own instructions                                  | ASI06, ASI10 |
 | AGC-PER-002  | High                    | Agent can change its own permissions or hooks                           | ASI10        |
 | AGC-SEC-001  | Critical                | Hardcoded credential                                                    | ASI03        |

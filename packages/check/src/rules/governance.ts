@@ -120,14 +120,25 @@ export const GOVERNANCE_RULES: readonly Rule[] = [
       severity: 'low',
       confidence: 'high',
       owasp: [ASI.rogue],
-      help: 'A CODEOWNERS entry only requests the owner’s review. Unless a ruleset or branch protection rule turns on "Require review from Code Owners", a change that widens an agent’s permissions merges with any approval, or with none on a branch that requires no reviews.',
+      help: 'A CODEOWNERS entry only requests the owner’s review. Unless a ruleset or branch protection rule turns on "Require review from Code Owners", a change that widens an agent’s permissions merges with any approval, or with none on a branch that requires no reviews. Whoever is on the rule’s bypass list can merge without the owners too.',
     },
     (project, report, context) => {
       const github = context.github;
-      if (!github || github.codeOwnerReview === 'required' || !project.codeowners) return;
+      if (!github || !project.codeowners) return;
       if (!project.agents.some(agent => agent.kind !== 'subagent')) return; // as AGC-GOV-001
       const line = ownedAgentLine(project);
       if (line === undefined) return; // No owner to require: AGC-GOV-001 covers the missing owner.
+      if (github.codeOwnerReview === 'required') {
+        // Bypass lists are hidden from most tokens; only a bypass GitHub confirmed is reported.
+        if (github.codeOwnerBypass === 'possible')
+          report({
+            message: `${github.branch} requires code owners to approve, but ${github.bypassWhy ?? 'someone may bypass the rule'}, so a change to an agent can still merge without them.`,
+            location: { file: project.codeowners.path, line },
+            subject: 'code-owner-review:bypass',
+            fix: 'Empty the bypass list of a ruleset that requires code owners, or keep it to one break-glass account. In a branch protection rule, turn on "Do not allow bypassing the above settings" and clear "Allow specified actors to bypass required pull requests".',
+          });
+        return;
+      }
       const unknown = github.codeOwnerReview === 'unknown';
       report({
         message: unknown

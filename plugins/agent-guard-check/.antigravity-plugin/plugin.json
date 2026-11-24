@@ -1,0 +1,18 @@
+{
+  "$schema": "https://antigravity.google/schemas/v1/plugin.json",
+  "name": "agent-guard-check",
+  "displayName": "Agent Guard Check",
+  "version": "1.6.2",
+  "description": "Shows what each AI agent in a repository can do and flags authority it does not need, before and after you change its configuration.",
+  "logo": "assets/logo.svg",
+  "suggestedPrompts": [
+    "What can the AI agents in this repository do without asking first?",
+    "Check whether my agent settings change gives any agent more authority.",
+    "Find the riskiest agent setting here and explain how to fix it."
+  ],
+  "author": { "name": "Shielda", "url": "https://shielda.ai" },
+  "homepage": "https://github.com/ShieldaAI/agent-guard/tree/main/plugins/agent-guard-check#readme",
+  "repository": "https://github.com/ShieldaAI/agent-guard",
+  "license": "Apache-2.0",
+  "keywords": ["security", "ai-agents", "mcp", "permissions", "static-analysis", "code-review", "lethal-trifecta"]
+}

@@ -300,6 +300,8 @@ export function isCandidate(path: string): boolean {
   )
     return true;
   if (name === 'package.json' || path === '.agc.yaml' || path === '.agc-reviews.yaml') return true;
+  // The root lockfile says which versions npx would run from the project's own install.
+  if (path === 'package-lock.json' || path === 'npm-shrinkwrap.json') return true;
   if (PACKAGE_SOURCE_FILES.has(name)) return true;
   // Agent Guard records: describe() output, inventory snapshots, host manifests.
   if (/^agent-guard[\w.-]*\.json$/.test(name) && parts.length <= 6) return true;

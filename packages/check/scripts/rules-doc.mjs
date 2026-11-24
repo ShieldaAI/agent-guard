@@ -35,7 +35,7 @@ function example(item) {
   const lines = [];
   if (item.github)
     lines.push(
-      `_GitHub reports that ${item.github.branch} ${item.github.codeOwnerReview === 'required' ? 'requires' : 'does not require'} review from code owners; \`CODEOWNERS\` names an owner for \`.claude/\`._`,
+      `_GitHub reports that ${item.github.branch} ${item.github.codeOwnerReview === 'required' ? 'requires' : 'does not require'} review from code owners${item.github.codeOwnerBypass === 'possible' ? ` and that ${item.github.bypassWhy}` : item.github.codeOwnerBypass === 'none' ? ' with no bypass' : ''}; \`CODEOWNERS\` names an owner for \`.claude/\`._`,
       '',
     );
   if (item.config) lines.push('`.agc.yaml`:', '', '```yaml', item.config.trimEnd(), '```', '');

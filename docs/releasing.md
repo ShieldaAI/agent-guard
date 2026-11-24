@@ -9,7 +9,11 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
 1. Confirm publishing rights in the npm `shieldaai` organization. Never put a token in the repository.
 2. Update the version in the root, all seven package and the private viewer manifests, and internal
    dependency versions together. Set `publishConfig.tag` to `latest` (stable) or `alpha`.
-   Never publish changed source under an existing version.
+   Never publish changed source under an existing version. The check's pinned version moves too:
+   the Action, the skill, the pre-commit hook, the README, `packages/check/server.json` and the
+   plugin in `plugins/agent-guard-check` (its three manifests, the skill, the README and
+   `VERSION` in `scripts/start-mcp-server.mjs`). `scripts/plugins.test.mjs` and
+   `packages/check/test/release.test.mjs` fail until every pin matches.
 3. Run the checks and pack; tarballs in `artifacts/` hold only JS, declarations, metadata, README, license.
 4. In the same release pull request, set `release-state.json` to `schemaVersion: 1`, the exact `version`,
    `status: "approved"`, an empty `blockers` array and nonempty `evidence`. One pull request per release:
@@ -20,6 +24,10 @@ root [release state](../release-state.json) (do not publish while blocked), [sup
 6. Publish one package at a time in the order below. Before the next one, wait for the version to
    appear and verify its `gitHead`, registry integrity and package bytes. Never use `--ignore-scripts` to bypass publish hooks.
 7. Install the exact versions from the registry into a clean project, then tag and create the GitHub release.
+8. After npm serves the new version: publish `packages/check/server.json` to the MCP Registry
+   (`mcp-publisher publish`), push the version tag to the standalone Action repository, and for
+   OpenAI upload the archives from `npm run pack:plugins`. Anthropic's directory and Antigravity
+   read the plugin folder from GitHub.
 
 Release notes link the release pull request and its CI run; add the merged commit's CI run in the GitHub release. If you publish from CI, use npm trusted publishing with `--provenance` so each package carries a signed statement of the commit it was built from; no workflow in this repository holds a publishing token today.
 

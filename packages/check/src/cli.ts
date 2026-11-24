@@ -95,6 +95,10 @@ Evidence:
   --include-user                       Also read your own settings: ~/.claude, ~/.claude.json, ~/.codex,
                                        ~/.gemini and managed settings (local runs only, not in CI)
 
+MCP server:
+  --mcp [root]                         Run the read-only MCP server (stdio) for this root instead of a
+                                       scan; must be the first argument. Same as agent-guard-check-mcp
+
 Claude Code hook:
   --hook                               Run as a SessionStart or UserPromptSubmit hook: report what local,
                                        personal and unstaged settings add to the staged files (exit 2)
@@ -248,6 +252,10 @@ export async function runCli(argv: readonly string[], io: CliIo): Promise<number
       },
     });
   } catch (error) {
+    if (argv.includes('--mcp')) {
+      io.stderr(`--mcp must be the first argument: ${TOOL_NAME} --mcp [root]\n`);
+      return 2;
+    }
     io.stderr(`${error instanceof Error ? error.message : String(error)}\n\n${USAGE}`);
     return argv.some(arg => arg === '--hook' || arg.startsWith('--hook=')) ? 1 : 2;
   }
@@ -530,8 +538,18 @@ function isEntry(): boolean {
   }
 }
 
-if (isEntry()) {
-  runCli(process.argv.slice(2), {
+const entryArgs = process.argv.slice(2);
+if (isEntry() && entryArgs[0] === '--mcp') {
+  // The MCP server through the default bin, so `npx @shieldaai/agent-guard-check --mcp` works.
+  import('./mcp-server.js').then(
+    ({ mcpMain }) => mcpMain(entryArgs.slice(1)),
+    error => {
+      process.stderr.write(`${TOOL_NAME}: ${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 2;
+    },
+  );
+} else if (isEntry()) {
+  runCli(entryArgs, {
     stdout: text => process.stdout.write(text),
     stderr: text => process.stderr.write(text),
     cwd: process.cwd(),
