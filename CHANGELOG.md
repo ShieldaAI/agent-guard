@@ -35,9 +35,17 @@
   configs above uses an unknown option. pnpm, yarn, bun and pipx document too few options for a
   full list, so an unknown option there is still read as a switch.
 - Fix: AGC-SUP-001 skipped any npx or bunx package that was also a project dependency, whatever
-  version the config asked for. npx runs the installed copy only for a bare name or the exact
-  installed version; `pkg@2.0.0`, a range or a tag is fetched. A config version now counts as
-  installed only when package.json declares exactly that version.
+  version the config asked for. It now follows npx (libnpmexec): an installed copy, at any depth,
+  runs for a bare name, the exact installed version or a range it satisfies; a tag (`@latest`) or
+  any other version is fetched. Installed versions come from the root `package-lock.json` or
+  `npm-shrinkwrap.json` (workspace links at their target's version), or from package.json when it
+  declares an exact version. Ranges are checked by a small semver reader that the tests compare
+  with npm's own node-semver on over 10,000 pairs.
+- Fix: `npm exec --no-install` fetches (npm exec does not know the option; only npx does), the last
+  of `--yes` and `--no` wins, `npm exec` reads options after the package up to `--`, and its `-p` is
+  `--parseable`, not `--package`.
+- AGC-SUP-001 and AGC-SUP-006 now also read `uv tool run`, `exec` in front of a shell line's
+  command (`bash -l -c "exec npx …"`), `docker.exe`, and docker inside `cmd /c` or `sh -c`.
 - npx and `npm exec` are read by their own rules (npm's `bin/npx-cli.js`): npx drops the removed
   `-n`, `--npm` and `--node-arg` with their values, and `--no`, `--no-yes` and `--yes=false` mean
   "installed copy only" like `--no-install`. uv's options come from every option in its CLI source,

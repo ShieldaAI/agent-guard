@@ -11,7 +11,8 @@ import {
 } from './common.js';
 import type { Rule } from './common.js';
 import type { Project } from '../model.js';
-import { dockerImage, dockerRun, isPinnedSpec, runnerSpecs, splitSpec } from '../mcp.js';
+import { parseRange, parseVersion, satisfies } from '../semver.js';
+import { dockerImage, dockerRun, isPinnedSpec, isPythonRunner, runnerSpecs, splitSpec } from '../mcp.js';
 import { lineAt } from '../text.js';
 
 /** Runners that run a project's installed copy of a package when there is one; dlx always fetches. */
@@ -19,11 +20,13 @@ const USES_PROJECT_INSTALL = new Set(['npx', 'npm exec', 'bunx']);
 
 /**
  * Whether a runner runs code from the repository rather than the registry: a local path, a run that
- * may not download (`--no-install`), or a project dependency with a runner that prefers it. Then
- * the repository's lockfile, not the config, decides what runs. npx runs the installed copy for a
- * bare name, or for a version that is exactly the installed one (libnpmexec compares the installed
- * `name@version` with the spec); a range, a tag or another version is fetched. Without reading the
- * lockfile, "exactly the installed one" is known only when package.json declares that exact version.
+ * may not download (`--no-install`), or an installed package with a runner that prefers it. Then
+ * the repository's lockfile, not the config, decides what runs.
+ *
+ * npx (libnpmexec's missingFromTree) runs an installed copy, at any depth, for a bare name, for the
+ * exact version installed, or for a range an installed version satisfies; a tag (`@latest`) is
+ * always fetched. The installed versions come from the root lockfile, or from package.json when it
+ * declares an exact version; a declared range says only that some version is installed.
  */
 function fromProject(
   project: Project,
@@ -33,9 +36,14 @@ function fromProject(
   if (runner.localOnly || /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)) return true;
   if (!USES_PROJECT_INSTALL.has(runner.runner)) return false;
   const declared = project.dependencies.get(name);
-  if (declared === undefined) return false;
-  const { version } = splitSpec(runner.spec);
-  return version === undefined || version === declared;
+  const locked = project.lockedVersions.get(name) ?? [];
+  if (declared === undefined && !locked.length) return false;
+  const { version: wanted } = splitSpec(runner.spec);
+  if (wanted === undefined) return true;
+  const installed = locked.length ? locked : declared !== undefined && parseVersion(declared) ? [declared] : [];
+  if (parseVersion(wanted)) return installed.some(version => version === wanted.replace(/^v/, ''));
+  if (!parseRange(wanted)) return false; // a tag
+  return installed.some(version => satisfies(version, wanted));
 }
 
 /** How each npm-ecosystem runner starts the copy the lockfile installed, without fetching. */
@@ -80,7 +88,7 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
               location: server.location,
               subject:
                 specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
-              fix: `Pin an exact version, for example "${name}${runner.runner === 'uvx' || runner.runner === 'pipx' ? '==' : '@'}<version>".`,
+              fix: `Pin an exact version, for example "${name}${isPythonRunner(runner.runner) ? '==' : '@'}<version>".`,
             });
         }
         if (specs.length) continue;
@@ -282,12 +290,12 @@ export const SUPPLY_CHAIN_RULES: readonly Rule[] = [
           const { name } = splitSpec(runner.spec);
           if (fromProject(project, runner, name)) continue;
           if (!isPinnedSpec(runner.runner, runner.spec)) continue; // AGC-SUP-001
-          const python = runner.runner === 'uvx' || runner.runner === 'pipx';
+          const python = isPythonRunner(runner.runner);
           report({
             message: `${serverLabel(server)} pins "${runner.spec}", but ${runner.runner} resolves its dependencies again on every fresh install, so unless the package fixes every dependency version, a new release of one of them can run with no change to this file.`,
             location: server.location,
-            subject:
-              specs.length > 1 && runner !== specs[0] ? `server:${server.name}:${name}` : `server:${server.name}`,
+            // Keyed by package name: another package is a new finding, a new version of it is not.
+            subject: `server:${server.name}:${name}`,
             fix: python
               ? `Install ${name} into a locked environment (uv.lock or a hashed requirements file) and start that copy.`
               : `Add ${name} to devDependencies so the lockfile fixes its dependencies, and start the installed copy with "${INSTALLED_RUN[runner.runner] ?? 'npx --no-install'} ${name}".`,

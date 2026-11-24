@@ -1004,11 +1004,12 @@ const RUN_PLAIN = [
 const set = (...lists: readonly (readonly string[])[]) => new Set(lists.flat());
 
 export const FLAG_TABLES: Readonly<Record<string, FlagTable>> = {
+  // npm exec: -p is npm's --parseable switch; only npx reads it as --package.
   npm: {
-    main: set(['-p', '--package']),
-    extra: set(['-p', '--package']),
+    main: set(['--package']),
+    extra: set(['--package']),
     valued: set(NPM_VALUED),
-    plain: set(NPM_PLAIN),
+    plain: set([...NPM_PLAIN, '-p']),
     negation: true,
   },
   // npx reads its own options before npm does (npm's bin/npx-cli.js): an option whose type
@@ -1102,6 +1103,8 @@ export const FLAG_TABLES: Readonly<Record<string, FlagTable>> = {
     ]),
     plain: set([
       '-D',
+      // An option with an optional value (`--cloud[=name]`) takes it only after `=`.
+      '--cloud',
       '--debug',
       '--tls',
       '--tlsverify',

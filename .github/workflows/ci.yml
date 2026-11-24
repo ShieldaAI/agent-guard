@@ -68,6 +68,10 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci --ignore-scripts
+      - name: Install uv for the runner option-list check
+        # packages/check compares its uv option table with `uv tool run --help`; podman is on the image.
+        if: matrix.node == 24 && matrix.os == 'ubuntu-latest'
+        run: pipx install uv==0.13.9
       - run: npm run format:check
       - run: npm run check
       - name: Evaluate task completion and unauthorized effects

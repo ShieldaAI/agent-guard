@@ -11,6 +11,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { diffScans, fetchBranchRules, runCli } from '@shieldaai/agent-guard-check';
 import { FLAG_TABLES } from '../dist/runner-flags.js';
+import { lockfileVersions } from '../dist/model.js';
 import { findingsFor, json, mcp, scanFiles, settings } from './helpers.mjs';
 
 const DIGEST = `sha256:${'0a'.repeat(32)}`;
@@ -1232,3 +1233,210 @@ for (const [program, args, table, pattern] of [
     assert.ok(checked > 30, `read ${checked} options from the help`);
   });
 }
+
+// ---------------------------------------------------------------- third review: npm's own behaviour
+
+test('installed-only options: by runner, and the last one wins', () => {
+  const cases = [
+    // npm exec does not know --no-install ("Unknown cli config"): it fetches.
+    [['npm', ['exec', '--no-install', '--', 'pkg']], ['001 pkg']],
+    [['npm', ['exec', '--no', '--', 'pkg']], []],
+    // npm reads the last value of --yes.
+    [['npx', ['--no-install', '-y', 'pkg']], ['001 pkg']],
+    [['npx', ['--no', '--yes', 'pkg']], ['001 pkg']],
+    [['npx', ['-y', '--no-install', 'pkg']], []],
+    [['npx', ['--yes=true', '--yes=false', 'pkg']], []],
+    // After the package the words are the server's.
+    [['npx', ['-y', 'pkg@1.2.3', '--no-install']], ['006 pkg@1.2.3']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+});
+
+test('npm exec reads options anywhere before --; npx stops at the package', () => {
+  const cases = [
+    [['npm', ['exec', '--yes', 'pkg@1.2.3', '--package=evil']], ['001 evil']],
+    [['npm', ['exec', '--yes', '--', 'pkg@1.2.3', '--package=evil']], ['006 pkg@1.2.3']],
+    [['npx', ['-y', 'pkg@1.2.3', '--package=evil']], ['006 pkg@1.2.3']],
+    // -p is --parseable for npm exec and --package for npx.
+    [['npm', ['exec', '-p', '--yes', '--', 'semver@7.6.0']], ['006 semver@7.6.0']],
+    // Run on npm 11.20: this runs semver, with -p as --parseable.
+    [['npm', ['exec', '--yes', '-p', 'semver@7.6.0', '--', '1.2.3']], ['006 semver@7.6.0']],
+    [['npx', ['-p', 'semver@7.6.0', 'semver']], ['006 semver@7.6.0']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+});
+
+test('project install: a range an installed version satisfies runs that copy', () => {
+  const dep = version => ({ 'package.json': json({ devDependencies: { pkg: version } }) });
+  assert.deepEqual(reported('npx', ['-y', 'pkg@^1.0.0'], dep('1.2.3')), []);
+  assert.deepEqual(reported('npx', ['-y', 'pkg@~1.2.0'], dep('1.2.3')), []);
+  assert.deepEqual(reported('npx', ['-y', 'pkg@>=2'], dep('1.2.3')), ['001 pkg@>=2']);
+  assert.deepEqual(reported('npx', ['-y', 'pkg@latest'], dep('1.2.3')), ['001 pkg@latest'], 'a tag is always fetched');
+  // From the lockfile, at any depth, and only versions it records.
+  const lock = {
+    'package.json': json({ devDependencies: { other: '1.0.0' } }),
+    'package-lock.json': json({
+      lockfileVersion: 3,
+      packages: {
+        '': { name: 'app' },
+        'node_modules/other': { version: '1.0.0' },
+        'node_modules/other/node_modules/pkg': { version: '1.4.0' },
+        'node_modules/alias': { name: 'aliased', version: '3.0.0' },
+        'node_modules/linked': { link: true, resolved: 'packages/linked' },
+        'packages/linked': { name: 'linked', version: '0.3.0' },
+        'node_modules/dangling': { link: true, resolved: 'packages/gone' },
+      },
+    }),
+  };
+  assert.deepEqual(reported('npx', ['-y', 'pkg@^1.3.0'], lock), []);
+  assert.deepEqual(reported('npx', ['-y', 'pkg@1.4.0'], lock), []);
+  assert.deepEqual(reported('npx', ['-y', 'pkg@2.0.0'], lock), ['006 pkg@2.0.0']);
+  assert.deepEqual(reported('npx', ['-y', 'pkg'], lock), []);
+  assert.deepEqual(reported('npx', ['-y', 'aliased@3.0.0'], lock), [], 'an alias is found by its real name');
+  assert.deepEqual(reported('npx', ['-y', 'alias@3.0.0'], lock), ['006 alias@3.0.0']);
+  assert.deepEqual(reported('npx', ['-y', 'linked'], lock), [], 'a workspace link is installed');
+  assert.deepEqual(reported('npx', ['-y', 'linked@0.3.0'], lock), [], 'at its target version');
+  assert.deepEqual(reported('npx', ['-y', 'dangling'], lock), ['001 dangling'], 'a link to nothing is not');
+  // A broken lockfile leaves the versions unknown and reports nothing about itself.
+  const broken = scanFiles({ ...server('npx', ['-y', 'pkg@1.0.0']), 'package-lock.json': '{ not json' });
+  assert.deepEqual(
+    broken.findings.filter(f => f.location.file === 'package-lock.json'),
+    [],
+  );
+  assert.equal(findingsFor(broken, 'AGC-SUP-006').length, 1);
+});
+
+test('lockfileVersions: v1, v2 and v3 shapes', () => {
+  assert.deepEqual(
+    lockfileVersions({
+      lockfileVersion: 1,
+      dependencies: { a: { version: '1.0.0', dependencies: { b: { version: '2.0.0' } } }, c: { version: 'file:../c' } },
+    }),
+    [
+      ['a', '1.0.0'],
+      ['b', '2.0.0'],
+    ],
+  );
+  assert.deepEqual(
+    lockfileVersions({ packages: { '': { version: '9.9.9' }, 'node_modules/@s/x': { version: '1.0.0' } } }),
+    [['@s/x', '1.0.0']],
+  );
+  assert.deepEqual(lockfileVersions(null), []);
+  assert.deepEqual(lockfileVersions({ packages: { 'node_modules/a': 'x' } }), []);
+});
+
+test('AGC-SUP-006 fingerprints: keyed by package name, whichever position it is in', () => {
+  const at = args => scanFiles(server('npx', args));
+  const added = (a, b) =>
+    diffScans(at(a), at(b))
+      .added.filter(f => f.ruleId === 'AGC-SUP-006')
+      .map(f => f.message.match(/pins "([^"]+)"/)[1]);
+  assert.deepEqual(added(['-y', 'good@1.0.0'], ['-y', 'evil@1.0.0']), ['evil@1.0.0'], 'another package is new');
+  assert.deepEqual(added(['-y', 'good@1.0.0'], ['-y', 'good@1.0.1']), [], 'a new version is not');
+  assert.deepEqual(
+    added(['-p', 'a@1.0.0', '-p', 'b@1.0.0', 'cmd'], ['-p', 'b@1.0.0', '-p', 'a@1.0.0', 'cmd']),
+    [],
+    'nor a new order',
+  );
+});
+
+test('third review: remaining branches', async () => {
+  const cases = [
+    [
+      ['uvx', ['--from', `pkg @ https://x.example/p.whl#sha256=${'c'.repeat(63)}`, 'c']],
+      [`001 pkg @ https://x.example/p.whl#sha256=${'c'.repeat(63)}`],
+    ],
+    [
+      ['uvx', ['--from', `pkg @ https://x.example/p.whl#sha256=${'c'.repeat(65)}`, 'c']],
+      [`001 pkg @ https://x.example/p.whl#sha256=${'c'.repeat(65)}`],
+    ],
+    [['yarn', ['dlx', '-qp', 'pkg@1.2.3', 'cmd']], ['006 pkg@1.2.3']],
+    [['bunx', ['-p=pkg@1.0.0', 'cmd']], ['006 pkg@1.0.0']],
+    [['pnpm', ['dlx', '-sc', 'pkg@1.2.3']], ['006 pkg@1.2.3']],
+    [['pipx', ['run', '--spec=pkg==1.0', 'cmd']], ['006 pkg==1.0']],
+    [['npx', ['-y', 'link:../pkg']], []],
+    [['npx', ['-y', 'workspace:pkg']], []],
+    // Launchers neither rule used to see.
+    [['docker.exe', ['run', '-i', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['cmd', ['/c', 'docker', 'run', '-i', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+    [['sh', ['-c', 'exec docker run -i ghcr.io/o/mcp']], ['001 ghcr.io/o/mcp']],
+    [['uv', ['tool', 'run', 'pkg==1.0']], ['006 pkg==1.0']],
+    [['uv', ['tool', 'run', 'pkg@1.0']], ['006 pkg@1.0']],
+    [['bash', ['-c', 'exec npx -y pkg@1.2.3']], ['006 pkg@1.2.3']],
+    [['docker', ['--cloud', 'run', '-i', 'ghcr.io/o/mcp:1']], ['006 ghcr.io/o/mcp:1']],
+  ];
+  for (const [[command, args], expected] of cases)
+    assert.deepEqual(reported(command, args), expected, `${command} ${args.join(' ')}`);
+  const [fix] = findingsFor(scanFiles(server('uv', ['tool', 'run', 'pkg==1.0'])), 'AGC-SUP-006');
+  assert.match(fix.fix, /locked environment/);
+  // GitHub: a request that fails among others, a non-200 with a list, and every contradicting answer.
+  const twoRulesets = (first, second) =>
+    read({
+      ...rulesOn([ownerRule(1), ownerRule(2)], {
+        '/repos/acme/app/rulesets/1': first,
+        '/repos/acme/app/rulesets/2': second,
+      }),
+      '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+    });
+  const network = () => Promise.reject(new TypeError('fetch failed'));
+  assert.equal((await twoRulesets(network, ruleset(2, [adminBypass]))).codeOwnerBypass, 'unknown');
+  assert.equal((await twoRulesets(ruleset(1, [adminBypass]), network)).codeOwnerBypass, 'unknown');
+  assert.equal(
+    (await twoRulesets([500, { id: 1, bypass_actors: [] }], ruleset(2, [adminBypass]))).codeOwnerBypass,
+    'unknown',
+  );
+  for (const mayBypass of ['always', 'pull_requests_only', 'exempt'])
+    assert.equal(
+      (
+        await twoRulesets(
+          [200, { id: 1, bypass_actors: [], current_user_can_bypass: mayBypass }],
+          ruleset(2, [adminBypass]),
+        )
+      ).codeOwnerBypass,
+      'unknown',
+      mayBypass,
+    );
+});
+
+test('option lists: npm shorthands and docker’s own options', t => {
+  const root = spawnSync('npm', ['root', '-g'], { encoding: 'utf8' }).stdout?.trim();
+  const file = root && join(root, 'npm', 'node_modules', '@npmcli', 'config', 'lib', 'definitions', 'index.js');
+  if (file && existsSync(file)) {
+    const { definitions, shorthands } = createRequire(import.meta.url)(file);
+    const types = name => [definitions[name]?.type].flat();
+    for (const [short, expansion] of Object.entries(shorthands)) {
+      const name = (short.length === 1 ? '-' : '--') + short;
+      // A negation (`--no-global`) or a fixed value (`--loglevel info`) is a switch.
+      const single =
+        expansion.length === 1 && !expansion[0].startsWith('--no-') ? expansion[0].replace(/^--/, '') : undefined;
+      // nopt (npm exec): a single option keeps its own reading; a fixed value is one word.
+      const npmTakes = single !== undefined && (!types(single).includes(Boolean) || types(single).includes(String));
+      if (name !== '-p')
+        assert.equal(FLAG_TABLES.npm.valued.has(name), npmTakes, `npm exec ${name} → ${expansion.join(' ')}`);
+      // npx-cli: -p is --package, -n is removed with its value, others follow npx's switch rule.
+      const npxTakes = name === '-n' || (single !== undefined && !types(single).includes(Boolean));
+      if (name !== '-p')
+        assert.equal(FLAG_TABLES.npx.valued.has(name), npxTakes, `npx ${name} → ${expansion.join(' ')}`);
+    }
+    assert.ok(FLAG_TABLES.npx.main.has('-p') && !FLAG_TABLES.npm.main.has('-p'));
+  } else t.diagnostic('npm definitions not found');
+  const help = spawnSync('docker', ['--help'], { encoding: 'utf8' });
+  if (help.status !== 0) return t.skip('docker not installed');
+  let checked = 0;
+  for (const line of help.stdout.split('\n')) {
+    const match = /^\s+(?:(-\w), )?(--[a-z0-9-]+)(?: ([a-zA-Z0-9:-]+)(\[=[^\]]*\])?)?\s{2,}/.exec(line);
+    if (!match) continue;
+    const [, short, long, value, optional] = match;
+    for (const name of [short, long].filter(Boolean)) {
+      checked += 1;
+      const takes = value !== undefined && optional === undefined;
+      assert.ok(
+        takes ? FLAG_TABLES.container.valued.has(name) : FLAG_TABLES.container.plain.has(name),
+        `docker ${name}`,
+      );
+    }
+  }
+  assert.ok(checked >= 10, `read ${checked} options from docker --help`);
+});
