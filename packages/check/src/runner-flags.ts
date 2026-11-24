@@ -23,6 +23,8 @@ export interface FlagTable {
   readonly plain?: ReadonlySet<string>;
   /** `--no-<anything>` is a switch (npm's parser). */
   readonly negation?: boolean;
+  /** A switch takes a following `true` or `false` as its value (npm's parser). */
+  readonly boolValues?: boolean;
 }
 
 const NPM_VALUED = [
@@ -782,6 +784,7 @@ export const FLAG_TABLES: Readonly<Record<string, FlagTable>> = {
     valued: set(NPM_VALUED),
     plain: set([...NPM_PLAIN, '-p']),
     negation: true,
+    boolValues: true,
   },
   uv: {
     main: set(['--from']),
@@ -1124,6 +1127,7 @@ export function readArgs(args: readonly string[], table: FlagTable): ReadArgs {
         take(name, value);
       } else if (eq < 0 && !isPlain(table, name) && table.plain && nextIsWord)
         return done(-1, { option: name, word: next });
+      else if (eq < 0 && table.boolValues && (next === 'true' || next === 'false')) i += 1;
       continue;
     }
     // A single dash with more letters: a listed option (`-dd`), or one-letter options joined (`-it`,

@@ -1629,3 +1629,75 @@ test('bypass: enterprise owners are one actor, and the bypass finding has its ow
       .slice(0, 20),
   );
 });
+
+// ---------------------------------------------------------------- fifth review
+
+test('a lockfile over 1 MiB is not agent configuration: no finding, exit 0, package.json decides', async t => {
+  const big = json({
+    lockfileVersion: 3,
+    packages: Object.fromEntries(
+      Array.from({ length: 30_000 }, (_, i) => [`node_modules/p${i}`, { version: '1.0.0' }]),
+    ),
+  });
+  assert.ok(Buffer.byteLength(big) > 1_048_576);
+  const files = { 'package-lock.json': big, '.mcp.json': mcp({ s: { command: 'npx', args: ['-y', 'pkg@1.0.0'] } }) };
+  const memory = scanFiles({ ...files, 'package.json': json({ devDependencies: { pkg: '1.0.0' } }) });
+  assert.deepEqual(
+    memory.findings.filter(f => f.ruleId === 'AGC-CFG-002'),
+    [],
+  );
+  assert.deepEqual(findingsFor(memory, 'AGC-SUP-006'), [], 'package.json declares the exact version');
+  // On disk, with no agent configuration at all: a default run passes.
+  const dir = mkdtempSync(join(tmpdir(), 'agc-lock-'));
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  writeFileSync(join(dir, 'package-lock.json'), big);
+  writeFileSync(join(dir, 'package.json'), json({ name: 'app' }));
+  let stdout = '';
+  const code = await runCli([dir, '--format', 'json'], {
+    stdout: s => (stdout += s),
+    stderr: () => {},
+    cwd: dir,
+    env: {},
+  });
+  assert.equal(code, 0);
+  assert.deepEqual(
+    JSON.parse(stdout).findings.filter(f => f.ruleId === 'AGC-CFG-002'),
+    [],
+  );
+});
+
+test('fifth review: local dots, aliases, switch values, uv options before tool run', () => {
+  const alias = { 'package.json': json({ devDependencies: { foo: 'npm:bar@1.0.0' } }) };
+  const cases = [
+    [['uvx', ['--with-editable', '.', 'pkg==1.0.0']], {}, ['006 pkg==1.0.0']],
+    [['uvx', ['--with-editable', '..', 'pkg==1.0.0']], {}, ['006 pkg==1.0.0']],
+    [['uvx', ['--from', '.', 'srv']], {}, []],
+    // An alias installs bar under the name foo; npx looks up foo by its real name and fetches it.
+    [['npx', ['-y', 'foo']], alias, ['001 foo']],
+    // npm reads a switch's following true or false as its value.
+    [['npm', ['exec', '--yes', 'false', 'pkg@1.2.3']], {}, []],
+    [['npm', ['exec', '--yes', 'true', 'pkg@1.2.3']], {}, ['006 pkg@1.2.3']],
+    [['npm', ['exec', '--audit', 'false', 'pkg@1.2.3']], {}, ['006 pkg@1.2.3']],
+    [['npm', ['exec', '--no', '--yes', 'false', '--yes', 'pkg']], {}, ['001 pkg']],
+    // uv's own options before tool and before run.
+    [['uv', ['--directory', '/x', 'tool', 'run', 'pkg']], {}, ['001 pkg']],
+    [['uv', ['-q', 'tool', 'run', 'pkg']], {}, ['001 pkg']],
+    [['uv', ['tool', '-q', 'run', 'pkg==1.0']], {}, ['006 pkg==1.0']],
+    [['uv', ['--frobnicate', 'x', 'tool', 'run', 'pkg']], {}, []],
+    // The second -- after npm exec's first is an argument of the server.
+    [['npm', ['exec', '--', 'a@1.0.0', '--', 'b']], {}, ['006 a@1.0.0']],
+    // The main package is not reported again as an extra.
+    [['npx', ['-p', 'pkg@1.0.0', '-p', 'pkg@1.0.0', 'cmd']], {}, ['006 pkg@1.0.0']],
+  ];
+  for (const [[command, args], files, expected] of cases)
+    assert.deepEqual(reported(command, args, files), expected, `${command} ${args.join(' ')}`);
+});
+
+test('bypass: an organization-level ruleset reads the same way', async () => {
+  const orgRule = id => ({ ...ownerRule(id), ruleset_source_type: 'Organization', ruleset_source: 'acme' });
+  const rules = await read({
+    ...rulesOn([orgRule(40)], { '/repos/acme/app/rulesets/40': ruleset(40, [adminBypass]) }),
+    '/repos/acme/app/branches/main': [200, { protection: { enabled: false } }],
+  });
+  assert.equal(rules.codeOwnerBypass, 'possible');
+});

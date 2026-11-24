@@ -495,6 +495,8 @@ const SHELL_LOADER =
 function isConfigPath(path: string, inputs: readonly { readonly path: string }[]): boolean {
   const parts = path.split('/');
   const name = parts.at(-1)!;
+  // A lockfile is read only for installed versions: one that cannot be read leaves them unknown.
+  if (name === 'package-lock.json' || name === 'npm-shrinkwrap.json') return false;
   if (name !== 'mcp.json' && name !== 'plugin.json') return true;
   if (['.vscode', '.cursor', '.claude-plugin', 'settings'].includes(parts.at(-2) ?? '')) return true;
   const folder = parts.slice(0, -1).join('/');

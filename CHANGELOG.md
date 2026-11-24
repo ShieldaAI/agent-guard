@@ -48,6 +48,10 @@
   file on 20,000 generated command lines) decides where options end, so an option npx counts as
   taking a value (`--no-color`) swallows the next word, and npm exec's own reading follows. bunx
   uses the project's copy only for a bare name, as bun's `bunx_command.rs` does.
+- A `package-lock.json` or `npm-shrinkwrap.json` over 1 MiB is not agent configuration: it is
+  skipped without a finding, and installed versions then come from package.json. A package.json
+  alias (`"foo": "npm:bar@1.0.0"`) does not count as installing `foo`. `uv` options before `tool run`,
+  a bare `.` or `..` as a local path, and npm's `--yes false` are read.
 - `uvx --with-requirements FILE` and `pipx --pip-args` install packages the config does not name:
   AGC-SUP-001 reports them as unreadable instead of judging only the package it can see.
 - The semver reader refuses ranges it cannot read with certainty (a wildcard before a number, a

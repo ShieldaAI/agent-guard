@@ -33,9 +33,11 @@ function fromProject(
   runner: { runner: string; spec: string; localOnly: boolean },
   name: string,
 ): boolean {
-  if (runner.localOnly || /^(\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)) return true;
+  if (runner.localOnly || /^(\.{1,2}$|\.{1,2}\/|\/|file:|link:|workspace:)/.test(runner.spec)) return true;
   if (!USES_PROJECT_INSTALL.has(runner.runner)) return false;
-  const declared = project.dependencies.get(name);
+  // An alias (`"foo": "npm:bar@1.0.0"`) installs bar, not foo: npx looks packages up by real name.
+  const raw = project.dependencies.get(name);
+  const declared = raw?.startsWith('npm:') ? undefined : raw;
   const locked = project.lockedVersions.get(name) ?? [];
   if (declared === undefined && !locked.length) return false;
   const { version: wanted } = splitSpec(runner.spec);

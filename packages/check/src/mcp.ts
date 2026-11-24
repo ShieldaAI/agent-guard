@@ -395,10 +395,13 @@ export const isPythonRunner = (runner: string) => isUvRunner(runner) || runner =
  */
 function installedOnly(options: readonly string[]): boolean {
   let local = false;
-  for (const word of options) {
+  options.forEach((word, at) => {
     if (['--no', '--no-yes', '--yes=false', '-n'].includes(word)) local = true;
     else if (['-y', '--yes', '--yes=true'].includes(word)) local = false;
-  }
+    // npm reads a switch's following `true` or `false` as its value (`--yes false`).
+    else if ((word === 'false' || word === 'true') && ['-y', '--yes'].includes(options[at - 1] ?? ''))
+      local = word === 'false';
+  });
   return local;
 }
 
@@ -437,9 +440,15 @@ function runnerParts(
   } else if (base === 'npm' && rest[0] === 'exec') {
     runner = 'npm exec';
     rest = rest.slice(1);
-  } else if (base === 'uv' && rest[0] === 'tool' && rest[1] === 'run') {
+  } else if (base === 'uv') {
+    // uv's own options may come before `tool` and between `tool` and `run` (`uv -q tool run pkg`).
+    const before = readArgs(rest, FLAG_TABLES['uv']!);
+    if (before.unknown || before.at < 0 || rest[before.at] !== 'tool') return undefined;
+    const after = readArgs(rest.slice(before.at + 1), FLAG_TABLES['uv']!);
+    const at = before.at + 1 + after.at;
+    if (after.unknown || after.at < 0 || rest[at] !== 'run') return undefined;
     runner = 'uv tool run';
-    rest = rest.slice(2);
+    rest = [...rest.slice(0, before.at), ...rest.slice(before.at + 1, at), ...rest.slice(at + 1)];
   } else if (!RUNNERS.has(base)) return undefined;
   // npx is npm exec after npx-cli's own pass over the options (npxArgv).
   const npx = RUNNER_FAMILY[runner] === 'npx';
