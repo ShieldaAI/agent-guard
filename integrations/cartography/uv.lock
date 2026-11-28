@@ -49,7 +49,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "botocore", specifier = "==1.40.61" },
-    { name = "cartography", specifier = "==0.144.0" },
+    { name = "cartography", specifier = "==0.145.0" },
     { name = "jsonschema", specifier = ">=4.25,<5" },
     { name = "neo4j", specifier = ">=6.4,<7" },
     { name = "referencing", specifier = ">=0.37,<1" },
@@ -707,7 +707,7 @@ wheels = [
 
 [[package]]
 name = "cartography"
-version = "0.144.0"
+version = "0.145.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aioboto3" },
@@ -780,9 +780,9 @@ dependencies = [
     { name = "workos" },
     { name = "xmltodict" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/9b/29/9669463b7fcb037c168a09e30990adcc9d82e6bef088c74e89e52ad539d9/cartography-0.144.0.tar.gz", hash = "sha256:ede7ef9804de651c26f994acd77082ea16200df92273db6b8b0e894f399ab1b4", size = 11034111, upload-time = "2026-10-29T20:06:14.281Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/11/02/8cab4a68f34e8a4e251e21e139bd8bcf105bd4e6f95cfa46df19c82be39c/cartography-0.145.0.tar.gz", hash = "sha256:44340bc2681ee46a6ac77a813cb895c3421c0a51a940e8732f6ac5852f46b7c1", size = 11330250, upload-time = "2026-11-19T19:38:01.355Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/ea/75/7a63c7f602214b635084d1ffc49f0e597fc62a4ab5c2ecdd6009b2d96a89/cartography-0.144.0-py3-none-any.whl", hash = "sha256:89ee88f4fca44a1a74e10de253475f14ba84154b5e88c908ad2a34412b26872a", size = 3662225, upload-time = "2026-10-29T20:06:11.941Z" },
+    { url = "https://files.pythonhosted.org/packages/2a/80/b4a4e1b801e2551a992569677a38d009af90acea91debf167a1e49a8f7f7/cartography-0.145.0-py3-none-any.whl", hash = "sha256:0832a986433c4689756d7616c74b3fe19a5aafc1bdc1a69f94b266761354e152", size = 3876562, upload-time = "2026-11-19T19:37:58.788Z" },
 ]
 
 [[package]]
