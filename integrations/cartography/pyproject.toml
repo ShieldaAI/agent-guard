@@ -12,7 +12,7 @@ license = "Apache-2.0"
 # Everything the package imports directly is declared here, not left to Cartography's
 # own requirements: neo4j (the driver) and referencing (schema $ref resolution) included.
 dependencies = [
-  "cartography==0.144.0",
+  "cartography==0.145.0",
   "botocore==1.40.61",
   "jsonschema>=4.25,<5",
   "neo4j>=6.4,<7",
